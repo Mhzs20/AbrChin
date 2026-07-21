@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-سپس `http://localhost:3000` را باز کنید.
+سپس `http://localhost:3010` را باز کنید.
 
 ## ساخت نسخه نهایی
 
@@ -17,3 +17,5 @@ npm run dev
 npm run build
 npm start
 ```
+
+نسخه توسعه و Production هر دو به‌صورت پیش‌فرض روی پورت `3010` اجرا می‌شوند.
