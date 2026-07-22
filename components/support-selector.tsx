@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Check, HeartHandshake, PackageCheck, Server } from "lucide-react";
+import { ArrowLeft, Check, HeartHandshake, PackageCheck, Server, ShieldCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
@@ -22,24 +22,24 @@ const levels: SupportLevel[] = [
     title: "خام",
     description: "زیرساخت رو تحویل می‌گیری و ادامه‌ی فنی با تیم خودته.",
     icon: Server,
-    items: ["دسترسی کامل", "انتخاب منابع", "مناسب تیم فنی"],
+    items: ["دسترسی کامل", "انتخاب منابع", "پرچین به‌صورت اختیاری"],
   },
   {
     id: "ready",
     kicker: "سریع شروع کن",
     title: "آماده‌به‌کار",
-    description: "محیط رو امن و آماده می‌کنیم؛ تو مستقیم پروژه رو بالا میاری.",
+    description: "محیط رو آماده و امن می‌کنیم؛ تو مستقیم پروژه رو بالا میاری.",
     icon: PackageCheck,
-    items: ["تنظیم اولیه", "امن‌سازی پایه", "آماده‌ی استقرار"],
+    items: ["تنظیم اولیه", "پرچین برای امن‌سازی", "آماده‌ی استقرار"],
     recommended: true,
   },
   {
     id: "managed",
     kicker: "خیالت راحت",
     title: "مدیریت‌شده",
-    description: "نگهداری زیرساخت رو می‌سپری به ابرچین و روی کارت می‌مونی.",
+    description: "زیرساخت و مراقبتش رو می‌سپری به ابرچین و روی کارت می‌مونی.",
     icon: HeartHandshake,
-    items: ["پایش و بکاپ", "نگهداری مداوم", "همراهی وقت رشد"],
+    items: ["پرچین فعال", "پایش و بکاپ", "همراهی وقت رشد"],
   },
 ];
 
@@ -79,10 +79,10 @@ export function SupportSelector() {
         <div>
           <span>انتخاب فعلی</span>
           <strong>{selected.title}</strong>
-          <p>توی قطب‌نما می‌تونی بقیه نیازها رو هم مشخص کنی.</p>
+          <p><ShieldCheck size={14} aria-hidden="true" /> سطح پرچین متناسب با همین انتخاب تنظیم می‌شه.</p>
         </div>
         <Link className="button button-primary" href={`/compass?management=${selected.id}`}>
-          ادامه با این سطح
+          ساخت پیشنهاد با این سطح
           <ArrowLeft size={18} aria-hidden="true" />
         </Link>
       </div>

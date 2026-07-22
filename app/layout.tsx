@@ -6,17 +6,17 @@ import { SiteShell } from "@/components/site-shell";
 export const metadata: Metadata = {
   metadataBase: new URL("https://abrchin.ir"),
   title: {
-    default: "ابرچین | زیرساخت ساده، آماده‌ی رشد",
+    default: "ابرچین | زیرساختت رو سوار بر ابرها بساز",
     template: "%s",
   },
   description:
-    "بگو چی می‌سازی؛ ابرچین زیرساخت مناسب پروژه‌ات رو پیشنهاد می‌ده، راه می‌اندازه و اگر بخوای مدیریتش هم می‌کنه.",
+    "ابرچین ابرها را برای یک شروع ساده، ادامه امن با پرچین و رشد بدون بن‌بست می‌چیند.",
   applicationName: "ابرچین",
   keywords: ["ابرچین", "زیرساخت ابری", "سرور مجازی", "زیرساخت مدیریت‌شده", "هاست وردپرس"],
   icons: { icon: "/icon.svg" },
   openGraph: {
-    title: "ابرچین | زیرساخت ساده، آماده‌ی رشد",
-    description: "بگو چی می‌سازی؛ زیرساختش رو ابرچین می‌چینه.",
+    title: "ابرچین | زیرساختت رو سوار بر ابرها بساز",
+    description: "ساده شروع کن، با پرچین امن ادامه بده و بدون بن‌بست رشد کن.",
     siteName: "ابرچین",
     url: "https://abrchin.ir",
     locale: "fa_IR",
@@ -24,8 +24,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary",
-    title: "ابرچین | زیرساخت ساده، آماده‌ی رشد",
-    description: "بگو چی می‌سازی؛ زیرساختش رو ابرچین می‌چینه.",
+    title: "ابرچین | زیرساختت رو سوار بر ابرها بساز",
+    description: "ساده شروع کن، با پرچین امن ادامه بده و بدون بن‌بست رشد کن.",
   },
 };
 

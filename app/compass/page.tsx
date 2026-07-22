@@ -11,6 +11,7 @@ export const metadata: Metadata = {
 const allowed: Record<keyof CompassAnswers, string[]> = {
   project: ["site", "commerce", "product", "api", "migration", "unsure"],
   stage: ["building", "launch", "active", "growing"],
+  scale: ["starting", "light", "daily", "heavy", "unsure"],
   management: ["raw", "ready", "managed"],
   priority: ["economy", "speed", "stability", "growth"],
   location: ["iran", "europe", "both", "unsure"],

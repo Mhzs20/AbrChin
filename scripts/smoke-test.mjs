@@ -14,13 +14,13 @@ server.stdout.on("data", (chunk) => { serverLog += chunk.toString(); });
 server.stderr.on("data", (chunk) => { serverLog += chunk.toString(); });
 
 const checks = [
-  ["/", "بگو چی می‌سازی"],
+  ["/", "زیرساختت رو سوار بر ابرها بساز"],
   ["/compass", "چی داری می‌سازی"],
-  ["/compass?project=commerce&management=managed", "الان کجای کاری"],
-  ["/solutions", "راهکار آماده"],
-  ["/support", "هرچقدر لازم داری"],
-  ["/about", "فقط سرور نمی‌فروشیم"],
-  ["/help", "قبل از خرید"],
+  ["/compass?project=commerce&management=managed&scale=daily", "الان کجای کاری"],
+  ["/solutions", "هر پروژه، چینش خودش رو می‌خواد"],
+  ["/support", "کنترل دست تو؛ همراهی با ما"],
+  ["/about", "زیرساخت باید محکم باشه، نه سنگین"],
+  ["/help", "قبل از خرید، همه‌چیز روشن"],
   ["/api/health", '"status":"ok"'],
   ["/robots.txt", "sitemap"],
   ["/sitemap.xml", "https://abrchin.ir/compass"],

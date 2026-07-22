@@ -22,8 +22,9 @@ export function HomeStarter() {
       </div>
 
       <div>
-        <p className="starter-kicker">برای چی زیرساخت می‌خوای؟</p>
-        <h2>از کاری که می‌سازی شروع کنیم.</h2>
+        <p className="starter-kicker">چی داری می‌سازی؟</p>
+        <h2>از نیازت شروع کنیم.</h2>
+        <p className="starter-description">فنی بودن لازم نیست؛ چند سؤال کوتاه می‌پرسیم و نقطه‌ی شروع مناسب رو پیشنهاد می‌دیم.</p>
       </div>
 
       <div className="starter-options" aria-label="انتخاب نوع پروژه">
@@ -48,11 +49,11 @@ export function HomeStarter() {
 
       <div className="starter-footer">
         <p aria-live="polite">
-          {selected ? "عالیه؛ حالا چند سؤال کوتاه می‌پرسیم." : "یکی رو انتخاب کن؛ فنی بودن لازم نیست."}
+          {selected ? "خوبه؛ حالا پیشنهادت رو دقیق‌تر می‌کنیم." : "یکی رو انتخاب کن تا ادامه بدیم."}
         </p>
         {selected ? (
           <Link className="button button-primary" href={`/compass?project=${selected}`}>
-            ادامه و دیدن پیشنهاد
+            ادامه و ساخت پیشنهاد
             <ArrowLeft size={18} aria-hidden="true" />
           </Link>
         ) : (

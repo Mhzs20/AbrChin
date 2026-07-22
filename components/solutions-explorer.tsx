@@ -1,16 +1,14 @@
-"use client";
-
 import {
   ArrowLeft,
   Boxes,
   Check,
   RefreshCw,
+  ShieldCheck,
   ShoppingBag,
   Store,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
 
 type Solution = {
   id: string;
@@ -19,6 +17,7 @@ type Solution = {
   promise: string;
   icon: LucideIcon;
   support: string;
+  parchin: string;
   bestFor: string[];
   includes: string[];
 };
@@ -27,30 +26,33 @@ const solutions: Solution[] = [
   {
     id: "site",
     title: "سایت و محتوا",
-    short: "سریع بالا بیا و راحت منتشر کن.",
-    promise: "برای سایت‌های معرفی و محتوایی که باید سریع، امن و بی‌دردسر شروع شوند.",
+    short: "سریع بالا بیا؛ ساده منتشر کن.",
+    promise: "برای سایت‌هایی که باید سبک شروع بشن و با رشد محتوا راحت ارتقا پیدا کنن.",
     icon: Store,
     support: "آماده‌به‌کار",
+    parchin: "امن‌سازی اولیه",
     bestFor: ["سایت شرکتی", "مجله و محتوا", "پروژه‌ی تازه"],
-    includes: ["راه‌اندازی اولیه", "امن‌سازی پایه", "مسیر ارتقای روشن"],
+    includes: ["راه‌اندازی اولیه", "چینش قابل ارتقا", "انتقال ساده"],
   },
   {
     id: "commerce",
     title: "فروش آنلاین",
-    short: "برای فروشگاه و روزهای شلوغ.",
-    promise: "برای فروشگاهی که سرعت خرید و پایداری زمان کمپین برایش مهم است.",
+    short: "برای فروش و روزهای شلوغ.",
+    promise: "برای فروشگاهی که سرعت خرید، بکاپ و پایداری زمان کمپین براش مهمه.",
     icon: ShoppingBag,
     support: "مدیریت‌شده",
-    bestFor: ["فروشگاه تازه", "کمپین فروش", "فروشگاه در حال رشد"],
-    includes: ["چینش مناسب فروش", "بکاپ و پایش", "آمادگی برای ترافیک"],
+    parchin: "پایش و بکاپ فعال",
+    bestFor: ["فروشگاه تازه", "کمپین فروش", "فروشگاه روبه‌رشد"],
+    includes: ["چینش مناسب فروش", "پایش مداوم", "آمادگی برای ترافیک"],
   },
   {
     id: "product",
     title: "اپ و محصول",
     short: "برای MVP، API و SaaS.",
-    promise: "از نسخه‌ی اول شروع کن و برای کاربرهای بعدی هم جا داشته باش.",
+    promise: "از نسخه‌ی اول شروع کن و برای کاربرها و سرویس‌های بعدی هم جا داشته باش.",
     icon: Boxes,
     support: "خام یا آماده‌به‌کار",
+    parchin: "اختیاری یا فعال",
     bestFor: ["MVP و بتا", "اپ و API", "محصول SaaS"],
     includes: ["محیط استقرار", "دسترسی کامل", "ارتقای مرحله‌ای"],
   },
@@ -58,76 +60,44 @@ const solutions: Solution[] = [
     id: "migration",
     title: "انتقال و رشد",
     short: "وقتی سرویس فعلی کم آورده.",
-    promise: "سرویس را با برنامه جابه‌جا می‌کنیم و برای مرحله‌ی بعد آماده‌اش می‌کنیم.",
+    promise: "سرویس رو با برنامه جابه‌جا می‌کنیم و برای مرحله‌ی بعد آماده نگه می‌داریم.",
     icon: RefreshCw,
     support: "مدیریت‌شده",
+    parchin: "پایش هنگام انتقال",
     bestFor: ["کندی و قطعی", "تغییر ارائه‌دهنده", "رشد ناگهانی"],
     includes: ["برنامه‌ی انتقال", "تست قبل از سوییچ", "همراهی تا پایداری"],
   },
 ];
 
 export function SolutionsExplorer() {
-  const [selectedId, setSelectedId] = useState("site");
-  const selected = solutions.find((item) => item.id === selectedId) ?? solutions[0];
-  const SelectedIcon = selected.icon;
-
   return (
     <div className="solutions-workspace">
-      <div className="solution-tabs" role="tablist" aria-label="راهکارهای ابرچین">
-        {solutions.map((solution) => {
-          const Icon = solution.icon;
-          const active = selected.id === solution.id;
-          return (
-            <button
-              key={solution.id}
-              id={`solution-tab-${solution.id}`}
-              className={active ? "active" : ""}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              aria-controls="solution-panel"
-              onClick={() => setSelectedId(solution.id)}
-            >
-              <span><Icon size={20} aria-hidden="true" /></span>
-              <span><strong>{solution.title}</strong><small>{solution.short}</small></span>
-            </button>
-          );
-        })}
-      </div>
+      {solutions.map((solution) => {
+        const Icon = solution.icon;
+        return (
+          <article className="solution-card" key={solution.id}>
+            <div className="solution-card-head">
+              <span className="solution-big-icon"><Icon size={27} aria-hidden="true" /></span>
+              <span className="support-pill">{solution.support}</span>
+            </div>
 
-      <article
-        className="solution-panel"
-        id="solution-panel"
-        role="tabpanel"
-        aria-labelledby={`solution-tab-${selected.id}`}
-      >
-        <div className="solution-panel-top">
-          <span className="solution-big-icon"><SelectedIcon size={29} aria-hidden="true" /></span>
-          <span className="support-pill">سطح پیشنهادی: {selected.support}</span>
-        </div>
+            <h2>{solution.title}</h2>
+            <strong className="solution-short">{solution.short}</strong>
+            <p>{solution.promise}</p>
 
-        <h2>{selected.title}</h2>
-        <p>{selected.promise}</p>
+            <div className="solution-facts">
+              <span><Check size={15} aria-hidden="true" />{solution.bestFor[0]}</span>
+              <span><Check size={15} aria-hidden="true" />{solution.includes[0]}</span>
+              <span><ShieldCheck size={15} aria-hidden="true" />پرچین: {solution.parchin}</span>
+            </div>
 
-        <div className="solution-columns">
-          <div>
-            <small>مناسب برای</small>
-            {selected.bestFor.map((item) => <span key={item}><Check size={15} aria-hidden="true" />{item}</span>)}
-          </div>
-          <div>
-            <small>تحویل می‌گیری</small>
-            {selected.includes.map((item) => <span key={item}><Check size={15} aria-hidden="true" />{item}</span>)}
-          </div>
-        </div>
-
-        <div className="solution-panel-footer">
-          <p>نوع بستر بعد از بررسی نیاز مشخص می‌شه.</p>
-          <Link className="button button-primary" href={`/compass?project=${selected.id}`}>
-            پیشنهاد این راهکار
-            <ArrowLeft size={18} aria-hidden="true" />
-          </Link>
-        </div>
-      </article>
+            <Link className="solution-link" href={`/compass?project=${solution.id}`}>
+              پیشنهاد این راهکار
+              <ArrowLeft size={18} aria-hidden="true" />
+            </Link>
+          </article>
+        );
+      })}
     </div>
   );
 }

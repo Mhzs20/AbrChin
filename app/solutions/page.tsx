@@ -14,8 +14,8 @@ export default function SolutionsPage() {
     <section className="solutions-page page-view" aria-labelledby="solutions-title">
       <header className="page-heading">
         <div className="eyebrow"><Layers3 size={15} aria-hidden="true" /> راهکارها</div>
-        <h1 id="solutions-title">راهکار آماده، برای نیاز واقعی.</h1>
-        <p>کارت رو انتخاب کن؛ جزئیات فنی رو ما می‌چینیم.</p>
+        <h1 id="solutions-title">هر پروژه، چینش خودش رو می‌خواد.</h1>
+        <p>از نیازت شروع کن؛ بستر و منابع مناسب رو ابرچین پیدا می‌کنه.</p>
       </header>
       <SolutionsExplorer />
     </section>

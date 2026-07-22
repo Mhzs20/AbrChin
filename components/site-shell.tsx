@@ -32,6 +32,8 @@ const navigation: NavigationItem[] = [
   { href: "/help", label: "راهنما و ارتباط", shortLabel: "راهنما", icon: CircleHelp },
 ];
 
+const mobileNavigation = navigation.filter((item) => item.href !== "/about");
+
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === href;
   return pathname.startsWith(href);
@@ -65,11 +67,11 @@ export function SiteShell({ children }: { children: ReactNode }) {
           <div className="topbar-actions">
             <span className="availability">
               <span className="live-dot" aria-hidden="true" />
-              آماده‌ی شروع
+              برای شروع کنارتیم
             </span>
             <Link className="button button-primary button-compact" href="/compass">
               <Sparkles size={17} aria-hidden="true" />
-              پیشنهادم رو بساز
+              پیشنهاد من
             </Link>
           </div>
         </header>
@@ -102,6 +104,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
           <Link className="rail-help" href="/help" aria-label="کمک سریع">
             <LifeBuoy size={19} aria-hidden="true" />
           </Link>
+          <span className="rail-copyright">© ۱۴۰۵</span>
         </aside>
 
         <main className="page-stage" id="main-content">
@@ -111,7 +114,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
         </main>
 
         <nav className="mobile-navigation" aria-label="منوی موبایل">
-          {navigation.map((item) => {
+          {mobileNavigation.map((item) => {
             const Icon = item.icon;
             const active = isActive(pathname, item.href);
 

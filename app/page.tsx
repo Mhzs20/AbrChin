@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Layers3, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, Layers3, ShieldCheck, Sparkles } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -18,17 +18,17 @@ export default function HomePage() {
         </div>
 
         <h1 id="home-title">
-          بگو چی می‌سازی؛
-          <span> زیرساختش رو ابرچین می‌چینه.</span>
+          زیرساختت رو
+          <span> سوار بر ابرها بساز.</span>
         </h1>
 
         <p className="home-lead">
-          پیشنهاد می‌دیم، راه‌اندازی می‌کنیم و اگر بخوای مدیریتش هم با ماست.
+          ابرچین ابرها رو طوری می‌چینه که بشه روشون محکم ساخت؛ ساده شروع کنی، با پرچین امن ادامه بدی و بدون بن‌بست رشد کنی.
         </p>
 
         <div className="home-actions">
           <Link className="button button-primary button-large" href="/compass">
-            پیشنهادم رو بساز
+            زیرساخت من رو بچین
             <ArrowLeft size={19} aria-hidden="true" />
           </Link>
           <Link className="button button-quiet button-large" href="/solutions">
@@ -38,9 +38,9 @@ export default function HomePage() {
         </div>
 
         <div className="trust-line" aria-label="ویژگی‌های سرویس ابرچین">
-          <span><Check size={14} aria-hidden="true" /> شروع سریع</span>
-          <span><Check size={14} aria-hidden="true" /> قابل ارتقا</span>
-          <span><Check size={14} aria-hidden="true" /> مدیریت اختیاری</span>
+          <span><Check size={15} aria-hidden="true" /> تأیید قبل از خرید</span>
+          <span><Check size={15} aria-hidden="true" /> ارتقا بدون بن‌بست</span>
+          <span><ShieldCheck size={15} aria-hidden="true" /> امنیت و مراقبت با پرچین</span>
         </div>
       </div>
 

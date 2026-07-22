@@ -6,7 +6,9 @@ import {
   Braces,
   Check,
   CircleHelp,
+  Clock3,
   Compass,
+  Copy,
   FileText,
   Globe2,
   HeartHandshake,
@@ -31,7 +33,9 @@ import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-export type CompassAnswers = Partial<Record<"project" | "stage" | "management" | "priority" | "location", string>>;
+export type CompassAnswers = Partial<
+  Record<"project" | "stage" | "scale" | "management" | "priority" | "location", string>
+>;
 
 type WizardOption = {
   value: string;
@@ -47,12 +51,22 @@ type WizardStep = {
   options: WizardOption[];
 };
 
+type PlanProfile = {
+  id: "lean" | "balanced" | "growth";
+  title: string;
+  description: string;
+  cpu: number;
+  ram: number;
+  storage: number;
+  recommended?: boolean;
+};
+
 const steps: WizardStep[] = [
   {
     id: "project",
     kicker: "اول خود پروژه",
     question: "چی داری می‌سازی؟",
-    hint: "اسم تکنولوژی مهم نیست؛ کاری که باید انجام بده مهمه.",
+    hint: "اسم تکنولوژی مهم نیست؛ کاری که قراره انجام بده مهمه.",
     options: [
       { value: "site", label: "سایت و محتوا", icon: FileText },
       { value: "commerce", label: "فروش آنلاین", icon: ShoppingBag },
@@ -75,6 +89,19 @@ const steps: WizardStep[] = [
     ],
   },
   {
+    id: "scale",
+    kicker: "اندازه‌ی استفاده",
+    question: "چقدر ازش استفاده می‌شه؟",
+    hint: "یک تخمین ساده کافیه؛ لازم نیست عدد فنی بدونی.",
+    options: [
+      { value: "starting", label: "هنوز اول راهه", icon: Sparkles },
+      { value: "light", label: "استفاده سبک", icon: Store },
+      { value: "daily", label: "استفاده روزانه", icon: UsersRound },
+      { value: "heavy", label: "پرترافیک یا حساس", icon: Zap },
+      { value: "unsure", label: "نمی‌دونم", icon: CircleHelp },
+    ],
+  },
+  {
     id: "management",
     kicker: "میزان همراهی",
     question: "چقدرش رو بسپری به ما؟",
@@ -89,7 +116,7 @@ const steps: WizardStep[] = [
     id: "priority",
     kicker: "اولویت اصلی",
     question: "چی برات مهم‌تره؟",
-    hint: "مهم‌ترین اولویت رو انتخاب کن؛ بقیه رو متعادل می‌کنیم.",
+    hint: "مهم‌ترین اولویت رو بگو؛ بقیه رو متعادل می‌کنیم.",
     options: [
       { value: "economy", label: "شروع اقتصادی", icon: WalletCards },
       { value: "speed", label: "سرعت بیشتر", icon: Zap },
@@ -138,36 +165,97 @@ function firstOpenStep(answers: CompassAnswers) {
   return index === -1 ? steps.length - 1 : index;
 }
 
+const cpuTiers = [2, 4, 6, 8, 12, 16, 24, 32, 48, 64];
+const ramTiers = [4, 8, 12, 16, 24, 32, 48, 64, 96, 128];
+
+function nextTier(value: number, tiers: number[]) {
+  return tiers.find((tier) => tier >= value) ?? Math.ceil(value / 16) * 16;
+}
+
 function buildResult(answers: CompassAnswers) {
-  const busy = answers.stage === "active" || answers.stage === "growing";
-  const growthFirst = answers.priority === "growth" || answers.priority === "stability";
-  const application = answers.project === "product" || answers.project === "api";
-  const commerce = answers.project === "commerce";
+  let cpu = 2;
+  let ram = 4;
+  let storage = 80;
 
-  let cpu = application || commerce ? 4 : 2;
-  let ram = application || commerce ? 8 : 4;
-  let storage = commerce ? 140 : 100;
-
-  if (busy || growthFirst) {
-    cpu = 8;
-    ram = 16;
-    storage = commerce ? 240 : 180;
+  if (["commerce", "product", "api", "migration"].includes(answers.project ?? "")) {
+    cpu = 4;
+    ram = 8;
+    storage = answers.project === "commerce" ? 140 : 110;
   }
 
-  if (answers.priority === "economy" && !busy) {
-    cpu = 2;
-    ram = application ? 8 : 4;
-    storage = 80;
+  if (answers.stage === "active") {
+    cpu += 2;
+    ram += 4;
+    storage += 40;
   }
+
+  if (answers.stage === "growing") {
+    cpu += 4;
+    ram += 8;
+    storage += 80;
+  }
+
+  if (answers.scale === "daily") {
+    cpu += 2;
+    ram += 4;
+  }
+
+  if (answers.scale === "heavy") {
+    cpu += 4;
+    ram += 8;
+    storage += 80;
+  }
+
+  if (answers.priority === "speed") cpu += 2;
+  if (answers.priority === "stability") ram += 4;
+  if (answers.priority === "growth") {
+    cpu += 2;
+    ram += 4;
+    storage += 40;
+  }
+
+  if (answers.priority === "economy" && answers.scale !== "heavy" && answers.stage !== "growing") {
+    cpu = Math.min(cpu, 4);
+    ram = Math.min(ram, 8);
+  }
+
+  cpu = nextTier(cpu, cpuTiers);
+  ram = nextTier(ram, ramTiers);
+  storage = Math.ceil(storage / 20) * 20;
+
+  const profiles: PlanProfile[] = [
+    {
+      id: "lean",
+      title: "شروع سبک",
+      description: "برای شروع کم‌هزینه و ارتقای مرحله‌ای.",
+      cpu: nextTier(cpu * 0.6, cpuTiers),
+      ram: nextTier(ram * 0.6, ramTiers),
+      storage: Math.max(60, Math.ceil(storage * 0.7 / 20) * 20),
+    },
+    {
+      id: "balanced",
+      title: "چینش پیشنهادی",
+      description: "تعادل منطقی بین هزینه، پایداری و رشد.",
+      cpu,
+      ram,
+      storage,
+      recommended: true,
+    },
+    {
+      id: "growth",
+      title: "آماده‌ی رشد",
+      description: "فضای بیشتر برای ترافیک و مرحله‌ی بعد.",
+      cpu: nextTier(cpu * 1.5, cpuTiers),
+      ram: nextTier(ram * 1.5, ramTiers),
+      storage: Math.ceil(storage * 1.5 / 20) * 20,
+    },
+  ];
 
   return {
     project: projectNames[answers.project ?? ""] ?? "پروژه‌ی تو",
     management: managementNames[answers.management ?? ""] ?? "آماده‌به‌کار",
     location: locationNames[answers.location ?? ""] ?? "بعد از بررسی",
-    cpu: `${cpu} vCPU`,
-    ram: `${ram} GB`,
-    storage: `${storage} GB`,
-    scale: busy || growthFirst ? "فضای رشد رزروشده" : "ارتقای مرحله‌ای",
+    profiles,
   };
 }
 
@@ -175,10 +263,16 @@ export function CompassWizard({ initialAnswers = {} }: { initialAnswers?: Compas
   const [answers, setAnswers] = useState<CompassAnswers>(initialAnswers);
   const [stepIndex, setStepIndex] = useState(() => firstOpenStep(initialAnswers));
   const [showResult, setShowResult] = useState(() => steps.every((step) => Boolean(initialAnswers[step.id])));
+  const [selectedPlanId, setSelectedPlanId] = useState<PlanProfile["id"]>("balanced");
+  const [parchinEnabled, setParchinEnabled] = useState(() => initialAnswers.management !== "raw");
+  const [copied, setCopied] = useState(false);
 
   const step = steps[stepIndex];
   const selected = answers[step.id];
   const result = useMemo(() => buildResult(answers), [answers]);
+  const selectedPlan = result.profiles.find((plan) => plan.id === selectedPlanId) ?? result.profiles[1];
+  const parchinIsRequired = answers.management === "managed";
+  const parchinIsActive = parchinIsRequired || parchinEnabled;
 
   const choose = (value: string) => {
     setAnswers((current) => ({ ...current, [step.id]: value }));
@@ -187,6 +281,7 @@ export function CompassWizard({ initialAnswers = {} }: { initialAnswers?: Compas
   const next = () => {
     if (!selected) return;
     if (stepIndex === steps.length - 1) {
+      setParchinEnabled(answers.management !== "raw");
       setShowResult(true);
       return;
     }
@@ -201,57 +296,127 @@ export function CompassWizard({ initialAnswers = {} }: { initialAnswers?: Compas
     setAnswers({});
     setStepIndex(0);
     setShowResult(false);
+    setSelectedPlanId("balanced");
+    setParchinEnabled(false);
+    setCopied(false);
+  };
+
+  const requestSummary = [
+    `پروژه: ${result.project}`,
+    `چینش: ${selectedPlan.title}`,
+    `منابع اولیه: ${selectedPlan.cpu} vCPU / ${selectedPlan.ram} GB RAM / ${selectedPlan.storage} GB Storage`,
+    `موقعیت: ${result.location}`,
+    `سطح همراهی: ${result.management}`,
+    `پرچین: ${parchinIsActive ? "فعال" : "غیرفعال"}`,
+  ].join("\n");
+
+  const contactHref = `mailto:hello@abrchin.ir?subject=${encodeURIComponent(`بررسی پیشنهاد ${result.project}`)}&body=${encodeURIComponent(`سلام ابرچین،\n\nاین پیشنهاد رو برای بررسی انتخاب کردم:\n${requestSummary}\n\nلطفاً قیمت روز و زمان راه‌اندازی رو اعلام کنید.`)}`;
+
+  const copyRequest = async () => {
+    await navigator.clipboard.writeText(requestSummary);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
   };
 
   if (showResult) {
     return (
       <section className="compass-result page-view" aria-labelledby="result-title">
-        <div className="result-copy">
-          <div className="eyebrow eyebrow-success"><Check size={15} aria-hidden="true" /> پیشنهاد اولیه آماده‌ست</div>
-          <h1 id="result-title">شروع منطقی برای {result.project}</h1>
-          <p>منابع نهایی و قیمت قبل از خرید با وضعیت واقعی پروژه چک می‌شن.</p>
+        <header className="result-heading">
+          <div>
+            <div className="eyebrow eyebrow-success"><Check size={16} aria-hidden="true" /> پیشنهاد اولیه آماده‌ست</div>
+            <h1 id="result-title">سه مسیر برای {result.project}</h1>
+            <p>چینش دلخواهت رو انتخاب کن؛ قیمت روز و موجودی قبل از خرید تأیید می‌شه.</p>
+          </div>
+          <button className="button button-quiet" type="button" onClick={restart}>
+            <RefreshCw size={17} aria-hidden="true" />
+            شروع دوباره
+          </button>
+        </header>
 
-          <div className="result-actions">
-            <a
-              className="button button-primary button-large"
-              href="mailto:hello@abrchin.ir?subject=%D8%A8%D8%B1%D8%B1%D8%B3%DB%8C%20%D9%86%D9%87%D8%A7%DB%8C%DB%8C%20%D9%BE%DB%8C%D8%B4%D9%86%D9%87%D8%A7%D8%AF%20%D8%A7%D8%A8%D8%B1%DA%86%DB%8C%D9%86"
+        <div className="result-layout">
+          <div className="plan-choices" aria-label="انتخاب چینش پیشنهادی">
+            {result.profiles.map((plan) => {
+              const active = selectedPlan.id === plan.id;
+              return (
+                <button
+                  key={plan.id}
+                  className={`plan-choice${active ? " active" : ""}`}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setSelectedPlanId(plan.id)}
+                >
+                  <span className="plan-choice-top">
+                    <span>{plan.recommended ? "پیشنهاد ابرچین" : "مسیر جایگزین"}</span>
+                    <span className="plan-radio">{active && <Check size={14} aria-hidden="true" />}</span>
+                  </span>
+                  <strong>{plan.title}</strong>
+                  <p>{plan.description}</p>
+                  <span className="plan-resources" dir="ltr">
+                    <span>{plan.cpu} <small>vCPU</small></span>
+                    <span>{plan.ram} <small>GB RAM</small></span>
+                    <span>{plan.storage} <small>GB</small></span>
+                  </span>
+                </button>
+              );
+            })}
+
+            <button
+              className={`parchin-choice${parchinIsActive ? " active" : ""}`}
+              type="button"
+              aria-pressed={parchinIsActive}
+              disabled={parchinIsRequired}
+              onClick={() => setParchinEnabled((current) => !current)}
             >
-              قیمت و راه‌اندازی
-              <ArrowLeft size={19} aria-hidden="true" />
-            </a>
-            <button className="button button-quiet button-large" type="button" onClick={restart}>
-              <RefreshCw size={17} aria-hidden="true" />
-              از اول
+              <span className="parchin-icon"><ShieldCheck size={24} aria-hidden="true" /></span>
+              <span>
+                <small>قابلیت حفاظتی ابرچین</small>
+                <strong>پرچین {parchinIsActive ? "فعاله" : "اختیاریه"}</strong>
+                <p>امن‌سازی، پایش، بکاپ و هشدارهای ضروری.</p>
+              </span>
+              <span className="toggle" aria-hidden="true"><span /></span>
             </button>
           </div>
-        </div>
 
-        <article className="result-card">
-          <div className="result-card-head">
-            <div>
-              <span>پیشنهاد ابرچین</span>
-              <h2>{result.project} · {result.management}</h2>
+          <article className="result-card">
+            <div className="result-card-head">
+              <div>
+                <span>چینش انتخابی تو</span>
+                <h2>{selectedPlan.title}</h2>
+              </div>
+              <span className="result-badge"><Sparkles size={22} aria-hidden="true" /></span>
             </div>
-            <span className="result-badge"><Sparkles size={20} aria-hidden="true" /></span>
-          </div>
 
-          <div className="resource-grid" dir="ltr">
-            <div><span>CPU</span><strong>{result.cpu}</strong></div>
-            <div><span>RAM</span><strong>{result.ram}</strong></div>
-            <div><span>NVMe</span><strong>{result.storage}</strong></div>
-          </div>
+            <div className="resource-grid" dir="ltr">
+              <div><span>CPU</span><strong>{selectedPlan.cpu} vCPU</strong></div>
+              <div><span>RAM</span><strong>{selectedPlan.ram} GB</strong></div>
+              <div><span>STORAGE</span><strong>{selectedPlan.storage} GB</strong></div>
+            </div>
 
-          <div className="result-details">
-            <div><MapPin size={18} aria-hidden="true" /><span>موقعیت</span><strong>{result.location}</strong></div>
-            <div><HeartHandshake size={18} aria-hidden="true" /><span>همراهی</span><strong>{result.management}</strong></div>
-            <div><LineChart size={18} aria-hidden="true" /><span>رشد</span><strong>{result.scale}</strong></div>
-          </div>
+            <div className="result-details">
+              <div><MapPin size={19} aria-hidden="true" /><span>موقعیت</span><strong>{result.location}</strong></div>
+              <div><HeartHandshake size={19} aria-hidden="true" /><span>همراهی</span><strong>{result.management}</strong></div>
+              <div><Clock3 size={19} aria-hidden="true" /><span>راه‌اندازی</span><strong>بعد از تأیید</strong></div>
+              <div><ShieldCheck size={19} aria-hidden="true" /><span>پرچین</span><strong>{parchinIsActive ? "فعال" : "اختیاری"}</strong></div>
+            </div>
 
-          <div className="result-note">
-            <Check size={16} aria-hidden="true" />
-            نوع سرور و ارائه‌دهنده بعد از بررسی نهایی مشخص می‌شه.
-          </div>
-        </article>
+            <div className="quote-box">
+              <span>قیمت نهایی</span>
+              <strong>استعلام قیمت روز</strong>
+              <small>منابع، موجودی و هزینه قبل از خرید با تو تأیید می‌شن.</small>
+            </div>
+
+            <div className="result-actions">
+              <a className="button button-primary button-large" href={contactHref}>
+                درخواست قیمت و راه‌اندازی
+                <ArrowLeft size={19} aria-hidden="true" />
+              </a>
+              <button className="button button-quiet" type="button" onClick={copyRequest}>
+                <Copy size={17} aria-hidden="true" />
+                {copied ? "کپی شد" : "کپی خلاصه"}
+              </button>
+            </div>
+          </article>
+        </div>
       </section>
     );
   }
@@ -261,7 +426,7 @@ export function CompassWizard({ initialAnswers = {} }: { initialAnswers?: Compas
       <div className="wizard-main">
         <div className="wizard-heading">
           <div>
-            <div className="eyebrow"><Compass size={15} aria-hidden="true" /> قطب‌نمای ابرچین</div>
+            <div className="eyebrow"><Compass size={16} aria-hidden="true" /> قطب‌نمای ابرچین</div>
             <p className="wizard-kicker">{step.kicker}</p>
             <h1 id="compass-title">{step.question}</h1>
             <p>{step.hint}</p>
@@ -288,7 +453,7 @@ export function CompassWizard({ initialAnswers = {} }: { initialAnswers?: Compas
                 aria-pressed={active}
                 onClick={() => choose(option.value)}
               >
-                <span className="wizard-option-icon"><Icon size={23} aria-hidden="true" /></span>
+                <span className="wizard-option-icon"><Icon size={24} aria-hidden="true" /></span>
                 <strong>{option.label}</strong>
                 <span className="wizard-check">{active && <Check size={14} aria-hidden="true" />}</span>
               </button>
@@ -298,9 +463,9 @@ export function CompassWizard({ initialAnswers = {} }: { initialAnswers?: Compas
 
         <div className="wizard-footer">
           {stepIndex === 0 ? (
-            <Link className="wizard-back" href="/"><MoveRight size={17} aria-hidden="true" /> خانه</Link>
+            <Link className="wizard-back" href="/"><MoveRight size={18} aria-hidden="true" /> خانه</Link>
           ) : (
-            <button className="wizard-back" type="button" onClick={back}><MoveRight size={17} aria-hidden="true" /> مرحله قبل</button>
+            <button className="wizard-back" type="button" onClick={back}><MoveRight size={18} aria-hidden="true" /> مرحله قبل</button>
           )}
           <button className="button button-primary wizard-next" type="button" disabled={!selected} onClick={next}>
             {stepIndex === steps.length - 1 ? "دیدن پیشنهاد" : "ادامه"}
@@ -313,14 +478,14 @@ export function CompassWizard({ initialAnswers = {} }: { initialAnswers?: Compas
         <div className="summary-cloud" aria-hidden="true">
           <span className="cloud-ring ring-one" />
           <span className="cloud-ring ring-two" />
-          <span className="summary-symbol"><Store size={26} /></span>
+          <span className="summary-symbol"><Store size={28} /></span>
         </div>
         <span className="summary-label">تا اینجا</span>
         <h2>{answers.project ? projectNames[answers.project] : "پروژه‌ی تو"}</h2>
         <div className="summary-list">
           <span><small>مرحله</small><strong>{answers.stage ? "مشخص شد" : "—"}</strong></span>
+          <span><small>اندازه</small><strong>{answers.scale ? "مشخص شد" : "—"}</strong></span>
           <span><small>همراهی</small><strong>{answers.management ? managementNames[answers.management] : "—"}</strong></span>
-          <span><small>اولویت</small><strong>{answers.priority ? "مشخص شد" : "—"}</strong></span>
         </div>
         <p>نوع زیرساخت، خروجی این مسیر است؛ لازم نیست از قبل انتخابش کنی.</p>
       </aside>

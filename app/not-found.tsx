@@ -6,8 +6,8 @@ export default function NotFound() {
     <section className="not-found page-view">
       <span><Cloud size={34} aria-hidden="true" /></span>
       <small>۴۰۴</small>
-      <h1>این مسیر هنوز چیده نشده.</h1>
-      <p>برگرد خونه یا از قطب‌نما مسیر درست رو پیدا کن.</p>
+      <h1>این تکه هنوز روی ابرها چیده نشده.</h1>
+      <p>برگرد خانه یا با قطب‌نما مسیر درست رو پیدا کن.</p>
       <Link className="button button-primary" href="/">
         برگشت به خانه
         <ArrowLeft size={18} aria-hidden="true" />

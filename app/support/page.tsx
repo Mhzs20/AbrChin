@@ -14,8 +14,8 @@ export default function SupportPage() {
     <section className="support-page page-view" aria-labelledby="support-title">
       <header className="page-heading centered-heading">
         <div className="eyebrow"><HeartHandshake size={15} aria-hidden="true" /> سطح همراهی</div>
-        <h1 id="support-title">هرچقدر لازم داری، کنارتیم.</h1>
-        <p>خام، آماده یا مدیریت‌شده؛ کنترلش با توئه.</p>
+        <h1 id="support-title">کنترل دست تو؛ همراهی با ما.</h1>
+        <p>خام، آماده یا مدیریت‌شده؛ پرچین هم به‌اندازه‌ی نیازت فعال می‌شه.</p>
       </header>
       <SupportSelector />
     </section>

@@ -1,4 +1,4 @@
-import { ArrowLeft, Compass, Layers3, LineChart, Sparkles } from "lucide-react";
+import { ArrowLeft, Layers3, LineChart, ShieldCheck, Sparkles } from "lucide-react";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -21,13 +21,13 @@ export default function AboutPage() {
     <section className="about-page page-view" aria-labelledby="about-title">
       <div className="about-hero">
         <div className="about-copy">
-          <div className="eyebrow"><Sparkles size={15} aria-hidden="true" /> ابرچین؛ زیرساخت رشد</div>
-          <h1 id="about-title">فقط سرور نمی‌فروشیم؛ مسیر رشدش رو هم می‌چینیم.</h1>
+          <div className="eyebrow"><Sparkles size={15} aria-hidden="true" /> ابرچین؛ زیرساخت روی ابرها</div>
+          <h1 id="about-title">زیرساخت باید محکم باشه، نه سنگین.</h1>
           <p>
-            از نیاز شروع می‌کنیم، گزینه‌ها رو سبک‌سنگین می‌کنیم و زیرساختی می‌دیم که امروز منطقی و فردا قابل ارتقا باشه.
+            ابرچین از نیازت شروع می‌کنه، گزینه‌ها رو می‌سنجه و ابرها رو طوری می‌چینه که ساده شروع کنی، با پرچین امن ادامه بدی و برای رشد به بن‌بست نخوری.
           </p>
           <Link className="button button-primary" href="/compass">
-            مسیر من رو بساز
+            زیرساخت من رو بچین
             <ArrowLeft size={18} aria-hidden="true" />
           </Link>
         </div>
@@ -36,14 +36,14 @@ export default function AboutPage() {
           <span className="about-halo halo-one" />
           <span className="about-halo halo-two" />
           <Image src="/assets/abrchin-symbol.svg" alt="" width={150} height={126} />
-          <span className="about-caption">پیچیدگی پشت صحنه می‌مونه.</span>
+          <span className="about-caption">محکم، بدون سنگین شدن.</span>
         </div>
       </div>
 
       <div className="brand-principles">
-        <article><span><Compass size={21} aria-hidden="true" /></span><div><h2>نیاز قبل از تکنولوژی</h2><p>اول می‌فهمیم چی می‌سازی.</p></div></article>
-        <article><span><Layers3 size={21} aria-hidden="true" /></span><div><h2>سادگی با حساب‌وکتاب</h2><p>هر انتخاب، دلیل روشن داره.</p></div></article>
-        <article><span><LineChart size={21} aria-hidden="true" /></span><div><h2>رشد بدون بن‌بست</h2><p>برای قدم بعد جا می‌ذاریم.</p></div></article>
+        <article><span><Layers3 size={22} aria-hidden="true" /></span><div><h2>ساده شروع کن</h2><p>از نیاز شروع می‌کنیم، نه اسم تکنولوژی.</p></div></article>
+        <article><span><ShieldCheck size={22} aria-hidden="true" /></span><div><h2>با پرچین امن بمون</h2><p>امن‌سازی، پایش و بکاپ به‌اندازه‌ی نیازت.</p></div></article>
+        <article><span><LineChart size={22} aria-hidden="true" /></span><div><h2>بدون بن‌بست رشد کن</h2><p>برای قدم بعد از امروز جا می‌ذاریم.</p></div></article>
       </div>
 
       <section className="roadmap-card" aria-labelledby="roadmap-title">
