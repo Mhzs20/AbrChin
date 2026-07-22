@@ -21,6 +21,7 @@ const checks = [
   ["/support", "هرچقدر لازم داری"],
   ["/about", "فقط سرور نمی‌فروشیم"],
   ["/help", "قبل از خرید"],
+  ["/api/health", '"status":"ok"'],
   ["/robots.txt", "sitemap"],
   ["/sitemap.xml", "https://abrchin.ir/compass"],
 ];
