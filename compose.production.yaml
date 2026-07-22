@@ -1,0 +1,41 @@
+name: abrchin
+
+services:
+  web:
+    image: ${ABRCHIN_IMAGE:?ABRCHIN_IMAGE must be set}
+    container_name: abrchin-web
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:3010:3010"
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      HOSTNAME: 0.0.0.0
+      PORT: "3010"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /app/.next/cache:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    cpus: 0.80
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3010/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
