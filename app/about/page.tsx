@@ -1,0 +1,71 @@
+import { ArrowLeft, Compass, Layers3, LineChart, Sparkles } from "lucide-react";
+import type { Metadata } from "next";
+import Image from "next/image";
+import Link from "next/link";
+
+export const metadata: Metadata = {
+  title: "درباره ابرچین",
+  description: "ابرچین پیچیدگی زیرساخت را می‌چیند تا تیم‌ها ساده‌تر شروع کنند و آماده رشد بمانند.",
+  alternates: { canonical: "/about" },
+};
+
+const roadmap = [
+  { time: "۰ تا ۶ ماه", title: "شروع هوشمند", text: "پیشنهاد، خرید و راه‌اندازی همراه با تیم ابرچین", active: true },
+  { time: "۶ تا ۱۲ ماه", title: "پنل یکپارچه", text: "سرویس، پرداخت و پشتیبانی در یک تجربه" },
+  { time: "۱۲ تا ۱۸ ماه", title: "مدیریت خودکار", text: "پایش، بکاپ و ارتقای ساده‌تر" },
+  { time: "۱۸ تا ۲۴ ماه", title: "ابر ابرچین", text: "ظرفیت اختصاصی، API و مقیاس گسترده‌تر" },
+];
+
+export default function AboutPage() {
+  return (
+    <section className="about-page page-view" aria-labelledby="about-title">
+      <div className="about-hero">
+        <div className="about-copy">
+          <div className="eyebrow"><Sparkles size={15} aria-hidden="true" /> ابرچین؛ زیرساخت رشد</div>
+          <h1 id="about-title">فقط سرور نمی‌فروشیم؛ مسیر رشدش رو هم می‌چینیم.</h1>
+          <p>
+            از نیاز شروع می‌کنیم، گزینه‌ها رو سبک‌سنگین می‌کنیم و زیرساختی می‌دیم که امروز منطقی و فردا قابل ارتقا باشه.
+          </p>
+          <Link className="button button-primary" href="/compass">
+            مسیر من رو بساز
+            <ArrowLeft size={18} aria-hidden="true" />
+          </Link>
+        </div>
+
+        <div className="about-visual" aria-hidden="true">
+          <span className="about-halo halo-one" />
+          <span className="about-halo halo-two" />
+          <Image src="/assets/abrchin-symbol.svg" alt="" width={150} height={126} />
+          <span className="about-caption">پیچیدگی پشت صحنه می‌مونه.</span>
+        </div>
+      </div>
+
+      <div className="brand-principles">
+        <article><span><Compass size={21} aria-hidden="true" /></span><div><h2>نیاز قبل از تکنولوژی</h2><p>اول می‌فهمیم چی می‌سازی.</p></div></article>
+        <article><span><Layers3 size={21} aria-hidden="true" /></span><div><h2>سادگی با حساب‌وکتاب</h2><p>هر انتخاب، دلیل روشن داره.</p></div></article>
+        <article><span><LineChart size={21} aria-hidden="true" /></span><div><h2>رشد بدون بن‌بست</h2><p>برای قدم بعد جا می‌ذاریم.</p></div></article>
+      </div>
+
+      <section className="roadmap-card" aria-labelledby="roadmap-title">
+        <div className="roadmap-title">
+          <div><span>نقشه‌ی توسعه‌ی ۲۴ ماهه</span><h2 id="roadmap-title">از همراهی انسانی تا ابر یکپارچه</h2></div>
+          <span className="roadmap-status"><span className="live-dot" /> امروز اینجاییم</span>
+        </div>
+        <div className="roadmap-line">
+          {roadmap.map((phase, index) => (
+            <article className={phase.active ? "active" : ""} key={phase.time}>
+              <span className="phase-dot">{toPersianDigits(index + 1)}</span>
+              <small>{phase.time}</small>
+              <h3>{phase.title}</h3>
+              <p>{phase.text}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function toPersianDigits(value: number) {
+  return String(value).replace(/\d/g, (digit) => "۰۱۲۳۴۵۶۷۸۹"[Number(digit)]);
+}

@@ -6,7 +6,8 @@
     "dev": "next dev -p 3010",
     "build": "next build",
     "start": "next start -p 3010",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:smoke": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
     "lucide-react": "1.25.0",
