@@ -333,16 +333,37 @@ a {
   transform: scaleY(1);
 }
 
-.rail-help {
+.rail-help,
+.rail-enamad {
   display: grid;
   width: 46px;
-  height: 44px;
+  height: 48px;
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: #fff;
+  overflow: hidden;
+  transition: 170ms ease;
+}
+
+.rail-enamad {
   color: var(--muted);
+  text-decoration: none;
+}
+
+.rail-enamad img {
+  display: block;
+  width: 34px;
+  max-height: 40px;
+  object-fit: contain;
+}
+
+.rail-help:hover,
+.rail-enamad:hover {
+  border-color: rgba(29, 114, 243, 0.27);
+  box-shadow: 0 9px 16px rgba(31, 70, 124, 0.08);
+  transform: translateY(-1px);
 }
 
 .rail-copyright {

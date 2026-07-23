@@ -7,7 +7,6 @@ import {
   HeartHandshake,
   Home,
   Layers3,
-  LifeBuoy,
   Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -101,9 +100,20 @@ export function SiteShell({ children }: { children: ReactNode }) {
             })}
           </nav>
 
-          <Link className="rail-help" href="/help" aria-label="کمک سریع">
-            <LifeBuoy size={19} aria-hidden="true" />
-          </Link>
+          <a
+            className="rail-enamad"
+            referrerPolicy="origin"
+            target="_blank"
+            rel="noopener noreferrer"
+            href="https://trustseal.enamad.ir/?id=7019774&Code=dtWarV79z2vgp5pSlQKKMjz8QPhgWitc"
+            aria-label="مشاهده اعتبار اینماد ابرچین"
+          >
+            <img
+              referrerPolicy="origin"
+              src="https://trustseal.enamad.ir/logo.aspx?id=7019774&Code=dtWarV79z2vgp5pSlQKKMjz8QPhgWitc"
+              alt="نماد اعتماد الکترونیکی ابرچین"
+            />
+          </a>
           <span className="rail-copyright">© ۱۴۰۵</span>
         </aside>
 
