@@ -104,12 +104,12 @@ export function SiteShell({ children }: { children: ReactNode }) {
             className="rail-enamad"
             referrerPolicy="origin"
             target="_blank"
-            href="https://trustseal.enamad.ir/?id=7019774&Code=dtWarV79z2vgp5pSlQKKMjz8QPhgWitc"
+            href="https://trustseal.enamad.ir/?id=762937&Code=dtWarV79z2vgp5pSlQKKMjz8QPhgWitc"
             aria-label="مشاهده اعتبار اینماد ابرچین"
           >
             <img
               referrerPolicy="origin"
-              src="https://trustseal.enamad.ir/logo.aspx?id=7019774&Code=dtWarV79z2vgp5pSlQKKMjz8QPhgWitc"
+              src="https://trustseal.enamad.ir/logo.aspx?id=762937&Code=dtWarV79z2vgp5pSlQKKMjz8QPhgWitc"
               alt=""
               code="dtWarV79z2vgp5pSlQKKMjz8QPhgWitc"
               style={{ cursor: "pointer" }}
