@@ -132,5 +132,6 @@ export function buildClearedSessionCookie() {
     name: SESSION_COOKIE_NAME,
     value: "",
     ...sessionCookieOptions(0, env.isProduction),
+    expires: new Date(0),
   };
 }

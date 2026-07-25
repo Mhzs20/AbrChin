@@ -9,16 +9,9 @@ import {
 
 import { prisma } from "@/lib/db";
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
+import { WalletError } from "@/lib/wallet/errors";
 
-export class WalletError extends Error {
-  readonly code: string;
-
-  constructor(code: string, message: string) {
-    super(message);
-    this.name = "WalletError";
-    this.code = code;
-  }
-}
+export { WalletError } from "@/lib/wallet/errors";
 
 export type CreditInput = {
   userId: string;

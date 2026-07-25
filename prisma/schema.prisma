@@ -82,6 +82,7 @@ model User {
   orders           ServiceOrder[]
   gatewayAudits    PaymentGatewayAuditLog[] @relation("GatewayAuditActor")
   updatedGateways  PaymentGatewayConfig[]   @relation("GatewayUpdatedBy")
+  walletTopUpSettingsUpdated WalletTopUpSettings[] @relation("WalletTopUpSettingsUpdatedBy")
 }
 
 model OtpChallenge {
@@ -171,6 +172,14 @@ model WalletTopUp {
   @@index([status, expiresAt])
   @@index([callbackTokenHash])
   @@index([gateway, status])
+}
+
+model WalletTopUpSettings {
+  id                    String   @id @default("default")
+  suggestedAmountsToman Json
+  updatedAt             DateTime @updatedAt
+  updatedById           String?
+  updatedBy             User?    @relation("WalletTopUpSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 }
 
 model PaymentGatewayConfig {

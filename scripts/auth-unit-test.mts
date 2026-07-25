@@ -93,12 +93,14 @@ test("logout cookie is httpOnly and cleared", () => {
     name: SESSION_COOKIE_NAME,
     value: "",
     ...sessionCookieOptions(0, true),
+    expires: new Date(0),
   };
   assert.equal(cleared.value, "");
   assert.equal(cleared.httpOnly, true);
   assert.equal(cleared.secure, true);
   assert.equal(cleared.sameSite, "lax");
   assert.equal(cleared.maxAge, 0);
+  assert.ok(cleared.expires.getTime() === 0);
 });
 
 test("fake revoked and expired sessions are rejected", () => {
@@ -144,6 +146,16 @@ test("cross-origin mutating requests are rejected", () => {
   assert.equal(isSameOriginRequest(same), true);
   assert.equal(isSameOriginRequest(cross), false);
   assert.equal(isSameOriginRequest(crossSiteHint), false);
+
+  const behindProxy = new Request("http://127.0.0.1:3010/api/auth/logout", {
+    method: "POST",
+    headers: {
+      host: "127.0.0.1:3010",
+      "x-forwarded-host": "abrchin.ir",
+      origin: "https://abrchin.ir",
+    },
+  });
+  assert.equal(isSameOriginRequest(behindProxy), true);
 });
 
 test("console SMS fails closed in production and never logs OTP", async () => {

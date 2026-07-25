@@ -4,16 +4,24 @@ import { LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-const SUGGESTED = [100_000, 250_000, 500_000, 1_000_000];
-
 type TopUpFormProps = {
   gatewayAvailable: boolean;
   gatewayDisplayName: string | null;
+  suggestedAmountsToman: number[];
+  minTopUpToman: number;
+  maxTopUpToman: number;
 };
 
-export function TopUpForm({ gatewayAvailable, gatewayDisplayName }: TopUpFormProps) {
+export function TopUpForm({
+  gatewayAvailable,
+  gatewayDisplayName,
+  suggestedAmountsToman,
+  minTopUpToman,
+  maxTopUpToman,
+}: TopUpFormProps) {
   const router = useRouter();
-  const [amount, setAmount] = useState(100_000);
+  const defaultAmount = suggestedAmountsToman[0] ?? minTopUpToman;
+  const [amount, setAmount] = useState(defaultAmount);
   const [custom, setCustom] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -48,7 +56,10 @@ export function TopUpForm({ gatewayAvailable, gatewayDisplayName }: TopUpFormPro
     <form className="auth-card auth-form" onSubmit={submit}>
       <div className="auth-card-head">
         <h1>شارژ کیف پول</h1>
-        <p>مبلغ را به تومان انتخاب کنید. حداقل ۵۰٬۰۰۰ و حداکثر ۵۰٬۰۰۰٬۰۰۰ تومان.</p>
+        <p>
+          مبلغ را به تومان انتخاب کنید. حداقل {minTopUpToman.toLocaleString("fa-IR")} و حداکثر{" "}
+          {maxTopUpToman.toLocaleString("fa-IR")} تومان.
+        </p>
       </div>
 
       {gatewayAvailable && gatewayDisplayName ? (
@@ -58,7 +69,7 @@ export function TopUpForm({ gatewayAvailable, gatewayDisplayName }: TopUpFormPro
       )}
 
       <div className="topup-suggestions">
-        {SUGGESTED.map((value) => (
+        {suggestedAmountsToman.map((value) => (
           <button
             key={value}
             type="button"

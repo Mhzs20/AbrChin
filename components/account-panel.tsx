@@ -4,6 +4,8 @@ import { LoaderCircle, LogOut, Wallet } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { performLogout } from "@/lib/auth-client";
+
 type AccountUser = {
   mobile: string;
   displayName: string | null;
@@ -47,11 +49,9 @@ export function AccountPanel({ user }: { user: AccountUser }) {
     setLoggingOut(true);
     setError("");
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      router.replace("/login");
-      router.refresh();
-    } catch {
-      setError("خروج ممکن نشد. دوباره تلاش کنید.");
+      await performLogout("/login");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "خروج ممکن نشد. دوباره تلاش کنید.");
       setLoggingOut(false);
     }
   }
@@ -101,12 +101,15 @@ export function AccountPanel({ user }: { user: AccountUser }) {
               {saving ? <LoaderCircle size={17} className="spin" aria-hidden="true" /> : null}
               ذخیره نام
             </button>
-            <button className="button button-quiet" type="button" onClick={onLogout} disabled={loggingOut}>
-              {loggingOut ? <LoaderCircle size={17} className="spin" aria-hidden="true" /> : <LogOut size={17} aria-hidden="true" />}
-              خروج
-            </button>
           </div>
         </form>
+
+        <div className="account-actions account-actions--footer">
+          <button className="button button-quiet" type="button" onClick={onLogout} disabled={loggingOut || saving}>
+            {loggingOut ? <LoaderCircle size={17} className="spin" aria-hidden="true" /> : <LogOut size={17} aria-hidden="true" />}
+            خروج از حساب
+          </button>
+        </div>
       </section>
 
       <section className="account-card account-placeholder" aria-labelledby="wallet-title">

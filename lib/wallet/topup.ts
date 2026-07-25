@@ -6,6 +6,11 @@ import { prisma } from "@/lib/db";
 import { assertServerSecrets } from "@/lib/env";
 import { assertPositiveIntegerToman, tomanToRial } from "@/lib/money";
 import {
+  MAX_TOPUP_TOMAN,
+  MIN_TOPUP_TOMAN,
+  TOPUP_TTL_MS,
+} from "@/lib/wallet/topup-limits";
+import {
   PaymentError,
   resolveDefaultPaymentGateway,
   resolveProviderForTopUp,
@@ -15,9 +20,7 @@ import { WalletError } from "@/lib/wallet/ledger";
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 import { providerEnumToSlug } from "@/lib/payments/types";
 
-export const MIN_TOPUP_TOMAN = 50_000;
-export const MAX_TOPUP_TOMAN = 50_000_000;
-export const TOPUP_TTL_MS = 30 * 60 * 1000;
+export { MAX_TOPUP_TOMAN, MIN_TOPUP_TOMAN, TOPUP_TTL_MS } from "@/lib/wallet/topup-limits";
 
 function hashCallbackToken(token: string, secret: string) {
   return createHash("sha256").update(`${secret}:${token}`).digest("hex");

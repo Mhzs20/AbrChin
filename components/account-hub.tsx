@@ -1,9 +1,11 @@
 "use client";
 
+import { LoaderCircle, LogOut, Receipt, ShoppingBag, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { LoaderCircle, LogOut, Receipt, ShoppingBag, Wallet } from "lucide-react";
+
+import { performLogout } from "@/lib/auth-client";
 
 type WalletSummary = {
   balanceTomanFa: string;
@@ -109,9 +111,13 @@ export function AccountHub({
 
   async function logout() {
     setLoggingOut(true);
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.replace("/login");
-    router.refresh();
+    setError("");
+    try {
+      await performLogout("/login");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "خروج ممکن نشد. دوباره تلاش کنید.");
+      setLoggingOut(false);
+    }
   }
 
   return (
@@ -151,11 +157,14 @@ export function AccountHub({
               {saving ? <LoaderCircle className="spin" size={16} /> : null}
               ذخیره نام
             </button>
-            <button className="button button-quiet" type="button" onClick={logout} disabled={loggingOut}>
-              <LogOut size={16} /> خروج
-            </button>
           </div>
         </form>
+        <div className="account-actions account-actions--footer">
+          <button className="button button-quiet" type="button" onClick={logout} disabled={loggingOut || saving}>
+            {loggingOut ? <LoaderCircle className="spin" size={16} /> : <LogOut size={16} />}
+            خروج از حساب
+          </button>
+        </div>
       </section>
 
       <section className="account-card">
@@ -209,6 +218,7 @@ export function AccountHub({
         {role === "ADMIN" ? (
           <>
             <Link className="button button-quiet" href="/admin/wallets">پنل ادمین کیف پول</Link>
+            <Link className="button button-quiet" href="/admin/wallet-topup-settings">تنظیمات شارژ کیف پول</Link>
             <Link className="button button-quiet" href="/admin/payment-gateways">مدیریت درگاه‌های پرداخت</Link>
           </>
         ) : null}

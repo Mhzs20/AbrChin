@@ -3,6 +3,11 @@ import test, { after } from "node:test";
 import { LedgerType, PrismaClient, WalletStatus } from "@prisma/client";
 
 import { assertPositiveIntegerToman, rialToToman, tomanToRial } from "../lib/money.ts";
+import {
+  DEFAULT_TOPUP_SUGGESTIONS_TOMAN,
+  normalizeSuggestedAmounts,
+} from "../lib/wallet/topup-limits.ts";
+import { WalletError } from "../lib/wallet/errors.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const prisma = databaseUrl ? new PrismaClient() : null;
@@ -86,6 +91,31 @@ test("wallet credit debit and negative balance protection", async (t) => {
 
   const fresh = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
   assert.equal(fresh.availableBalance, 600_000n);
+});
+
+test("topup suggestion defaults and validation", async (t) => {
+  assert.deepEqual(normalizeSuggestedAmounts([...DEFAULT_TOPUP_SUGGESTIONS_TOMAN]), [
+    1_000_000,
+    5_000_000,
+    10_000_000,
+    20_000_000,
+  ]);
+  assert.throws(() => normalizeSuggestedAmounts([1_000_000, 2_000_000]), WalletError);
+  assert.throws(() => normalizeSuggestedAmounts([1_000_000, 1_000_000, 2_000_000, 3_000_000]), WalletError);
+
+  if (!prisma) {
+    t.skip("DATABASE_URL not set");
+    return;
+  }
+
+  const settings = await prisma.walletTopUpSettings.findUnique({ where: { id: "default" } });
+  assert.ok(settings);
+  assert.deepEqual(normalizeSuggestedAmounts(settings.suggestedAmountsToman), [
+    1_000_000,
+    5_000_000,
+    10_000_000,
+    20_000_000,
+  ]);
 });
 
 test("one wallet per user unique constraint", async (t) => {
