@@ -5,17 +5,38 @@ function readInt(name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function readBool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  return raw === "1" || raw.toLowerCase() === "true" || raw.toLowerCase() === "yes";
+}
+
 export function getEnv() {
+  const isProduction = process.env.NODE_ENV === "production";
   return {
     databaseUrl: process.env.DATABASE_URL ?? "",
     sessionSecret: process.env.SESSION_SECRET ?? "",
     smsProvider: (process.env.SMS_PROVIDER ?? "console").toLowerCase(),
-    smsApiKey: process.env.SMS_API_KEY ?? "",
-    smsSender: process.env.SMS_SENDER ?? "",
+    kavenegarApiKey: process.env.KAVENEGAR_API_KEY ?? "",
+    kavenegarTemplate: process.env.KAVENEGAR_TEMPLATE ?? "abrchinlogin",
+    kavenegarTimeoutMs: readInt("KAVENEGAR_TIMEOUT_MS", 8000),
     otpTtlSeconds: readInt("OTP_TTL_SECONDS", 120),
     sessionTtlDays: readInt("SESSION_TTL_DAYS", 30),
+    zibalMerchant: process.env.ZIBAL_MERCHANT ?? "",
+    zibalTimeoutMs: readInt("ZIBAL_TIMEOUT_MS", 10_000),
+    zarinpalMerchantId: process.env.ZARINPAL_MERCHANT_ID ?? "",
+    zarinpalSandbox: readBool("ZARINPAL_SANDBOX", !isProduction),
+    zarinpalTimeoutMs: readInt("ZARINPAL_TIMEOUT_MS", 10_000),
+    paymentCallbackBaseUrl: process.env.PAYMENT_CALLBACK_BASE_URL ?? "http://localhost:3010",
+    paymentBootstrapDefaultProvider: (
+      process.env.PAYMENT_BOOTSTRAP_DEFAULT_PROVIDER ?? "zibal"
+    ).toLowerCase(),
+    adminMobiles: (process.env.ADMIN_MOBILES ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
     nodeEnv: process.env.NODE_ENV ?? "development",
-    isProduction: process.env.NODE_ENV === "production",
+    isProduction,
   };
 }
 
@@ -28,4 +49,8 @@ export function assertServerSecrets() {
     throw new Error("SESSION_SECRET must be set (min 16 characters)");
   }
   return env;
+}
+
+export function isAdminMobile(mobile: string): boolean {
+  return getEnv().adminMobiles.includes(mobile);
 }

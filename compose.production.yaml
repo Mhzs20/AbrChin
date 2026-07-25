@@ -1,11 +1,40 @@
 name: abrchin
 
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: abrchin-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    volumes:
+      - abrchin_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 512m
+    cpus: 0.35
+    networks:
+      - abrchin_internal
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
   web:
     image: ${ABRCHIN_IMAGE:?ABRCHIN_IMAGE must be set}
     container_name: abrchin-web
     restart: unless-stopped
     init: true
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "127.0.0.1:3010:3010"
     environment:
@@ -13,13 +42,20 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       HOSTNAME: 0.0.0.0
       PORT: "3010"
-      # Auth uses an external PostgreSQL (no DB service added to this compose).
-      # Set these on the host / deploy environment when enabling OTP auth.
-      DATABASE_URL: ${DATABASE_URL:-}
-      SESSION_SECRET: ${SESSION_SECRET:-}
-      SMS_PROVIDER: ${SMS_PROVIDER:-console}
-      SMS_API_KEY: ${SMS_API_KEY:-}
-      SMS_SENDER: ${SMS_SENDER:-}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set}
+      SMS_PROVIDER: ${SMS_PROVIDER:?SMS_PROVIDER must be set}
+      KAVENEGAR_API_KEY: ${KAVENEGAR_API_KEY:-}
+      KAVENEGAR_TEMPLATE: ${KAVENEGAR_TEMPLATE:-abrchinlogin}
+      KAVENEGAR_TIMEOUT_MS: ${KAVENEGAR_TIMEOUT_MS:-8000}
+      PAYMENT_CALLBACK_BASE_URL: ${PAYMENT_CALLBACK_BASE_URL:?PAYMENT_CALLBACK_BASE_URL must be set}
+      PAYMENT_BOOTSTRAP_DEFAULT_PROVIDER: ${PAYMENT_BOOTSTRAP_DEFAULT_PROVIDER:-zibal}
+      ZIBAL_MERCHANT: ${ZIBAL_MERCHANT:-}
+      ZIBAL_TIMEOUT_MS: ${ZIBAL_TIMEOUT_MS:-10000}
+      ZARINPAL_MERCHANT_ID: ${ZARINPAL_MERCHANT_ID:-}
+      ZARINPAL_SANDBOX: ${ZARINPAL_SANDBOX:-false}
+      ZARINPAL_TIMEOUT_MS: ${ZARINPAL_TIMEOUT_MS:-10000}
+      ADMIN_MOBILES: ${ADMIN_MOBILES:-}
       OTP_TTL_SECONDS: ${OTP_TTL_SECONDS:-120}
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
     read_only: true
@@ -32,6 +68,8 @@ services:
       - no-new-privileges:true
     mem_limit: 768m
     cpus: 0.80
+    networks:
+      - abrchin_internal
     healthcheck:
       test:
         - CMD
@@ -41,10 +79,18 @@ services:
       interval: 15s
       timeout: 5s
       retries: 6
-      start_period: 20s
+      start_period: 40s
     stop_grace_period: 20s
     logging:
       driver: json-file
       options:
         max-size: 10m
         max-file: "3"
+
+networks:
+  abrchin_internal:
+    name: abrchin_internal
+
+volumes:
+  abrchin_pg_data:
+    name: abrchin_pg_data

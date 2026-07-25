@@ -1,0 +1,106 @@
+"use client";
+
+import { LoaderCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+
+const SUGGESTED = [100_000, 250_000, 500_000, 1_000_000];
+
+type TopUpFormProps = {
+  gatewayAvailable: boolean;
+  gatewayDisplayName: string | null;
+};
+
+export function TopUpForm({ gatewayAvailable, gatewayDisplayName }: TopUpFormProps) {
+  const router = useRouter();
+  const [amount, setAmount] = useState(100_000);
+  const [custom, setCustom] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const selected = custom ? Number.parseInt(custom, 10) : amount;
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (loading || !gatewayAvailable) return;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/wallet/topups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amountToman: selected }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error || "ایجاد شارژ ممکن نشد.");
+        setLoading(false);
+        return;
+      }
+      window.location.href = data.redirectUrl;
+    } catch {
+      setError("ارتباط برقرار نشد.");
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form className="auth-card auth-form" onSubmit={submit}>
+      <div className="auth-card-head">
+        <h1>شارژ کیف پول</h1>
+        <p>مبلغ را به تومان انتخاب کنید. حداقل ۵۰٬۰۰۰ و حداکثر ۵۰٬۰۰۰٬۰۰۰ تومان.</p>
+      </div>
+
+      {gatewayAvailable && gatewayDisplayName ? (
+        <p className="topup-gateway-note">پرداخت امن از طریق {gatewayDisplayName}</p>
+      ) : (
+        <p className="auth-error">درگاه پرداخت موقتاً در دسترس نیست</p>
+      )}
+
+      <div className="topup-suggestions">
+        {SUGGESTED.map((value) => (
+          <button
+            key={value}
+            type="button"
+            className={`button button-quiet${selected === value && !custom ? " selected" : ""}`}
+            onClick={() => {
+              setAmount(value);
+              setCustom("");
+            }}
+            disabled={!gatewayAvailable}
+          >
+            {value.toLocaleString("fa-IR")} تومان
+          </button>
+        ))}
+      </div>
+
+      <label className="auth-field" htmlFor="custom-amount">
+        <span>مبلغ دلخواه (تومان)</span>
+        <input
+          id="custom-amount"
+          inputMode="numeric"
+          dir="ltr"
+          placeholder="مثلاً 200000"
+          value={custom}
+          disabled={!gatewayAvailable}
+          onChange={(e) => setCustom(e.target.value.replace(/\D/g, ""))}
+        />
+      </label>
+
+      <p className="topup-summary">مبلغ نهایی: {(Number.isFinite(selected) ? selected : 0).toLocaleString("fa-IR")} تومان</p>
+      {error ? <p className="auth-error">{error}</p> : null}
+
+      <button
+        className="button button-primary button-large"
+        type="submit"
+        disabled={loading || !selected || !gatewayAvailable}
+      >
+        {loading ? <LoaderCircle className="spin" size={18} /> : null}
+        تأیید و انتقال به درگاه
+      </button>
+      <button className="button button-quiet" type="button" onClick={() => router.push("/account/wallet")} disabled={loading}>
+        انصراف
+      </button>
+    </form>
+  );
+}

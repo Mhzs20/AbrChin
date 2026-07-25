@@ -3347,3 +3347,157 @@ a:focus-visible {
     width: 100%;
   }
 }
+
+.wallet-balance {
+  margin: 0;
+  color: var(--navy-950);
+  font-size: 28px;
+  font-weight: 900;
+}
+
+.account-empty {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.account-list {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.account-list li {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.account-list.dense li {
+  padding: 10px 12px;
+}
+
+.account-list strong {
+  color: var(--navy-900);
+  font-size: 13px;
+}
+
+.account-list span {
+  color: var(--blue-700);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.account-list small {
+  color: var(--muted-2);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.topup-suggestions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.topup-suggestions .button.selected {
+  border-color: rgba(29, 114, 243, 0.35);
+  background: var(--blue-50);
+  color: var(--blue-700);
+}
+
+.topup-summary {
+  margin: 0;
+  color: var(--navy-800);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.topup-gateway-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.auth-field select {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.gateway-admin-list {
+  display: grid;
+  gap: 16px;
+}
+
+.gateway-admin-card {
+  width: min(100%, 720px);
+}
+
+.gateway-admin-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 0 0 16px;
+}
+
+.gateway-admin-meta dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gateway-admin-meta dd {
+  margin: 2px 0 0;
+  color: var(--navy-900);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.gateway-admin-actions {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.gateway-toggle,
+.gateway-priority,
+.gateway-env {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--navy-800);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.gateway-priority input,
+.gateway-env select {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.gateway-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(8, 24, 48, 0.45);
+}
+
+.gateway-confirm-modal {
+  width: min(100%, 420px);
+}

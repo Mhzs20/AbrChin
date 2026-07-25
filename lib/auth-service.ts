@@ -2,7 +2,8 @@ import { OtpPurpose } from "@prisma/client";
 
 import { generateOtpCode, hashWithSecret, safeEqualHex } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
-import { assertServerSecrets } from "@/lib/env";
+import { assertServerSecrets, isAdminMobile } from "@/lib/env";
+import { createThenDeliverOtpChallenge } from "@/lib/otp-delivery";
 import {
   OTP_MAX_ATTEMPTS,
   canAttemptOtp,
@@ -10,7 +11,9 @@ import {
   secondsUntilResend,
 } from "@/lib/otp-rules";
 import { createSmsProvider } from "@/lib/sms";
+import type { SmsProvider } from "@/lib/sms";
 import { createUserSession, toPublicUser } from "@/lib/session";
+import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 
 export type RequestOtpResult =
   | { ok: true; resendAvailableIn: number }
@@ -24,7 +27,10 @@ export type VerifyOtpResult =
     }
   | { ok: false; error: string };
 
-export async function requestLoginOtp(mobile: string): Promise<RequestOtpResult> {
+export async function requestLoginOtp(
+  mobile: string,
+  options?: { smsProvider?: SmsProvider },
+): Promise<RequestOtpResult> {
   const env = assertServerSecrets();
 
   const recent = await prisma.otpChallenge.findFirst({
@@ -43,21 +49,28 @@ export async function requestLoginOtp(mobile: string): Promise<RequestOtpResult>
     }
   }
 
-  const sms = createSmsProvider();
+  const sms = options?.smsProvider ?? createSmsProvider();
   const code = generateOtpCode();
   const codeHash = hashWithSecret(code, env.sessionSecret);
   const expiresAt = new Date(Date.now() + env.otpTtlSeconds * 1000);
 
-  await prisma.otpChallenge.create({
-    data: {
-      mobile,
-      codeHash,
-      purpose: OtpPurpose.LOGIN,
-      expiresAt,
+  await createThenDeliverOtpChallenge(
+    () =>
+      prisma.otpChallenge.create({
+        data: {
+          mobile,
+          codeHash,
+          purpose: OtpPurpose.LOGIN,
+          expiresAt,
+        },
+      }),
+    async () => {
+      await sms.sendOtp({ mobile, code, purpose: OtpPurpose.LOGIN });
     },
-  });
-
-  await sms.sendOtp({ mobile, code, purpose: OtpPurpose.LOGIN });
+    async (challenge) => {
+      await prisma.otpChallenge.delete({ where: { id: challenge.id } });
+    },
+  );
 
   return { ok: true, resendAvailableIn: 60 };
 }
@@ -113,17 +126,21 @@ export async function verifyLoginOtp(
   }
 
   const now = new Date();
+  const role = isAdminMobile(mobile) ? "ADMIN" : "CUSTOMER";
   const user = await prisma.user.upsert({
     where: { mobile },
     create: {
       mobile,
       mobileVerifiedAt: now,
+      role,
     },
     update: {
       mobileVerifiedAt: now,
+      role,
     },
   });
 
+  await ensureWalletForUser(user.id);
   const session = await createUserSession(user.id, meta);
 
   return {

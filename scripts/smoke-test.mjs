@@ -24,6 +24,7 @@ const checks = [
   ["/login", "ورود به حساب ابرچین"],
   ["/api/health", '"status":"ok"'],
   ["/api/auth/me", "برای ادامه وارد شوید"],
+  ["/api/wallet", "برای ادامه وارد شوید"],
   ["/robots.txt", "sitemap"],
   ["/sitemap.xml", "https://abrchin.ir/compass"],
 ];
@@ -48,7 +49,8 @@ try {
   for (const [route, expectedText] of checks) {
     const response = await fetch(`${origin}${route}`);
     const body = await response.text();
-    const allowUnauthorized = route === "/api/auth/me" && response.status === 401;
+    const allowUnauthorized =
+      (route === "/api/auth/me" || route === "/api/wallet") && response.status === 401;
     if ((!response.ok && !allowUnauthorized) || !body.includes(expectedText)) {
       throw new Error(`${route} failed: status=${response.status}, expected=${expectedText}`);
     }
@@ -60,6 +62,16 @@ try {
     if (!response.ok) throw new Error(`${asset} failed: status=${response.status}`);
     console.log(`✓ ${asset}`);
   }
+
+  const account = await fetch(`${origin}/account`, { redirect: "manual" });
+  if (account.status !== 307 && account.status !== 302) {
+    throw new Error(`/account expected redirect for guest, got ${account.status}`);
+  }
+  const location = account.headers.get("location") || "";
+  if (!location.includes("/login")) {
+    throw new Error(`/account redirect location unexpected: ${location}`);
+  }
+  console.log("✓ /account guest redirect");
 } finally {
   server.kill("SIGTERM");
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after } from "node:test";
 import { PrismaClient, OtpPurpose } from "@prisma/client";
 
 import { hashWithSecret, safeEqualHex } from "../lib/crypto.ts";
@@ -7,6 +7,8 @@ import {
   OTP_MAX_ATTEMPTS,
   canAttemptOtp,
 } from "../lib/otp-rules.ts";
+import { createThenDeliverOtpChallenge } from "../lib/otp-delivery.ts";
+import { SmsDeliveryError } from "../lib/sms/kavenegar.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const sessionSecret = process.env.SESSION_SECRET || "test-session-secret-32chars!!";
@@ -14,6 +16,10 @@ const sessionSecret = process.env.SESSION_SECRET || "test-session-secret-32chars
 const prisma = databaseUrl
   ? new PrismaClient({ datasources: { db: { url: databaseUrl } } })
   : null;
+
+after(async () => {
+  if (prisma) await prisma.$disconnect();
+});
 
 async function cleanup(mobile: string) {
   if (!prisma) return;
@@ -33,7 +39,6 @@ test("integration: create user, session, otp lifecycle, logout revoke", async (t
 
   t.after(async () => {
     await cleanup(mobile);
-    await prisma.$disconnect();
   });
 
   const code = "654321";
@@ -121,4 +126,43 @@ test("integration: create user, session, otp lifecycle, logout revoke", async (t
   });
   const revoked = await prisma.session.findUniqueOrThrow({ where: { id: session.id } });
   assert.ok(revoked.revokedAt);
+});
+
+test("integration: SMS failure deletes challenge so it is not consumable", async (t) => {
+  if (!prisma) {
+    t.skip("DATABASE_URL not set — skipping DB integration tests");
+    return;
+  }
+
+  const mobile = "09120009988";
+  await cleanup(mobile);
+
+  t.after(async () => {
+    await cleanup(mobile);
+  });
+
+  await assert.rejects(() =>
+    createThenDeliverOtpChallenge(
+      () =>
+        prisma.otpChallenge.create({
+          data: {
+            mobile,
+            codeHash: hashWithSecret("111222", sessionSecret),
+            purpose: OtpPurpose.LOGIN,
+            expiresAt: new Date(Date.now() + 120_000),
+          },
+        }),
+      async () => {
+        throw new SmsDeliveryError("network", "SMS provider network request failed");
+      },
+      async (challenge) => {
+        await prisma.otpChallenge.delete({ where: { id: challenge.id } });
+      },
+    ),
+  );
+
+  const leftover = await prisma.otpChallenge.findFirst({
+    where: { mobile, consumedAt: null },
+  });
+  assert.equal(leftover, null);
 });

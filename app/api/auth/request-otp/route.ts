@@ -2,6 +2,7 @@ import { requestLoginOtp } from "@/lib/auth-service";
 import { getClientIp, jsonError, jsonOk } from "@/lib/http";
 import { normalizeIranMobile } from "@/lib/mobile";
 import { otpIpLimiter, otpMobileLimiter } from "@/lib/rate-limit";
+import { SmsDeliveryError } from "@/lib/sms";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,12 @@ export async function POST(request: Request) {
       resendAvailableIn: result.resendAvailableIn,
     });
   } catch (error) {
-    console.error("[auth/request-otp]", error instanceof Error ? error.message : "unknown");
+    if (error instanceof SmsDeliveryError) {
+      console.error(`[auth/request-otp] sms_delivery_failed code=${error.code}`);
+    } else {
+      console.error("[auth/request-otp]", error instanceof Error ? error.message : "unknown");
+    }
+    // Enumeration-safe generic failure for callers.
     return jsonError("ارسال کد با مشکل مواجه شد. لطفاً دوباره تلاش کنید.", 500);
   }
 }
