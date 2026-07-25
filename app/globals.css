@@ -3104,3 +3104,246 @@ a:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Auth & account (OTP login) */
+.auth-page {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding-block: 12px 28px;
+}
+
+.auth-card,
+.account-card {
+  width: min(100%, 460px);
+  padding: 28px 26px 24px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 251, 255, 0.92));
+  box-shadow: var(--shadow-card);
+}
+
+.auth-card-head,
+.account-card-head {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.auth-card-head h1,
+.account-card-head h2 {
+  margin: 0;
+  color: var(--navy-950);
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.auth-card-head p,
+.account-card-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-field {
+  display: grid;
+  gap: 8px;
+}
+
+.auth-field > span {
+  color: var(--navy-800);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.auth-field input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.auth-field input:focus {
+  border-color: rgba(29, 114, 243, 0.45);
+  box-shadow: 0 0 0 4px rgba(29, 114, 243, 0.12);
+}
+
+.auth-error,
+.auth-success {
+  margin: 0;
+  padding: 11px 13px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.auth-error {
+  border: 1px solid rgba(248, 103, 83, 0.28);
+  background: rgba(255, 232, 227, 0.72);
+  color: #b53d2d;
+}
+
+.auth-success {
+  border: 1px solid rgba(34, 170, 121, 0.24);
+  background: rgba(226, 247, 239, 0.75);
+  color: #176b4d;
+}
+
+.auth-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.auth-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue-700);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.auth-back:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.auth-nav-link {
+  gap: 7px;
+}
+
+.account-page {
+  display: grid;
+  gap: 22px;
+  align-content: start;
+}
+
+.account-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.account-card {
+  width: 100%;
+}
+
+.account-meta {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 18px;
+}
+
+.account-meta > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.account-meta dt {
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
+.account-meta dd {
+  margin: 0;
+  color: var(--navy-900);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.account-placeholder {
+  min-height: 180px;
+  display: grid;
+  align-content: center;
+  background:
+    linear-gradient(160deg, rgba(231, 240, 255, 0.9), rgba(255, 255, 255, 0.94));
+}
+
+.account-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--blue-100);
+  color: var(--blue-700);
+}
+
+.spin {
+  animation: auth-spin 900ms linear infinite;
+}
+
+@keyframes auth-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 980px) {
+  .account-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .auth-nav-link span {
+    display: none;
+  }
+
+  .auth-nav-link {
+    min-width: 40px;
+    padding-inline: 11px;
+  }
+}
+
+@media (max-width: 620px) {
+  .auth-card,
+  .account-card {
+    padding: 22px 18px 20px;
+    border-radius: 20px;
+  }
+
+  .auth-card-head h1,
+  .account-card-head h2 {
+    font-size: 24px;
+  }
+
+  .account-actions {
+    flex-direction: column;
+  }
+
+  .account-actions .button {
+    width: 100%;
+  }
+}

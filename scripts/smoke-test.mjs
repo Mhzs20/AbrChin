@@ -21,7 +21,9 @@ const checks = [
   ["/support", "کنترل دست تو؛ همراهی با ما"],
   ["/about", "زیرساخت باید محکم باشه، نه سنگین"],
   ["/help", "قبل از خرید، همه‌چیز روشن"],
+  ["/login", "ورود به حساب ابرچین"],
   ["/api/health", '"status":"ok"'],
+  ["/api/auth/me", "برای ادامه وارد شوید"],
   ["/robots.txt", "sitemap"],
   ["/sitemap.xml", "https://abrchin.ir/compass"],
 ];
@@ -46,7 +48,8 @@ try {
   for (const [route, expectedText] of checks) {
     const response = await fetch(`${origin}${route}`);
     const body = await response.text();
-    if (!response.ok || !body.includes(expectedText)) {
+    const allowUnauthorized = route === "/api/auth/me" && response.status === 401;
+    if ((!response.ok && !allowUnauthorized) || !body.includes(expectedText)) {
       throw new Error(`${route} failed: status=${response.status}, expected=${expectedText}`);
     }
     console.log(`✓ ${route}`);

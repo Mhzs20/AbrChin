@@ -15,6 +15,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { AuthNavLink } from "@/components/auth-nav-link";
+
 type NavigationItem = {
   href: string;
   label: string;
@@ -68,6 +70,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
               <span className="live-dot" aria-hidden="true" />
               برای شروع کنارتیم
             </span>
+            <AuthNavLink />
             <Link className="button button-primary button-compact" href="/compass">
               <Sparkles size={17} aria-hidden="true" />
               پیشنهاد من
@@ -107,11 +110,12 @@ export function SiteShell({ children }: { children: ReactNode }) {
             href="https://trustseal.enamad.ir/?id=762937&Code=dtWarV79z2vgp5pSlQKKMjz8QPhgWitc"
             aria-label="مشاهده اعتبار اینماد ابرچین"
           >
+            {/* Enamad trust seal requires their hosted image URL as-is. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               referrerPolicy="origin"
               src="https://trustseal.enamad.ir/logo.aspx?id=762937&Code=dtWarV79z2vgp5pSlQKKMjz8QPhgWitc"
               alt=""
-              code="dtWarV79z2vgp5pSlQKKMjz8QPhgWitc"
               style={{ cursor: "pointer" }}
             />
           </a>

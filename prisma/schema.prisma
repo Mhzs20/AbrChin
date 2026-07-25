@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+}
+
+enum OtpPurpose {
+  LOGIN
+}
+
+model User {
+  id               String    @id @default(cuid())
+  mobile           String    @unique
+  displayName      String?
+  role             UserRole  @default(CUSTOMER)
+  mobileVerifiedAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  sessions         Session[]
+}
+
+model OtpChallenge {
+  id         String     @id @default(cuid())
+  mobile     String
+  codeHash   String
+  purpose    OtpPurpose @default(LOGIN)
+  expiresAt  DateTime
+  attempts   Int        @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([mobile, purpose, createdAt])
+  @@index([expiresAt])
+}
+
+model Session {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  ipAddress  String?
+  userAgent  String?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
