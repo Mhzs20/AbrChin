@@ -1,5 +1,6 @@
 import { LedgerType } from "@prisma/client";
 
+import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { prisma } from "@/lib/db";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 import { assertPositiveIntegerToman, bigintToString, formatTomanFa, rialToToman, tomanToRial } from "@/lib/money";
@@ -113,6 +114,9 @@ export async function POST(request: Request) {
       userAgent: meta.userAgent,
     };
 
+    const wallet = await ensureWalletForUser(target.id);
+    const beforeBalance = wallet.availableBalance;
+
     const entry =
       direction === "CREDIT"
         ? await creditWallet({
@@ -132,7 +136,23 @@ export async function POST(request: Request) {
             metadata,
           });
 
-    const wallet = await ensureWalletForUser(target.id);
+    await writeAuditLog({
+      actorUserId: admin.id,
+      action: AuditActions.WALLET_ADJUSTMENT,
+      entityType: "wallet",
+      entityId: wallet.id,
+      beforeData: { balanceRial: beforeBalance.toString(), userId: target.id },
+      afterData: {
+        balanceRial: entry.balanceAfter.toString(),
+        direction,
+        amountRial: amountRial.toString(),
+        reason,
+      },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    const refreshedWallet = await ensureWalletForUser(target.id);
     return jsonOk({
       entry: {
         id: entry.id,
@@ -141,9 +161,9 @@ export async function POST(request: Request) {
         balanceAfterTomanFa: formatTomanFa(entry.balanceAfter),
       },
       wallet: {
-        balanceTomanFa: formatTomanFa(wallet.availableBalance),
-        balanceRial: bigintToString(wallet.availableBalance),
-        balanceToman: bigintToString(rialToToman(wallet.availableBalance)),
+        balanceTomanFa: formatTomanFa(refreshedWallet.availableBalance),
+        balanceRial: bigintToString(refreshedWallet.availableBalance),
+        balanceToman: bigintToString(rialToToman(refreshedWallet.availableBalance)),
       },
     });
   } catch (error) {

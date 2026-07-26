@@ -16,6 +16,7 @@ COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/abrchin?schema=public"
 RUN npx prisma generate
+RUN node scripts/build-worker.mjs
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runner
@@ -40,8 +41,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/worker-entrypoint.sh ./scripts/worker-entrypoint.sh
-COPY --from=builder --chown=nextjs:nodejs /app/scripts/provisioning-worker.mts ./scripts/provisioning-worker.mts
-COPY --from=builder --chown=nextjs:nodejs /app/lib ./lib
+COPY --from=builder --chown=nextjs:nodejs /app/dist/worker ./dist/worker
 
 RUN chmod +x ./scripts/docker-entrypoint.sh ./scripts/worker-entrypoint.sh
 

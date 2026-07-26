@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 
-import { DataTable, PageHeader, StatusBadge, TechnicalValue } from "@/components/product";
+import { AdminPlansPanel } from "@/components/admin/plans-panel";
+import { DataTable, MoneyDisplay, PageHeader, StatusBadge, TechnicalValue } from "@/components/product";
+import { guardAdminPage } from "@/lib/admin/auth";
 import { listAllPlans } from "@/lib/orders/plans";
 import { deliveryModeLabel } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
-import { MoneyDisplay } from "@/components/product";
 
 export const metadata: Metadata = {
   title: "پلن‌های زیرساخت | پنل مدیریت | ابرچین",
@@ -14,7 +15,23 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminPlansPage() {
+  await guardAdminPage();
   const plans = await listAllPlans();
+  const panelPlans = plans.map((plan) => ({
+    id: plan.id,
+    code: plan.code,
+    title: plan.title,
+    description: plan.description,
+    deliveryMode: plan.deliveryMode,
+    regionCode: plan.regionCode,
+    sizeCode: plan.sizeCode,
+    imageCode: plan.imageCode,
+    salePriceRial: plan.salePriceRial.toString(),
+    estimatedProviderCostRial: plan.estimatedProviderCostRial.toString(),
+    active: plan.active,
+    sortOrder: plan.sortOrder,
+  }));
+
   const columns = [
     { key: "code", header: "کد" },
     { key: "title", header: "عنوان" },
@@ -43,6 +60,7 @@ export default async function AdminPlansPage() {
   return (
     <>
       <PageHeader title="پلن‌های زیرساخت" description="مدیریت پلن‌های فروش و مشخصات Provider" />
+      <AdminPlansPanel initialPlans={panelPlans} />
       <DataTable columns={columns} rows={rows} emptyMessage="پلنی تعریف نشده است." />
     </>
   );

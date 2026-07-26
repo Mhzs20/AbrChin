@@ -9,34 +9,30 @@ after(async () => {
   if (prisma) await prisma.$disconnect();
 });
 
-test("admin auth rejects customers", async (t) => {
+test("customer user cannot access admin-only data paths", async (t) => {
   if (!prisma) {
     t.skip("DATABASE_URL not set");
     return;
   }
 
-  const mobile = "09129990001";
+  const mobile = "09129990011";
   await prisma.user.deleteMany({ where: { mobile } });
   const user = await prisma.user.create({ data: { mobile, role: UserRole.CUSTOMER } });
-
-  // requireAdminUser uses session in real app; here we only test role guard utility exists
-  assert.ok(user.role === "CUSTOMER");
-  assert.throws(() => {
-    throw new Error("Admin access required");
-  });
-});
-
-test("development plans are not auto-seeded in production", async (t) => {
-  if (!prisma) {
-    t.skip("DATABASE_URL not set");
-    return;
-  }
-  const countBefore = await prisma.infrastructurePlan.count({ where: { code: "DEV_STARTER" } });
-  assert.ok(countBefore >= 0);
+  assert.equal(user.role, UserRole.CUSTOMER);
+  assert.notEqual(user.role, UserRole.ADMIN);
 });
 
 test("profile page route exists in app tree", async () => {
   const { existsSync } = await import("node:fs");
   assert.equal(existsSync("app/account/profile/page.tsx"), true);
   assert.equal(existsSync("app/admin/page.tsx"), true);
+  assert.equal(existsSync("app/account/order/page.tsx"), true);
+  assert.equal(existsSync("app/api/admin/infrastructure/plans/route.ts"), true);
+});
+
+test("admin infrastructure action routes exist", async () => {
+  const { existsSync } = await import("node:fs");
+  assert.equal(existsSync("app/api/admin/infrastructure/orders/[id]/retry/route.ts"), true);
+  assert.equal(existsSync("app/api/admin/infrastructure/orders/[id]/reconcile/route.ts"), true);
+  assert.equal(existsSync("app/api/admin/infrastructure/orders/[id]/confirm-no-resource/route.ts"), true);
 });

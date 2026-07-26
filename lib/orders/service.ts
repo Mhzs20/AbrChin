@@ -10,11 +10,12 @@ import {
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 import { WalletError } from "@/lib/wallet/errors";
 import {
+  CloudInstanceStatus,
+  InfrastructureOrderStatus,
   LedgerDirection,
   LedgerStatus,
   LedgerType,
   ServiceOrderStatus,
-  InfrastructureOrderStatus,
 } from "@prisma/client";
 
 export async function createServiceOrder(userId: string, planCode: string) {
@@ -72,6 +73,30 @@ export async function refundOrder(params: {
       throw new WalletError("invalid_status", "فقط سفارش پرداخت‌شده قابل بازگشت است.");
     }
 
+    const infra = await tx.infrastructureOrder.findUnique({
+      where: { serviceOrderId: order.id },
+      include: { cloudInstance: true },
+    });
+    if (infra) {
+      const blockedStatuses: InfrastructureOrderStatus[] = [
+        InfrastructureOrderStatus.PROVISIONING,
+        InfrastructureOrderStatus.ACTIVE,
+        InfrastructureOrderStatus.NEEDS_RECONCILIATION,
+      ];
+      if (blockedStatuses.includes(infra.status)) {
+        throw new WalletError(
+          "refund_blocked",
+          "بازگشت وجه برای سفارش با منبع فعال یا در حال آماده‌سازی مجاز نیست.",
+        );
+      }
+      if (infra.cloudInstance && infra.cloudInstance.status !== CloudInstanceStatus.TERMINATED) {
+        throw new WalletError(
+          "refund_blocked",
+          "تا زمان خاتمه سرور، بازگشت وجه مجاز نیست.",
+        );
+      }
+    }
+
     const debit = await tx.walletLedgerEntry.findFirst({
       where: {
         referenceType: "order",
@@ -125,7 +150,6 @@ export async function refundOrder(params: {
       data: { status: ServiceOrderStatus.REFUNDED },
     });
 
-    const infra = await tx.infrastructureOrder.findUnique({ where: { serviceOrderId: order.id } });
     if (infra) {
       await tx.infrastructureOrder.update({
         where: { id: infra.id },

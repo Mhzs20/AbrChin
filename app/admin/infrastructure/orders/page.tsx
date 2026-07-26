@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { FundingConfirmButton } from "@/components/admin/funding-confirm-button";
+import { InfrastructureOrderActions } from "@/components/admin/infrastructure-order-actions";
 import {
   DataTable,
   MoneyDisplay,
@@ -62,7 +63,11 @@ export default async function AdminInfrastructureOrdersPage() {
             adminName={admin.displayName || admin.mobile}
           />
         ) : (
-          "—"
+          <InfrastructureOrderActions
+            orderId={order.id}
+            status={order.status}
+            hasCloudInstance={Boolean(order.cloudInstance)}
+          />
         ),
     },
   }));

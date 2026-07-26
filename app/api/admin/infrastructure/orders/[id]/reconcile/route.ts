@@ -28,7 +28,7 @@ export async function POST(
         ? (body as { reason: string }).reason.trim()
         : "";
 
-    const order = await reconcileInfrastructureOrder({
+    const result = await reconcileInfrastructureOrder({
       infrastructureOrderId: id,
       adminUserId: admin.id,
       reason,
@@ -36,7 +36,11 @@ export async function POST(
       userAgent: meta.userAgent,
     });
 
-    return jsonOk({ infrastructureOrderId: order.id, status: order.status });
+    return jsonOk({
+      infrastructureOrderId: result.order.id,
+      status: result.order.status,
+      jobId: result.job.id,
+    });
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);

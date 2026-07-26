@@ -38,7 +38,7 @@ export default async function AdminUsersPage() {
 
   return (
     <>
-      <PageHeader title="کاربران" description="جست‌وجو، نقش و جزئیات حساب" />
+      <PageHeader title="کاربران" description="مشاهده فقط‌خواندنی کاربران؛ تغییر نقش در این نسخه پشتیبانی نمی‌شود." />
       <DataTable columns={columns} rows={rows} />
     </>
   );

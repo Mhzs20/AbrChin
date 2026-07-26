@@ -37,7 +37,10 @@ export async function POST(request: Request, { params }: Params) {
     return jsonOk({ order: { id: order.id, status: order.status } });
   } catch (error) {
     if (error instanceof AuthRequiredError) return jsonError("برای ادامه وارد شوید.", 401);
-    if (error instanceof WalletError) return jsonError(error.message, 400);
+    if (error instanceof WalletError) {
+      if (error.code === "refund_blocked") return jsonError(error.message, 409);
+      return jsonError(error.message, 400);
+    }
     console.error("[orders/refund]", error instanceof Error ? error.message : "unknown");
     return jsonError("بازگشت وجه ممکن نیست.", 500);
   }

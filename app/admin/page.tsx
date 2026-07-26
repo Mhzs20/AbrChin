@@ -56,6 +56,7 @@ export default async function AdminDashboardPage() {
           <StatCard label="Kavenegar" value={<StatusBadge label={system.kavenegar.configured ? "سالم" : "تنظیم نشده"} tone={system.kavenegar.configured ? "success" : "warning"} />} />
           <StatCard label="PostgreSQL" value={<StatusBadge label={system.postgres.configured ? "سالم" : "خطا"} tone={system.postgres.configured ? "success" : "danger"} />} />
           <StatCard label="ParsPack" value={<StatusBadge label={system.parspack.message} tone={system.parspack.status === "healthy" ? "success" : "warning"} />} />
+          <StatCard label="Worker Provisioning" value={<StatusBadge label={system.worker.label} tone={system.worker.status === "healthy" ? "success" : system.worker.status === "stale" ? "warning" : "danger"} />} />
         </div>
       </SectionCard>
 

@@ -7,6 +7,7 @@ import {
 
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { prisma } from "@/lib/db";
+import { isProviderConfigured } from "@/lib/infrastructure/provider-factory";
 import { assertPositiveIntegerToman, tomanToRial } from "@/lib/money";
 import { WalletError } from "@/lib/wallet/errors";
 
@@ -28,6 +29,8 @@ export async function confirmProviderFunding(params: {
   const fundedAmountRial = tomanToRial(params.fundedAmountToman);
 
   return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "InfrastructureOrder" WHERE id = ${params.infrastructureOrderId} FOR UPDATE`;
+
     const order = await tx.infrastructureOrder.findUnique({
       where: { id: params.infrastructureOrderId },
       include: {
@@ -60,8 +63,17 @@ export async function confirmProviderFunding(params: {
     if (!FUNDING_ALLOWED_STATUSES.includes(order.status)) {
       throw new WalletError("invalid_status", "این سفارش در وضعیت تأیید شارژ نیست.");
     }
+    if (!isProviderConfigured()) {
+      throw new WalletError("provider_disabled", "Provider فعال نیست؛ صف‌بندی مجاز نیست.");
+    }
     if (fundedAmountRial <= 0n) {
       throw new WalletError("invalid_amount", "مبلغ شارژ باید مثبت باشد.");
+    }
+    if (fundedAmountRial < order.requiredFundingRial) {
+      throw new WalletError(
+        "invalid_amount",
+        "مبلغ شارژ تأییدشده باید حداقل برابر هزینه موردنیاز Provider باشد.",
+      );
     }
 
     const activeCreateJob = await tx.provisioningJob.findFirst({
@@ -141,7 +153,12 @@ export async function confirmProviderFunding(params: {
       tx,
     );
 
-    return { order, fundingConfirmation, job };
+    const updatedOrder = await tx.infrastructureOrder.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { fundingConfirmations: { orderBy: { attempt: "desc" } } },
+    });
+
+    return { order: updatedOrder, fundingConfirmation, job };
   });
 }
 

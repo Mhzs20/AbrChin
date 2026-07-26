@@ -65,17 +65,20 @@ export function SidebarLink({
   label,
   icon: Icon,
   active,
+  onNavigate,
 }: {
   href: string;
   label: string;
   icon: LucideIcon;
   active: boolean;
+  onNavigate?: () => void;
 }) {
   return (
     <Link
       href={href}
       className={`product-sidebar-link${active ? " active" : ""}`}
       aria-current={active ? "page" : undefined}
+      onClick={onNavigate}
     >
       <Icon size={18} aria-hidden="true" />
       <span>{label}</span>
@@ -360,5 +363,4 @@ export { ConfirmDialog } from "@/components/product/confirm-dialog";
 export { DetailDrawer } from "@/components/product/detail-drawer";
 export { MobileHeader } from "@/components/product/mobile-header";
 export { MobileNavigation } from "@/components/product/mobile-navigation";
-export { AdminDrawer } from "@/components/product/admin-drawer";
 export { ToastProvider, useToast } from "@/components/product/toast";

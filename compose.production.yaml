@@ -112,6 +112,9 @@ services:
       PARSPACK_TIMEOUT_MS: ${PARSPACK_TIMEOUT_MS:-15000}
       INFRASTRUCTURE_PROVIDER_MODE: ${INFRASTRUCTURE_PROVIDER_MODE:-parspack}
       WORKER_POLL_MS: ${WORKER_POLL_MS:-3000}
+      WORKER_LEASE_MS: ${WORKER_LEASE_MS:-120000}
+      WORKER_STALE_AFTER_MS: ${WORKER_STALE_AFTER_MS:-60000}
+      WORKER_ID: ${WORKER_ID:-provisioning-worker}
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=32m
@@ -124,11 +127,11 @@ services:
     networks:
       - abrchin_internal
     healthcheck:
-      test: ["CMD", "node", "-e", "process.exit(0)"]
+      test: ["CMD", "node", "scripts/worker-healthcheck.mjs"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 40s
     logging:
       driver: json-file
       options:

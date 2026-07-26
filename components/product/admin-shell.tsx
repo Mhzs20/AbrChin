@@ -17,7 +17,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import {
-  AdminDrawer,
   MobileHeader,
   MobileNavigation,
   ProductShell,
@@ -51,6 +50,13 @@ const financeNav: NavItem[] = [
 const systemNav: NavItem[] = [
   { href: "/admin/audit", label: "گزارش عملیات", icon: FileText },
   { href: "/admin/settings", label: "تنظیمات", icon: Settings },
+];
+
+const drawerGroups = [
+  { title: "اصلی", items: mainNav },
+  { title: "زیرساخت", items: infraNav },
+  { title: "مالی", items: financeNav },
+  { title: "سیستم", items: systemNav },
 ];
 
 export function AdminShell({
@@ -111,10 +117,11 @@ export function AdminShell({
           </Link>
         </div>
       }
-      mobileHeader={<MobileHeader title="پنل مدیریت" userName={user.displayName || "مدیر"} drawerTarget="admin" />}
+      mobileHeader={
+        <MobileHeader title="پنل مدیریت" userName={user.displayName || "مدیر"} groups={drawerGroups} pathname={pathname} />
+      }
       mobileNav={<MobileNavigation items={mainNav} pathname={pathname} extraIcon={Settings} extraHref="/admin/settings" extraLabel="بیشتر" />}
     >
-      <AdminDrawer pathname={pathname} />
       {children}
     </ProductShell>
   );

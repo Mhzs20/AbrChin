@@ -6,7 +6,8 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
-import { createInfrastructureProvider, isProviderConfigured } from "@/lib/infrastructure/provider-factory";
+import { isProviderConfigured } from "@/lib/infrastructure/provider-factory";
+import { getWorkerHealthStatus } from "@/lib/infrastructure/provisioning-service";
 import { ensureGatewayConfigsSeeded } from "@/lib/payments/gateway-config";
 
 export async function getAdminDashboardStats() {
@@ -77,6 +78,7 @@ export async function getSystemStatuses() {
   let parspackMessage = "تنظیم نشده";
   if (isProviderConfigured()) {
     try {
+      const { createInfrastructureProvider } = await import("@/lib/infrastructure/provider-factory");
       const provider = createInfrastructureProvider();
       const health = await provider.checkConnection();
       parspackStatus = health.ok ? "healthy" : "error";
@@ -86,6 +88,10 @@ export async function getSystemStatuses() {
       parspackMessage = "غیرفعال";
     }
   }
+
+  const worker = await getWorkerHealthStatus();
+  const workerLabel =
+    worker.status === "healthy" ? "سالم" : worker.status === "stale" ? "کهنه" : "قطع";
 
   const zibal = gateways.find((g) => g.provider === "ZIBAL");
   const zarinpal = gateways.find((g) => g.provider === "ZARINPAL");
@@ -105,7 +111,14 @@ export async function getSystemStatuses() {
       imageCount: catalog?.imageCount ?? 0,
       lastError: catalog?.lastError ?? null,
     },
-    worker: { status: "unknown" as const },
+    worker: {
+      status: worker.status,
+      label: workerLabel,
+      workerId: worker.workerId,
+      lastSeenAt: worker.lastSeenAt,
+      lastCycleAt: worker.lastCycleAt,
+      cyclesTotal: worker.cyclesTotal ?? 0,
+    },
   };
 }
 

@@ -19,6 +19,9 @@ after(async () => {
 
 async function seedQueuedJob() {
   if (!prisma) throw new Error("no prisma");
+  await prisma.provisioningJob.deleteMany({
+    where: { status: { in: [ProvisioningJobStatus.QUEUED, ProvisioningJobStatus.RUNNING] } },
+  });
   const mobile = "09128882001";
   await prisma.provisioningJob.deleteMany({
     where: { infrastructureOrder: { user: { mobile } } },
@@ -95,6 +98,8 @@ test("claimNextProvisioningJob is exclusive under concurrent workers", async (t)
 
   const refreshed = await prisma.provisioningJob.findUniqueOrThrow({ where: { id: job.id } });
   assert.equal(refreshed.status, ProvisioningJobStatus.RUNNING);
+  assert.equal(refreshed.attempt, 1);
+  assert.equal(refreshed.claimCount, 1);
 
   await prisma.provisioningJob.delete({ where: { id: job.id } });
   await prisma.infrastructureOrder.deleteMany({ where: { id: job.infrastructureOrderId } });

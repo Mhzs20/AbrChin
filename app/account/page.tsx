@@ -26,17 +26,17 @@ export default async function AccountOverviewPage() {
   if (!user) return null;
 
   const overview = await getAccountOverview(user.id);
-  const greeting = user.displayName ? `${user.displayName} عزیز` : "به ابرچین خوش آمدید";
+  const greeting = user.displayName;
 
   return (
     <>
       <PageHeader
-        title={`سلام، ${greeting}`}
+        title={greeting ? `سلام، ${greeting}` : "سلام"}
         description="خلاصه وضعیت حساب، کیف پول و سرویس‌های شما"
         actions={
           overview.isNewUser ? (
-            <Link href="/account/wallet/topup" className="product-btn product-btn--primary">
-              شارژ کیف پول و شروع
+            <Link href="/account/order" className="product-btn product-btn--primary">
+              انتخاب راهکار و شروع
             </Link>
           ) : (
             <Link href="/account/services" className="product-btn product-btn--primary">

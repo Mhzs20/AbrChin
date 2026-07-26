@@ -17,9 +17,28 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: abrchin_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d abrchin_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     env:
       NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/abrchin_test?schema=public
+      SESSION_SECRET: ci-session-secret-32chars-min
+      SMS_PROVIDER: console
+      PAYMENT_CALLBACK_BASE_URL: http://localhost:3010
+      INFRASTRUCTURE_PROVIDER_MODE: mock
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -33,11 +52,41 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Prisma validate
+        run: npx prisma validate
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Migrate database
+        run: npx prisma migrate deploy
+
       - name: Lint
         run: npm run lint
 
-      - name: Build production bundle
+      - name: Auth tests
+        run: npm run test:auth
+
+      - name: Wallet tests
+        run: npm run test:wallet
+
+      - name: Payments tests
+        run: npm run test:payments
+
+      - name: Infrastructure tests
+        run: npm run test:infrastructure
+
+      - name: Account admin tests
+        run: npm run test:account-admin
+
+      - name: Build
         run: npm run build
 
-      - name: Smoke-test production server
+      - name: Worker runtime tests
+        run: npm run test:worker-runtime
+
+      - name: Smoke tests
         run: npm run test:smoke
+
+      - name: Diff check
+        run: git diff --check

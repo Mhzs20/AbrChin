@@ -132,6 +132,7 @@ export async function executePayOrderWithWalletTx(
       deliveryMode: plan.deliveryMode,
       status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
       requiredFundingRial: plan.estimatedProviderCostRial,
+      desiredInstanceName: `abrchin-${order.id.slice(-12)}`,
     },
   });
 

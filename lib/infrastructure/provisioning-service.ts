@@ -17,12 +17,17 @@ import {
 } from "@/lib/infrastructure/errors";
 import { createInfrastructureProvider } from "@/lib/infrastructure/provider-factory";
 import type { InfrastructureProviderAdapter } from "@/lib/infrastructure/types";
+import { getWorkerConfig } from "@/lib/worker/config";
 
 const POLL_ATTEMPTS = 8;
 const POLL_DELAY_MS = 2000;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function buildDesiredInstanceName(infrastructureOrderId: string) {
+  return `abrchin-${infrastructureOrderId.slice(-12)}`;
 }
 
 async function logProviderOperation(input: {
@@ -68,7 +73,85 @@ async function createAdminNotification(input: {
 
 type ClaimedJobRow = { id: string };
 
-export async function claimNextProvisioningJob() {
+export async function recoverExpiredProvisioningJobs() {
+  const now = new Date();
+
+  const expired = await prisma.provisioningJob.findMany({
+    where: {
+      status: ProvisioningJobStatus.RUNNING,
+      leaseExpiresAt: { lt: now },
+    },
+    include: {
+      infrastructureOrder: { include: { cloudInstance: true } },
+    },
+  });
+
+  for (const job of expired) {
+    const hasProviderId = Boolean(
+      job.providerRequestId || job.infrastructureOrder.cloudInstance?.providerInstanceId,
+    );
+    const afterCreate = Boolean(job.createSentAt);
+
+    if (!afterCreate && !hasProviderId) {
+      await prisma.provisioningJob.update({
+        where: { id: job.id },
+        data: {
+          status: ProvisioningJobStatus.QUEUED,
+          workerId: null,
+          lockedAt: null,
+          leaseExpiresAt: null,
+          startedAt: null,
+        },
+      });
+      continue;
+    }
+
+    if (afterCreate && !hasProviderId) {
+      await prisma.$transaction([
+        prisma.provisioningJob.update({
+          where: { id: job.id },
+          data: {
+            status: ProvisioningJobStatus.NEEDS_RECONCILIATION,
+            finishedAt: now,
+            workerId: null,
+            lockedAt: null,
+            leaseExpiresAt: null,
+            lastErrorCode: "provider_ambiguous",
+            lastErrorMessage: customerSafeProviderMessage(),
+          },
+        }),
+        prisma.infrastructureOrder.update({
+          where: { id: job.infrastructureOrderId },
+          data: { status: InfrastructureOrderStatus.NEEDS_RECONCILIATION },
+        }),
+      ]);
+      continue;
+    }
+
+    if (hasProviderId) {
+      await prisma.provisioningJob.update({
+        where: { id: job.id },
+        data: {
+          status: ProvisioningJobStatus.QUEUED,
+          workerId: null,
+          lockedAt: null,
+          leaseExpiresAt: null,
+          startedAt: null,
+        },
+      });
+    }
+  }
+
+  return expired.length;
+}
+
+export async function claimNextProvisioningJob(workerId?: string) {
+  const config = getWorkerConfig();
+  const id = workerId ?? config.workerId;
+  const leaseUntil = new Date(Date.now() + config.leaseMs);
+
+  await recoverExpiredProvisioningJobs();
+
   return prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<ClaimedJobRow[]>`
       SELECT id
@@ -85,14 +168,19 @@ export async function claimNextProvisioningJob() {
       where: { id: row.id, status: ProvisioningJobStatus.QUEUED },
       data: {
         status: ProvisioningJobStatus.RUNNING,
+        workerId: id,
+        lockedAt: new Date(),
+        leaseExpiresAt: leaseUntil,
         startedAt: new Date(),
-        attempt: { increment: 1 },
+        claimCount: { increment: 1 },
+        runCount: { increment: 1 },
       },
     });
     if (claimed.count !== 1) return null;
 
+    const job = await tx.provisioningJob.findUniqueOrThrow({ where: { id: row.id } });
     await tx.infrastructureOrder.updateMany({
-      where: { id: (await tx.provisioningJob.findUniqueOrThrow({ where: { id: row.id } })).infrastructureOrderId, status: InfrastructureOrderStatus.QUEUED },
+      where: { id: job.infrastructureOrderId, status: InfrastructureOrderStatus.QUEUED },
       data: { status: InfrastructureOrderStatus.PROVISIONING },
     });
 
@@ -110,6 +198,7 @@ export async function claimNextProvisioningJob() {
 async function resolveExistingProviderInstance(
   order: {
     id: string;
+    desiredInstanceName: string | null;
     provider: InfrastructureProvider;
     cloudInstance: { providerInstanceId: string } | null;
     provisioningJobs: Array<{ providerRequestId: string | null }>;
@@ -120,8 +209,59 @@ async function resolveExistingProviderInstance(
     order.cloudInstance?.providerInstanceId ??
     order.provisioningJobs.find((job) => job.providerRequestId)?.providerRequestId ??
     null;
-  if (!providerInstanceId) return null;
-  return provider.getInstance(providerInstanceId);
+  if (providerInstanceId) {
+    return provider.getInstance(providerInstanceId);
+  }
+  if (order.desiredInstanceName) {
+    return provider.findInstanceByName(order.desiredInstanceName);
+  }
+  return null;
+}
+
+export async function touchWorkerHeartbeat(input?: {
+  cycleOk?: boolean;
+  status?: "healthy" | "stale" | "down";
+}) {
+  const config = getWorkerConfig();
+  const now = new Date();
+  const status = input?.status ?? (input?.cycleOk ? "healthy" : "stale");
+
+  await prisma.workerHeartbeat.upsert({
+    where: { id: "provisioning" },
+    create: {
+      workerId: config.workerId,
+      lastSeenAt: now,
+      lastCycleAt: input?.cycleOk ? now : null,
+      cyclesTotal: input?.cycleOk ? 1 : 0,
+      status,
+    },
+    update: {
+      workerId: config.workerId,
+      lastSeenAt: now,
+      ...(input?.cycleOk ? { lastCycleAt: now, cyclesTotal: { increment: 1 } } : {}),
+      status,
+    },
+  });
+}
+
+export async function getWorkerHealthStatus() {
+  const config = getWorkerConfig();
+  const row = await prisma.workerHeartbeat.findUnique({ where: { id: "provisioning" } });
+  if (!row) {
+    return { status: "down" as const, workerId: null, lastSeenAt: null, lastCycleAt: null };
+  }
+  const ageMs = Date.now() - row.lastSeenAt.getTime();
+  let status: "healthy" | "stale" | "down" = row.status as "healthy" | "stale" | "down";
+  if (ageMs > config.staleAfterMs * 2) status = "down";
+  else if (ageMs > config.staleAfterMs) status = "stale";
+  else if (row.lastCycleAt) status = "healthy";
+  return {
+    status,
+    workerId: row.workerId,
+    lastSeenAt: row.lastSeenAt.toISOString(),
+    lastCycleAt: row.lastCycleAt?.toISOString() ?? null,
+    cyclesTotal: row.cyclesTotal,
+  };
 }
 
 export async function processProvisioningJob(
@@ -148,6 +288,15 @@ export async function processProvisioningJob(
   }
 
   const provider = providerOverride ?? createInfrastructureProvider();
+
+  if (!order.desiredInstanceName) {
+    const desiredName = buildDesiredInstanceName(order.id);
+    await prisma.infrastructureOrder.update({
+      where: { id: order.id },
+      data: { desiredInstanceName: desiredName },
+    });
+    order.desiredInstanceName = desiredName;
+  }
 
   try {
     const existingInstance = await resolveExistingProviderInstance(order, provider);
@@ -180,12 +329,17 @@ export async function processProvisioningJob(
 
     if (!providerInstanceId) {
       const createInput = {
-        name: `abrchin-${order.id.slice(-8)}`,
+        name: order.desiredInstanceName,
         region: order.plan.regionCode,
         size: order.plan.sizeCode,
         image: order.plan.imageCode,
         deliveryMode: order.deliveryMode,
       };
+
+      await prisma.provisioningJob.update({
+        where: { id: job.id },
+        data: { createSentAt: new Date() },
+      });
 
       created = await provider.createInstance(createInput);
       providerInstanceId = created.id;
@@ -225,7 +379,7 @@ export async function processProvisioningJob(
     }
 
     let final = created ?? (await provider.getInstance(providerInstanceId!));
-    for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
+    for (let poll = 0; poll < POLL_ATTEMPTS; poll += 1) {
       await sleep(POLL_DELAY_MS);
       final = await provider.getInstance(providerInstanceId!);
       if (final.status.toLowerCase() === "active" && final.ipv4) break;
@@ -260,7 +414,13 @@ export async function processProvisioningJob(
       }),
       prisma.provisioningJob.update({
         where: { id: job.id },
-        data: { status: ProvisioningJobStatus.SUCCEEDED, finishedAt: new Date() },
+        data: {
+          status: ProvisioningJobStatus.SUCCEEDED,
+          finishedAt: new Date(),
+          workerId: null,
+          lockedAt: null,
+          leaseExpiresAt: null,
+        },
       }),
     ]);
 
@@ -283,6 +443,9 @@ export async function processProvisioningJob(
             lastErrorCode: errorCode,
             lastErrorMessage: errorMessage,
             finishedAt: new Date(),
+            workerId: null,
+            lockedAt: null,
+            leaseExpiresAt: null,
           },
         }),
         prisma.infrastructureOrder.update({
@@ -299,7 +462,7 @@ export async function processProvisioningJob(
       return;
     }
 
-    if (isAmbiguousProviderError(error)) {
+    if (isAmbiguousProviderError(error) || job.createSentAt) {
       await prisma.$transaction([
         prisma.provisioningJob.update({
           where: { id: job.id },
@@ -308,6 +471,9 @@ export async function processProvisioningJob(
             lastErrorCode: errorCode,
             lastErrorMessage: errorMessage,
             finishedAt: new Date(),
+            workerId: null,
+            lockedAt: null,
+            leaseExpiresAt: null,
           },
         }),
         prisma.infrastructureOrder.update({
@@ -332,6 +498,9 @@ export async function processProvisioningJob(
           lastErrorCode: errorCode,
           lastErrorMessage: errorMessage,
           finishedAt: new Date(),
+          workerId: null,
+          lockedAt: null,
+          leaseExpiresAt: null,
         },
       }),
       prisma.infrastructureOrder.update({
@@ -357,8 +526,11 @@ export async function processProvisioningJob(
   }
 }
 
-export async function runProvisioningWorkerCycle(providerOverride?: InfrastructureProviderAdapter) {
-  const job = await claimNextProvisioningJob();
+export async function runProvisioningWorkerCycle(
+  providerOverride?: InfrastructureProviderAdapter,
+  workerId?: string,
+) {
+  const job = await claimNextProvisioningJob(workerId);
   if (!job) return false;
   await processProvisioningJob(job.id, providerOverride);
   return true;

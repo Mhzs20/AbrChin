@@ -36,6 +36,7 @@ export interface InfrastructureProviderAdapter {
   syncCatalog(): Promise<ProviderCatalog>;
   createInstance(input: CreateInstanceInput): Promise<ProviderInstance>;
   getInstance(providerInstanceId: string): Promise<ProviderInstance>;
+  findInstanceByName(name: string): Promise<ProviderInstance | null>;
 }
 
 export type ProviderErrorCode =

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 import { bigintToString, formatTomanFa, rialToToman } from "@/lib/money";
-import { createServiceOrder } from "@/lib/orders/service";
+import { createServiceOrder, createServiceOrderByPlanId } from "@/lib/orders/service";
 import { AuthRequiredError, requireCurrentUser } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/ledger";
 
@@ -50,12 +50,13 @@ export async function POST(request: Request) {
       return jsonError("درخواست نامعتبر است.", 400);
     }
 
-    const planCode =
-      typeof body === "object" && body && "planCode" in body
-        ? String((body as { planCode: unknown }).planCode)
-        : "";
+    const payload = typeof body === "object" && body ? (body as Record<string, unknown>) : {};
+    const planId = typeof payload.planId === "string" ? payload.planId : "";
+    const planCode = typeof payload.planCode === "string" ? payload.planCode : "";
 
-    const order = await createServiceOrder(user.id, planCode);
+    const order = planId
+      ? await createServiceOrderByPlanId(user.id, planId)
+      : await createServiceOrder(user.id, planCode);
     return jsonOk({
       order: {
         id: order.id,

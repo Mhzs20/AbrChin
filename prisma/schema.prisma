@@ -337,6 +337,8 @@ model InfrastructureOrder {
   deliveryMode       DeliveryMode
   status             InfrastructureOrderStatus @default(WAITING_ADMIN_FUNDING)
   requiredFundingRial BigInt
+  desiredInstanceName String?                  @unique
+  reconcileNoResourceConfirmedAt DateTime?
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
   serviceOrder       ServiceOrder              @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
@@ -381,7 +383,13 @@ model ProvisioningJob {
   operation             String
   status                ProvisioningJobStatus @default(QUEUED)
   idempotencyKey        String                @unique
-  attempt               Int                   @default(0)
+  attempt               Int                   @default(1)
+  runCount              Int                   @default(0)
+  claimCount            Int                   @default(0)
+  workerId              String?
+  lockedAt              DateTime?
+  leaseExpiresAt        DateTime?
+  createSentAt          DateTime?
   providerRequestId     String?
   lastErrorCode         String?
   lastErrorMessage      String?
@@ -454,6 +462,16 @@ model ProviderOperationLog {
   @@index([provider, createdAt])
   @@index([infrastructureOrderId, createdAt])
   @@index([provisioningJobId])
+}
+
+model WorkerHeartbeat {
+  id           String   @id @default("provisioning")
+  workerId     String
+  lastSeenAt   DateTime
+  lastCycleAt  DateTime?
+  cyclesTotal  Int      @default(0)
+  status       String   @default("down")
+  updatedAt    DateTime @updatedAt
 }
 
 model AuditLog {

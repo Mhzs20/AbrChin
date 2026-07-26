@@ -29,6 +29,7 @@ import type { PublicUser } from "@/lib/session";
 
 const mainNav: NavItem[] = [
   { href: "/account", label: "نمای کلی", icon: Home, shortLabel: "خانه" },
+  { href: "/account/order", label: "خرید راهکار", icon: ShoppingBag, shortLabel: "خرید" },
   { href: "/account/services", label: "سرویس‌های من", icon: Server, shortLabel: "سرویس" },
   { href: "/account/orders", label: "سفارش‌های من", icon: ShoppingBag, shortLabel: "سفارش" },
   { href: "/account/wallet", label: "کیف پول", icon: Wallet, shortLabel: "کیف" },
@@ -38,6 +39,11 @@ const mainNav: NavItem[] = [
 const secondaryNav: NavItem[] = [
   { href: "/account/profile", label: "پروفایل", icon: User },
   { href: "/account/support", label: "راهنما و پشتیبانی", icon: CircleHelp },
+];
+
+const drawerGroups = [
+  { items: mainNav },
+  { title: "حساب", items: secondaryNav },
 ];
 
 export function AccountShell({
@@ -103,7 +109,9 @@ export function AccountShell({
           </Link>
         </div>
       }
-      mobileHeader={<MobileHeader title="پنل کاربری" userName={displayName} drawerTarget="account" />}
+      mobileHeader={
+        <MobileHeader title="پنل کاربری" userName={displayName} groups={drawerGroups} pathname={pathname} />
+      }
       mobileNav={<MobileNavigation items={mainNav} pathname={pathname} extraIcon={LayoutGrid} extraHref="/account/profile" extraLabel="بیشتر" />}
     >
       {children}

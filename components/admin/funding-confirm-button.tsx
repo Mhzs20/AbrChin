@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { ConfirmDialog, FormField, MoneyDisplay } from "@/components/product";
 
@@ -19,6 +19,12 @@ export function FundingConfirmButton({
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const idempotencyKeyRef = useRef<string | null>(null);
+
+  function openDialog() {
+    idempotencyKeyRef.current = crypto.randomUUID();
+    setOpen(true);
+  }
 
   async function confirm() {
     setLoading(true);
@@ -31,6 +37,7 @@ export function FundingConfirmButton({
           fundedAmountToman: Number(fundedAmountToman),
           receiptReference,
           note,
+          idempotencyKey: idempotencyKeyRef.current,
         }),
       });
       const data = await response.json();
@@ -48,7 +55,7 @@ export function FundingConfirmButton({
 
   return (
     <>
-      <button type="button" className="product-btn product-btn--primary" onClick={() => setOpen(true)}>
+      <button type="button" className="product-btn product-btn--primary" onClick={openDialog}>
         شارژ پارس‌پک انجام شد
       </button>
       <ConfirmDialog

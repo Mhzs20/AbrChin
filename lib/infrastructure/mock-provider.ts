@@ -64,6 +64,15 @@ export class MockInfrastructureProvider implements InfrastructureProviderAdapter
     return { ...record };
   }
 
+  async findInstanceByName(name: string): Promise<ProviderInstance | null> {
+    for (const record of MockInfrastructureProvider.instances.values()) {
+      if (record.name === name) {
+        return this.getInstance(record.id);
+      }
+    }
+    return null;
+  }
+
   static reset() {
     MockInfrastructureProvider.instances.clear();
   }
@@ -75,12 +84,13 @@ export function createMockProviderWithBehavior(
   const provider = new MockInfrastructureProvider();
   const originalCreate = provider.createInstance.bind(provider);
   provider.createInstance = async (input) => {
+    if (behavior === "blocked") {
+      throw new InfrastructureError("provider_insufficient_balance", "Insufficient provider balance");
+    }
     const name =
-      behavior === "blocked"
-        ? `blocked-${input.name}`
-        : behavior === "ambiguous"
-          ? `ambiguous-${input.name}`
-          : input.name;
+      behavior === "ambiguous"
+        ? `ambiguous-${input.name}`
+        : input.name;
     if (behavior === "timeout") {
       throw new InfrastructureError("provider_timeout", "Provider timeout");
     }

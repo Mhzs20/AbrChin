@@ -1,7 +1,13 @@
 import { InfrastructureProvider } from "@prisma/client";
 
 import { InfrastructureError } from "@/lib/infrastructure/errors";
-import { mapProviderHttpError, parseCatalogItems, parseParsPackVm } from "@/lib/infrastructure/parspack/mapper";
+import {
+  mapProviderHttpError,
+  parseCatalogItems,
+  parseParsPackVm,
+  parseVmList,
+  sanitizeProviderResponse,
+} from "@/lib/infrastructure/parspack/mapper";
 import type {
   CreateInstanceInput,
   InfrastructureProviderAdapter,
@@ -15,6 +21,23 @@ type ParsPackClientConfig = {
   token: string;
   timeoutMs: number;
   fetchImpl?: typeof fetch;
+  enabled?: boolean;
+};
+
+type ParsPackListResponse<T> = {
+  data?: T[];
+  items?: T[];
+};
+
+type ParsPackVm = {
+  id?: string | number;
+  name?: string;
+  region?: string;
+  size?: string;
+  image?: string;
+  ipv4?: string | null;
+  ip?: string | null;
+  status?: string;
 };
 
 export class ParsPackProvider implements InfrastructureProviderAdapter {
@@ -23,15 +46,24 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
   private readonly token: string;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly enabled: boolean;
 
   constructor(config: ParsPackClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, "");
     this.token = config.token;
     this.timeoutMs = config.timeoutMs;
     this.fetchImpl = config.fetchImpl ?? fetch;
+    this.enabled = config.enabled ?? true;
   }
 
-  private async request<T>(path: string, init?: RequestInit): Promise<T> {
+  private ensureEnabled() {
+    if (!this.enabled) {
+      throw new InfrastructureError("provider_disabled", "ParsPack provider is disabled");
+    }
+  }
+
+  private async request<T>(path: string, init?: RequestInit): Promise<{ data: T; status: number }> {
+    this.ensureEnabled();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
@@ -45,11 +77,20 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
           ...(init?.headers ?? {}),
         },
       });
+      const text = await response.text();
+      let body: unknown = null;
+      if (text) {
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = { message: text.slice(0, 200) };
+        }
+      }
       if (!response.ok) {
-        const code = mapProviderHttpError(response.status);
+        const code = mapProviderHttpError(response.status, body as never);
         throw new InfrastructureError(code, "ParsPack request failed");
       }
-      return (await response.json()) as T;
+      return { data: body as T, status: response.status };
     } catch (error) {
       if (error instanceof InfrastructureError) throw error;
       if (error instanceof Error && error.name === "AbortError") {
@@ -66,7 +107,7 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
       await this.request("/regions");
       return { ok: true, message: "اتصال برقرار است", checkedAt: new Date() };
     } catch (error) {
-      const message = error instanceof InfrastructureError ? error.message : "خطای اتصال";
+      const message = error instanceof InfrastructureError ? "خطای اتصال" : "خطای اتصال";
       return { ok: false, message, checkedAt: new Date() };
     }
   }
@@ -78,14 +119,14 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
       this.request<unknown>("/images"),
     ]);
     return {
-      regions: parseCatalogItems(regionsPayload as never),
-      sizes: parseCatalogItems(sizesPayload as never),
-      images: parseCatalogItems(imagesPayload as never),
+      regions: parseCatalogItems(regionsPayload.data as never),
+      sizes: parseCatalogItems(sizesPayload.data as never),
+      images: parseCatalogItems(imagesPayload.data as never),
     };
   }
 
   async createInstance(input: CreateInstanceInput): Promise<ProviderInstance> {
-    const payload = await this.request<ParsPackVm>("/vms", {
+    const { data, status } = await this.request<ParsPackVm>("/vms", {
       method: "POST",
       body: JSON.stringify({
         name: input.name,
@@ -94,22 +135,19 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
         image: input.image,
       }),
     });
-    return parseParsPackVm(payload);
+    void sanitizeProviderResponse({ status, body: data });
+    return parseParsPackVm(data);
   }
 
   async getInstance(providerInstanceId: string): Promise<ProviderInstance> {
-    const payload = await this.request<ParsPackVm>(`/vms/${encodeURIComponent(providerInstanceId)}`);
-    return parseParsPackVm(payload);
+    const { data } = await this.request<ParsPackVm>(`/vms/${encodeURIComponent(providerInstanceId)}`);
+    return parseParsPackVm(data);
+  }
+
+  async findInstanceByName(name: string): Promise<ProviderInstance | null> {
+    const { data } = await this.request<ParsPackListResponse<ParsPackVm> | ParsPackVm[]>("/vms");
+    const list = parseVmList(data);
+    const match = list.find((vm) => vm.name === name);
+    return match ?? null;
   }
 }
-
-type ParsPackVm = {
-  id?: string | number;
-  name?: string;
-  region?: string;
-  size?: string;
-  image?: string;
-  ipv4?: string | null;
-  ip?: string | null;
-  status?: string;
-};

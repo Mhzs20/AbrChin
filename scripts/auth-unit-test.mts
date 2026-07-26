@@ -9,6 +9,7 @@ import { MemoryRateLimiter } from "../lib/rate-limit.ts";
 import { isSameOriginRequest } from "../lib/request-origin.ts";
 import { isSessionRecordValid } from "../lib/session-rules.ts";
 import { SESSION_COOKIE_NAME, sessionCookieOptions } from "../lib/session-cookie.ts";
+import { getClientIp } from "../lib/client-ip.ts";
 import { ConsoleSmsProvider } from "../lib/sms/console-provider.ts";
 
 test("normalize accepts 09 and +98 formats", () => {
@@ -211,6 +212,19 @@ test("console SMS factory policy fails closed in production even when SMS_PROVID
     if (previousProvider === undefined) delete process.env.SMS_PROVIDER;
     else process.env.SMS_PROVIDER = previousProvider;
   }
+});
+
+test("trusted proxy hops select rightmost trusted client IP", () => {
+  const previous = process.env.TRUSTED_PROXY_HOPS;
+  process.env.TRUSTED_PROXY_HOPS = "1";
+  const request = new Request("http://localhost/api/test", {
+    headers: { "x-forwarded-for": "203.0.113.10, 10.0.0.1" },
+  });
+  assert.equal(getClientIp(request), "10.0.0.1");
+  process.env.TRUSTED_PROXY_HOPS = "0";
+  assert.equal(getClientIp(request), "unknown");
+  if (previous === undefined) delete process.env.TRUSTED_PROXY_HOPS;
+  else process.env.TRUSTED_PROXY_HOPS = previous;
 });
 
 test("first login creates user; second recovers same mobile identity", () => {
