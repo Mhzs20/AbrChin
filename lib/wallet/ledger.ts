@@ -3,6 +3,7 @@ import {
   LedgerStatus,
   LedgerType,
   Prisma,
+  PrismaClient,
   WalletStatus,
   type WalletLedgerEntry,
 } from "@prisma/client";
@@ -125,23 +126,36 @@ export async function debitWallet(input: DebitInput): Promise<WalletLedgerEntry>
   });
 }
 
-export async function reverseLedgerEntry(params: {
-  userId: string;
-  originalEntryId: string;
-  idempotencyKey: string;
-  description?: string;
-  metadata?: Prisma.InputJsonValue;
-}): Promise<WalletLedgerEntry> {
-  const existing = await findByIdempotency(params.idempotencyKey);
+export async function reverseLedgerEntry(
+  params: {
+    userId: string;
+    originalEntryId: string;
+    idempotencyKey: string;
+    description?: string;
+    metadata?: Prisma.InputJsonValue;
+  },
+  db: PrismaClient | Prisma.TransactionClient = prisma,
+): Promise<WalletLedgerEntry> {
+  const existing = await db.walletLedgerEntry.findUnique({ where: { idempotencyKey: params.idempotencyKey } });
   if (existing) {
     if (existing.status === LedgerStatus.COMPLETED) return existing;
     throw new WalletError("idempotency_conflict", "Idempotency key already used");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const run = async (tx: Prisma.TransactionClient) => {
     const original = await tx.walletLedgerEntry.findUnique({ where: { id: params.originalEntryId } });
     if (!original || original.status !== LedgerStatus.COMPLETED) {
       throw new WalletError("invalid_entry", "Original ledger entry is not reversible");
+    }
+
+    const priorReverse = await tx.walletLedgerEntry.findFirst({
+      where: {
+        reversedEntryId: original.id,
+        status: LedgerStatus.COMPLETED,
+      },
+    });
+    if (priorReverse) {
+      return priorReverse;
     }
 
     const wallet = await tx.wallet.findUniqueOrThrow({ where: { id: original.walletId } });
@@ -154,7 +168,7 @@ export async function reverseLedgerEntry(params: {
         where: { id: wallet.id },
         data: { availableBalance: { increment: original.amount } },
       });
-      const credit = await tx.walletLedgerEntry.create({
+      return tx.walletLedgerEntry.create({
         data: {
           walletId: wallet.id,
           direction: LedgerDirection.CREDIT,
@@ -170,11 +184,6 @@ export async function reverseLedgerEntry(params: {
           reversedEntryId: original.id,
         },
       });
-      await tx.walletLedgerEntry.update({
-        where: { id: original.id },
-        data: { status: LedgerStatus.REVERSED },
-      });
-      return credit;
     }
 
     const updated = await tx.wallet.updateMany({
@@ -188,7 +197,7 @@ export async function reverseLedgerEntry(params: {
       throw new WalletError("insufficient_funds", "موجودی برای برگشت کافی نیست.");
     }
     const fresh = await tx.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
-    const debit = await tx.walletLedgerEntry.create({
+    return tx.walletLedgerEntry.create({
       data: {
         walletId: wallet.id,
         direction: LedgerDirection.DEBIT,
@@ -204,10 +213,10 @@ export async function reverseLedgerEntry(params: {
         reversedEntryId: original.id,
       },
     });
-    await tx.walletLedgerEntry.update({
-      where: { id: original.id },
-      data: { status: LedgerStatus.REVERSED },
-    });
-    return debit;
-  });
+  };
+
+  if ("$transaction" in db) {
+    return db.$transaction(run);
+  }
+  return run(db);
 }

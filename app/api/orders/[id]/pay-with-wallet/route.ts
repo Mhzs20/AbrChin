@@ -15,7 +15,8 @@ export async function POST(request: Request, { params }: Params) {
   try {
     const user = await requireCurrentUser();
     const { id } = await params;
-    const order = await payOrderWithWallet(user.id, id);
+    const result = await payOrderWithWallet(user.id, id);
+    const order = result.order;
     return jsonOk({
       order: {
         id: order.id,
@@ -26,6 +27,12 @@ export async function POST(request: Request, { params }: Params) {
         amountToman: bigintToString(rialToToman(order.amount)),
         paidAt: order.paidAt?.toISOString() ?? null,
       },
+      infrastructureOrder: result.infrastructureOrder
+        ? {
+            id: result.infrastructureOrder.id,
+            status: result.infrastructureOrder.status,
+          }
+        : null,
     });
   } catch (error) {
     if (error instanceof AuthRequiredError) return jsonError("برای ادامه وارد شوید.", 401);

@@ -35,6 +35,11 @@ export function getEnv() {
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean),
+    parspackEnabled: readBool("PARSPACK_ENABLED", false),
+    parspackApiBaseUrl: process.env.PARSPACK_API_BASE_URL ?? "https://my.parspack.com/cserver/api/v1",
+    parspackApiToken: process.env.PARSPACK_API_TOKEN ?? "",
+    parspackTimeoutMs: readInt("PARSPACK_TIMEOUT_MS", 15_000),
+    infrastructureProviderMode: (process.env.INFRASTRUCTURE_PROVIDER_MODE ?? "mock").toLowerCase(),
     nodeEnv: process.env.NODE_ENV ?? "development",
     isProduction,
   };

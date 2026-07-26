@@ -1,22 +1,103 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import Link from "next/link";
 
-import { OrdersPanel } from "@/components/orders-panel";
+import {
+  DataTable,
+  MoneyDisplay,
+  PageHeader,
+  ResponsiveRowList,
+  StatusBadge,
+  TechnicalValue,
+} from "@/components/product";
+import { getUserOrders } from "@/lib/account/queries";
+import {
+  getInfrastructureStage,
+  infrastructureOrderStatusLabel,
+  serviceOrderStatusLabel,
+} from "@/lib/labels/infrastructure";
+import { formatTomanFa } from "@/lib/money";
 import { getCurrentUser } from "@/lib/session";
 
-export const metadata: Metadata = { title: "سفارش‌ها | ابرچین", robots: { index: false, follow: false } };
+export const metadata: Metadata = {
+  title: "سفارش‌های من | حساب من | ابرچین",
+  robots: { index: false, follow: false },
+};
+
 export const dynamic = "force-dynamic";
 
-export default async function OrdersPage() {
+function orderTone(status: string): "success" | "warning" | "danger" | "info" | "neutral" {
+  if (status === "PAID") return "success";
+  if (status === "PENDING_PAYMENT") return "warning";
+  if (status === "REFUNDED" || status === "CANCELED") return "neutral";
+  return "info";
+}
+
+export default async function AccountOrdersPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login?next=/account/orders");
+  if (!user) return null;
+
+  const orders = await getUserOrders(user.id);
+  const columns = [
+    { key: "id", header: "شماره" },
+    { key: "title", header: "پلن" },
+    { key: "amount", header: "مبلغ" },
+    { key: "status", header: "وضعیت" },
+    { key: "stage", header: "مرحله" },
+    { key: "createdAt", header: "زمان" },
+    { key: "actions", header: "" },
+  ];
+
+  const rows = orders.map((order) => {
+    const infraStatus = order.infrastructureOrder?.status;
+    return {
+      id: order.id,
+      cells: {
+        id: <TechnicalValue>{order.id.slice(-8)}</TechnicalValue>,
+        title: order.title,
+        amount: <MoneyDisplay amount={formatTomanFa(order.amount)} />,
+        status: <StatusBadge label={serviceOrderStatusLabel[order.status]} tone={orderTone(order.status)} />,
+        stage: infraStatus
+          ? getInfrastructureStage(infraStatus)
+          : serviceOrderStatusLabel[order.status],
+        createdAt: new Date(order.createdAt).toLocaleString("fa-IR"),
+        actions: (
+          <Link href={`/account/orders/${order.id}`} className="product-btn product-btn--quiet">
+            جزئیات
+          </Link>
+        ),
+      },
+    };
+  });
+
+  const mobileRows = orders.map((order) => ({
+    id: order.id,
+    title: order.title,
+    fields: [
+      { label: "مبلغ", value: <MoneyDisplay amount={formatTomanFa(order.amount)} /> },
+      {
+        label: "وضعیت",
+        value: <StatusBadge label={serviceOrderStatusLabel[order.status]} tone={orderTone(order.status)} />,
+      },
+      {
+        label: "مرحله",
+        value: order.infrastructureOrder
+          ? infrastructureOrderStatusLabel[order.infrastructureOrder.status]
+          : "—",
+      },
+      { label: "زمان", value: new Date(order.createdAt).toLocaleString("fa-IR") },
+    ],
+    actions: (
+      <Link href={`/account/orders/${order.id}`} className="product-btn product-btn--quiet">
+        جزئیات
+      </Link>
+    ),
+  }));
+
   return (
-    <section className="account-page page-view">
-      <div className="page-heading">
-        <h1>سفارش‌های من</h1>
-        <p>ثبت و پرداخت بسته‌های آزمایشی ابرچین از کیف پول.</p>
-      </div>
-      <OrdersPanel />
-    </section>
+    <>
+      <PageHeader title="سفارش‌های من" description="پیگیری وضعیت سفارش‌های زیرساخت" />
+      <DataTable columns={columns} rows={rows} emptyMessage="سفارشی ثبت نشده است." />
+      <ResponsiveRowList rows={mobileRows} />
+    </>
   );
 }

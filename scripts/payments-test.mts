@@ -9,7 +9,6 @@ import {
 } from "@prisma/client";
 
 import { tomanToRial } from "../lib/money.ts";
-import { getServicePlan } from "../lib/orders/plans.ts";
 import { PaymentError } from "../lib/payments/errors.ts";
 import { MockPaymentProvider } from "../lib/payments/mock-provider.ts";
 import { createZarinpalForTest, createZibalForTest, hasServerCredentials } from "../lib/payments/provider-factory.ts";
@@ -277,9 +276,30 @@ test("zarinpal adapter validates responses without leaking merchant id", async (
   if (!msg.ok) assert.equal(msg.message.includes(merchant), false);
 });
 
-test("server plans expose fixed toman prices", () => {
-  assert.equal(getServicePlan("STARTER")?.amountToman, 150_000);
-  assert.equal(getServicePlan("unknown"), null);
+test("server plans are loaded from database", async (t) => {
+  if (!prisma) {
+    t.skip("DATABASE_URL not set");
+    return;
+  }
+  process.env.NODE_ENV = "development";
+  const plan = await prisma.infrastructurePlan.upsert({
+    where: { code: "DEV_STARTER" },
+    update: {},
+    create: {
+      code: "DEV_STARTER",
+      title: "شروع توسعه",
+      provider: "PARSPACK",
+      regionCode: "tehran11",
+      sizeCode: "irLinuxVPS4",
+      imageCode: "ubuntu24-cloudinit-qcow2",
+      deliveryMode: "RAW",
+      salePriceRial: tomanToRial(150_000),
+      estimatedProviderCostRial: tomanToRial(120_000),
+      active: true,
+      sortOrder: 1,
+    },
+  });
+  assert.equal(plan.salePriceRial, tomanToRial(150_000));
 });
 
 test("gateway config rules and audit", async (t) => {
@@ -533,17 +553,33 @@ test("order pay refund flow with ledger references", async (t) => {
   const wallet = await prisma.wallet.create({
     data: { userId: user.id, availableBalance: tomanToRial(2_000_000) },
   });
-  const plan = getServicePlan("STARTER");
-  assert.ok(plan);
+  const plan = await prisma.infrastructurePlan.upsert({
+    where: { code: "DEV_STARTER" },
+    update: {},
+    create: {
+      code: "DEV_STARTER",
+      title: "شروع توسعه",
+      provider: "PARSPACK",
+      regionCode: "tehran11",
+      sizeCode: "irLinuxVPS4",
+      imageCode: "ubuntu24-cloudinit-qcow2",
+      deliveryMode: "RAW",
+      salePriceRial: tomanToRial(150_000),
+      estimatedProviderCostRial: tomanToRial(120_000),
+      active: true,
+      sortOrder: 1,
+    },
+  });
 
   const order = await prisma.serviceOrder.create({
     data: {
       userId: user.id,
       title: plan.title,
       description: plan.description,
-      amount: tomanToRial(plan.amountToman),
+      amount: plan.salePriceRial,
       status: ServiceOrderStatus.PENDING_PAYMENT,
       planCode: plan.code,
+      planId: plan.id,
     },
   });
 
@@ -596,17 +632,12 @@ test("order pay refund flow with ledger references", async (t) => {
         reversedEntryId: debit.id,
       },
     });
-    await tx.walletLedgerEntry.update({
-      where: { id: debit.id },
-      data: { status: "REVERSED" },
-    });
     await tx.serviceOrder.update({
       where: { id: order.id },
       data: { status: ServiceOrderStatus.REFUNDED },
     });
   });
 
-  const refunded = await prisma.serviceOrder.findUniqueOrThrow({ where: { id: order.id } });
-  assert.equal(refunded.status, ServiceOrderStatus.REFUNDED);
-  assert.equal(TopUpStatus.SUCCEEDED, "SUCCEEDED");
+  const originalDebit = await prisma.walletLedgerEntry.findUniqueOrThrow({ where: { id: debit.id } });
+  assert.equal(originalDebit.status, "COMPLETED");
 });

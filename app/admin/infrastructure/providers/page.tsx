@@ -1,0 +1,24 @@
+import type { Metadata } from "next";
+
+import { ProviderPanel } from "@/components/admin/provider-panel";
+import { getSystemStatuses } from "@/lib/admin/dashboard";
+
+export const metadata: Metadata = {
+  title: "تأمین‌کننده‌ها | پنل مدیریت | ابرچین",
+  robots: { index: false, follow: false },
+};
+
+export const dynamic = "force-dynamic";
+
+export default async function AdminProvidersPage() {
+  const system = await getSystemStatuses();
+  return (
+    <ProviderPanel
+      initial={{
+        ...system.parspack,
+        status: system.parspack.status,
+        configured: system.parspack.status !== "unconfigured",
+      }}
+    />
+  );
+}

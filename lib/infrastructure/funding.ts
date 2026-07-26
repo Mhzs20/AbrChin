@@ -1,0 +1,150 @@
+import {
+  AdminNotificationStatus,
+  AdminNotificationType,
+  InfrastructureOrderStatus,
+  ProvisioningJobStatus,
+} from "@prisma/client";
+
+import { AuditActions, writeAuditLog } from "@/lib/audit/service";
+import { prisma } from "@/lib/db";
+import { assertPositiveIntegerToman, tomanToRial } from "@/lib/money";
+import { WalletError } from "@/lib/wallet/errors";
+
+const FUNDING_ALLOWED_STATUSES: InfrastructureOrderStatus[] = [
+  InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
+  InfrastructureOrderStatus.BLOCKED_PROVIDER_BALANCE,
+];
+
+export async function confirmProviderFunding(params: {
+  infrastructureOrderId: string;
+  adminUserId: string;
+  fundedAmountToman: number;
+  receiptReference?: string | null;
+  note?: string | null;
+  idempotencyKey?: string | null;
+  ip?: string | null;
+  userAgent?: string | null;
+}) {
+  const fundedAmountRial = tomanToRial(params.fundedAmountToman);
+
+  return prisma.$transaction(async (tx) => {
+    const order = await tx.infrastructureOrder.findUnique({
+      where: { id: params.infrastructureOrderId },
+      include: {
+        fundingConfirmations: { orderBy: { attempt: "desc" } },
+        serviceOrder: true,
+        plan: true,
+        cloudInstance: true,
+      },
+    });
+    if (!order) throw new WalletError("not_found", "سفارش زیرساخت پیدا نشد.");
+
+    const nextAttempt = (order.fundingConfirmations[0]?.attempt ?? 0) + 1;
+    const confirmationKey =
+      params.idempotencyKey?.trim() ||
+      `funding_confirm_${order.id}_a${nextAttempt}_${params.adminUserId}`;
+
+    const existingConfirmation = await tx.providerFundingConfirmation.findUnique({
+      where: { idempotencyKey: confirmationKey },
+    });
+    if (existingConfirmation) {
+      const job = await tx.provisioningJob.findFirst({
+        where: {
+          infrastructureOrderId: order.id,
+          idempotencyKey: `parspack_create_${order.id}_a${existingConfirmation.attempt}`,
+        },
+      });
+      return { order, fundingConfirmation: existingConfirmation, job };
+    }
+
+    if (!FUNDING_ALLOWED_STATUSES.includes(order.status)) {
+      throw new WalletError("invalid_status", "این سفارش در وضعیت تأیید شارژ نیست.");
+    }
+    if (fundedAmountRial <= 0n) {
+      throw new WalletError("invalid_amount", "مبلغ شارژ باید مثبت باشد.");
+    }
+
+    const activeCreateJob = await tx.provisioningJob.findFirst({
+      where: {
+        infrastructureOrderId: order.id,
+        operation: "create_instance",
+        status: { in: [ProvisioningJobStatus.QUEUED, ProvisioningJobStatus.RUNNING] },
+      },
+    });
+    if (activeCreateJob) {
+      throw new WalletError("invalid_status", "Job ساخت فعال در حال اجراست.");
+    }
+
+    const fundingConfirmation = await tx.providerFundingConfirmation.create({
+      data: {
+        infrastructureOrderId: order.id,
+        attempt: nextAttempt,
+        provider: order.provider,
+        requiredAmountRial: order.requiredFundingRial,
+        fundedAmountRial,
+        receiptReference: params.receiptReference?.trim() || null,
+        note: params.note?.trim() || null,
+        confirmedById: params.adminUserId,
+        idempotencyKey: confirmationKey,
+        ip: params.ip?.slice(0, 64) ?? null,
+        userAgent: params.userAgent?.slice(0, 255) ?? null,
+      },
+    });
+
+    const jobIdempotencyKey = `parspack_create_${order.id}_a${nextAttempt}`;
+    let job = await tx.provisioningJob.findUnique({ where: { idempotencyKey: jobIdempotencyKey } });
+    if (!job) {
+      job = await tx.provisioningJob.create({
+        data: {
+          infrastructureOrderId: order.id,
+          operation: "create_instance",
+          status: ProvisioningJobStatus.QUEUED,
+          idempotencyKey: jobIdempotencyKey,
+          attempt: nextAttempt,
+        },
+      });
+    }
+
+    await tx.infrastructureOrder.update({
+      where: { id: order.id },
+      data: { status: InfrastructureOrderStatus.QUEUED },
+    });
+
+    await tx.adminNotification.updateMany({
+      where: {
+        infrastructureOrderId: order.id,
+        type: {
+          in: [
+            AdminNotificationType.ORDER_WAITING_PROVIDER_FUNDING,
+            AdminNotificationType.PROVIDER_BALANCE_BLOCKED,
+          ],
+        },
+        status: { in: [AdminNotificationStatus.UNREAD, AdminNotificationStatus.READ] },
+      },
+      data: { status: AdminNotificationStatus.RESOLVED, resolvedAt: new Date() },
+    });
+
+    await writeAuditLog(
+      {
+        actorUserId: params.adminUserId,
+        action: AuditActions.FUNDING_CONFIRMATION,
+        entityType: "infrastructure_order",
+        entityId: order.id,
+        afterData: {
+          attempt: nextAttempt,
+          fundedAmountRial: fundedAmountRial.toString(),
+          receiptReference: params.receiptReference ?? null,
+        },
+        ip: params.ip,
+        userAgent: params.userAgent,
+      },
+      tx,
+    );
+
+    return { order, fundingConfirmation, job };
+  });
+}
+
+export function parseFundedAmountToman(value: unknown): number {
+  return assertPositiveIntegerToman(value);
+}

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { DataTable, EmptyState, ErrorState, LoadingSkeleton, MoneyDisplay, PageHeader } from "@/components/product";
+
 type Item = {
   id: string;
   type: string;
@@ -41,24 +43,47 @@ export function TransactionsPanel() {
     };
   }, []);
 
-  if (loading) return <p className="account-empty">در حال بارگذاری...</p>;
-  if (error) return <p className="auth-error">{error}</p>;
-  if (items.length === 0) return <p className="account-empty">تراکنشی ثبت نشده است.</p>;
+  if (loading) {
+    return (
+      <>
+        <PageHeader title="تراکنش‌ها" />
+        <LoadingSkeleton rows={5} />
+      </>
+    );
+  }
+  if (error) {
+    return (
+      <>
+        <PageHeader title="تراکنش‌ها" />
+        <ErrorState message={error} />
+      </>
+    );
+  }
+
+  const columns = [
+    { key: "type", header: "نوع" },
+    { key: "amount", header: "مبلغ" },
+    { key: "balance", header: "مانده" },
+    { key: "description", header: "توضیح" },
+    { key: "createdAt", header: "زمان" },
+  ];
+
+  const rows = items.map((item) => ({
+    id: item.id,
+    cells: {
+      type: `${item.type} · ${item.direction}`,
+      amount: <MoneyDisplay amount={item.amountTomanFa} />,
+      balance: <MoneyDisplay amount={item.balanceAfterTomanFa} />,
+      description: item.description || "—",
+      createdAt: new Date(item.createdAt).toLocaleString("fa-IR"),
+    },
+  }));
 
   return (
-    <div className="account-card">
-      <ul className="account-list dense">
-        {items.map((item) => (
-          <li key={item.id}>
-            <strong>{item.type} · {item.direction}</strong>
-            <span>{item.amountTomanFa} تومان</span>
-            <small>
-              {item.description || "—"} · مانده {item.balanceAfterTomanFa} ·{" "}
-              {new Date(item.createdAt).toLocaleString("fa-IR")}
-            </small>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <>
+      <PageHeader title="تراکنش‌ها" description="همه حرکت‌های کیف پول شما" />
+      <DataTable columns={columns} rows={rows} emptyMessage="تراکنشی ثبت نشده است." />
+      {items.length === 0 ? <EmptyState title="تراکنشی ثبت نشده است." /> : null}
+    </>
   );
 }

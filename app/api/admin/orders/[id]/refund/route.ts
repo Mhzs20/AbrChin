@@ -1,7 +1,7 @@
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 import { refundOrder } from "@/lib/orders/service";
-import { AuthRequiredError, requireCurrentUser } from "@/lib/session";
-import { WalletError } from "@/lib/wallet/ledger";
+import { AuthRequiredError, readRequestMeta, requireCurrentUser } from "@/lib/session";
+import { WalletError } from "@/lib/wallet/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,14 @@ export async function POST(request: Request, { params }: Params) {
       // optional body
     }
 
-    const order = await refundOrder({ orderId: id, actorUserId: user.id, reason });
+    const meta = await readRequestMeta(request);
+    const order = await refundOrder({
+      orderId: id,
+      actorUserId: user.id,
+      reason,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
     return jsonOk({ order: { id: order.id, status: order.status } });
   } catch (error) {
     if (error instanceof AuthRequiredError) return jsonError("برای ادامه وارد شوید.", 401);

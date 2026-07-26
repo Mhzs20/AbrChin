@@ -42,6 +42,11 @@ function isActive(pathname: string, href: string) {
 
 export function SiteShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const isProductRoute = pathname.startsWith("/account") || pathname.startsWith("/admin");
+
+  if (isProductRoute) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="app-canvas">

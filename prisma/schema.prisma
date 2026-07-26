@@ -57,6 +57,60 @@ enum ServiceOrderStatus {
   REFUNDED
 }
 
+enum InfrastructureProvider {
+  PARSPACK
+}
+
+enum DeliveryMode {
+  RAW
+  MANAGED
+}
+
+enum InfrastructureOrderStatus {
+  WAITING_ADMIN_FUNDING
+  FUNDING_CONFIRMED
+  QUEUED
+  PROVISIONING
+  ACTIVE
+  BLOCKED_PROVIDER_BALANCE
+  NEEDS_RECONCILIATION
+  FAILED
+  CANCELED
+  REFUNDED
+}
+
+enum ProvisioningJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  BLOCKED_PROVIDER_BALANCE
+  NEEDS_RECONCILIATION
+}
+
+enum AdminNotificationType {
+  ORDER_WAITING_PROVIDER_FUNDING
+  PROVIDER_BALANCE_BLOCKED
+  PROVISIONING_FAILED
+  NEEDS_RECONCILIATION
+  INSTANCE_ACTIVE
+  PAYMENT_FAILED
+  PROVIDER_UNAVAILABLE
+}
+
+enum AdminNotificationStatus {
+  UNREAD
+  READ
+  RESOLVED
+}
+
+enum CloudInstanceStatus {
+  PENDING
+  ACTIVE
+  FAILED
+  TERMINATED
+}
+
 enum PaymentGatewayProvider {
   ZIBAL
   ZARINPAL
@@ -83,6 +137,11 @@ model User {
   gatewayAudits    PaymentGatewayAuditLog[] @relation("GatewayAuditActor")
   updatedGateways  PaymentGatewayConfig[]   @relation("GatewayUpdatedBy")
   walletTopUpSettingsUpdated WalletTopUpSettings[] @relation("WalletTopUpSettingsUpdatedBy")
+  infrastructureOrders InfrastructureOrder[]
+  cloudInstances       CloudInstance[]
+  fundingConfirmations ProviderFundingConfirmation[] @relation("FundingConfirmedBy")
+  auditLogs            AuditLog[] @relation("AuditActor")
+  infrastructurePlansUpdated InfrastructurePlan[] @relation("PlanUpdatedBy")
 }
 
 model OtpChallenge {
@@ -147,6 +206,7 @@ model WalletLedgerEntry {
   @@index([walletId, createdAt])
   @@index([referenceType, referenceId])
   @@index([status])
+  @@index([reversedEntryId])
 }
 
 model WalletTopUp {
@@ -221,19 +281,207 @@ model PaymentGatewayAuditLog {
 }
 
 model ServiceOrder {
-  id          String             @id @default(cuid())
-  userId      String
-  title       String
-  description String?
-  amount      BigInt
-  currency    String             @default("IRR")
-  status      ServiceOrderStatus @default(DRAFT)
-  planCode    String?
-  paidAt      DateTime?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String             @id @default(cuid())
+  userId       String
+  title        String
+  description  String?
+  amount       BigInt
+  currency     String             @default("IRR")
+  status       ServiceOrderStatus @default(DRAFT)
+  planCode     String?
+  planId       String?
+  planSnapshot Json?
+  paidAt       DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan         InfrastructurePlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  infrastructureOrder InfrastructureOrder?
 
   @@index([userId, createdAt])
   @@index([status])
+  @@index([planId])
+}
+
+model InfrastructurePlan {
+  id                        String                 @id @default(cuid())
+  code                      String                 @unique
+  title                     String
+  description               String?
+  provider                  InfrastructureProvider
+  regionCode                String
+  sizeCode                  String
+  imageCode                 String
+  deliveryMode              DeliveryMode
+  salePriceRial             BigInt
+  estimatedProviderCostRial BigInt
+  active                    Boolean                @default(true)
+  sortOrder                 Int                    @default(0)
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+  updatedById               String?
+  updatedBy                 User?                  @relation("PlanUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  orders                    ServiceOrder[]
+  infrastructureOrders      InfrastructureOrder[]
+
+  @@index([active, sortOrder])
+  @@index([provider, active])
+}
+
+model InfrastructureOrder {
+  id                 String                    @id @default(cuid())
+  serviceOrderId     String                    @unique
+  userId             String
+  planId             String
+  provider           InfrastructureProvider
+  deliveryMode       DeliveryMode
+  status             InfrastructureOrderStatus @default(WAITING_ADMIN_FUNDING)
+  requiredFundingRial BigInt
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  serviceOrder       ServiceOrder              @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  user               User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan               InfrastructurePlan        @relation(fields: [planId], references: [id], onDelete: Restrict)
+  fundingConfirmations ProviderFundingConfirmation[]
+  provisioningJobs   ProvisioningJob[]
+  cloudInstance      CloudInstance?
+  notifications      AdminNotification[]
+  operationLogs      ProviderOperationLog[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([planId])
+}
+
+model ProviderFundingConfirmation {
+  id                    String                 @id @default(cuid())
+  infrastructureOrderId String
+  attempt               Int
+  provider              InfrastructureProvider
+  requiredAmountRial    BigInt
+  fundedAmountRial      BigInt
+  receiptReference      String?
+  note                  String?
+  confirmedById         String
+  confirmedAt           DateTime               @default(now())
+  ip                    String?
+  userAgent             String?
+  idempotencyKey        String                 @unique
+  infrastructureOrder   InfrastructureOrder    @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+  confirmedBy           User                   @relation("FundingConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+
+  @@unique([infrastructureOrderId, attempt])
+  @@index([confirmedById, confirmedAt])
+  @@index([infrastructureOrderId, confirmedAt])
+}
+
+model ProvisioningJob {
+  id                    String                @id @default(cuid())
+  infrastructureOrderId String
+  operation             String
+  status                ProvisioningJobStatus @default(QUEUED)
+  idempotencyKey        String                @unique
+  attempt               Int                   @default(0)
+  providerRequestId     String?
+  lastErrorCode         String?
+  lastErrorMessage      String?
+  startedAt             DateTime?
+  finishedAt            DateTime?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  infrastructureOrder   InfrastructureOrder   @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+  operationLogs         ProviderOperationLog[]
+
+  @@index([infrastructureOrderId, createdAt])
+  @@index([status, createdAt])
+  @@index([infrastructureOrderId, operation, status])
+}
+
+model CloudInstance {
+  id                    String              @id @default(cuid())
+  infrastructureOrderId String              @unique
+  userId                String
+  provider              InfrastructureProvider
+  providerInstanceId    String              @unique
+  name                  String
+  region                String
+  size                  String
+  image                 String
+  deliveryMode          DeliveryMode
+  ipv4                  String?
+  status                CloudInstanceStatus @default(PENDING)
+  provisionedAt         DateTime?
+  terminatedAt          DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  infrastructureOrder   InfrastructureOrder @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+model AdminNotification {
+  id                    String                  @id @default(cuid())
+  type                  AdminNotificationType
+  infrastructureOrderId String?
+  title                 String
+  message               String
+  status                AdminNotificationStatus @default(UNREAD)
+  createdAt             DateTime                @default(now())
+  resolvedAt            DateTime?
+  infrastructureOrder   InfrastructureOrder?    @relation(fields: [infrastructureOrderId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([type, createdAt])
+  @@index([infrastructureOrderId])
+}
+
+model ProviderOperationLog {
+  id                    String                 @id @default(cuid())
+  provider              InfrastructureProvider
+  operation             String
+  infrastructureOrderId String?
+  provisioningJobId     String?
+  status                String
+  requestSummary        Json?
+  responseSummary       Json?
+  errorCode             String?
+  createdAt             DateTime               @default(now())
+  infrastructureOrder   InfrastructureOrder?   @relation(fields: [infrastructureOrderId], references: [id], onDelete: SetNull)
+  provisioningJob       ProvisioningJob?       @relation(fields: [provisioningJobId], references: [id], onDelete: SetNull)
+
+  @@index([provider, createdAt])
+  @@index([infrastructureOrderId, createdAt])
+  @@index([provisioningJobId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String
+  action      String
+  entityType  String
+  entityId    String?
+  beforeData  Json?
+  afterData   Json?
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+  actor       User     @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: Cascade)
+
+  @@index([actorUserId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action, createdAt])
+}
+
+model ProviderCatalogState {
+  id              String                 @id @default("parspack")
+  provider        InfrastructureProvider @unique
+  lastHealthCheck DateTime?
+  lastCatalogSync DateTime?
+  regionCount     Int                    @default(0)
+  sizeCount       Int                    @default(0)
+  imageCount      Int                    @default(0)
+  lastError       String?
+  updatedAt       DateTime               @updatedAt
 }

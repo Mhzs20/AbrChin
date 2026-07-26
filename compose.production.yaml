@@ -58,6 +58,11 @@ services:
       ADMIN_MOBILES: ${ADMIN_MOBILES:-}
       OTP_TTL_SECONDS: ${OTP_TTL_SECONDS:-120}
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
+      PARSPACK_ENABLED: ${PARSPACK_ENABLED:-false}
+      PARSPACK_API_BASE_URL: ${PARSPACK_API_BASE_URL:-https://my.parspack.com/cserver/api/v1}
+      PARSPACK_API_TOKEN: ${PARSPACK_API_TOKEN:-}
+      PARSPACK_TIMEOUT_MS: ${PARSPACK_TIMEOUT_MS:-15000}
+      INFRASTRUCTURE_PROVIDER_MODE: ${INFRASTRUCTURE_PROVIDER_MODE:-parspack}
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
@@ -81,6 +86,49 @@ services:
       retries: 6
       start_period: 40s
     stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  worker:
+    image: ${ABRCHIN_IMAGE:?ABRCHIN_IMAGE must be set}
+    container_name: abrchin-worker
+    restart: unless-stopped
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["./scripts/worker-entrypoint.sh"]
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set}
+      PARSPACK_ENABLED: ${PARSPACK_ENABLED:-false}
+      PARSPACK_API_BASE_URL: ${PARSPACK_API_BASE_URL:-https://my.parspack.com/cserver/api/v1}
+      PARSPACK_API_TOKEN: ${PARSPACK_API_TOKEN:-}
+      PARSPACK_TIMEOUT_MS: ${PARSPACK_TIMEOUT_MS:-15000}
+      INFRASTRUCTURE_PROVIDER_MODE: ${INFRASTRUCTURE_PROVIDER_MODE:-parspack}
+      WORKER_POLL_MS: ${WORKER_POLL_MS:-3000}
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.25
+    networks:
+      - abrchin_internal
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     logging:
       driver: json-file
       options:

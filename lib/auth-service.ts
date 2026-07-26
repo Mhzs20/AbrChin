@@ -1,4 +1,4 @@
-import { OtpPurpose } from "@prisma/client";
+import { OtpPurpose, UserRole } from "@prisma/client";
 
 import { generateOtpCode, hashWithSecret, safeEqualHex } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
@@ -126,17 +126,17 @@ export async function verifyLoginOtp(
   }
 
   const now = new Date();
-  const role = isAdminMobile(mobile) ? "ADMIN" : "CUSTOMER";
+  const adminRole = isAdminMobile(mobile) ? UserRole.ADMIN : null;
   const user = await prisma.user.upsert({
     where: { mobile },
     create: {
       mobile,
       mobileVerifiedAt: now,
-      role,
+      role: adminRole ?? UserRole.CUSTOMER,
     },
     update: {
       mobileVerifiedAt: now,
-      role,
+      ...(adminRole ? { role: adminRole } : {}),
     },
   });
 
