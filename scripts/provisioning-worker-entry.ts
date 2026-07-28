@@ -23,12 +23,11 @@ async function main() {
   while (!stopping) {
     try {
       const processed = await runProvisioningWorkerCycle();
+      await touchWorkerHeartbeat({ cycleOk: true });
       if (processed) {
         idleRounds = 0;
-        await touchWorkerHeartbeat({ cycleOk: true });
       } else {
         idleRounds += 1;
-        await touchWorkerHeartbeat({ cycleOk: false });
         if (idleRounds >= config.maxIdleRounds) {
           await sleep(config.pollMs);
           idleRounds = 0;

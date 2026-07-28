@@ -7,7 +7,11 @@ import {
   ServiceOrderStatus,
 } from "@prisma/client";
 
-import { claimNextProvisioningJob } from "../lib/infrastructure/provisioning-service.ts";
+import {
+  claimNextProvisioningJob,
+  getWorkerHealthStatus,
+  touchWorkerHeartbeat,
+} from "../lib/infrastructure/provisioning-service.ts";
 import { tomanToRial } from "../lib/money.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -105,4 +109,25 @@ test("claimNextProvisioningJob is exclusive under concurrent workers", async (t)
   await prisma.infrastructureOrder.deleteMany({ where: { id: job.infrastructureOrderId } });
   await prisma.serviceOrder.deleteMany({ where: { user: { mobile } } });
   await prisma.user.deleteMany({ where: { mobile } });
+});
+
+test("successful idle heartbeat is healthy and a failed cycle stays stale", async (t) => {
+  if (!prisma) {
+    t.skip("DATABASE_URL not set");
+    return;
+  }
+
+  await prisma.workerHeartbeat.deleteMany({ where: { id: "provisioning" } });
+
+  await touchWorkerHeartbeat({ cycleOk: true });
+  const healthy = await getWorkerHealthStatus();
+  assert.equal(healthy.status, "healthy");
+  assert.ok(healthy.lastCycleAt);
+
+  await touchWorkerHeartbeat({ cycleOk: false, status: "stale" });
+  const stale = await getWorkerHealthStatus();
+  assert.equal(stale.status, "stale");
+  assert.ok(stale.lastCycleAt);
+
+  await prisma.workerHeartbeat.deleteMany({ where: { id: "provisioning" } });
 });

@@ -254,7 +254,9 @@ export async function getWorkerHealthStatus() {
   let status: "healthy" | "stale" | "down" = row.status as "healthy" | "stale" | "down";
   if (ageMs > config.staleAfterMs * 2) status = "down";
   else if (ageMs > config.staleAfterMs) status = "stale";
-  else if (row.lastCycleAt) status = "healthy";
+  else if (row.status === "down") status = "down";
+  else if (row.status === "stale" || !row.lastCycleAt) status = "stale";
+  else status = "healthy";
   return {
     status,
     workerId: row.workerId,

@@ -36,6 +36,22 @@ test("worker entrypoint references compiled bundle", () => {
   assert.equal(script.includes("experimental-strip-types"), false);
 });
 
+test("successful idle cycles update the healthy heartbeat before branching", () => {
+  const source = readFileSync("scripts/provisioning-worker-entry.ts", "utf8");
+  const cycleIndex = source.indexOf("const processed = await runProvisioningWorkerCycle()");
+  const heartbeatIndex = source.indexOf("await touchWorkerHeartbeat({ cycleOk: true })");
+  const branchIndex = source.indexOf("if (processed)");
+
+  assert.ok(cycleIndex >= 0);
+  assert.ok(heartbeatIndex > cycleIndex);
+  assert.ok(branchIndex > heartbeatIndex);
+});
+
+test("worker healthcheck rejects a fresh stale heartbeat", () => {
+  const source = readFileSync("scripts/worker-healthcheck.mjs", "utf8");
+  assert.match(source, /row\.status !== "healthy"/);
+});
+
 test("compiled worker starts without alias resolution error", async () => {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL required for worker runtime test");
