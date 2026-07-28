@@ -26,6 +26,7 @@ export async function GET() {
         amountRial: bigintToString(order.amount),
         amountToman: bigintToString(rialToToman(order.amount)),
         amountTomanFa: formatTomanFa(order.amount),
+        quoteExpiresAt: order.quoteExpiresAt?.toISOString() ?? null,
         paidAt: order.paidAt?.toISOString() ?? null,
         createdAt: order.createdAt.toISOString(),
       })),
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
         amountRial: bigintToString(order.amount),
         amountToman: bigintToString(rialToToman(order.amount)),
         amountTomanFa: formatTomanFa(order.amount),
+        quoteExpiresAt: order.quoteExpiresAt?.toISOString() ?? null,
         createdAt: order.createdAt.toISOString(),
       },
     });

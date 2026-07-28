@@ -44,7 +44,11 @@ async function seedDevPlan() {
   if (!prisma) return null;
   return prisma.infrastructurePlan.upsert({
     where: { code: "DEV_STARTER" },
-    update: {},
+    update: {
+      salePriceRial: tomanToRial(150_000),
+      estimatedProviderCostRial: tomanToRial(120_000),
+      active: true,
+    },
     create: {
       code: "DEV_STARTER",
       title: "شروع توسعه",
@@ -132,6 +136,57 @@ test("payment is atomic and creates infrastructure order without cloud instance"
   assert.equal(result.order.status, ServiceOrderStatus.PAID);
   assert.equal(result.infrastructureOrder?.status, InfrastructureOrderStatus.WAITING_ADMIN_FUNDING);
   assert.equal(await prisma.cloudInstance.count({ where: { userId: user.id } }), 0);
+
+  await cleanupMobile(mobile);
+});
+
+test("payment uses the locked order quote when the plan price changes", async (t) => {
+  if (!prisma) {
+    t.skip("DATABASE_URL not set");
+    return;
+  }
+
+  const mobile = "09128881009";
+  await cleanupMobile(mobile);
+  const { user, plan, order } = await createPaidOrderFixture(mobile);
+  const quotedAmount = order.amount;
+
+  await prisma.infrastructurePlan.update({
+    where: { id: plan.id },
+    data: { salePriceRial: quotedAmount + tomanToRial(50_000) },
+  });
+
+  await payOrderWithWallet(user.id, order.id);
+  const ledger = await prisma.walletLedgerEntry.findFirstOrThrow({
+    where: { referenceId: order.id, direction: "DEBIT" },
+  });
+  assert.equal(ledger.amount, quotedAmount);
+
+  await cleanupMobile(mobile);
+});
+
+test("payment rejects an expired quote without debiting the wallet", async (t) => {
+  if (!prisma) {
+    t.skip("DATABASE_URL not set");
+    return;
+  }
+
+  const mobile = "09128881010";
+  await cleanupMobile(mobile);
+  const { user, order } = await createPaidOrderFixture(mobile);
+  const walletBefore = await prisma.wallet.findUniqueOrThrow({ where: { userId: user.id } });
+  await prisma.serviceOrder.update({
+    where: { id: order.id },
+    data: { quoteExpiresAt: new Date(Date.now() - 1_000) },
+  });
+
+  await assert.rejects(() => payOrderWithWallet(user.id, order.id), /اعتبار قیمت/);
+  const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { userId: user.id } });
+  assert.equal(walletAfter.availableBalance, walletBefore.availableBalance);
+  assert.equal(
+    await prisma.walletLedgerEntry.count({ where: { referenceId: order.id } }),
+    0,
+  );
 
   await cleanupMobile(mobile);
 });

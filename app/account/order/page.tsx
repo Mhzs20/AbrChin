@@ -23,8 +23,8 @@ export default async function AccountOrderPage() {
   return (
     <>
       <PageHeader
-        title="انتخاب راهکار"
-        description="بر اساس نیاز و سطح همراهی خود، راهکار مناسب را انتخاب کنید. جزئیات فنی در مرحله بعد نمایش داده می‌شود."
+        title="سرورهای آماده"
+        description="قیمت و منابع را ببین، یک چینش را انتخاب کن و مستقیم پرداخت را انجام بده."
       />
       <div className="product-grid product-grid--2">
         {plans.map((plan) => (
@@ -32,6 +32,9 @@ export default async function AccountOrderPage() {
             <p style={{ color: "var(--product-muted)", marginTop: 0 }}>{plan.description}</p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
               <StatusBadge label={deliveryModeLabel[plan.deliveryMode]} tone="info" />
+              {plan.vcpu ? <span className="product-tech">{plan.vcpu} vCPU</span> : null}
+              {plan.ramGb ? <span className="product-tech">{plan.ramGb} GB RAM</span> : null}
+              {plan.storageGb ? <span className="product-tech">{plan.storageGb} GB</span> : null}
               <span className="product-tech">{formatTomanFa(plan.salePriceRial)} تومان</span>
             </div>
             <Link href={`/account/order/${plan.id}`} className="product-btn product-btn--primary">

@@ -18,6 +18,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { ConversationCloud } from "@/components/conversation-cloud";
+import { QuickCloudPlans } from "@/components/quick-cloud-plans";
 import {
   adjustRecommendationProfile,
   buildRecommendation,
@@ -34,6 +35,7 @@ import type {
   RecommendationAnswers,
   RecommendationDirection,
 } from "@/lib/recommendation/types";
+import type { PublicPlanOffer } from "@/lib/orders/plans";
 
 const storageKey = "abrchin:conversation:v1";
 
@@ -70,11 +72,13 @@ function selectedLabel(questionId: QuestionId, value: string, answers: Recommend
 export function ConversationBuilder({
   initialProject,
   resume = false,
-  parspackQuotesReady = false,
+  publicPlans,
+  signedIn,
 }: {
   initialProject?: ProjectKind;
   resume?: boolean;
-  parspackQuotesReady?: boolean;
+  publicPlans: PublicPlanOffer[];
+  signedIn: boolean;
 }) {
   const reduceMotion = useReducedMotion();
   const [hydrated, setHydrated] = useState(!resume);
@@ -450,37 +454,20 @@ export function ConversationBuilder({
                   </div>
                 ))}
 
-                <div className="provider-readiness">
-                  <span>
-                    <Image
-                      src="/assets/abrchin-system/icons/provider.svg"
-                      alt=""
-                      width={28}
-                      height={28}
-                    />
-                    <span>
-                      <strong>پارس‌پک</strong>
-                      <small>
-                        {parspackQuotesReady
-                          ? "اتصال فعال؛ قیمت و ظرفیت پیش از پرداخت تازه‌سازی می‌شود."
-                          : "مسیر ساخت آماده است؛ قرارداد خصوصی قیمت و ظرفیت هنوز متصل نشده."}
-                      </small>
-                    </span>
-                    <i className={parspackQuotesReady ? "is-ready" : ""} />
-                  </span>
-                  <span>
-                    <Image
-                      src="/assets/abrchin-system/icons/compare.svg"
-                      alt=""
-                      width={28}
-                      height={28}
-                    />
-                    <span>
-                      <strong>ابر آروان</strong>
-                      <small>قرارداد اتصال آماده می‌شود؛ تا دریافت API خصوصی وارد قیمت‌گذاری نمی‌شود.</small>
-                    </span>
-                    <i />
-                  </span>
+                <div className="result-live-plans">
+                  <div>
+                    <span>سه چینش واقعی ابرچین</span>
+                    <strong>
+                      {publicPlans.length >= 3
+                        ? "قیمت‌های فروش تأیید شده‌اند"
+                        : "چینش‌های قیمت‌دار به‌زودی آماده‌اند"}
+                    </strong>
+                  </div>
+                  <QuickCloudPlans
+                    plans={publicPlans}
+                    signedIn={signedIn}
+                    compact
+                  />
                 </div>
 
                 <div className="conversation-result-actions">
@@ -493,19 +480,11 @@ export function ConversationBuilder({
                       با همراهی ادامه بده
                       <ArrowLeft size={17} aria-hidden="true" />
                     </Link>
-                  ) : parspackQuotesReady ? (
-                    <Link
-                      className="button button-primary"
-                      href="/login?next=/compass?resume=1"
-                    >
-                      ورود و دریافت قیمت روز
+                  ) : (
+                    <Link className="button button-primary" href="/cloud-servers">
+                      همه سرورهای آماده
                       <ArrowLeft size={17} aria-hidden="true" />
                     </Link>
-                  ) : (
-                    <span className="button button-disabled" aria-disabled="true">
-                      قیمت روز بعد از اتصال API
-                      <ArrowLeft size={17} aria-hidden="true" />
-                    </span>
                   )}
                 </div>
               </motion.div>

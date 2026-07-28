@@ -13,8 +13,29 @@ export type PlanSnapshot = {
   sizeCode: string;
   imageCode: string;
   deliveryMode: DeliveryMode;
+  vcpu: number | null;
+  ramGb: number | null;
+  storageGb: number | null;
   salePriceRial: string;
+  renewalPriceRial: string | null;
   estimatedProviderCostRial: string;
+  deliveryEstimateMinutes: number;
+  parchinIncluded: boolean;
+};
+
+export type PublicPlanOffer = {
+  id: string;
+  code: string;
+  title: string;
+  description: string | null;
+  deliveryMode: DeliveryMode;
+  vcpu: number | null;
+  ramGb: number | null;
+  storageGb: number | null;
+  salePriceRial: string;
+  renewalPriceRial: string;
+  deliveryEstimateMinutes: number;
+  parchinIncluded: boolean;
 };
 
 export function toPlanSnapshot(plan: InfrastructurePlan): PlanSnapshot {
@@ -27,8 +48,31 @@ export function toPlanSnapshot(plan: InfrastructurePlan): PlanSnapshot {
     sizeCode: plan.sizeCode,
     imageCode: plan.imageCode,
     deliveryMode: plan.deliveryMode,
+    vcpu: plan.vcpu,
+    ramGb: plan.ramGb,
+    storageGb: plan.storageGb,
     salePriceRial: plan.salePriceRial.toString(),
+    renewalPriceRial: plan.renewalPriceRial?.toString() ?? null,
     estimatedProviderCostRial: plan.estimatedProviderCostRial.toString(),
+    deliveryEstimateMinutes: plan.deliveryEstimateMinutes,
+    parchinIncluded: plan.parchinIncluded,
+  };
+}
+
+export function toPublicPlanOffer(plan: InfrastructurePlan): PublicPlanOffer {
+  return {
+    id: plan.id,
+    code: plan.code,
+    title: plan.title,
+    description: plan.description,
+    deliveryMode: plan.deliveryMode,
+    vcpu: plan.vcpu,
+    ramGb: plan.ramGb,
+    storageGb: plan.storageGb,
+    salePriceRial: plan.salePriceRial.toString(),
+    renewalPriceRial: (plan.renewalPriceRial ?? plan.salePriceRial).toString(),
+    deliveryEstimateMinutes: plan.deliveryEstimateMinutes,
+    parchinIncluded: plan.parchinIncluded,
   };
 }
 
@@ -49,6 +93,11 @@ export async function listActivePlans() {
     where: { active: true },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
   });
+}
+
+export async function listPublicPlanOffers() {
+  const plans = await listActivePlans();
+  return plans.map(toPublicPlanOffer);
 }
 
 export async function listAllPlans() {

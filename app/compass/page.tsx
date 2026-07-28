@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 
 import { ConversationBuilder } from "@/components/conversation-builder";
-import { getEnv } from "@/lib/env";
+import { listPublicPlanOffers } from "@/lib/orders/plans";
 import type { ProjectKind } from "@/lib/recommendation/types";
+import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "گفت‌وگوی ساخت سرور | ابرچین",
@@ -37,17 +38,17 @@ export default async function CompassPage({
       ? (rawProject as ProjectKind)
       : undefined;
   const resume = firstValue(params.resume) === "1";
-  const env = getEnv();
-  const parspackQuotesReady =
-    env.parspackEnabled &&
-    env.infrastructureProviderMode === "parspack" &&
-    Boolean(env.parspackApiToken);
+  const [publicPlans, user] = await Promise.all([
+    listPublicPlanOffers(),
+    getCurrentUser(),
+  ]);
 
   return (
     <ConversationBuilder
       initialProject={initialProject}
       resume={resume}
-      parspackQuotesReady={parspackQuotesReady}
+      publicPlans={publicPlans}
+      signedIn={Boolean(user)}
     />
   );
 }

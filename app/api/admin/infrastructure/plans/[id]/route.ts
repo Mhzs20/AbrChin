@@ -31,12 +31,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (typeof body.regionCode === "string") data.regionCode = body.regionCode.trim();
     if (typeof body.sizeCode === "string") data.sizeCode = body.sizeCode.trim();
     if (typeof body.imageCode === "string") data.imageCode = body.imageCode.trim();
+    if (body.vcpu != null) data.vcpu = assertPositiveIntegerToman(body.vcpu);
+    if (body.ramGb != null) data.ramGb = assertPositiveIntegerToman(body.ramGb);
+    if (body.storageGb != null) data.storageGb = assertPositiveIntegerToman(body.storageGb);
     if (body.salePriceToman != null) data.salePriceRial = tomanToRial(assertPositiveIntegerToman(body.salePriceToman));
+    if (body.renewalPriceToman != null) {
+      data.renewalPriceRial = tomanToRial(assertPositiveIntegerToman(body.renewalPriceToman));
+    }
     if (body.estimatedProviderCostToman != null) {
       data.estimatedProviderCostRial = tomanToRial(assertPositiveIntegerToman(body.estimatedProviderCostToman));
     }
     if (typeof body.active === "boolean") data.active = body.active;
     if (typeof body.sortOrder === "number") data.sortOrder = body.sortOrder;
+    if (body.deliveryEstimateMinutes != null) {
+      data.deliveryEstimateMinutes = assertPositiveIntegerToman(body.deliveryEstimateMinutes);
+    }
+    if (typeof body.parchinIncluded === "boolean") data.parchinIncluded = body.parchinIncluded;
 
     const plan = await prisma.infrastructurePlan.update({ where: { id }, data });
 

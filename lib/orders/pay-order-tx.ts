@@ -52,15 +52,21 @@ export async function executePayOrderWithWalletTx(
   if (order.status !== ServiceOrderStatus.PENDING_PAYMENT) {
     throw new WalletError("invalid_status", "این سفارش قابل پرداخت نیست.");
   }
+  if (order.quoteExpiresAt && order.quoteExpiresAt.getTime() <= Date.now()) {
+    throw new WalletError(
+      "quote_expired",
+      "اعتبار قیمت این سفارش تمام شده؛ قیمت را دوباره دریافت کنید.",
+    );
+  }
 
   const plan = order.planId
     ? await tx.infrastructurePlan.findUnique({ where: { id: order.planId } })
     : null;
-  if (!plan) {
+  if (!plan || !plan.active) {
     throw new WalletError("invalid_plan", "پلن سفارش معتبر نیست.");
   }
 
-  const amountRial = plan.salePriceRial;
+  const amountRial = order.amount;
   const idempotencyKey = `order_pay_${order.id}`;
 
   const existingLedger = await tx.walletLedgerEntry.findUnique({ where: { idempotencyKey } });

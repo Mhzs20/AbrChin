@@ -13,8 +13,14 @@ type PlanRow = {
   regionCode: string;
   sizeCode: string;
   imageCode: string;
+  vcpu: number | null;
+  ramGb: number | null;
+  storageGb: number | null;
   salePriceRial: string;
+  renewalPriceRial: string | null;
   estimatedProviderCostRial: string;
+  deliveryEstimateMinutes: number;
+  parchinIncluded: boolean;
   active: boolean;
   sortOrder: number;
 };
@@ -32,8 +38,14 @@ export function AdminPlansPanel({ initialPlans }: { initialPlans: PlanRow[] }) {
     regionCode: "",
     sizeCode: "",
     imageCode: "",
+    vcpu: "",
+    ramGb: "",
+    storageGb: "",
     salePriceToman: "",
+    renewalPriceToman: "",
     estimatedProviderCostToman: "",
+    deliveryEstimateMinutes: "15",
+    parchinIncluded: false,
     active: true,
     sortOrder: "0",
   });
@@ -48,8 +60,14 @@ export function AdminPlansPanel({ initialPlans }: { initialPlans: PlanRow[] }) {
       regionCode: "",
       sizeCode: "",
       imageCode: "",
+      vcpu: "",
+      ramGb: "",
+      storageGb: "",
       salePriceToman: "",
+      renewalPriceToman: "",
       estimatedProviderCostToman: "",
+      deliveryEstimateMinutes: "15",
+      parchinIncluded: false,
       active: true,
       sortOrder: "0",
     });
@@ -67,8 +85,16 @@ export function AdminPlansPanel({ initialPlans }: { initialPlans: PlanRow[] }) {
       regionCode: plan.regionCode,
       sizeCode: plan.sizeCode,
       imageCode: plan.imageCode,
+      vcpu: plan.vcpu == null ? "" : String(plan.vcpu),
+      ramGb: plan.ramGb == null ? "" : String(plan.ramGb),
+      storageGb: plan.storageGb == null ? "" : String(plan.storageGb),
       salePriceToman: String(Math.floor(Number(plan.salePriceRial) / 10)),
+      renewalPriceToman: String(
+        Math.floor(Number(plan.renewalPriceRial ?? plan.salePriceRial) / 10),
+      ),
       estimatedProviderCostToman: String(Math.floor(Number(plan.estimatedProviderCostRial) / 10)),
+      deliveryEstimateMinutes: String(plan.deliveryEstimateMinutes),
+      parchinIncluded: plan.parchinIncluded,
       active: plan.active,
       sortOrder: String(plan.sortOrder),
     });
@@ -83,7 +109,12 @@ export function AdminPlansPanel({ initialPlans }: { initialPlans: PlanRow[] }) {
       const payload = {
         ...form,
         salePriceToman: Number(form.salePriceToman),
+        renewalPriceToman: Number(form.renewalPriceToman || form.salePriceToman),
         estimatedProviderCostToman: Number(form.estimatedProviderCostToman),
+        vcpu: Number(form.vcpu),
+        ramGb: Number(form.ramGb),
+        storageGb: Number(form.storageGb),
+        deliveryEstimateMinutes: Number(form.deliveryEstimateMinutes),
         sortOrder: Number(form.sortOrder),
       };
       const response = await fetch(
@@ -164,11 +195,26 @@ export function AdminPlansPanel({ initialPlans }: { initialPlans: PlanRow[] }) {
         <FormField id="plan-image" label="کد Image">
           <input id="plan-image" value={form.imageCode} onChange={(e) => setForm((f) => ({ ...f, imageCode: e.target.value }))} className="product-tech" />
         </FormField>
+        <FormField id="plan-vcpu" label="vCPU نمایشی">
+          <input id="plan-vcpu" type="number" min={1} value={form.vcpu} onChange={(e) => setForm((f) => ({ ...f, vcpu: e.target.value }))} required />
+        </FormField>
+        <FormField id="plan-ram" label="RAM (GB)">
+          <input id="plan-ram" type="number" min={1} value={form.ramGb} onChange={(e) => setForm((f) => ({ ...f, ramGb: e.target.value }))} required />
+        </FormField>
+        <FormField id="plan-storage" label="فضا (GB)">
+          <input id="plan-storage" type="number" min={1} value={form.storageGb} onChange={(e) => setForm((f) => ({ ...f, storageGb: e.target.value }))} required />
+        </FormField>
         <FormField id="plan-sale" label="قیمت فروش (تومان)">
           <input id="plan-sale" type="number" min={1} value={form.salePriceToman} onChange={(e) => setForm((f) => ({ ...f, salePriceToman: e.target.value }))} required />
         </FormField>
+        <FormField id="plan-renewal" label="قیمت تمدید ماهانه (تومان)">
+          <input id="plan-renewal" type="number" min={1} value={form.renewalPriceToman} onChange={(e) => setForm((f) => ({ ...f, renewalPriceToman: e.target.value }))} required />
+        </FormField>
         <FormField id="plan-cost" label="هزینه Provider (تومان)">
           <input id="plan-cost" type="number" min={1} value={form.estimatedProviderCostToman} onChange={(e) => setForm((f) => ({ ...f, estimatedProviderCostToman: e.target.value }))} required />
+        </FormField>
+        <FormField id="plan-delivery" label="زمان تحویل تقریبی (دقیقه)">
+          <input id="plan-delivery" type="number" min={1} value={form.deliveryEstimateMinutes} onChange={(e) => setForm((f) => ({ ...f, deliveryEstimateMinutes: e.target.value }))} required />
         </FormField>
         <FormField id="plan-sort" label="ترتیب نمایش">
           <input id="plan-sort" type="number" value={form.sortOrder} onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))} />
@@ -176,6 +222,10 @@ export function AdminPlansPanel({ initialPlans }: { initialPlans: PlanRow[] }) {
         <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} />
           فعال
+        </label>
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input type="checkbox" checked={form.parchinIncluded} onChange={(e) => setForm((f) => ({ ...f, parchinIncluded: e.target.checked }))} />
+          پرچین در این پلن فعال است
         </label>
         {error ? <p className="product-error">{error}</p> : null}
       </ConfirmDialog>

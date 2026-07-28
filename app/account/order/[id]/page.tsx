@@ -17,10 +17,10 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AccountOrderPlanPage({ params }: { params: Promise<{ id: string }> }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login?next=/account/order");
-
   const { id } = await params;
+  const user = await getCurrentUser();
+  if (!user) redirect(`/login?next=${encodeURIComponent(`/account/order/${id}`)}`);
+
   const plan = await getActivePlanById(id);
   if (!plan) redirect("/account/order");
 
@@ -39,11 +39,16 @@ export default async function AccountOrderPlanPage({ params }: { params: Promise
         <p style={{ marginTop: 0 }}>{plan.description}</p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
           <StatusBadge label={deliveryModeLabel[plan.deliveryMode]} tone="info" />
-          <span className="product-tech">{formatTomanFa(plan.salePriceRial)} تومان</span>
+          {plan.vcpu ? <span className="product-tech">{plan.vcpu} vCPU</span> : null}
+          {plan.ramGb ? <span className="product-tech">{plan.ramGb} GB RAM</span> : null}
+          {plan.storageGb ? <span className="product-tech">{plan.storageGb} GB فضا</span> : null}
+          <span className="product-tech">ماه اول {formatTomanFa(plan.salePriceRial)} تومان</span>
         </div>
         <div style={{ fontSize: 13, color: "var(--product-muted)" }}>
-          منطقه: <span className="product-tech">{plan.regionCode}</span> · اندازه:{" "}
-          <span className="product-tech">{plan.sizeCode}</span>
+          تمدید ماهانه:{" "}
+          <strong>{formatTomanFa(plan.renewalPriceRial ?? plan.salePriceRial)} تومان</strong>
+          {" · "}تحویل حدود {plan.deliveryEstimateMinutes.toLocaleString("fa-IR")} دقیقه
+          {" · "}پرچین: {plan.parchinIncluded ? "فعال" : "قابل افزودن"}
         </div>
       </SectionCard>
       <OrderCheckoutPanel planId={plan.id} planTitle={plan.title} priceToman={formatTomanFa(plan.salePriceRial)} />

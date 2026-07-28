@@ -124,24 +124,24 @@ enum PaymentGatewayEnvironment {
 }
 
 model User {
-  id               String         @id @default(cuid())
-  mobile           String         @unique
-  displayName      String?
-  role             UserRole       @default(CUSTOMER)
-  mobileVerifiedAt DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  sessions         Session[]
-  wallet           Wallet?
-  orders           ServiceOrder[]
-  gatewayAudits    PaymentGatewayAuditLog[] @relation("GatewayAuditActor")
-  updatedGateways  PaymentGatewayConfig[]   @relation("GatewayUpdatedBy")
-  walletTopUpSettingsUpdated WalletTopUpSettings[] @relation("WalletTopUpSettingsUpdatedBy")
-  infrastructureOrders InfrastructureOrder[]
-  cloudInstances       CloudInstance[]
-  fundingConfirmations ProviderFundingConfirmation[] @relation("FundingConfirmedBy")
-  auditLogs            AuditLog[] @relation("AuditActor")
-  infrastructurePlansUpdated InfrastructurePlan[] @relation("PlanUpdatedBy")
+  id                         String                        @id @default(cuid())
+  mobile                     String                        @unique
+  displayName                String?
+  role                       UserRole                      @default(CUSTOMER)
+  mobileVerifiedAt           DateTime?
+  createdAt                  DateTime                      @default(now())
+  updatedAt                  DateTime                      @updatedAt
+  sessions                   Session[]
+  wallet                     Wallet?
+  orders                     ServiceOrder[]
+  gatewayAudits              PaymentGatewayAuditLog[]      @relation("GatewayAuditActor")
+  updatedGateways            PaymentGatewayConfig[]        @relation("GatewayUpdatedBy")
+  walletTopUpSettingsUpdated WalletTopUpSettings[]         @relation("WalletTopUpSettingsUpdatedBy")
+  infrastructureOrders       InfrastructureOrder[]
+  cloudInstances             CloudInstance[]
+  fundingConfirmations       ProviderFundingConfirmation[] @relation("FundingConfirmedBy")
+  auditLogs                  AuditLog[]                    @relation("AuditActor")
+  infrastructurePlansUpdated InfrastructurePlan[]          @relation("PlanUpdatedBy")
 }
 
 model OtpChallenge {
@@ -159,15 +159,15 @@ model OtpChallenge {
 }
 
 model Session {
-  id         String    @id @default(cuid())
-  userId     String
-  tokenHash  String    @unique
-  expiresAt  DateTime
-  revokedAt  DateTime?
-  createdAt  DateTime  @default(now())
-  ipAddress  String?
-  userAgent  String?
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  ipAddress String?
+  userAgent String?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
@@ -243,21 +243,21 @@ model WalletTopUpSettings {
 }
 
 model PaymentGatewayConfig {
-  id             String                     @id @default(cuid())
-  provider       PaymentGatewayProvider     @unique
-  displayName    String
-  enabled        Boolean                    @default(false)
-  isDefault      Boolean                    @default(false)
-  priority       Int
-  environment    PaymentGatewayEnvironment
-  minAmountRial  BigInt?
-  maxAmountRial  BigInt?
-  description    String?
-  createdAt      DateTime                   @default(now())
-  updatedAt      DateTime                   @updatedAt
-  updatedById    String?
-  updatedBy      User?                      @relation("GatewayUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  auditLogs      PaymentGatewayAuditLog[]
+  id            String                    @id @default(cuid())
+  provider      PaymentGatewayProvider    @unique
+  displayName   String
+  enabled       Boolean                   @default(false)
+  isDefault     Boolean                   @default(false)
+  priority      Int
+  environment   PaymentGatewayEnvironment
+  minAmountRial BigInt?
+  maxAmountRial BigInt?
+  description   String?
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  updatedById   String?
+  updatedBy     User?                     @relation("GatewayUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  auditLogs     PaymentGatewayAuditLog[]
 
   @@index([enabled, isDefault])
   @@index([priority])
@@ -281,21 +281,22 @@ model PaymentGatewayAuditLog {
 }
 
 model ServiceOrder {
-  id           String             @id @default(cuid())
-  userId       String
-  title        String
-  description  String?
-  amount       BigInt
-  currency     String             @default("IRR")
-  status       ServiceOrderStatus @default(DRAFT)
-  planCode     String?
-  planId       String?
-  planSnapshot Json?
-  paidAt       DateTime?
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan         InfrastructurePlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  id                  String               @id @default(cuid())
+  userId              String
+  title               String
+  description         String?
+  amount              BigInt
+  currency            String               @default("IRR")
+  status              ServiceOrderStatus   @default(DRAFT)
+  planCode            String?
+  planId              String?
+  planSnapshot        Json?
+  quoteExpiresAt      DateTime?
+  paidAt              DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                InfrastructurePlan?  @relation(fields: [planId], references: [id], onDelete: SetNull)
   infrastructureOrder InfrastructureOrder?
 
   @@index([userId, createdAt])
@@ -313,8 +314,14 @@ model InfrastructurePlan {
   sizeCode                  String
   imageCode                 String
   deliveryMode              DeliveryMode
+  vcpu                      Int?
+  ramGb                     Int?
+  storageGb                 Int?
   salePriceRial             BigInt
+  renewalPriceRial          BigInt?
   estimatedProviderCostRial BigInt
+  deliveryEstimateMinutes   Int                    @default(15)
+  parchinIncluded           Boolean                @default(false)
   active                    Boolean                @default(true)
   sortOrder                 Int                    @default(0)
   createdAt                 DateTime               @default(now())
@@ -329,26 +336,26 @@ model InfrastructurePlan {
 }
 
 model InfrastructureOrder {
-  id                 String                    @id @default(cuid())
-  serviceOrderId     String                    @unique
-  userId             String
-  planId             String
-  provider           InfrastructureProvider
-  deliveryMode       DeliveryMode
-  status             InfrastructureOrderStatus @default(WAITING_ADMIN_FUNDING)
-  requiredFundingRial BigInt
-  desiredInstanceName String?                  @unique
+  id                             String                        @id @default(cuid())
+  serviceOrderId                 String                        @unique
+  userId                         String
+  planId                         String
+  provider                       InfrastructureProvider
+  deliveryMode                   DeliveryMode
+  status                         InfrastructureOrderStatus     @default(WAITING_ADMIN_FUNDING)
+  requiredFundingRial            BigInt
+  desiredInstanceName            String?                       @unique
   reconcileNoResourceConfirmedAt DateTime?
-  createdAt          DateTime                  @default(now())
-  updatedAt          DateTime                  @updatedAt
-  serviceOrder       ServiceOrder              @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
-  user               User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan               InfrastructurePlan        @relation(fields: [planId], references: [id], onDelete: Restrict)
-  fundingConfirmations ProviderFundingConfirmation[]
-  provisioningJobs   ProvisioningJob[]
-  cloudInstance      CloudInstance?
-  notifications      AdminNotification[]
-  operationLogs      ProviderOperationLog[]
+  createdAt                      DateTime                      @default(now())
+  updatedAt                      DateTime                      @updatedAt
+  serviceOrder                   ServiceOrder                  @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  user                           User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                           InfrastructurePlan            @relation(fields: [planId], references: [id], onDelete: Restrict)
+  fundingConfirmations           ProviderFundingConfirmation[]
+  provisioningJobs               ProvisioningJob[]
+  cloudInstance                  CloudInstance?
+  notifications                  AdminNotification[]
+  operationLogs                  ProviderOperationLog[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -378,14 +385,14 @@ model ProviderFundingConfirmation {
 }
 
 model ProvisioningJob {
-  id                    String                @id @default(cuid())
+  id                    String                 @id @default(cuid())
   infrastructureOrderId String
   operation             String
-  status                ProvisioningJobStatus @default(QUEUED)
-  idempotencyKey        String                @unique
-  attempt               Int                   @default(1)
-  runCount              Int                   @default(0)
-  claimCount            Int                   @default(0)
+  status                ProvisioningJobStatus  @default(QUEUED)
+  idempotencyKey        String                 @unique
+  attempt               Int                    @default(1)
+  runCount              Int                    @default(0)
+  claimCount            Int                    @default(0)
   workerId              String?
   lockedAt              DateTime?
   leaseExpiresAt        DateTime?
@@ -395,9 +402,9 @@ model ProvisioningJob {
   lastErrorMessage      String?
   startedAt             DateTime?
   finishedAt            DateTime?
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
-  infrastructureOrder   InfrastructureOrder   @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  infrastructureOrder   InfrastructureOrder    @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
   operationLogs         ProviderOperationLog[]
 
   @@index([infrastructureOrderId, createdAt])
@@ -406,24 +413,24 @@ model ProvisioningJob {
 }
 
 model CloudInstance {
-  id                    String              @id @default(cuid())
-  infrastructureOrderId String              @unique
+  id                    String                 @id @default(cuid())
+  infrastructureOrderId String                 @unique
   userId                String
   provider              InfrastructureProvider
-  providerInstanceId    String              @unique
+  providerInstanceId    String                 @unique
   name                  String
   region                String
   size                  String
   image                 String
   deliveryMode          DeliveryMode
   ipv4                  String?
-  status                CloudInstanceStatus @default(PENDING)
+  status                CloudInstanceStatus    @default(PENDING)
   provisionedAt         DateTime?
   terminatedAt          DateTime?
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  infrastructureOrder   InfrastructureOrder @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
-  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  infrastructureOrder   InfrastructureOrder    @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([status])
@@ -465,13 +472,13 @@ model ProviderOperationLog {
 }
 
 model WorkerHeartbeat {
-  id           String   @id @default("provisioning")
-  workerId     String
-  lastSeenAt   DateTime
-  lastCycleAt  DateTime?
-  cyclesTotal  Int      @default(0)
-  status       String   @default("down")
-  updatedAt    DateTime @updatedAt
+  id          String    @id @default("provisioning")
+  workerId    String
+  lastSeenAt  DateTime
+  lastCycleAt DateTime?
+  cyclesTotal Int       @default(0)
+  status      String    @default("down")
+  updatedAt   DateTime  @updatedAt
 }
 
 model AuditLog {

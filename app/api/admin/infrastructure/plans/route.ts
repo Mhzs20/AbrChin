@@ -24,8 +24,14 @@ export async function GET() {
         regionCode: plan.regionCode,
         sizeCode: plan.sizeCode,
         imageCode: plan.imageCode,
+        vcpu: plan.vcpu,
+        ramGb: plan.ramGb,
+        storageGb: plan.storageGb,
         salePriceRial: plan.salePriceRial.toString(),
+        renewalPriceRial: plan.renewalPriceRial?.toString() ?? null,
         estimatedProviderCostRial: plan.estimatedProviderCostRial.toString(),
+        deliveryEstimateMinutes: plan.deliveryEstimateMinutes,
+        parchinIncluded: plan.parchinIncluded,
         active: plan.active,
         sortOrder: plan.sortOrder,
       })),
@@ -52,6 +58,9 @@ export async function POST(request: Request) {
     if (!code || !title) return jsonError("کد و عنوان الزامی است.", 400);
 
     const salePriceRial = tomanToRial(assertPositiveIntegerToman(body.salePriceToman));
+    const renewalPriceRial = tomanToRial(
+      assertPositiveIntegerToman(body.renewalPriceToman ?? body.salePriceToman),
+    );
     const estimatedProviderCostRial = tomanToRial(assertPositiveIntegerToman(body.estimatedProviderCostToman));
 
     const plan = await prisma.infrastructurePlan.create({
@@ -64,8 +73,14 @@ export async function POST(request: Request) {
         sizeCode: String(body.sizeCode ?? ""),
         imageCode: String(body.imageCode ?? ""),
         deliveryMode: body.deliveryMode === "MANAGED" ? DeliveryMode.MANAGED : DeliveryMode.RAW,
+        vcpu: assertPositiveIntegerToman(body.vcpu),
+        ramGb: assertPositiveIntegerToman(body.ramGb),
+        storageGb: assertPositiveIntegerToman(body.storageGb),
         salePriceRial,
+        renewalPriceRial,
         estimatedProviderCostRial,
+        deliveryEstimateMinutes: assertPositiveIntegerToman(body.deliveryEstimateMinutes),
+        parchinIncluded: body.parchinIncluded === true,
         active: body.active !== false,
         sortOrder: Number(body.sortOrder ?? 0),
         updatedById: admin.id,

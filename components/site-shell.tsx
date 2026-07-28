@@ -26,14 +26,17 @@ type NavigationItem = {
 
 const navigation: NavigationItem[] = [
   { href: "/", label: "خانه", shortLabel: "خانه", icon: Home },
-  { href: "/compass", label: "قطب‌نما", shortLabel: "قطب‌نما", icon: Compass },
+  { href: "/cloud-servers", label: "سرور ابری", shortLabel: "خرید", icon: Cloud },
+  { href: "/compass", label: "راهنمای انتخاب", shortLabel: "راهنما", icon: Compass },
   { href: "/solutions", label: "راهکارها", shortLabel: "راهکارها", icon: Layers3 },
   { href: "/support", label: "سطح همراهی", shortLabel: "همراهی", icon: HeartHandshake },
   { href: "/about", label: "درباره ابرچین", shortLabel: "درباره", icon: Cloud },
   { href: "/help", label: "راهنما و ارتباط", shortLabel: "راهنما", icon: CircleHelp },
 ];
 
-const mobileNavigation = navigation.filter((item) => item.href !== "/about");
+const mobileNavigation = navigation.filter(
+  (item) => item.href !== "/about" && item.href !== "/support",
+);
 
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === href;
@@ -76,9 +79,9 @@ export function SiteShell({ children }: { children: ReactNode }) {
               برای شروع کنارتیم
             </span>
             <AuthNavLink />
-            <Link className="button button-primary button-compact" href="/compass">
+            <Link className="button button-primary button-compact" href="/cloud-servers">
               <Sparkles size={17} aria-hidden="true" />
-              پیشنهاد من
+              خرید سرور
             </Link>
           </div>
         </header>

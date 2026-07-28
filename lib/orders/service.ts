@@ -18,6 +18,8 @@ import {
   ServiceOrderStatus,
 } from "@prisma/client";
 
+const QUOTE_VALIDITY_MS = 10 * 60 * 1000;
+
 export async function createServiceOrder(userId: string, planCode: string) {
   const plan = await getActivePlanByCode(planCode);
   if (!plan) {
@@ -38,6 +40,7 @@ export async function createServiceOrder(userId: string, planCode: string) {
       planCode: plan.code,
       planId: plan.id,
       planSnapshot: snapshot,
+      quoteExpiresAt: new Date(Date.now() + QUOTE_VALIDITY_MS),
     },
   });
 }

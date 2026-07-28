@@ -15,6 +15,7 @@ server.stderr.on("data", (chunk) => { serverLog += chunk.toString(); });
 
 const checks = [
   ["/", "زیرساختت رو سوار بر ابرها بساز"],
+  ["/cloud-servers", "خرید سریع سرور ابری"],
   ["/compass", "چی می‌سازی یا می‌خواهی منتقل کنی؟"],
   ["/compass?project=commerce", "کاربرهات بیشتر کجا هستند؟"],
   ["/solutions", "هر پروژه، چینش خودش رو می‌خواد"],
@@ -26,7 +27,7 @@ const checks = [
   ["/api/auth/me", "برای ادامه وارد شوید"],
   ["/api/wallet", "برای ادامه وارد شوید"],
   ["/robots.txt", "sitemap"],
-  ["/sitemap.xml", "https://abrchin.ir/compass"],
+  ["/sitemap.xml", "https://abrchin.ir/cloud-servers"],
 ];
 
 async function waitForServer() {

@@ -27,13 +27,13 @@ export default function HomePage() {
         </p>
 
         <div className="home-actions">
-          <Link className="button button-primary button-large" href="/compass">
-            زیرساخت من رو بچین
+          <Link className="button button-primary button-large" href="/cloud-servers">
+            خرید سریع سرور ابری
             <ArrowLeft size={19} aria-hidden="true" />
           </Link>
-          <Link className="button button-quiet button-large" href="/solutions">
+          <Link className="button button-quiet button-large" href="/compass">
             <Layers3 size={18} aria-hidden="true" />
-            راهکارها رو ببین
+            برای انتخاب کمک می‌خوام
           </Link>
         </div>
 
