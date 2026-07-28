@@ -4,6 +4,7 @@ dist/
 out/
 .DS_Store
 *.log
+*.tsbuildinfo
 .env*
 !.env.example
 !.env.production.example

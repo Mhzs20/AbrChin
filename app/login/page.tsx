@@ -8,10 +8,24 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function LoginPage() {
+function safeNextPath(value: string | string[] | undefined) {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//")) {
+    return "/account";
+  }
+  return candidate;
+}
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+
   return (
     <section className="auth-page page-view" aria-label="ورود">
-      <LoginForm />
+      <LoginForm nextPath={safeNextPath(params.next)} />
     </section>
   );
 }

@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "principle": "motion explains how scattered needs become a stable cloud arrangement",
+  "reducedMotion": "remove translation, scaling and path drawing; keep immediate state changes",
+  "transitions": {
+    "questionChange": { "durationMs": 420, "easing": [0.2, 0.78, 0.24, 1] },
+    "cloudNodeActivation": { "durationMs": 560, "easing": [0.2, 0.78, 0.24, 1] },
+    "modal": { "durationMs": 200, "easing": [0.2, 0.78, 0.24, 1] }
+  }
+}

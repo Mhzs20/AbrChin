@@ -24,7 +24,8 @@ export function createInfrastructureProvider(): InfrastructureProviderAdapter {
       throw new InfrastructureError("provider_disabled", "Mock provider is not allowed in production");
     }
     return new ParsPackProvider({
-      baseUrl: env.parspackApiBaseUrl,
+      managementBaseUrl: env.parspackApiBaseUrl,
+      publicBaseUrl: env.parspackPublicApiBaseUrl,
       token: env.parspackApiToken,
       timeoutMs: env.parspackTimeoutMs,
     });

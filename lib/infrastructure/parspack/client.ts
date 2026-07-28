@@ -3,10 +3,12 @@ import { InfrastructureProvider } from "@prisma/client";
 import { InfrastructureError } from "@/lib/infrastructure/errors";
 import {
   mapProviderHttpError,
-  parseCatalogItems,
+  parseParsPackImages,
+  parseParsPackNextPage,
+  parseParsPackRegions,
+  parseParsPackSizes,
   parseParsPackVm,
   parseVmList,
-  sanitizeProviderResponse,
 } from "@/lib/infrastructure/parspack/mapper";
 import type {
   CreateInstanceInput,
@@ -17,39 +19,59 @@ import type {
 } from "@/lib/infrastructure/types";
 
 type ParsPackClientConfig = {
-  baseUrl: string;
+  managementBaseUrl?: string;
+  publicBaseUrl?: string;
+  /** @deprecated Use managementBaseUrl. Kept for compatibility with existing tests/callers. */
+  baseUrl?: string;
   token: string;
   timeoutMs: number;
   fetchImpl?: typeof fetch;
   enabled?: boolean;
 };
 
-type ParsPackListResponse<T> = {
-  data?: T[];
-  items?: T[];
-};
+type ApiScope = "management" | "public";
 
-type ParsPackVm = {
-  id?: string | number;
-  name?: string;
-  region?: string;
-  size?: string;
-  image?: string;
-  ipv4?: string | null;
-  ip?: string | null;
-  status?: string;
-};
+const catalogPageSize = 200;
+
+function trimBaseUrl(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+function inferPublicBaseUrl(managementBaseUrl: string): string {
+  if (managementBaseUrl.endsWith("/api/v1")) {
+    return `${managementBaseUrl.slice(0, -"/api/v1".length)}/api/public/v1`;
+  }
+  return managementBaseUrl;
+}
+
+function asProviderResponse<T>(parser: (payload: unknown) => T, payload: unknown): T {
+  try {
+    return parser(payload);
+  } catch {
+    throw new InfrastructureError(
+      "provider_invalid_response",
+      "ParsPack returned an invalid response",
+    );
+  }
+}
 
 export class ParsPackProvider implements InfrastructureProviderAdapter {
   readonly provider = InfrastructureProvider.PARSPACK;
-  private readonly baseUrl: string;
+  private readonly managementBaseUrl: string;
+  private readonly publicBaseUrl: string;
   private readonly token: string;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
   private readonly enabled: boolean;
 
   constructor(config: ParsPackClientConfig) {
-    this.baseUrl = config.baseUrl.replace(/\/$/, "");
+    const managementBaseUrl = trimBaseUrl(
+      config.managementBaseUrl ?? config.baseUrl ?? "https://my.parspack.com/cserver/api/v1",
+    );
+    this.managementBaseUrl = managementBaseUrl;
+    this.publicBaseUrl = trimBaseUrl(
+      config.publicBaseUrl ?? inferPublicBaseUrl(managementBaseUrl),
+    );
     this.token = config.token;
     this.timeoutMs = config.timeoutMs;
     this.fetchImpl = config.fetchImpl ?? fetch;
@@ -62,16 +84,23 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
     }
   }
 
-  private async request<T>(path: string, init?: RequestInit): Promise<{ data: T; status: number }> {
+  private async request<T>(
+    scope: ApiScope,
+    path: string,
+    init?: RequestInit,
+  ): Promise<{ data: T; status: number }> {
     this.ensureEnabled();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const baseUrl = scope === "management" ? this.managementBaseUrl : this.publicBaseUrl;
+
     try {
-      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      const response = await this.fetchImpl(`${baseUrl}${path}`, {
         ...init,
         signal: controller.signal,
         headers: {
           Accept: "application/json",
+          "Accept-Language": "en",
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.token}`,
           ...(init?.headers ?? {}),
@@ -102,31 +131,61 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
     }
   }
 
+  private async readCatalogCollection<T>(
+    path: string,
+    parser: (payload: unknown) => T[],
+  ): Promise<T[]> {
+    const items: T[] = [];
+    let page = 1;
+
+    for (let requestCount = 0; requestCount < 20; requestCount += 1) {
+      const { data } = await this.request<unknown>(
+        "public",
+        `${path}?page=${page}&per_page=${catalogPageSize}`,
+      );
+      items.push(...asProviderResponse(parser, data));
+
+      const nextPage = parseParsPackNextPage(data);
+      if (nextPage == null) return items;
+      if (nextPage <= page) {
+        throw new InfrastructureError(
+          "provider_invalid_response",
+          "ParsPack returned invalid pagination links",
+        );
+      }
+      page = nextPage;
+    }
+
+    throw new InfrastructureError(
+      "provider_invalid_response",
+      "ParsPack catalog pagination exceeded the safety limit",
+    );
+  }
+
   async checkConnection(): Promise<ProviderHealth> {
     try {
-      await this.request("/regions");
+      const { data } = await this.request<unknown>(
+        "public",
+        "/regions?page=1&per_page=1",
+      );
+      asProviderResponse(parseParsPackRegions, data);
       return { ok: true, message: "اتصال برقرار است", checkedAt: new Date() };
-    } catch (error) {
-      const message = error instanceof InfrastructureError ? "خطای اتصال" : "خطای اتصال";
-      return { ok: false, message, checkedAt: new Date() };
+    } catch {
+      return { ok: false, message: "خطای اتصال", checkedAt: new Date() };
     }
   }
 
   async syncCatalog(): Promise<ProviderCatalog> {
-    const [regionsPayload, sizesPayload, imagesPayload] = await Promise.all([
-      this.request<unknown>("/regions"),
-      this.request<unknown>("/sizes"),
-      this.request<unknown>("/images"),
+    const [regions, sizes, images] = await Promise.all([
+      this.readCatalogCollection("/regions", parseParsPackRegions),
+      this.readCatalogCollection("/sizes", parseParsPackSizes),
+      this.readCatalogCollection("/images", parseParsPackImages),
     ]);
-    return {
-      regions: parseCatalogItems(regionsPayload.data as never),
-      sizes: parseCatalogItems(sizesPayload.data as never),
-      images: parseCatalogItems(imagesPayload.data as never),
-    };
+    return { regions, sizes, images };
   }
 
   async createInstance(input: CreateInstanceInput): Promise<ProviderInstance> {
-    const { data, status } = await this.request<ParsPackVm>("/vms", {
+    const { data } = await this.request<unknown>("management", "/vms", {
       method: "POST",
       body: JSON.stringify({
         name: input.name,
@@ -135,19 +194,29 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
         image: input.image,
       }),
     });
-    void sanitizeProviderResponse({ status, body: data });
-    return parseParsPackVm(data);
+    return asProviderResponse(parseParsPackVm, data);
   }
 
   async getInstance(providerInstanceId: string): Promise<ProviderInstance> {
-    const { data } = await this.request<ParsPackVm>(`/vms/${encodeURIComponent(providerInstanceId)}`);
-    return parseParsPackVm(data);
+    const { data } = await this.request<unknown>(
+      "public",
+      `/vms/${encodeURIComponent(providerInstanceId)}`,
+    );
+    return asProviderResponse(parseParsPackVm, data);
   }
 
   async findInstanceByName(name: string): Promise<ProviderInstance | null> {
-    const { data } = await this.request<ParsPackListResponse<ParsPackVm> | ParsPackVm[]>("/vms");
-    const list = parseVmList(data);
-    const match = list.find((vm) => vm.name === name);
-    return match ?? null;
+    const query = new URLSearchParams({
+      name,
+      page: "1",
+      per_page: "20",
+    });
+    const { data } = await this.request<unknown>("public", `/vms?${query.toString()}`);
+    const list = asProviderResponse(parseVmList, data);
+    const normalized = name.trim().toLocaleLowerCase("en-US");
+    return (
+      list.find((vm) => vm.name.trim().toLocaleLowerCase("en-US") === normalized) ??
+      null
+    );
   }
 }

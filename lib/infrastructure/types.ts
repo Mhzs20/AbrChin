@@ -1,9 +1,34 @@
 import type { DeliveryMode, InfrastructureProvider } from "@prisma/client";
 
 export type ProviderCatalog = {
-  regions: Array<{ code: string; name: string }>;
-  sizes: Array<{ code: string; name: string; regionCode?: string }>;
-  images: Array<{ code: string; name: string; osFamily?: string }>;
+  regions: Array<{
+    code: string;
+    name: string;
+    available?: boolean;
+    sizeCodes?: string[];
+    features?: string[];
+  }>;
+  sizes: Array<{
+    code: string;
+    name: string;
+    regionCode?: string;
+    regionCodes?: string[];
+    available?: boolean;
+    vcpu?: number;
+    memoryMb?: number;
+    diskGb?: number;
+    priceHourly?: number;
+    priceMonthly?: number;
+    transfer?: number;
+  }>;
+  images: Array<{
+    code: string;
+    name: string;
+    osFamily?: string;
+    regionCodes?: string[];
+    minDiskGb?: number;
+    status?: string;
+  }>;
 };
 
 export type CreateInstanceInput = {
@@ -44,6 +69,7 @@ export type ProviderErrorCode =
   | "provider_timeout"
   | "provider_auth_failed"
   | "provider_insufficient_balance"
+  | "provider_not_found"
   | "provider_ambiguous"
   | "provider_unavailable"
   | "provider_invalid_response";

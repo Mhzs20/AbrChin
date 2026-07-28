@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./conversation.css";
 
 import { SiteShell } from "@/components/site-shell";
 

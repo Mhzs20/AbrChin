@@ -10,7 +10,7 @@ function toEnglishDigits(value: string) {
   return value.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
 }
 
-export function LoginForm() {
+export function LoginForm({ nextPath = "/account" }: { nextPath?: string }) {
   const router = useRouter();
   const mobileRef = useRef<HTMLInputElement>(null);
   const otpRef = useRef<HTMLInputElement>(null);
@@ -89,7 +89,7 @@ export function LoginForm() {
         return;
       }
 
-      router.replace("/account");
+      router.replace(nextPath);
       router.refresh();
     } catch {
       setError("ارتباط با سرور برقرار نشد.");

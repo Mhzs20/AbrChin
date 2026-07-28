@@ -76,6 +76,9 @@ jobs:
       - name: Infrastructure tests
         run: npm run test:infrastructure
 
+      - name: Recommendation tests
+        run: npm run test:recommendation
+
       - name: Account admin tests
         run: npm run test:account-admin
 

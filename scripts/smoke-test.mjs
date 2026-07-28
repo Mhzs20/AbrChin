@@ -15,8 +15,8 @@ server.stderr.on("data", (chunk) => { serverLog += chunk.toString(); });
 
 const checks = [
   ["/", "زیرساختت رو سوار بر ابرها بساز"],
-  ["/compass", "چی داری می‌سازی"],
-  ["/compass?project=commerce&management=managed&scale=daily", "الان کجای کاری"],
+  ["/compass", "چی می‌سازی یا می‌خواهی منتقل کنی؟"],
+  ["/compass?project=commerce", "کاربرهات بیشتر کجا هستند؟"],
   ["/solutions", "هر پروژه، چینش خودش رو می‌خواد"],
   ["/support", "کنترل دست تو؛ همراهی با ما"],
   ["/about", "زیرساخت باید محکم باشه، نه سنگین"],
@@ -57,7 +57,12 @@ try {
     console.log(`✓ ${route}`);
   }
 
-  for (const asset of ["/assets/fonts/Mikhak-DS1-Medium.ttf", "/assets/fonts/Mikhak-DS1-Black.ttf", "/assets/abrchin-logo.svg"]) {
+  for (const asset of [
+    "/assets/fonts/Mikhak-DS1-Medium.ttf",
+    "/assets/fonts/Mikhak-DS1-Black.ttf",
+    "/assets/abrchin-logo.svg",
+    "/assets/abrchin-system/icons/compute.svg",
+  ]) {
     const response = await fetch(`${origin}${asset}`);
     if (!response.ok) throw new Error(`${asset} failed: status=${response.status}`);
     console.log(`✓ ${asset}`);

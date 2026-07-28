@@ -6,8 +6,8 @@
 - `web` Next standalone image with migrate-on-start entrypoint
 
 ## Bootstrap
-1. Copy `.env.production.example` and fill secrets.
-2. Export required env vars.
+1. Copy `.env.production.example` to `.env` in the project root and fill secrets.
+2. Export the file before bootstrap: `set -a; source .env; set +a`.
 3. Run `./ops/bootstrap-production.sh`
 
 ## Migrations
@@ -26,3 +26,4 @@ Optional remote sync can be added with rclone after the dump.
 - `ZARINPAL_MERCHANT_ID` (optional alternate gateway)
 - `PAYMENT_CALLBACK_BASE_URL`
 - `ADMIN_MOBILES`
+- `PARSPACK_API_TOKEN` (when `PARSPACK_ENABLED=true`)
