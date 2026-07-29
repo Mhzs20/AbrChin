@@ -23,7 +23,7 @@ export default function HomePage() {
         </h1>
 
         <p className="home-lead">
-          ابرچین ابرها رو طوری می‌چینه که بشه روشون محکم ساخت؛ ساده شروع کنی، با پرچین امن ادامه بدی و بدون بن‌بست رشد کنی.
+          ابرچین ابرها رو طوری می‌چینه که بشه روشون محکم ساخت؛ ساده شروع کنی، با تحویل شفاف ادامه بدی و بدون بن‌بست رشد کنی.
         </p>
 
         <div className="home-actions">
@@ -40,7 +40,7 @@ export default function HomePage() {
         <div className="trust-line" aria-label="ویژگی‌های سرویس ابرچین">
           <span><Check size={15} aria-hidden="true" /> تأیید قبل از خرید</span>
           <span><Check size={15} aria-hidden="true" /> ارتقا بدون بن‌بست</span>
-          <span><ShieldCheck size={15} aria-hidden="true" /> امنیت و مراقبت با پرچین</span>
+          <span><ShieldCheck size={15} aria-hidden="true" /> دسترسی امن با پرچین پایه</span>
         </div>
       </div>
 

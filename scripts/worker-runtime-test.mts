@@ -53,14 +53,15 @@ test("worker healthcheck rejects a fresh stale heartbeat", () => {
 });
 
 test("compiled worker starts without alias resolution error", async () => {
-  if (!process.env.DATABASE_URL) {
-    throw new Error("DATABASE_URL required for worker runtime test");
-  }
+  const runtimeDatabaseUrl =
+    process.env.DATABASE_URL ??
+    "postgresql://runtime:runtime@127.0.0.1:1/runtime";
 
   await new Promise<void>((resolvePromise, reject) => {
     const child = spawn("node", [workerBundle], {
       env: {
         ...process.env,
+        DATABASE_URL: runtimeDatabaseUrl,
         WORKER_POLL_MS: "50",
         WORKER_MAX_IDLE_ROUNDS: "1",
       },

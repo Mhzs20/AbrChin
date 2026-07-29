@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { MoneyDisplay, PageHeader, SectionCard, StatusBadge, Timeline } from "@/components/product";
+import { CredentialRevealPanel } from "@/components/account/credential-reveal-panel";
+import { SubscriptionPanel } from "@/components/account/subscription-panel";
 import { prisma } from "@/lib/db";
 import {
   getInfrastructureStage,
@@ -24,7 +26,33 @@ export default async function AccountOrderDetailPage({ params }: { params: Promi
   const { id } = await params;
   const order = await prisma.serviceOrder.findFirst({
     where: { id, userId: user.id },
-    include: { infrastructureOrder: { include: { provisioningJobs: { orderBy: { createdAt: "asc" } } } } },
+    include: {
+      infrastructureOrder: {
+        include: {
+          provisioningJobs: { orderBy: { createdAt: "asc" } },
+          cloudInstance: {
+            select: {
+              id: true,
+              ipv4: true,
+              status: true,
+              credential: {
+                select: {
+                  status: true,
+                  expiresAt: true,
+                },
+              },
+              subscription: {
+                select: {
+                  status: true,
+                  currentPeriodEnd: true,
+                  graceEndsAt: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   });
   if (!order) notFound();
 
@@ -58,6 +86,35 @@ export default async function AccountOrderDetailPage({ params }: { params: Promi
       <SectionCard title="زمان‌بندی">
         <Timeline items={timeline} />
       </SectionCard>
+      {order.infrastructureOrder?.cloudInstance?.status === "ACTIVE" &&
+      order.infrastructureOrder.cloudInstance.ipv4 ? (
+        <SectionCard title="تحویل امن سرور">
+          <CredentialRevealPanel
+            instanceId={order.infrastructureOrder.cloudInstance.id}
+            ipv4={order.infrastructureOrder.cloudInstance.ipv4}
+            credentialStatus={
+              order.infrastructureOrder.cloudInstance.credential?.status ?? null
+            }
+            credentialExpiresAt={
+              order.infrastructureOrder.cloudInstance.credential?.expiresAt.toISOString() ?? null
+            }
+          />
+        </SectionCard>
+      ) : null}
+      {order.infrastructureOrder?.cloudInstance?.subscription ? (
+        <SectionCard title="تمدید و چرخه عمر">
+          <SubscriptionPanel
+            instanceId={order.infrastructureOrder.cloudInstance.id}
+            status={order.infrastructureOrder.cloudInstance.subscription.status}
+            currentPeriodEnd={
+              order.infrastructureOrder.cloudInstance.subscription.currentPeriodEnd.toISOString()
+            }
+            graceEndsAt={
+              order.infrastructureOrder.cloudInstance.subscription.graceEndsAt.toISOString()
+            }
+          />
+        </SectionCard>
+      ) : null}
     </>
   );
 }

@@ -7,6 +7,7 @@ import { OrderCheckoutPanel } from "@/components/account/order-checkout-panel";
 import { deliveryModeLabel } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
 import { getActivePlanById } from "@/lib/orders/plans";
+import { parchinPlanLabel, parchinPlanSummary } from "@/lib/parchin/catalog";
 import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -48,8 +49,11 @@ export default async function AccountOrderPlanPage({ params }: { params: Promise
           تمدید ماهانه:{" "}
           <strong>{formatTomanFa(plan.renewalPriceRial ?? plan.salePriceRial)} تومان</strong>
           {" · "}تحویل حدود {plan.deliveryEstimateMinutes.toLocaleString("fa-IR")} دقیقه
-          {" · "}پرچین: {plan.parchinIncluded ? "فعال" : "قابل افزودن"}
+          {" · "}{parchinPlanLabel(plan.parchinIncluded)}
         </div>
+        <p style={{ fontSize: 13, color: "var(--product-muted)", marginBottom: 0 }}>
+          {parchinPlanSummary(plan.parchinIncluded)}
+        </p>
       </SectionCard>
       <OrderCheckoutPanel planId={plan.id} planTitle={plan.title} priceToman={formatTomanFa(plan.salePriceRial)} />
     </>

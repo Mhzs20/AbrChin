@@ -10,24 +10,38 @@ import {
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 import { WalletError } from "@/lib/wallet/errors";
 import {
+  resolvePlanPricing,
+  samePriceSnapshot,
+} from "@/lib/pricing/plan-pricing";
+import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
+import {
   CloudInstanceStatus,
   InfrastructureOrderStatus,
   LedgerDirection,
   LedgerStatus,
   LedgerType,
+  RecommendationFlowStatus,
+  RecommendationQuoteStatus,
   ServiceOrderStatus,
 } from "@prisma/client";
 
 const QUOTE_VALIDITY_MS = 10 * 60 * 1000;
+const PURCHASABLE_QUOTE_STATUSES: RecommendationQuoteStatus[] = [
+  RecommendationQuoteStatus.ACTIVE,
+  RecommendationQuoteStatus.SELECTED,
+];
 
 export async function createServiceOrder(userId: string, planCode: string) {
+  await refreshProviderCatalogForPricing();
   const plan = await getActivePlanByCode(planCode);
   if (!plan) {
     throw new WalletError("invalid_plan", "بسته انتخاب‌شده معتبر نیست.");
   }
 
   await ensureWalletForUser(userId);
-  const snapshot = toPlanSnapshot(plan);
+  const createdAt = new Date();
+  const expiresAt = new Date(createdAt.getTime() + QUOTE_VALIDITY_MS);
+  const snapshot = toPlanSnapshot(plan, { createdAt, expiresAt });
 
   return prisma.serviceOrder.create({
     data: {
@@ -40,17 +54,122 @@ export async function createServiceOrder(userId: string, planCode: string) {
       planCode: plan.code,
       planId: plan.id,
       planSnapshot: snapshot,
-      quoteExpiresAt: new Date(Date.now() + QUOTE_VALIDITY_MS),
+      quoteExpiresAt: expiresAt,
     },
   });
 }
 
 export async function createServiceOrderByPlanId(userId: string, planId: string) {
+  await refreshProviderCatalogForPricing();
   const plan = await getActivePlanById(planId);
-  if (!plan) {
-    throw new WalletError("invalid_plan", "بسته انتخاب‌شده معتبر نیست.");
-  }
-  return createServiceOrder(userId, plan.code);
+  if (!plan) throw new WalletError("invalid_plan", "بسته انتخاب‌شده معتبر نیست.");
+  await ensureWalletForUser(userId);
+  const createdAt = new Date();
+  const expiresAt = new Date(createdAt.getTime() + QUOTE_VALIDITY_MS);
+  return prisma.serviceOrder.create({
+    data: {
+      userId,
+      title: plan.title,
+      description: plan.description,
+      amount: plan.pricing.finalPriceRial,
+      currency: "IRR",
+      status: ServiceOrderStatus.PENDING_PAYMENT,
+      planCode: plan.code,
+      planId: plan.id,
+      planSnapshot: toPlanSnapshot(plan, { createdAt, expiresAt }),
+      quoteExpiresAt: expiresAt,
+    },
+  });
+}
+
+export async function createServiceOrderFromQuote(userId: string, quoteId: string) {
+  await refreshProviderCatalogForPricing();
+  return prisma.$transaction(async (tx) => {
+    const quote = await tx.recommendationQuote.findUnique({
+      where: { id: quoteId },
+      include: {
+        plan: { include: { catalogItem: true } },
+        session: true,
+        serviceOrder: true,
+      },
+    });
+
+    if (!quote) {
+      throw new WalletError("invalid_quote", "پیشنهاد انتخاب‌شده پیدا نشد.");
+    }
+    if (quote.session.userId && quote.session.userId !== userId) {
+      throw new WalletError("quote_claimed", "این پیشنهاد به حساب دیگری تعلق دارد.");
+    }
+    if (quote.serviceOrder) {
+      if (quote.serviceOrder.userId !== userId) {
+        throw new WalletError("quote_claimed", "این پیشنهاد قبلاً استفاده شده است.");
+      }
+      return quote.serviceOrder;
+    }
+    if (!PURCHASABLE_QUOTE_STATUSES.includes(quote.status)) {
+      throw new WalletError("invalid_quote_status", "این پیشنهاد دیگر قابل خرید نیست.");
+    }
+    if (quote.expiresAt.getTime() <= Date.now() || quote.session.expiresAt.getTime() <= Date.now()) {
+      throw new WalletError(
+        "quote_expired",
+        "اعتبار این پیشنهاد تمام شده؛ قیمت و ظرفیت را دوباره دریافت کن.",
+      );
+    }
+    if (!quote.plan.active) {
+      throw new WalletError("invalid_plan", "ظرفیت این چینش دیگر فعال نیست.");
+    }
+    const pricingConfig = await tx.providerPricingConfig.findUnique({
+      where: { provider: quote.plan.provider },
+    });
+    const currentPricing = resolvePlanPricing(quote.plan, pricingConfig);
+    if (!currentPricing) {
+      throw new WalletError(
+        "quote_unavailable",
+        "ظرفیت این پیشنهاد دیگر موجود نیست؛ پرداخت متوقف شد.",
+      );
+    }
+    if (!samePriceSnapshot(currentPricing, quote)) {
+      throw new WalletError(
+        "quote_price_changed",
+        "قیمت این پیشنهاد تغییر کرده؛ پیشنهاد تازه را دریافت کنید.",
+      );
+    }
+
+    await ensureWalletForUser(userId, tx);
+    const snapshot = quote.planSnapshot as Prisma.InputJsonValue;
+    const order = await tx.serviceOrder.create({
+      data: {
+        userId,
+        title: quote.plan.title,
+        description: quote.plan.description,
+        amount: quote.amountRial,
+        currency: "IRR",
+        status: ServiceOrderStatus.PENDING_PAYMENT,
+        planCode: quote.plan.code,
+        planId: quote.plan.id,
+        planSnapshot: snapshot,
+        recommendationQuoteId: quote.id,
+        quoteExpiresAt: quote.expiresAt,
+      },
+    });
+
+    await tx.recommendationQuote.update({
+      where: { id: quote.id },
+      data: {
+        status: RecommendationQuoteStatus.SELECTED,
+        selectedAt: new Date(),
+      },
+    });
+    await tx.recommendationSession.update({
+      where: { id: quote.sessionId },
+      data: {
+        userId,
+        status: RecommendationFlowStatus.CHECKOUT,
+      },
+    });
+
+    return order;
+  });
 }
 
 export async function payOrderWithWallet(
@@ -58,6 +177,13 @@ export async function payOrderWithWallet(
   orderId: string,
   options?: PayOrderTxOptions,
 ) {
+  const existing = await prisma.serviceOrder.findFirst({
+    where: { id: orderId, userId },
+    select: { status: true },
+  });
+  if (existing?.status !== ServiceOrderStatus.PAID) {
+    await refreshProviderCatalogForPricing();
+  }
   return prisma.$transaction(async (tx) => executePayOrderWithWalletTx(tx, userId, orderId, options));
 }
 

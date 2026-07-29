@@ -12,6 +12,8 @@ test("balanced recommendation is deterministic for an active commerce workload",
     audience: "iran",
     stage: "active",
     usage: "daily",
+    architecture: "app_db",
+    growth: "stable",
     criticality: "high",
     management: "managed",
   });
@@ -78,4 +80,22 @@ test("economy adjustment never goes below the workload minimum", () => {
   assert.ok(economy.storageGb >= recommendation.minimumProfile.storageGb);
   assert.ok(performance.vcpu > recommendation.profile.vcpu);
   assert.ok(performance.ramGb > recommendation.profile.ramGb);
+});
+
+test("near-zero migration is routed to an assisted cutover instead of auto checkout", () => {
+  const recommendation = buildRecommendation({
+    project: "migration",
+    audience: "iran",
+    stage: "migration",
+    usage: "daily",
+    architecture: "app_db",
+    storage: "medium",
+    growth: "stable",
+    downtime: "near_zero",
+    criticality: "high",
+    management: "managed",
+  });
+
+  assert.equal(recommendation.architectureEscalation, true);
+  assert.match(recommendation.caveats[0], /Cutover/);
 });

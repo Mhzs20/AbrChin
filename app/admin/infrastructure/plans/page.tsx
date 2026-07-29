@@ -6,6 +6,12 @@ import { guardAdminPage } from "@/lib/admin/auth";
 import { listAllPlans } from "@/lib/orders/plans";
 import { deliveryModeLabel } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
+import { prisma } from "@/lib/db";
+import {
+  catalogItemBasePriceRial,
+  compatibleImageCodes,
+} from "@/lib/pricing/plan-pricing";
+import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
 
 export const metadata: Metadata = {
   title: "پلن‌های زیرساخت | پنل مدیریت | ابرچین",
@@ -16,32 +22,54 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPlansPage() {
   await guardAdminPage();
-  const plans = await listAllPlans();
+  const [plans, catalogItems, pricingConfig] = await Promise.all([
+    listAllPlans(),
+    prisma.providerCatalogItem.findMany({
+      where: { provider: "PARSPACK", active: true },
+      orderBy: [{ regionCode: "asc" }, { sizeCode: "asc" }],
+    }),
+    prisma.providerPricingConfig.findUnique({ where: { provider: "PARSPACK" } }),
+  ]);
   const panelPlans = plans.map((plan) => ({
     id: plan.id,
     code: plan.code,
     title: plan.title,
     description: plan.description,
     deliveryMode: plan.deliveryMode,
-    regionCode: plan.regionCode,
-    sizeCode: plan.sizeCode,
+    catalogItemId: plan.catalogItemId,
+    catalogMappingStatus: plan.catalogMappingStatus,
     imageCode: plan.imageCode,
-    vcpu: plan.vcpu,
-    ramGb: plan.ramGb,
-    storageGb: plan.storageGb,
-    salePriceRial: plan.salePriceRial.toString(),
-    renewalPriceRial: plan.renewalPriceRial?.toString() ?? null,
-    estimatedProviderCostRial: plan.estimatedProviderCostRial.toString(),
     deliveryEstimateMinutes: plan.deliveryEstimateMinutes,
     parchinIncluded: plan.parchinIncluded,
     active: plan.active,
     sortOrder: plan.sortOrder,
   }));
+  const panelCatalogItems = catalogItems.map((item) => {
+    const basePriceRial = catalogItemBasePriceRial(item);
+    const finalPriceRial =
+      basePriceRial != null && pricingConfig
+        ? calculateFinalPriceRial(
+            basePriceRial,
+            pricingConfig.markupBasisPoints,
+          )
+        : null;
+    return {
+      id: item.id,
+      regionCode: item.regionCode,
+      sizeCode: item.sizeCode,
+      compatibleImageCodes: compatibleImageCodes(item),
+      vcpu: item.vcpu,
+      ramMb: item.ramMb,
+      diskGb: item.diskGb,
+      available: item.available,
+      basePriceRial: basePriceRial?.toString() ?? null,
+      finalPriceRial: finalPriceRial?.toString() ?? null,
+    };
+  });
 
   const columns = [
     { key: "code", header: "کد" },
     { key: "title", header: "عنوان" },
-    { key: "provider", header: "Provider" },
     { key: "region", header: "Region" },
     { key: "size", header: "Size" },
     { key: "mode", header: "نوع" },
@@ -54,19 +82,33 @@ export default async function AdminPlansPage() {
     cells: {
       code: <TechnicalValue>{plan.code}</TechnicalValue>,
       title: plan.title,
-      provider: plan.provider,
       region: <TechnicalValue>{plan.regionCode}</TechnicalValue>,
       size: <TechnicalValue>{plan.sizeCode}</TechnicalValue>,
       mode: deliveryModeLabel[plan.deliveryMode],
-      price: <MoneyDisplay amount={formatTomanFa(plan.salePriceRial)} />,
-      active: <StatusBadge label={plan.active ? "فعال" : "غیرفعال"} tone={plan.active ? "success" : "neutral"} />,
+      price: plan.pricing ? (
+        <MoneyDisplay amount={formatTomanFa(plan.pricing.finalPriceRial)} />
+      ) : (
+        "قیمت نامعتبر"
+      ),
+      active: (
+        <StatusBadge
+          label={
+            plan.catalogMappingStatus !== "MAPPED"
+              ? "بدون Mapping"
+              : plan.active
+                ? "فعال"
+                : "غیرفعال"
+          }
+          tone={plan.active && plan.pricing ? "success" : "neutral"}
+        />
+      ),
     },
   }));
 
   return (
     <>
-      <PageHeader title="پلن‌های زیرساخت" description="مدیریت پلن‌های فروش و مشخصات Provider" />
-      <AdminPlansPanel initialPlans={panelPlans} />
+      <PageHeader title="پلن‌های زیرساخت" description="مشخصات محصول روی Catalog Item واقعی؛ منابع و قیمت فقط خواندنی‌اند" />
+      <AdminPlansPanel initialPlans={panelPlans} catalogItems={panelCatalogItems} />
       <DataTable columns={columns} rows={rows} emptyMessage="پلنی تعریف نشده است." />
     </>
   );

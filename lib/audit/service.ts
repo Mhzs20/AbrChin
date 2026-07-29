@@ -43,4 +43,6 @@ export const AuditActions = {
   RECONCILIATION: "reconciliation",
   PROVIDER_TOGGLE: "provider_toggle",
   NOTIFICATION_RESOLVE: "notification_resolve",
+  CREDENTIAL_READY: "credential_ready",
+  CREDENTIAL_REVEALED: "credential_revealed",
 } as const;

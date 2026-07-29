@@ -16,6 +16,7 @@ export function getEnv() {
   return {
     databaseUrl: process.env.DATABASE_URL ?? "",
     sessionSecret: process.env.SESSION_SECRET ?? "",
+    credentialEncryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY ?? "",
     smsProvider: (process.env.SMS_PROVIDER ?? "console").toLowerCase(),
     kavenegarApiKey: process.env.KAVENEGAR_API_KEY ?? "",
     kavenegarTemplate: process.env.KAVENEGAR_TEMPLATE ?? "abrchinlogin",
@@ -42,10 +43,22 @@ export function getEnv() {
       "https://my.parspack.com/cserver/api/public/v1",
     parspackApiToken: process.env.PARSPACK_API_TOKEN ?? "",
     parspackTimeoutMs: readInt("PARSPACK_TIMEOUT_MS", 15_000),
+    parspackPriceCurrency: (process.env.PARSPACK_PRICE_CURRENCY ?? "").trim().toUpperCase(),
+    parspackPriceAmountUnit: (process.env.PARSPACK_PRICE_AMOUNT_UNIT ?? "")
+      .trim()
+      .toUpperCase(),
     infrastructureProviderMode: (process.env.INFRASTRUCTURE_PROVIDER_MODE ?? "mock").toLowerCase(),
     nodeEnv: process.env.NODE_ENV ?? "development",
     isProduction,
   };
+}
+
+export function assertCredentialEncryptionKey(): string {
+  const key = getEnv().credentialEncryptionKey;
+  if (!key) {
+    throw new Error("CREDENTIAL_ENCRYPTION_KEY is not configured");
+  }
+  return key;
 }
 
 export function assertServerSecrets() {

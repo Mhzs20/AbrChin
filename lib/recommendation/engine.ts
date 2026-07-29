@@ -1,12 +1,16 @@
 import type {
   AnswerSources,
+  ArchitectureKind,
   CriticalityKind,
+  DowntimeKind,
+  GrowthKind,
   ManagementKind,
   RecommendationAnswers,
   RecommendationAssumption,
   RecommendationDirection,
   RecommendationResult,
   ResourceProfile,
+  StorageKind,
   UsageKind,
 } from "@/lib/recommendation/types";
 
@@ -102,6 +106,73 @@ function resolveManagement(
   return "managed";
 }
 
+function resolveArchitecture(
+  answers: RecommendationAnswers,
+  assumptions: RecommendationAssumption[],
+): Exclude<ArchitectureKind, "unknown"> {
+  if (answers.architecture && answers.architecture !== "unknown") return answers.architecture;
+  const value: Exclude<ArchitectureKind, "unknown"> =
+    answers.project === "site" ? "single" : answers.project === "data" ? "data_heavy" : "app_db";
+  assumptions.push({
+    field: "architecture",
+    label: "شکل اجرا",
+    value:
+      value === "single"
+        ? "یک سرویس ساده"
+        : value === "data_heavy"
+          ? "داده و پردازش"
+          : "اپ و دیتابیس",
+    reason: "اجزای فنی دقیق نبود؛ از نوع پروژه یک شکل اجرای قابل بازبینی ساختیم.",
+    source: "estimate",
+  });
+  return value;
+}
+
+function resolveStorage(
+  answers: RecommendationAnswers,
+  assumptions: RecommendationAssumption[],
+): Exclude<StorageKind, "unknown"> {
+  if (answers.storage && answers.storage !== "unknown") return answers.storage;
+  assumptions.push({
+    field: "storage",
+    label: "حجم داده",
+    value: "حجم متوسط و قابل ارتقا",
+    reason: "اندازه‌ی دقیق داده مشخص نبود؛ فضای کافی برای شروع و اندازه‌گیری واقعی در نظر گرفتیم.",
+    source: "estimate",
+  });
+  return "medium";
+}
+
+function resolveGrowth(
+  answers: RecommendationAnswers,
+  assumptions: RecommendationAssumption[],
+): Exclude<GrowthKind, "unknown"> {
+  if (answers.growth && answers.growth !== "unknown") return answers.growth;
+  assumptions.push({
+    field: "growth",
+    label: "رشد نزدیک",
+    value: answers.stage === "growing" ? "رشد سریع" : "رشد پایدار",
+    reason: "برنامه‌ی سه ماه آینده قطعی نبود؛ مسیر ارتقای مرحله‌ای باز نگه داشته شد.",
+    source: "estimate",
+  });
+  return answers.stage === "growing" ? "rapid" : "stable";
+}
+
+function resolveDowntime(
+  answers: RecommendationAnswers,
+  assumptions: RecommendationAssumption[],
+): Exclude<DowntimeKind, "unknown"> {
+  if (answers.downtime && answers.downtime !== "unknown") return answers.downtime;
+  assumptions.push({
+    field: "downtime",
+    label: "توقف مهاجرت",
+    value: "توقف کوتاه و کنترل‌شده",
+    reason: "محدودیت توقف مشخص نبود؛ قبل از اجرا باید Cutover و مسیر بازگشت تأیید شود.",
+    source: "estimate",
+  });
+  return "short";
+}
+
 export function buildRecommendation(
   answers: RecommendationAnswers,
   sources: AnswerSources = {},
@@ -126,6 +197,19 @@ export function buildRecommendation(
   const usage = resolveUsage(answers, assumptions);
   const criticality = resolveCriticality(answers, assumptions);
   const management = resolveManagement(answers, assumptions);
+  const architecture = resolveArchitecture(answers, assumptions);
+  const migration = project === "migration" || stage === "migration";
+  const dataSensitive =
+    project === "data" || architecture === "data_heavy" || migration;
+  const growthSensitive =
+    stage === "launch" ||
+    stage === "active" ||
+    stage === "growing" ||
+    usage === "daily" ||
+    usage === "busy";
+  const storage = dataSensitive ? resolveStorage(answers, assumptions) : "small";
+  const growth = growthSensitive ? resolveGrowth(answers, assumptions) : "stable";
+  const downtime = migration ? resolveDowntime(answers, assumptions) : "flexible";
 
   let vcpu = baseline.vcpu;
   let ramGb = baseline.ramGb;
@@ -163,7 +247,39 @@ export function buildRecommendation(
 
   if (criticality === "high" || criticality === "severe") {
     ramGb += 4;
-    reasons.push("اثر قطعی روی کار یا درآمد، بکاپ روزانه و همراهی عملیاتی را مهم می‌کند.");
+    reasons.push("اثر قطعی روی کار یا درآمد، نیاز به بکاپ روزانه و مسیر بازیابی واقعی را بالا می‌برد.");
+  }
+
+  if (architecture === "app_db") {
+    ramGb += 2;
+    reasons.push("برای اجرای هم‌زمان برنامه و دیتابیس، حاشیه‌ی RAM جدا در نظر گرفته شده.");
+  } else if (architecture === "multi_service") {
+    vcpu += 2;
+    ramGb += 4;
+    storageGb += 20;
+    reasons.push("چند سرویس یا Worker به ظرفیت هم‌زمان و حافظه‌ی بیشتری نیاز دارد.");
+  } else if (architecture === "data_heavy") {
+    vcpu += 4;
+    ramGb += 8;
+    storageGb += 80;
+    reasons.push("پردازش داده و فایل از چینش عمومی جدا و با ظرفیت بالاتر محاسبه شده.");
+  }
+
+  if (storage === "medium") {
+    storageGb = Math.max(storageGb, 200);
+  } else if (storage === "large") {
+    storageGb = Math.max(storageGb, 500);
+    reasons.push("حجم بالای داده، فضای عملیاتی و مسیر بکاپ جدا می‌خواهد.");
+  }
+
+  if (growth === "campaign") {
+    vcpu += 2;
+    ramGb += 4;
+    reasons.push("برای کمپین یا لانچ نزدیک، ظرفیت پیک کوتاه‌مدت لحاظ شده.");
+  } else if (growth === "rapid") {
+    vcpu += 4;
+    ramGb += 8;
+    reasons.push("رشد سریع به حاشیه‌ی بیشتر و امکان Resize بدون تعویض مسیر خرید نیاز دارد.");
   }
 
   vcpu = atLeastTier(vcpu, cpuTiers);
@@ -184,14 +300,34 @@ export function buildRecommendation(
     regionPreference: "IRAN",
     deliveryMode: management === "managed" ? "MANAGED" : "RAW",
     backupPolicy,
-    needsResize: stage === "growing" || usage === "busy",
+    needsResize:
+      stage === "growing" ||
+      usage === "busy" ||
+      growth === "campaign" ||
+      growth === "rapid",
   };
 
+  const architectureCpuFloor =
+    architecture === "multi_service"
+      ? baseline.vcpu + 2
+      : architecture === "data_heavy"
+        ? baseline.vcpu + 4
+        : baseline.vcpu;
+  const architectureRamFloor =
+    architecture === "app_db"
+      ? baseline.ramGb + 2
+      : architecture === "multi_service"
+        ? baseline.ramGb + 4
+        : architecture === "data_heavy"
+          ? baseline.ramGb + 8
+          : baseline.ramGb;
+  const storageFloor =
+    storage === "large" ? 500 : storage === "medium" ? 200 : baseline.storageGb;
   const minimumProfile: ResourceProfile = {
     ...profile,
-    vcpu: baseline.vcpu,
-    ramGb: baseline.ramGb,
-    storageGb: baseline.storageGb,
+    vcpu: atLeastTier(architectureCpuFloor, cpuTiers),
+    ramGb: atLeastTier(architectureRamFloor, ramTiers),
+    storageGb: storageFloor,
   };
 
   if (answers.audience === "abroad") {
@@ -212,15 +348,17 @@ export function buildRecommendation(
     });
   }
 
-  const architectureEscalation = criticality === "severe";
+  const architectureEscalation = criticality === "severe" || downtime === "near_zero";
   if (architectureEscalation) {
     caveats.unshift(
-      "برای این سطح حساسیت، خرید خودکار یک سرور متوقف می‌شود؛ ابتدا باید معماری تحمل‌خطا بررسی شود.",
+      downtime === "near_zero"
+        ? "مهاجرت تقریباً بدون توقف به همگام‌سازی، تست Cutover و مسیر بازگشت نیاز دارد؛ خرید خودکار متوقف می‌شود."
+        : "برای این سطح حساسیت، خرید خودکار یک سرور متوقف می‌شود؛ ابتدا باید معماری تحمل‌خطا بررسی شود.",
     );
   }
 
   if (management === "managed") {
-    reasons.push("حالت «همراه ابرچین» با پرچین و مسئولیت عملیاتی شفاف در نظر گرفته شده.");
+    reasons.push("حالت «همراه ابرچین» با پرچین پایه و دامنه‌ی مسئولیت شفاف در نظر گرفته شده.");
   } else {
     reasons.push("سرور خام انتخاب شده و مدیریت سیستم‌عامل و دسترسی‌ها با خودت می‌ماند.");
   }

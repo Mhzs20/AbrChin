@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { PageHeader, SectionCard, Timeline } from "@/components/product";
+import { InstanceCredentialForm } from "@/components/admin/instance-credential-form";
 import { prisma } from "@/lib/db";
 import { getInfrastructureStage } from "@/lib/labels/infrastructure";
 
@@ -18,6 +19,14 @@ export default async function AdminInstanceDetailPage({ params }: { params: Prom
     where: { id },
     include: {
       user: true,
+      credential: {
+        select: {
+          status: true,
+          username: true,
+          expiresAt: true,
+          revealedAt: true,
+        },
+      },
       infrastructureOrder: {
         include: {
           plan: true,
@@ -60,6 +69,12 @@ export default async function AdminInstanceDetailPage({ params }: { params: Prom
               done: job.status === "SUCCEEDED",
             })),
           ]}
+        />
+      </SectionCard>
+      <SectionCard title="تحویل امن دسترسی">
+        <InstanceCredentialForm
+          instanceId={instance.id}
+          currentStatus={instance.credential?.status ?? null}
         />
       </SectionCard>
     </>

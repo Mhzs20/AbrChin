@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import {
   DataTable,
@@ -38,6 +39,7 @@ export default async function AccountServicesPage() {
     { key: "mode", header: "نوع" },
     { key: "status", header: "وضعیت" },
     { key: "createdAt", header: "ایجاد" },
+    { key: "actions", header: "" },
   ];
 
   const rows = services.map((service) => ({
@@ -52,6 +54,14 @@ export default async function AccountServicesPage() {
       mode: deliveryModeLabel[service.deliveryMode],
       status: <StatusBadge label={cloudInstanceStatusLabel[service.status]} tone={service.status === "ACTIVE" ? "success" : "warning"} />,
       createdAt: new Date(service.createdAt).toLocaleString("fa-IR"),
+      actions: (
+        <Link
+          className="product-btn product-btn--quiet"
+          href={`/account/orders/${service.infrastructureOrder.serviceOrder.id}`}
+        >
+          مدیریت و تمدید
+        </Link>
+      ),
     },
   }));
 
@@ -64,6 +74,14 @@ export default async function AccountServicesPage() {
       { label: "وضعیت", value: cloudInstanceStatusLabel[service.status] },
       { label: "مرحله", value: getInfrastructureStage(service.infrastructureOrder.status) },
     ],
+    actions: (
+      <Link
+        className="product-btn product-btn--quiet"
+        href={`/account/orders/${service.infrastructureOrder.serviceOrder.id}`}
+      >
+        مدیریت و تمدید
+      </Link>
+    ),
   }));
 
   return (

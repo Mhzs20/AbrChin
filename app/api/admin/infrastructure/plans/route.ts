@@ -4,8 +4,12 @@ import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/db";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
-import { assertPositiveIntegerToman, tomanToRial } from "@/lib/money";
+import { assertPositiveIntegerToman } from "@/lib/money";
 import { listAllPlans } from "@/lib/orders/plans";
+import {
+  compatibleImageCodes,
+  resolveCatalogItemPricing,
+} from "@/lib/pricing/plan-pricing";
 import { readRequestMeta } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -24,12 +28,18 @@ export async function GET() {
         regionCode: plan.regionCode,
         sizeCode: plan.sizeCode,
         imageCode: plan.imageCode,
-        vcpu: plan.vcpu,
-        ramGb: plan.ramGb,
-        storageGb: plan.storageGb,
-        salePriceRial: plan.salePriceRial.toString(),
-        renewalPriceRial: plan.renewalPriceRial?.toString() ?? null,
-        estimatedProviderCostRial: plan.estimatedProviderCostRial.toString(),
+        catalogItemId: plan.catalogItemId,
+        catalogMappingStatus: plan.catalogMappingStatus,
+        vcpu: plan.catalogItem?.vcpu ?? plan.vcpu,
+        ramGb:
+          plan.catalogItem?.ramMb == null
+            ? plan.ramGb
+            : Math.ceil(plan.catalogItem.ramMb / 1024),
+        storageGb: plan.catalogItem?.diskGb ?? plan.storageGb,
+        basePriceRial: plan.pricing?.providerBasePriceRial.toString() ?? null,
+        finalPriceRial: plan.pricing?.finalPriceRial.toString() ?? null,
+        available: plan.catalogItem?.available === true,
+        lastSyncedAt: plan.catalogItem?.lastSyncedAt.toISOString() ?? null,
         deliveryEstimateMinutes: plan.deliveryEstimateMinutes,
         parchinIncluded: plan.parchinIncluded,
         active: plan.active,
@@ -56,12 +66,37 @@ export async function POST(request: Request) {
     const code = typeof body.code === "string" ? body.code.trim() : "";
     const title = typeof body.title === "string" ? body.title.trim() : "";
     if (!code || !title) return jsonError("کد و عنوان الزامی است.", 400);
-
-    const salePriceRial = tomanToRial(assertPositiveIntegerToman(body.salePriceToman));
-    const renewalPriceRial = tomanToRial(
-      assertPositiveIntegerToman(body.renewalPriceToman ?? body.salePriceToman),
-    );
-    const estimatedProviderCostRial = tomanToRial(assertPositiveIntegerToman(body.estimatedProviderCostToman));
+    if (
+      "salePriceToman" in body ||
+      "renewalPriceToman" in body ||
+      "estimatedProviderCostToman" in body ||
+      "vcpu" in body ||
+      "ramGb" in body ||
+      "storageGb" in body
+    ) {
+      return jsonError("قیمت و منابع فقط از کاتالوگ Provider خوانده می‌شوند.", 400);
+    }
+    const catalogItemId =
+      typeof body.catalogItemId === "string" ? body.catalogItemId.trim() : "";
+    const imageCode = typeof body.imageCode === "string" ? body.imageCode.trim() : "";
+    const [catalogItem, pricingConfig] = await Promise.all([
+      prisma.providerCatalogItem.findUnique({ where: { id: catalogItemId } }),
+      prisma.providerPricingConfig.findUnique({
+        where: { provider: InfrastructureProvider.PARSPACK },
+      }),
+    ]);
+    if (!catalogItem || catalogItem.provider !== InfrastructureProvider.PARSPACK) {
+      return jsonError("Catalog Item معتبر نیست.", 400);
+    }
+    if (!compatibleImageCodes(catalogItem).includes(imageCode)) {
+      return jsonError("Image با Region و Size انتخاب‌شده سازگار نیست.", 400);
+    }
+    const pricing = pricingConfig
+      ? resolveCatalogItemPricing(catalogItem, pricingConfig)
+      : null;
+    if (body.active !== false && !pricing) {
+      return jsonError("Catalog Item ناموجود یا فاقد قرارداد قیمت معتبر است.", 400);
+    }
 
     const plan = await prisma.infrastructurePlan.create({
       data: {
@@ -69,20 +104,24 @@ export async function POST(request: Request) {
         title,
         description: typeof body.description === "string" ? body.description.trim() : null,
         provider: InfrastructureProvider.PARSPACK,
-        regionCode: String(body.regionCode ?? ""),
-        sizeCode: String(body.sizeCode ?? ""),
-        imageCode: String(body.imageCode ?? ""),
+        regionCode: catalogItem.regionCode,
+        sizeCode: catalogItem.sizeCode,
+        imageCode,
         deliveryMode: body.deliveryMode === "MANAGED" ? DeliveryMode.MANAGED : DeliveryMode.RAW,
-        vcpu: assertPositiveIntegerToman(body.vcpu),
-        ramGb: assertPositiveIntegerToman(body.ramGb),
-        storageGb: assertPositiveIntegerToman(body.storageGb),
-        salePriceRial,
-        renewalPriceRial,
-        estimatedProviderCostRial,
+        vcpu: catalogItem.vcpu,
+        ramGb:
+          catalogItem.ramMb == null ? null : Math.ceil(catalogItem.ramMb / 1024),
+        storageGb: catalogItem.diskGb,
+        salePriceRial: pricing?.finalPriceRial ?? 1n,
+        renewalPriceRial: pricing?.finalPriceRial ?? 1n,
+        estimatedProviderCostRial: pricing?.providerBasePriceRial ?? 1n,
         deliveryEstimateMinutes: assertPositiveIntegerToman(body.deliveryEstimateMinutes),
         parchinIncluded: body.parchinIncluded === true,
-        active: body.active !== false,
+        active: body.active !== false && pricing != null,
         sortOrder: Number(body.sortOrder ?? 0),
+        catalogItemId: catalogItem.id,
+        catalogMappingStatus: "MAPPED",
+        catalogMappedAt: new Date(),
         updatedById: admin.id,
       },
     });

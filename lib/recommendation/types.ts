@@ -3,6 +3,10 @@ export type QuestionId =
   | "audience"
   | "stage"
   | "usage"
+  | "architecture"
+  | "storage"
+  | "growth"
+  | "downtime"
   | "criticality"
   | "management";
 
@@ -20,6 +24,10 @@ export type StageKind = "idea" | "launch" | "active" | "growing" | "migration";
 export type UsageKind = "starting" | "light" | "daily" | "busy" | "unknown";
 export type CriticalityKind = "low" | "medium" | "high" | "severe" | "unknown";
 export type ManagementKind = "raw" | "managed" | "unknown";
+export type ArchitectureKind = "single" | "app_db" | "multi_service" | "data_heavy" | "unknown";
+export type StorageKind = "small" | "medium" | "large" | "unknown";
+export type GrowthKind = "stable" | "campaign" | "rapid" | "unknown";
+export type DowntimeKind = "flexible" | "short" | "near_zero" | "unknown";
 export type AnswerSource = "user" | "estimate" | "default";
 
 export type RecommendationAnswers = Partial<{
@@ -27,6 +35,10 @@ export type RecommendationAnswers = Partial<{
   audience: AudienceKind;
   stage: StageKind;
   usage: UsageKind;
+  architecture: ArchitectureKind;
+  storage: StorageKind;
+  growth: GrowthKind;
+  downtime: DowntimeKind;
   criticality: CriticalityKind;
   management: ManagementKind;
 }>;
@@ -43,6 +55,7 @@ export type QuestionOption = {
     | "growth"
     | "location"
     | "managed-shield"
+    | "question-help"
     | "raw-server"
     | "storage"
     | "support"
@@ -96,6 +109,25 @@ export type RecommendationResult = {
 };
 
 export type RecommendationDirection = "economy" | "balanced" | "performance";
+
+export type RecommendationOfferRole = "ECONOMY" | "RECOMMENDED" | "GROWTH";
+
+export type PublicRecommendationQuote = {
+  id: string;
+  role: RecommendationOfferRole;
+  title: string;
+  description: string | null;
+  deliveryMode: "RAW" | "MANAGED";
+  vcpu: number | null;
+  ramGb: number | null;
+  storageGb: number | null;
+  amountRial: string;
+  renewalAmountRial: string;
+  deliveryEstimateMinutes: number;
+  parchinIncluded: boolean;
+  reasons: string[];
+  expiresAt: string;
+};
 
 export type ProviderOffer = {
   id: string;

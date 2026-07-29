@@ -28,6 +28,8 @@ export function createInfrastructureProvider(): InfrastructureProviderAdapter {
       publicBaseUrl: env.parspackPublicApiBaseUrl,
       token: env.parspackApiToken,
       timeoutMs: env.parspackTimeoutMs,
+      priceCurrencyCode: env.parspackPriceCurrency,
+      priceAmountUnit: env.parspackPriceAmountUnit,
     });
   }
 

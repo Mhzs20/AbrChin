@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { ConfirmDialog, FormField } from "@/components/product";
 
@@ -10,66 +10,69 @@ type PlanRow = {
   title: string;
   description: string | null;
   deliveryMode: string;
-  regionCode: string;
-  sizeCode: string;
+  catalogItemId: string | null;
+  catalogMappingStatus: string;
   imageCode: string;
-  vcpu: number | null;
-  ramGb: number | null;
-  storageGb: number | null;
-  salePriceRial: string;
-  renewalPriceRial: string | null;
-  estimatedProviderCostRial: string;
   deliveryEstimateMinutes: number;
   parchinIncluded: boolean;
   active: boolean;
   sortOrder: number;
 };
 
-export function AdminPlansPanel({ initialPlans }: { initialPlans: PlanRow[] }) {
+type CatalogRow = {
+  id: string;
+  regionCode: string;
+  sizeCode: string;
+  compatibleImageCodes: string[];
+  vcpu: number | null;
+  ramMb: number | null;
+  diskGb: number | null;
+  available: boolean;
+  basePriceRial: string | null;
+  finalPriceRial: string | null;
+};
+
+const emptyForm = {
+  code: "",
+  title: "",
+  description: "",
+  deliveryMode: "RAW",
+  catalogItemId: "",
+  imageCode: "",
+  deliveryEstimateMinutes: "15",
+  parchinIncluded: false,
+  active: true,
+  sortOrder: "0",
+};
+
+function toman(value: string | null) {
+  return value ? `${(BigInt(value) / 10n).toLocaleString("fa-IR")} تومان` : "نامعتبر";
+}
+
+export function AdminPlansPanel({
+  initialPlans,
+  catalogItems,
+}: {
+  initialPlans: PlanRow[];
+  catalogItems: CatalogRow[];
+}) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PlanRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({
-    code: "",
-    title: "",
-    description: "",
-    deliveryMode: "RAW",
-    regionCode: "",
-    sizeCode: "",
-    imageCode: "",
-    vcpu: "",
-    ramGb: "",
-    storageGb: "",
-    salePriceToman: "",
-    renewalPriceToman: "",
-    estimatedProviderCostToman: "",
-    deliveryEstimateMinutes: "15",
-    parchinIncluded: false,
-    active: true,
-    sortOrder: "0",
-  });
+  const [form, setForm] = useState(emptyForm);
+  const selectedCatalog = useMemo(
+    () => catalogItems.find((item) => item.id === form.catalogItemId) ?? null,
+    [catalogItems, form.catalogItemId],
+  );
 
   function openCreate() {
+    const first = catalogItems.find((item) => item.available && item.finalPriceRial);
     setEditing(null);
     setForm({
-      code: "",
-      title: "",
-      description: "",
-      deliveryMode: "RAW",
-      regionCode: "",
-      sizeCode: "",
-      imageCode: "",
-      vcpu: "",
-      ramGb: "",
-      storageGb: "",
-      salePriceToman: "",
-      renewalPriceToman: "",
-      estimatedProviderCostToman: "",
-      deliveryEstimateMinutes: "15",
-      parchinIncluded: false,
-      active: true,
-      sortOrder: "0",
+      ...emptyForm,
+      catalogItemId: first?.id ?? "",
+      imageCode: first?.compatibleImageCodes[0] ?? "",
     });
     setError("");
     setOpen(true);
@@ -82,17 +85,8 @@ export function AdminPlansPanel({ initialPlans }: { initialPlans: PlanRow[] }) {
       title: plan.title,
       description: plan.description ?? "",
       deliveryMode: plan.deliveryMode,
-      regionCode: plan.regionCode,
-      sizeCode: plan.sizeCode,
+      catalogItemId: plan.catalogItemId ?? "",
       imageCode: plan.imageCode,
-      vcpu: plan.vcpu == null ? "" : String(plan.vcpu),
-      ramGb: plan.ramGb == null ? "" : String(plan.ramGb),
-      storageGb: plan.storageGb == null ? "" : String(plan.storageGb),
-      salePriceToman: String(Math.floor(Number(plan.salePriceRial) / 10)),
-      renewalPriceToman: String(
-        Math.floor(Number(plan.renewalPriceRial ?? plan.salePriceRial) / 10),
-      ),
-      estimatedProviderCostToman: String(Math.floor(Number(plan.estimatedProviderCostRial) / 10)),
       deliveryEstimateMinutes: String(plan.deliveryEstimateMinutes),
       parchinIncluded: plan.parchinIncluded,
       active: plan.active,
@@ -102,23 +96,28 @@ export function AdminPlansPanel({ initialPlans }: { initialPlans: PlanRow[] }) {
     setOpen(true);
   }
 
+  function selectCatalog(catalogItemId: string) {
+    const item = catalogItems.find((candidate) => candidate.id === catalogItemId);
+    setForm((current) => ({
+      ...current,
+      catalogItemId,
+      imageCode: item?.compatibleImageCodes[0] ?? "",
+    }));
+  }
+
   async function submit() {
     setLoading(true);
     setError("");
     try {
       const payload = {
         ...form,
-        salePriceToman: Number(form.salePriceToman),
-        renewalPriceToman: Number(form.renewalPriceToman || form.salePriceToman),
-        estimatedProviderCostToman: Number(form.estimatedProviderCostToman),
-        vcpu: Number(form.vcpu),
-        ramGb: Number(form.ramGb),
-        storageGb: Number(form.storageGb),
         deliveryEstimateMinutes: Number(form.deliveryEstimateMinutes),
         sortOrder: Number(form.sortOrder),
       };
       const response = await fetch(
-        editing ? `/api/admin/infrastructure/plans/${editing.id}` : "/api/admin/infrastructure/plans",
+        editing
+          ? `/api/admin/infrastructure/plans/${editing.id}`
+          : "/api/admin/infrastructure/plans",
         {
           method: editing ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -150,6 +149,7 @@ export function AdminPlansPanel({ initialPlans }: { initialPlans: PlanRow[] }) {
           <li key={plan.id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
             <span>
               {plan.title} <span className="product-tech">({plan.code})</span>
+              {plan.catalogMappingStatus !== "MAPPED" ? " · بدون Mapping" : ""}
             </span>
             <button type="button" className="product-btn product-btn--quiet" onClick={() => openEdit(plan)}>
               ویرایش
@@ -166,66 +166,58 @@ export function AdminPlansPanel({ initialPlans }: { initialPlans: PlanRow[] }) {
         onConfirm={submit}
       >
         <FormField id="plan-code" label="کد">
-          <input
-            id="plan-code"
-            value={form.code}
-            onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-            disabled={Boolean(editing)}
-            required
-          />
+          <input id="plan-code" value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} disabled={Boolean(editing)} required />
         </FormField>
         <FormField id="plan-title" label="عنوان">
-          <input id="plan-title" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} required />
+          <input id="plan-title" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} required />
         </FormField>
         <FormField id="plan-desc" label="توضیحات">
-          <textarea id="plan-desc" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={2} />
+          <textarea id="plan-desc" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} rows={2} />
         </FormField>
         <FormField id="plan-mode" label="سطح همراهی">
-          <select id="plan-mode" value={form.deliveryMode} onChange={(e) => setForm((f) => ({ ...f, deliveryMode: e.target.value }))}>
+          <select id="plan-mode" value={form.deliveryMode} onChange={(event) => setForm((current) => ({ ...current, deliveryMode: event.target.value }))}>
             <option value="RAW">خودمدیریتی</option>
             <option value="MANAGED">مدیریت‌شده</option>
           </select>
         </FormField>
-        <FormField id="plan-region" label="کد Region">
-          <input id="plan-region" value={form.regionCode} onChange={(e) => setForm((f) => ({ ...f, regionCode: e.target.value }))} className="product-tech" />
+        <FormField id="plan-catalog" label="Catalog Size / Region">
+          <select id="plan-catalog" value={form.catalogItemId} onChange={(event) => selectCatalog(event.target.value)} required>
+            <option value="">انتخاب کنید</option>
+            {catalogItems.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.regionCode} / {item.sizeCode} · {item.vcpu ?? "—"} vCPU · {item.ramMb ?? "—"} MB · {item.available ? toman(item.finalPriceRial) : "ناموجود"}
+              </option>
+            ))}
+          </select>
         </FormField>
-        <FormField id="plan-size" label="کد Size">
-          <input id="plan-size" value={form.sizeCode} onChange={(e) => setForm((f) => ({ ...f, sizeCode: e.target.value }))} className="product-tech" />
+        <FormField id="plan-image" label="Image">
+          <select id="plan-image" value={form.imageCode} onChange={(event) => setForm((current) => ({ ...current, imageCode: event.target.value }))} required>
+            <option value="">انتخاب کنید</option>
+            {(selectedCatalog?.compatibleImageCodes ?? []).map((code) => (
+              <option key={code} value={code}>{code}</option>
+            ))}
+          </select>
         </FormField>
-        <FormField id="plan-image" label="کد Image">
-          <input id="plan-image" value={form.imageCode} onChange={(e) => setForm((f) => ({ ...f, imageCode: e.target.value }))} className="product-tech" />
-        </FormField>
-        <FormField id="plan-vcpu" label="vCPU نمایشی">
-          <input id="plan-vcpu" type="number" min={1} value={form.vcpu} onChange={(e) => setForm((f) => ({ ...f, vcpu: e.target.value }))} required />
-        </FormField>
-        <FormField id="plan-ram" label="RAM (GB)">
-          <input id="plan-ram" type="number" min={1} value={form.ramGb} onChange={(e) => setForm((f) => ({ ...f, ramGb: e.target.value }))} required />
-        </FormField>
-        <FormField id="plan-storage" label="فضا (GB)">
-          <input id="plan-storage" type="number" min={1} value={form.storageGb} onChange={(e) => setForm((f) => ({ ...f, storageGb: e.target.value }))} required />
-        </FormField>
-        <FormField id="plan-sale" label="قیمت فروش (تومان)">
-          <input id="plan-sale" type="number" min={1} value={form.salePriceToman} onChange={(e) => setForm((f) => ({ ...f, salePriceToman: e.target.value }))} required />
-        </FormField>
-        <FormField id="plan-renewal" label="قیمت تمدید ماهانه (تومان)">
-          <input id="plan-renewal" type="number" min={1} value={form.renewalPriceToman} onChange={(e) => setForm((f) => ({ ...f, renewalPriceToman: e.target.value }))} required />
-        </FormField>
-        <FormField id="plan-cost" label="هزینه Provider (تومان)">
-          <input id="plan-cost" type="number" min={1} value={form.estimatedProviderCostToman} onChange={(e) => setForm((f) => ({ ...f, estimatedProviderCostToman: e.target.value }))} required />
-        </FormField>
+        {selectedCatalog ? (
+          <p style={{ fontSize: 13 }}>
+            منابع Read-only: {selectedCatalog.vcpu ?? "—"} vCPU · {selectedCatalog.ramMb ?? "—"} MB RAM · {selectedCatalog.diskGb ?? "—"} GB
+            <br />
+            قیمت پایه: {toman(selectedCatalog.basePriceRial)} · قیمت نهایی: {toman(selectedCatalog.finalPriceRial)}
+          </p>
+        ) : null}
         <FormField id="plan-delivery" label="زمان تحویل تقریبی (دقیقه)">
-          <input id="plan-delivery" type="number" min={1} value={form.deliveryEstimateMinutes} onChange={(e) => setForm((f) => ({ ...f, deliveryEstimateMinutes: e.target.value }))} required />
+          <input id="plan-delivery" type="number" min={1} value={form.deliveryEstimateMinutes} onChange={(event) => setForm((current) => ({ ...current, deliveryEstimateMinutes: event.target.value }))} required />
         </FormField>
         <FormField id="plan-sort" label="ترتیب نمایش">
-          <input id="plan-sort" type="number" value={form.sortOrder} onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))} />
+          <input id="plan-sort" type="number" value={form.sortOrder} onChange={(event) => setForm((current) => ({ ...current, sortOrder: event.target.value }))} />
         </FormField>
         <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} />
+          <input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} />
           فعال
         </label>
         <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input type="checkbox" checked={form.parchinIncluded} onChange={(e) => setForm((f) => ({ ...f, parchinIncluded: e.target.checked }))} />
-          پرچین در این پلن فعال است
+          <input type="checkbox" checked={form.parchinIncluded} onChange={(event) => setForm((current) => ({ ...current, parchinIncluded: event.target.checked }))} />
+          پرچین پایه
         </label>
         {error ? <p className="product-error">{error}</p> : null}
       </ConfirmDialog>

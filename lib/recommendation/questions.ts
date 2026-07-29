@@ -78,6 +78,75 @@ const questions: Record<QuestionId, RecommendationQuestion> = {
       { value: "unknown", label: "نمی‌دونم", description: "ابرچین از نشانه‌های قبلی تخمین می‌زند", icon: "warning" },
     ],
   },
+  architecture: {
+    id: "architecture",
+    stepLabel: "شکل اجرا",
+    prompt: "پروژه‌ات از چه بخش‌هایی تشکیل شده؟",
+    helper: "لازم نیست معماری فنی را بدانی؛ نزدیک‌ترین تصویر را انتخاب کن.",
+    explanation:
+      "تعداد سرویس‌ها و وجود دیتابیس یا پردازش جدا، روی RAM، CPU و شیوه‌ی نگه‌داری اثر مستقیم دارد.",
+    example: "یک سایت ساده با اپلیکیشن، دیتابیس و Worker یک نیاز یکسان ندارد.",
+    decisionEffect: "اندازه‌ی پایه، حاشیه‌ی RAM و امکان خرید خودکار را دقیق‌تر می‌کند.",
+    unknownNote: "حالت «اپ و دیتابیس» را به‌عنوان فرض محافظه‌کارانه ثبت می‌کنیم.",
+    options: [
+      { value: "single", label: "یک سرویس ساده", description: "سایت یا برنامه‌ی سبک", icon: "compute" },
+      { value: "app_db", label: "اپ و دیتابیس", description: "برنامه همراه پایگاه داده", icon: "storage" },
+      { value: "multi_service", label: "چند سرویس", description: "اپ، Worker، دیتابیس یا چند کانتینر", icon: "growth" },
+      { value: "data_heavy", label: "داده و پردازش", description: "فایل، گزارش یا پردازش سنگین", icon: "storage" },
+      { value: "unknown", label: "مطمئن نیستم", description: "با یک فرض روشن جلو می‌رویم", icon: "warning" },
+    ],
+  },
+  storage: {
+    id: "storage",
+    stepLabel: "حجم واقعی",
+    prompt: "داده و فایل‌ها در شروع تقریباً چقدرند؟",
+    helper: "حجم فعلی مهم‌تر از حدس چند سال آینده است؛ مسیر ارتقا را جدا نگه می‌داریم.",
+    explanation:
+      "فضای سیستم‌عامل، دیتابیس، فایل‌ها و جای لازم برای بکاپ یا مهاجرت باید از ابتدا تفکیک شوند.",
+    example: "زیر ۵۰ گیگ سبک است؛ آرشیو فایل یا دیتابیس بزرگ می‌تواند از ۲۰۰ گیگ عبور کند.",
+    decisionEffect: "حداقل دیسک و امکان مهاجرت یا بکاپ امن را تعیین می‌کند.",
+    unknownNote: "یک حجم متوسط با امکان بازبینی پیشنهاد می‌شود.",
+    options: [
+      { value: "small", label: "کمتر از ۵۰ گیگ", description: "شروع سبک یا داده‌ی محدود", icon: "storage" },
+      { value: "medium", label: "۵۰ تا ۲۰۰ گیگ", description: "داده‌ی فعال و قابل رشد", icon: "storage" },
+      { value: "large", label: "بیشتر از ۲۰۰ گیگ", description: "آرشیو، دیتابیس یا فایل زیاد", icon: "warning" },
+      { value: "unknown", label: "نمی‌دونم", description: "بعداً از سرویس فعلی اندازه می‌گیریم", icon: "support" },
+    ],
+  },
+  growth: {
+    id: "growth",
+    stepLabel: "اتفاق بعدی",
+    prompt: "در سه ماه آینده چه تغییری محتمل‌تره؟",
+    helper: "ظرفیت امروز را جدا از رشد نزدیک می‌سنجیم تا نه کم بخری و نه بی‌دلیل زیاد.",
+    explanation:
+      "کمپین و رشد سریع می‌تواند نیاز لحظه‌ای را چند برابر کند؛ اما رشد پایدار معمولاً با ارتقای مرحله‌ای بهتر مدیریت می‌شود.",
+    example: "لانچ عمومی، تبلیغات یا ورود مشتری بزرگ یک جهش مصرف محسوب می‌شود.",
+    decisionEffect: "روی حاشیه ظرفیت و قابلیت Resize اثر می‌گذارد.",
+    unknownNote: "رشد پایدار فرض می‌شود و امکان ارتقا حفظ خواهد شد.",
+    options: [
+      { value: "stable", label: "تقریباً ثابت", description: "رشد آرام و قابل پیش‌بینی", icon: "compute" },
+      { value: "campaign", label: "کمپین یا لانچ", description: "یک پیک مشخص در پیش است", icon: "traffic" },
+      { value: "rapid", label: "رشد سریع", description: "کاربر یا پردازش مدام بیشتر می‌شود", icon: "growth" },
+      { value: "unknown", label: "هنوز مشخص نیست", description: "مسیر ارتقا را باز نگه می‌داریم", icon: "warning" },
+    ],
+  },
+  downtime: {
+    id: "downtime",
+    stepLabel: "مهاجرت امن",
+    prompt: "برای انتقال، چقدر توقف قابل قبوله؟",
+    helper: "این پاسخ مشخص می‌کند مهاجرت خودکار کافی است یا باید برنامه‌ی Cutover داشته باشیم.",
+    explanation:
+      "انتقال تقریباً بدون توقف معمولاً به همگام‌سازی داده، تست و مسیر بازگشت نیاز دارد و خرید مستقیم یک سرور به‌تنهایی کافی نیست.",
+    example: "برای سرویس فعال فروش، توقف چندساعته با یک سایت آرشیوی یکسان نیست.",
+    decisionEffect: "می‌تواند خرید مستقیم را متوقف و مسیر همراهی مهاجرت را فعال کند.",
+    unknownNote: "توقف کوتاه به‌عنوان فرض اولیه ثبت می‌شود و قبل از اجرا بازبینی خواهد شد.",
+    options: [
+      { value: "flexible", label: "چند ساعت مشکلی نیست", description: "انتقال برنامه‌ریزی‌شده", icon: "support" },
+      { value: "short", label: "حداکثر چند دقیقه", description: "نیازمند Cutover کنترل‌شده", icon: "managed-shield" },
+      { value: "near_zero", label: "تقریباً بدون توقف", description: "نیازمند طراحی مهاجرت و بازگشت", icon: "warning" },
+      { value: "unknown", label: "مطمئن نیستم", description: "قبل از خرید بررسی می‌کنیم", icon: "question-help" },
+    ],
+  },
   criticality: {
     id: "criticality",
     stepLabel: "ریسک واقعی",
@@ -100,28 +169,42 @@ const questions: Record<QuestionId, RecommendationQuestion> = {
     id: "management",
     stepLabel: "سطح همراهی",
     prompt: "سرور رو خام می‌خوای یا همراه ابرچین؟",
-    helper: "خام یعنی مدیریت سیستم‌عامل با خودت؛ همراه یعنی راه‌اندازی امن و کمک عملیاتی.",
+    helper: "خام یعنی مدیریت سیستم‌عامل با خودت؛ همراه یعنی تحویل کنترل‌شده با پرچین پایه.",
     explanation:
-      "در حالت خام، به‌روزرسانی، SSH، فایروال و رفع خطا با خودت است. «همراه ابرچین» دامنه‌ی مشخص دارد و هزینه‌اش جدا نمایش داده می‌شود.",
-    example: "اگر نمی‌خواهی درگیر SSH و مراقبت روزمره شوی، حالت همراه مناسب‌تر است.",
+      "در حالت خام، به‌روزرسانی، SSH، فایروال و رفع خطا با خودت است. «همراه ابرچین» فعلاً تحویل کنترل‌شده، دسترسی یک‌بارمصرف و پیگیری راه‌اندازی را پوشش می‌دهد؛ پایش، بکاپ و نگه‌داری روزمره فقط وقتی جداگانه در سفارش ثبت شوند.",
+    example: "اگر تحویل امن و پیگیری راه‌اندازی می‌خواهی، حالت همراه مناسب‌تر است.",
     decisionEffect: "نوع تحویل، پرچین، مسئولیت‌ها و مبلغ نهایی را تغییر می‌دهد.",
     unknownNote: "حالت همراه را پیشنهاد می‌دهیم؛ قبل از پرداخت می‌توانی به خام تغییرش بدهی.",
     options: [
       { value: "raw", label: "سرور خام", description: "کنترل و مدیریت کامل با خودم", icon: "raw-server" },
-      { value: "managed", label: "همراه ابرچین", description: "راه‌اندازی امن، پرچین و کمک عملیاتی", icon: "managed-shield" },
+      { value: "managed", label: "همراه ابرچین", description: "پرچین پایه و پیگیری تحویل", icon: "managed-shield" },
       { value: "unknown", label: "کمکم کن انتخاب کنم", description: "مسئولیت‌ها را مقایسه و پیشنهاد می‌دهیم", icon: "support" },
     ],
   },
 };
 
-export const recommendationQuestionOrder: QuestionId[] = [
-  "project",
-  "audience",
-  "stage",
-  "usage",
-  "criticality",
-  "management",
-];
+export function getRecommendationQuestionOrder(
+  answers: RecommendationAnswers,
+): QuestionId[] {
+  const order: QuestionId[] = ["project", "stage", "audience", "usage", "architecture"];
+  const migration = answers.project === "migration" || answers.stage === "migration";
+  const dataSensitive =
+    answers.project === "data" ||
+    answers.architecture === "data_heavy" ||
+    migration;
+  const growthSensitive =
+    answers.stage === "launch" ||
+    answers.stage === "active" ||
+    answers.stage === "growing" ||
+    answers.usage === "daily" ||
+    answers.usage === "busy";
+
+  if (dataSensitive) order.push("storage");
+  if (growthSensitive) order.push("growth");
+  if (migration) order.push("downtime");
+  order.push("criticality", "management");
+  return order;
+}
 
 export function getRecommendationQuestion(
   id: QuestionId,
@@ -172,5 +255,13 @@ export function getDefaultAssistedAnswer(
       return "low";
     case "management":
       return "managed";
+    case "architecture":
+      return answers.project === "site" ? "single" : "app_db";
+    case "storage":
+      return "unknown";
+    case "growth":
+      return answers.stage === "growing" ? "rapid" : "stable";
+    case "downtime":
+      return "short";
   }
 }

@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 
 import { ProviderPanel } from "@/components/admin/provider-panel";
-import { getSystemStatuses } from "@/lib/admin/dashboard";
+import {
+  getProviderCatalogAdminView,
+  getSystemStatuses,
+} from "@/lib/admin/dashboard";
 
 export const metadata: Metadata = {
   title: "تأمین‌کننده‌ها | پنل مدیریت | ابرچین",
@@ -11,7 +14,10 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminProvidersPage() {
-  const system = await getSystemStatuses();
+  const [system, catalogItems] = await Promise.all([
+    getSystemStatuses(),
+    getProviderCatalogAdminView(),
+  ]);
   return (
     <ProviderPanel
       initial={{
@@ -19,6 +25,7 @@ export default async function AdminProvidersPage() {
         status: system.parspack.status,
         configured: system.parspack.status !== "unconfigured",
       }}
+      catalogItems={catalogItems}
     />
   );
 }

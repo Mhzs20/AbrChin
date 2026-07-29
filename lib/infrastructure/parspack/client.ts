@@ -27,6 +27,8 @@ type ParsPackClientConfig = {
   timeoutMs: number;
   fetchImpl?: typeof fetch;
   enabled?: boolean;
+  priceCurrencyCode?: string;
+  priceAmountUnit?: string;
 };
 
 type ApiScope = "management" | "public";
@@ -63,6 +65,8 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
   private readonly enabled: boolean;
+  private readonly priceCurrencyCode: string;
+  private readonly priceAmountUnit: string;
 
   constructor(config: ParsPackClientConfig) {
     const managementBaseUrl = trimBaseUrl(
@@ -76,6 +80,8 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
     this.timeoutMs = config.timeoutMs;
     this.fetchImpl = config.fetchImpl ?? fetch;
     this.enabled = config.enabled ?? true;
+    this.priceCurrencyCode = config.priceCurrencyCode?.trim().toUpperCase() ?? "";
+    this.priceAmountUnit = config.priceAmountUnit?.trim().toUpperCase() ?? "";
   }
 
   private ensureEnabled() {
@@ -181,7 +187,19 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
       this.readCatalogCollection("/sizes", parseParsPackSizes),
       this.readCatalogCollection("/images", parseParsPackImages),
     ]);
-    return { regions, sizes, images };
+    const confirmed =
+      this.priceCurrencyCode === "IRR" &&
+      (this.priceAmountUnit === "RIAL" || this.priceAmountUnit === "TOMAN");
+    return {
+      priceContract: {
+        currencyCode: confirmed ? this.priceCurrencyCode : null,
+        amountUnit: confirmed ? this.priceAmountUnit : null,
+        confirmed,
+      },
+      regions,
+      sizes,
+      images,
+    };
   }
 
   async createInstance(input: CreateInstanceInput): Promise<ProviderInstance> {

@@ -80,7 +80,11 @@ export async function getUserServices(userId: string) {
     orderBy: { createdAt: "desc" },
     include: {
       infrastructureOrder: {
-        include: { plan: true, provisioningJobs: { orderBy: { createdAt: "asc" } } },
+        include: {
+          plan: true,
+          serviceOrder: true,
+          provisioningJobs: { orderBy: { createdAt: "asc" } },
+        },
       },
     },
   });

@@ -33,12 +33,34 @@ test("customer recommendation UI does not reveal infrastructure providers", asyn
 test("checkout locks the quoted amount and rejects expired quotes", async () => {
   const service = await readFile("lib/orders/service.ts", "utf8");
   const payment = await readFile("lib/orders/pay-order-tx.ts", "utf8");
+  const ordersRoute = await readFile("app/api/orders/route.ts", "utf8");
 
   assert.match(service, /quoteExpiresAt/);
   assert.match(service, /10 \* 60 \* 1000/);
+  assert.match(service, /createServiceOrderFromQuote/);
+  assert.match(service, /recommendationQuoteId/);
+  assert.match(service, /quote\.session\.userId !== userId/);
   assert.match(payment, /quote_expired/);
+  assert.match(payment, /quote_mismatch/);
+  assert.match(payment, /RecommendationQuoteStatus\.CONVERTED/);
   assert.match(payment, /const amountRial = order\.amount/);
   assert.doesNotMatch(payment, /const amountRial = plan\.salePriceRial/);
+  assert.match(ordersRoute, /quoteId/);
+});
+
+test("guided recommendation requests server-generated quotes instead of static cards", async () => {
+  const conversation = await readFile("components/conversation-builder.tsx", "utf8");
+  const quoteRoute = await readFile("app/api/recommendations/quotes/route.ts", "utf8");
+  const quoteService = await readFile("lib/recommendation/quote-service.ts", "utf8");
+
+  assert.match(conversation, /\/api\/recommendations\/quotes/);
+  assert.match(conversation, /quotes=\{quotes\}/);
+  assert.match(quoteRoute, /parseRecommendationInput/);
+  assert.match(quoteService, /RecommendationQuoteRole/);
+  assert.match(quoteService, /rankProviderOffers/);
+  assert.match(quoteService, /RECOMMENDATION_QUOTE_VALIDITY_MS/);
+  assert.match(quoteService, /quoteNotice/);
+  assert.match(quoteService, /خرید خودکار متوقف شد/);
 });
 
 test("solutions use quick purchase and keep guided selection optional", async () => {

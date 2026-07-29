@@ -5,6 +5,7 @@ import {
   InfrastructureOrderStatus,
   InfrastructureProvider,
   ProvisioningJobStatus,
+  SubscriptionStatus,
   type Prisma,
 } from "@prisma/client";
 
@@ -17,6 +18,10 @@ import {
 } from "@/lib/infrastructure/errors";
 import { createInfrastructureProvider } from "@/lib/infrastructure/provider-factory";
 import type { InfrastructureProviderAdapter } from "@/lib/infrastructure/types";
+import {
+  addBillingMonth,
+  addGracePeriod,
+} from "@/lib/subscriptions/period";
 import { getWorkerConfig } from "@/lib/worker/config";
 
 const POLL_ATTEMPTS = 8;
@@ -401,13 +406,24 @@ export async function processProvisioningJob(
       throw new InfrastructureError("provider_ambiguous", "Instance state ambiguous");
     }
 
+    const activatedAt = new Date();
+    const periodEnd = addBillingMonth(activatedAt);
+    const activeInstance = await prisma.cloudInstance.findUniqueOrThrow({
+      where: { infrastructureOrderId: order.id },
+    });
+    const paidSnapshot = (order.serviceOrder.planSnapshot ?? {}) as Record<string, unknown>;
+    const renewalPriceRial =
+      typeof paidSnapshot.finalPriceRialSnapshot === "string"
+        ? BigInt(paidSnapshot.finalPriceRialSnapshot)
+        : order.serviceOrder.amount;
+
     await prisma.$transaction([
       prisma.cloudInstance.updateMany({
         where: { infrastructureOrderId: order.id },
         data: {
           ipv4: final.ipv4,
           status: CloudInstanceStatus.ACTIVE,
-          provisionedAt: new Date(),
+          provisionedAt: activatedAt,
         },
       }),
       prisma.infrastructureOrder.update({
@@ -422,6 +438,22 @@ export async function processProvisioningJob(
           workerId: null,
           lockedAt: null,
           leaseExpiresAt: null,
+        },
+      }),
+      prisma.serviceSubscription.upsert({
+        where: { cloudInstanceId: activeInstance.id },
+        update: {},
+        create: {
+          cloudInstanceId: activeInstance.id,
+          sourceOrderId: order.serviceOrderId,
+          userId: order.userId,
+          planId: order.planId,
+          status: SubscriptionStatus.ACTIVE,
+          renewalPriceRial,
+          currentPeriodStart: activatedAt,
+          currentPeriodEnd: periodEnd,
+          nextRenewalAt: periodEnd,
+          graceEndsAt: addGracePeriod(periodEnd),
         },
       }),
     ]);

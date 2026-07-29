@@ -15,10 +15,39 @@
 | دریافت VM | `GET /cserver/api/public/v1/vms/{id}` | پیاده‌سازی‌شده |
 | ساخت VM | `POST /cserver/api/v1/vms` | پیاده‌سازی‌شده |
 
+عملیات Start، Stop، Restart، Reset و Delete تا وقتی مسیر، payload، پاسخ و رفتار
+idempotency آن‌ها با حساب واقعی پذیرش نشده، در Adapter و رابط مشتری فعال
+نمی‌شوند. دکمه‌ای که فقط ظاهراً کار کند یا از endpoint حدسی استفاده کند مجاز
+نیست.
+
 تمام درخواست‌ها هدرهای `Accept: application/json`،
 `Accept-Language: en` و `Authorization: Bearer ...` دارند. پاسخ‌های رسمی
 envelopeهایی مانند `vm`، `vms`، `regions`، `sizes` و `images` دارند و Adapter
 آن‌ها را به قرارداد داخلی ابرچین تبدیل می‌کند.
+
+## قرارداد قیمت و واحد پول
+
+Source of Truth فیلدهای قیمت، OpenAPI رسمی
+`https://docs.parspack.com/reference/api/cloud-server/` و پاسخ همان endpoint
+`GET /cserver/api/public/v1/sizes` است. پاسخ رسمی فیلدهای
+`price_hourly` و `price_monthly` را نشان می‌دهد، اما نسخه `1.0.0` OpenAPI برای
+این دو فیلد Currency، Amount Unit و Tax semantics تعریف نکرده است. بنابراین
+ابرچین هیچ‌وقت از روی مقدار عددی حدس نمی‌زند که واحد ریال یا تومان است.
+
+دو متغیر زیر فقط پس از دریافت قرارداد مکتوب Provider یا تطبیق رسمی صورتحساب
+تنظیم می‌شوند:
+
+```dotenv
+PARSPACK_PRICE_CURRENCY=IRR
+PARSPACK_PRICE_AMOUNT_UNIT=TOMAN # یا RIAL، فقط مطابق قرارداد تأییدشده
+```
+
+اگر هر دو مقدار معتبر نباشند، Sync قیمت خام را Persist می‌کند اما
+`currencyCode` و `amountUnit` را خالی نگه می‌دارد، `pricedItemCount` صفر است و
+هیچ Plan یا Quote جدیدی قابل فروش نیست. Tax به‌طور ضمنی اضافه یا حذف نمی‌شود.
+
+مبالغ Provider با Scale ثابت شش رقم اعشار به `BigInt` تبدیل می‌شوند؛ بنابراین
+مقادیر اعشاری مثل `price_hourly: 0.42` نیز بدون Float ذخیره می‌شوند.
 
 ## تنظیمات محیط
 
@@ -29,6 +58,8 @@ PARSPACK_API_BASE_URL=https://my.parspack.com/cserver/api/v1
 PARSPACK_PUBLIC_API_BASE_URL=https://my.parspack.com/cserver/api/public/v1
 PARSPACK_API_TOKEN=
 PARSPACK_TIMEOUT_MS=15000
+PARSPACK_PRICE_CURRENCY=
+PARSPACK_PRICE_AMOUNT_UNIT=
 ```
 
 توکن فقط باید در Secret Store محیط اجرا قرار بگیرد و نباید در Git، پنل ادمین،
@@ -45,19 +76,68 @@ npm run integration:parspack
 این Probe فقط اتصال و کاتالوگ را می‌خواند، VM ایجاد یا حذف نمی‌کند و توکن را
 چاپ نمی‌کند.
 
-## معیار فعال‌کردن قیمت روز و خرید
+## Persist و Availability
 
-وجود توکن به‌تنهایی برای فعال‌شدن CTA خرید کافی نیست. پیش از Production باید
-این موارد روی حساب همکاری واقعی تأیید شوند:
+دکمه Sync ادمین Region/Size/Image را فقط نمی‌شمارد. هر ترکیب قطعی
+`provider + regionCode + sizeCode` در `ProviderCatalogItem` Upsert می‌شود و
+منابع، سازگاری Image، Availability، قیمت ساعتی/ماهانه، Currency/Unit،
+`lastSyncedAt` و `rawUpdatedAt` را نگه می‌دارد. Sync idempotent است.
 
-1. `sizes` قیمت معتبر، واحد پول مشخص و `available` قابل اتکا برگرداند.
-2. Region انتخابی در هر دو فهرست `regions[].sizes` و `sizes[].regions` موجود باشد.
-3. یک ساخت VM در حساب Staging پاسخ دارای `vm.id` بدهد.
-4. خواندن همان VM با ID و یافتن آن با نام هر دو موفق باشند.
-5. خطای موجودی ناکافی با پاسخ واقعی ثبت و به
-   `provider_insufficient_balance` نگاشت شود.
-6. زمان ساخت، حالت‌های status و رسیدن IP در تست پذیرش اندازه‌گیری شوند.
-7. واحد و دوره‌ی `price_hourly` و `price_monthly` با صورتحساب واقعی تطبیق داده شود.
+قبل از هر Sync، رکوردهای قبلی حذف نمی‌شوند. Size حذف‌شده یا ناموجود
+`available=false` و `unavailableAt` می‌گیرد، از Plan/Quote جدید کنار گذاشته
+می‌شود و Snapshotهای Quote، Order و Renewal قبلی بدون تغییر می‌مانند. Region
+نامشخص با `__unscoped__` Persist ولی غیرقابل فروش می‌شود؛ اتصال حدسی به Region
+دیگر ممنوع است.
 
-تا پایان این پذیرش، ابرچین می‌تواند کاتالوگ را بخواند و مسیر Provisioning را
-آماده نگه دارد، اما نباید قیمت نهایی یا «تحویل فوری قطعی» نشان دهد.
+Planهای قدیمی فقط با تطبیق دقیق Provider/Region/Size و Image سازگار Mapping
+می‌شوند. Plan بدون تطبیق غیرفعال و در Admin با وضعیت `UNMAPPED` دیده می‌شود.
+
+`parchinIncluded` در پلن فعلی فقط «پرچین پایه» یعنی کنترل تحویل و دسترسی
+یک‌بارمصرف را نشان می‌دهد. این مقدار نباید به‌عنوان قابلیت Backup یا Monitoring
+به موتور پیشنهاد داده شود. بکاپ روزانه برای نیازهای پرریسک یک شرط سخت است و تا
+اتصال قابلیت واقعی، خرید خودکار آن نیاز متوقف می‌ماند.
+
+## Markup و قیمت نهایی
+
+`ProviderPricingConfig` برای ParsPack فقط یک `markupBasisPoints` سراسری دارد.
+ادمین درصد Markup را ویرایش می‌کند؛ Base Price، Resources و Final Price
+Read-only هستند. Provider Cost، Sale Price و Renewal Price قدیمی فقط برای
+سازگاری Schema و Rollback حفظ شده‌اند و Source of Truth نیستند.
+
+فرمول داخلی:
+
+```text
+providerBasePriceRial = ceil(providerMonthlyAmount × rialMultiplier / 10^6)
+finalPriceRial = ceil(providerBasePriceRial × (10000 + markupBasisPoints) / 10000)
+```
+
+برای مثال قرارداد Toman، قیمت پایه `500000` و Markup `25%`، به
+`6,250,000 IRR` یا `625,000 تومان` می‌رسد. گردکردن همیشه رو‌به‌بالا تا یک ریال
+است و با تست پوشش داده شده است.
+
+## Quote، Payment و Renewal
+
+Quote خرید ده دقیقه اعتبار دارد و Catalog Item، Region، Size، Image، منابع،
+Base Price، Markup، Final Price، Currency و زمان بررسی قیمت را Snapshot
+می‌کند. قبل از برداشت کیف پول، Catalog Item و Availability دوباره خوانده
+می‌شوند. تغییر قیمت Quote قبلی را رد می‌کند و یک Quote جدید Customer-safe
+می‌سازد؛ نام Provider و Base Price در پاسخ مشتری وجود ندارند.
+
+Order پرداخت‌شده قبل از Revalidation بازگردانده می‌شود و مبلغ یا Snapshot آن
+با Sync یا تغییر Markup تغییر نمی‌کند. `requiredFundingRial` از Snapshot
+تأییدشده همان پرداخت می‌آید.
+
+تمدید خودکار و Auto-charge وجود ندارد. Customer ابتدا یک Renewal Quote
+ده‌دقیقه‌ای با قیمت فعلی می‌گیرد و سپس همان قیمت را تأیید و پرداخت می‌کند.
+قبل از برداشت، قیمت و Availability دوباره Revalidate می‌شوند و هر تمدید
+Snapshot و Ledger idempotency مستقل دارد.
+
+## Migration، Rollback و سازگاری داده
+
+Migration `20260729200000_parspack_catalog_pricing` فقط enum، جدول، index،
+foreign key و ستون nullable/defaultدار اضافه می‌کند. جدول مالی، Order،
+Transaction یا Snapshot قبلی حذف/بازنویسی نمی‌شود. ستون‌های قیمت دستی قدیمی
+برای rollback کد حفظ شده‌اند، ولی Flow جدید آن‌ها را نمی‌خواند. تنها data
+update، خاموش‌کردن `autoRenew=true` قدیمی است تا پس از ارتقا برداشت خودکار رخ
+ندهد. Rollback اپلیکیشن می‌تواند ستون‌های قدیمی را بخواند؛ rollback دیتابیس
+نیازی به پاک‌کردن داده جدید ندارد.

@@ -1,12 +1,14 @@
 "use client";
 
-import { ArrowLeft, Check, HeartHandshake, PackageCheck, Server, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Check, HeartHandshake, Server, ShieldCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
+import type { ManagementKind } from "@/lib/recommendation/types";
+
 type SupportLevel = {
-  id: string;
+  id: Exclude<ManagementKind, "unknown">;
   kicker: string;
   title: string;
   description: string;
@@ -22,29 +24,21 @@ const levels: SupportLevel[] = [
     title: "خام",
     description: "زیرساخت رو تحویل می‌گیری و ادامه‌ی فنی با تیم خودته.",
     icon: Server,
-    items: ["دسترسی کامل", "انتخاب منابع", "پرچین به‌صورت اختیاری"],
-  },
-  {
-    id: "ready",
-    kicker: "سریع شروع کن",
-    title: "آماده‌به‌کار",
-    description: "محیط رو آماده و امن می‌کنیم؛ تو مستقیم پروژه رو بالا میاری.",
-    icon: PackageCheck,
-    items: ["تنظیم اولیه", "پرچین برای امن‌سازی", "آماده‌ی استقرار"],
-    recommended: true,
+    items: ["دسترسی کامل", "انتخاب منابع", "مدیریت و نگه‌داری با خودت"],
   },
   {
     id: "managed",
-    kicker: "خیالت راحت",
-    title: "مدیریت‌شده",
-    description: "زیرساخت و مراقبتش رو می‌سپری به ابرچین و روی کارت می‌مونی.",
+    kicker: "تحویل کنترل‌شده",
+    title: "همراه ابرچین",
+    description: "سرور بعد از کنترل وضعیت و با دسترسی یک‌بارمصرف تحویل می‌شه.",
     icon: HeartHandshake,
-    items: ["پرچین فعال", "پایش و بکاپ", "همراهی وقت رشد"],
+    items: ["پرچین پایه", "تحویل امن دسترسی", "پیگیری راه‌اندازی"],
+    recommended: true,
   },
 ];
 
 export function SupportSelector() {
-  const [selectedId, setSelectedId] = useState("ready");
+  const [selectedId, setSelectedId] = useState<SupportLevel["id"]>("managed");
   const selected = levels.find((level) => level.id === selectedId) ?? levels[1];
 
   return (
@@ -79,7 +73,12 @@ export function SupportSelector() {
         <div>
           <span>انتخاب فعلی</span>
           <strong>{selected.title}</strong>
-          <p><ShieldCheck size={14} aria-hidden="true" /> سطح پرچین متناسب با همین انتخاب تنظیم می‌شه.</p>
+          <p>
+            <ShieldCheck size={14} aria-hidden="true" />
+            {selected.id === "managed"
+              ? "پرچین پایه شامل تحویل کنترل‌شده است؛ پایش و بکاپ خودکار جزوش نیست."
+              : "پایش، بکاپ و نگه‌داری کامل با خودت است."}
+          </p>
         </div>
         <Link className="button button-primary" href={`/compass?management=${selected.id}`}>
           ساخت پیشنهاد با این سطح

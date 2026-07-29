@@ -23,8 +23,8 @@ async function main() {
   const availableSizes = catalog.sizes.filter((size) => size.available !== false);
   const pricedSizes = availableSizes.filter(
     (size) =>
-      (size.priceHourly != null && size.priceHourly > 0) ||
-      (size.priceMonthly != null && size.priceMonthly > 0),
+      (size.priceHourly != null && Number(size.priceHourly) > 0) ||
+      (size.priceMonthly != null && Number(size.priceMonthly) > 0),
   );
 
   console.log(

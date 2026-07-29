@@ -24,7 +24,7 @@ export default function AboutPage() {
           <div className="eyebrow"><Sparkles size={15} aria-hidden="true" /> ابرچین؛ زیرساخت روی ابرها</div>
           <h1 id="about-title">زیرساخت باید محکم باشه، نه سنگین.</h1>
           <p>
-            ابرچین از نیازت شروع می‌کنه، گزینه‌ها رو می‌سنجه و ابرها رو طوری می‌چینه که ساده شروع کنی، با پرچین امن ادامه بدی و برای رشد به بن‌بست نخوری.
+            ابرچین از نیازت شروع می‌کنه، گزینه‌ها رو می‌سنجه و ابرها رو طوری می‌چینه که ساده شروع کنی، با پرچین پایه شفاف تحویل بگیری و برای رشد به بن‌بست نخوری.
           </p>
           <Link className="button button-primary" href="/compass">
             زیرساخت من رو بچین
@@ -42,7 +42,7 @@ export default function AboutPage() {
 
       <div className="brand-principles">
         <article><span><Layers3 size={22} aria-hidden="true" /></span><div><h2>ساده شروع کن</h2><p>از نیاز شروع می‌کنیم، نه اسم تکنولوژی.</p></div></article>
-        <article><span><ShieldCheck size={22} aria-hidden="true" /></span><div><h2>با پرچین امن بمون</h2><p>امن‌سازی، پایش و بکاپ به‌اندازه‌ی نیازت.</p></div></article>
+        <article><span><ShieldCheck size={22} aria-hidden="true" /></span><div><h2>با پرچین شفاف تحویل بگیر</h2><p>کنترل وضعیت و دسترسی یک‌بارمصرف؛ بدون وعده‌ی مبهم.</p></div></article>
         <article><span><LineChart size={22} aria-hidden="true" /></span><div><h2>بدون بن‌بست رشد کن</h2><p>برای قدم بعد از امروز جا می‌ذاریم.</p></div></article>
       </div>
 

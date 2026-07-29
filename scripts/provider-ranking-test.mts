@@ -77,6 +77,25 @@ test("insufficient resources never win because of a lower price", () => {
   assert.equal(result.rejected[0].reason, "insufficient_resources");
 });
 
+test("daily backup is a hard requirement while weekly backup stays a visible preference", () => {
+  const withoutBackup = offer({ id: "without-backup", supportsBackup: false });
+  const weekly = rankProviderOffers(
+    { ...profile, backupPolicy: "WEEKLY" },
+    [withoutBackup],
+    now,
+  );
+  const daily = rankProviderOffers(
+    { ...profile, backupPolicy: "DAILY" },
+    [withoutBackup],
+    now,
+  );
+
+  assert.equal(weekly.ranked[0]?.id, "without-backup");
+  assert.ok(weekly.ranked[0].scoreBreakdown.capability < 100);
+  assert.equal(daily.ranked.length, 0);
+  assert.equal(daily.rejected[0]?.reason, "missing_backup");
+});
+
 test("a cheap but unreliable offer does not automatically beat a healthy offer", () => {
   const result = rankProviderOffers(
     profile,

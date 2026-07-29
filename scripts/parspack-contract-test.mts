@@ -71,7 +71,7 @@ test("parses regions, sizes, images, live prices, and availability", () => {
         vcpus: 2,
         disk: 50,
         price_hourly: 1200,
-        price_monthly: 864000,
+        price_monthly: "864000.00",
         regions: ["tehran11"],
         available: true,
         transfer: 1000,
@@ -97,7 +97,8 @@ test("parses regions, sizes, images, live prices, and availability", () => {
   assert.deepEqual(regions[0]?.sizeCodes, ["irLinuxVPS4"]);
   assert.equal(sizes[0]?.vcpu, 2);
   assert.equal(sizes[0]?.memoryMb, 4096);
-  assert.equal(sizes[0]?.priceMonthly, 864000);
+  assert.equal(sizes[0]?.priceHourly, "1200");
+  assert.equal(sizes[0]?.priceMonthly, "864000");
   assert.equal(images[0]?.code, "ubuntu24-cloudinit-qcow2");
   assert.equal(images[0]?.osFamily, "Ubuntu");
   assert.equal(
@@ -148,6 +149,8 @@ test("uses management V1 for create and public V1 for catalog/read operations", 
     token: "contract-test-token",
     timeoutMs: 1000,
     fetchImpl,
+    priceCurrencyCode: "IRR",
+    priceAmountUnit: "TOMAN",
   });
 
   const created = await provider.createInstance({
@@ -167,6 +170,11 @@ test("uses management V1 for create and public V1 for catalog/read operations", 
   assert.equal(catalog.regions.length, 1);
   assert.equal(catalog.sizes.length, 1);
   assert.equal(catalog.images.length, 1);
+  assert.deepEqual(catalog.priceContract, {
+    currencyCode: "IRR",
+    amountUnit: "TOMAN",
+    confirmed: true,
+  });
 
   const createCall = calls.find((call) => call.url.endsWith("/api/v1/vms"));
   assert.ok(createCall);

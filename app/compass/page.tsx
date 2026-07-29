@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 
 import { ConversationBuilder } from "@/components/conversation-builder";
-import { listPublicPlanOffers } from "@/lib/orders/plans";
-import type { ProjectKind } from "@/lib/recommendation/types";
+import type { ManagementKind, ProjectKind } from "@/lib/recommendation/types";
 import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -21,6 +20,7 @@ const projects = new Set<ProjectKind>([
   "data",
   "other",
 ]);
+const managementModes = new Set<Exclude<ManagementKind, "unknown">>(["raw", "managed"]);
 
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -37,17 +37,20 @@ export default async function CompassPage({
     rawProject && projects.has(rawProject as ProjectKind)
       ? (rawProject as ProjectKind)
       : undefined;
+  const rawManagement = firstValue(params.management);
+  const initialManagement =
+    rawManagement &&
+    managementModes.has(rawManagement as Exclude<ManagementKind, "unknown">)
+      ? (rawManagement as Exclude<ManagementKind, "unknown">)
+      : undefined;
   const resume = firstValue(params.resume) === "1";
-  const [publicPlans, user] = await Promise.all([
-    listPublicPlanOffers(),
-    getCurrentUser(),
-  ]);
+  const user = await getCurrentUser();
 
   return (
     <ConversationBuilder
       initialProject={initialProject}
+      initialManagement={initialManagement}
       resume={resume}
-      publicPlans={publicPlans}
       signedIn={Boolean(user)}
     />
   );

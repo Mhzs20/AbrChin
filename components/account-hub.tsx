@@ -30,6 +30,7 @@ type Order = {
 const typeLabel: Record<string, string> = {
   TOP_UP: "شارژ",
   SERVICE_PURCHASE: "خرید سرویس",
+  SERVICE_RENEWAL: "تمدید سرویس",
   REFUND: "بازگشت وجه",
   ADMIN_ADJUSTMENT: "تعدیل",
 };

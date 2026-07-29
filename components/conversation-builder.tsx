@@ -26,16 +26,17 @@ import {
 import {
   getDefaultAssistedAnswer,
   getRecommendationQuestion,
-  recommendationQuestionOrder,
+  getRecommendationQuestionOrder,
 } from "@/lib/recommendation/questions";
 import type {
   AnswerSources,
+  ManagementKind,
   ProjectKind,
+  PublicRecommendationQuote,
   QuestionId,
   RecommendationAnswers,
   RecommendationDirection,
 } from "@/lib/recommendation/types";
-import type { PublicPlanOffer } from "@/lib/orders/plans";
 
 const storageKey = "abrchin:conversation:v1";
 
@@ -46,9 +47,9 @@ const confidenceLabels = {
 } as const;
 
 const backupLabels = {
-  NONE: "فعلاً بدون بکاپ",
-  WEEKLY: "بکاپ هفتگی",
-  DAILY: "بکاپ روزانه",
+  NONE: "نیاز الزامی ندارد",
+  WEEKLY: "هفتگی پیشنهاد می‌شود",
+  DAILY: "روزانه پیشنهاد می‌شود",
 } as const;
 
 type StoredDraft = {
@@ -71,28 +72,40 @@ function selectedLabel(questionId: QuestionId, value: string, answers: Recommend
 
 export function ConversationBuilder({
   initialProject,
+  initialManagement,
   resume = false,
-  publicPlans,
   signedIn,
 }: {
   initialProject?: ProjectKind;
+  initialManagement?: Exclude<ManagementKind, "unknown">;
   resume?: boolean;
-  publicPlans: PublicPlanOffer[];
   signedIn: boolean;
 }) {
   const reduceMotion = useReducedMotion();
   const [hydrated, setHydrated] = useState(!resume);
   const [answers, setAnswers] = useState<RecommendationAnswers>(
-    initialProject ? { project: initialProject } : {},
+    {
+      ...(initialProject ? { project: initialProject } : {}),
+      ...(initialManagement ? { management: initialManagement } : {}),
+    },
   );
   const [sources, setSources] = useState<AnswerSources>(
-    initialProject ? { project: "user" } : {},
+    {
+      ...(initialProject ? { project: "user" as const } : {}),
+      ...(initialManagement ? { management: "user" as const } : {}),
+    },
   );
   const [stepIndex, setStepIndex] = useState(initialProject ? 1 : 0);
   const [showResult, setShowResult] = useState(false);
   const [direction, setDirection] = useState<RecommendationDirection>("balanced");
   const [helpOpen, setHelpOpen] = useState(false);
   const [restored, setRestored] = useState(false);
+  const [quotes, setQuotes] = useState<PublicRecommendationQuote[]>([]);
+  const [quotesResolved, setQuotesResolved] = useState(false);
+  const [quotesError, setQuotesError] = useState<string | null>(null);
+  const [quotesNotice, setQuotesNotice] = useState<string | null>(null);
+  const [quotesRetry, setQuotesRetry] = useState(0);
+  const questionOrder = useMemo(() => getRecommendationQuestionOrder(answers), [answers]);
 
   useEffect(() => {
     if (!resume) return;
@@ -103,8 +116,9 @@ export function ConversationBuilder({
         if (isStoredDraft(parsed)) {
           setAnswers(parsed.answers);
           setSources(parsed.sources);
+          const restoredOrder = getRecommendationQuestionOrder(parsed.answers);
           setStepIndex(
-            Math.max(0, Math.min(parsed.stepIndex, recommendationQuestionOrder.length - 1)),
+            Math.max(0, Math.min(parsed.stepIndex, restoredOrder.length - 1)),
           );
           setShowResult(parsed.showResult);
           setDirection(parsed.direction ?? "balanced");
@@ -124,7 +138,45 @@ export function ConversationBuilder({
     window.sessionStorage.setItem(storageKey, JSON.stringify(draft));
   }, [answers, direction, hydrated, showResult, sources, stepIndex]);
 
-  const questionId = recommendationQuestionOrder[stepIndex];
+  useEffect(() => {
+    if (!showResult) return;
+
+    const controller = new AbortController();
+
+    async function loadQuotes() {
+      try {
+        const response = await fetch("/api/recommendations/quotes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answers, sources }),
+          signal: controller.signal,
+        });
+        const body = (await response.json()) as {
+          quotes?: PublicRecommendationQuote[];
+          quoteNotice?: string | null;
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(body.error ?? "دریافت پیشنهادها ممکن نیست.");
+        }
+        setQuotes(body.quotes ?? []);
+        setQuotesNotice(body.quoteNotice ?? null);
+        setQuotesResolved(true);
+      } catch (error: unknown) {
+        if (controller.signal.aborted) return;
+        setQuotes([]);
+        setQuotesNotice(null);
+        setQuotesResolved(true);
+        setQuotesError(error instanceof Error ? error.message : "دریافت پیشنهادها ممکن نیست.");
+      }
+    }
+
+    void loadQuotes();
+
+    return () => controller.abort();
+  }, [answers, quotesRetry, showResult, sources]);
+
+  const questionId = questionOrder[Math.min(stepIndex, questionOrder.length - 1)];
   const question = getRecommendationQuestion(questionId, answers);
   const selected = answers[questionId] as string | undefined;
   const recommendation = useMemo(
@@ -135,13 +187,18 @@ export function ConversationBuilder({
     () => adjustRecommendationProfile(recommendation, direction),
     [direction, recommendation],
   );
-  const completedAnswers = recommendationQuestionOrder
+  const completedAnswers = questionOrder
     .slice(0, stepIndex)
     .filter((id) => Boolean(answers[id]));
+  const quotesLoading = showResult && !quotesResolved && quotesError === null;
 
   function choose(value: string, source: AnswerSources[QuestionId] = "user") {
     setAnswers((current) => ({ ...current, [questionId]: value }));
     setSources((current) => ({ ...current, [questionId]: source }));
+    setQuotes([]);
+    setQuotesResolved(false);
+    setQuotesError(null);
+    setQuotesNotice(null);
   }
 
   function helpMeChoose() {
@@ -152,7 +209,7 @@ export function ConversationBuilder({
 
   function next() {
     if (!selected) return;
-    if (stepIndex === recommendationQuestionOrder.length - 1) {
+    if (stepIndex === questionOrder.length - 1) {
       setShowResult(true);
       return;
     }
@@ -177,6 +234,10 @@ export function ConversationBuilder({
     setDirection("balanced");
     setHelpOpen(false);
     setRestored(false);
+    setQuotes([]);
+    setQuotesResolved(false);
+    setQuotesError(null);
+    setQuotesNotice(null);
     window.sessionStorage.removeItem(storageKey);
   }
 
@@ -217,7 +278,7 @@ export function ConversationBuilder({
           <span>
             {showResult
               ? "پیشنهاد آماده"
-              : `سؤال ${stepIndex + 1} از ${recommendationQuestionOrder.length}`}
+              : `سؤال ${stepIndex + 1} از ${questionOrder.length}`}
           </span>
           <div>
             <motion.i
@@ -226,7 +287,7 @@ export function ConversationBuilder({
                 width: `${
                   showResult
                     ? 100
-                    : ((stepIndex + (selected ? 1 : 0)) / recommendationQuestionOrder.length) * 100
+                    : ((stepIndex + (selected ? 1 : 0)) / questionOrder.length) * 100
                 }%`,
               }}
               transition={transition}
@@ -344,7 +405,7 @@ export function ConversationBuilder({
                       disabled={!selected}
                       onClick={next}
                     >
-                      {stepIndex === recommendationQuestionOrder.length - 1
+                      {stepIndex === questionOrder.length - 1
                         ? "پیشنهاد رو بساز"
                         : "ادامه"}
                       <ArrowLeft size={17} aria-hidden="true" />
@@ -413,7 +474,7 @@ export function ConversationBuilder({
                     </strong>
                   </span>
                   <span>
-                    <small>بازیابی</small>
+                    <small>نیاز بکاپ</small>
                     <strong>{backupLabels[activeProfile.backupPolicy]}</strong>
                   </span>
                 </div>
@@ -458,16 +519,63 @@ export function ConversationBuilder({
                   <div>
                     <span>سه چینش واقعی ابرچین</span>
                     <strong>
-                      {publicPlans.length >= 3
+                      {quotes.length >= 3
                         ? "قیمت‌های فروش تأیید شده‌اند"
-                        : "چینش‌های قیمت‌دار به‌زودی آماده‌اند"}
+                        : quotesLoading
+                          ? "در حال بررسی قیمت و ظرفیت واقعی"
+                          : "ظرفیت‌های معتبر موجود نمایش داده شده‌اند"}
                     </strong>
                   </div>
-                  <QuickCloudPlans
-                    plans={publicPlans}
-                    signedIn={signedIn}
-                    compact
-                  />
+                  {quotesError ? (
+                    <section className="quick-plans-empty" role="alert">
+                      <CircleHelp size={24} aria-hidden="true" />
+                      <div>
+                        <strong>{quotesError}</strong>
+                        <button
+                          className="button button-quiet"
+                          type="button"
+                          onClick={() => {
+                            setQuotesError(null);
+                            setQuotes([]);
+                            setQuotesResolved(false);
+                            setQuotesNotice(null);
+                            setQuotesRetry((current) => current + 1);
+                          }}
+                        >
+                          <RefreshCw size={15} aria-hidden="true" />
+                          تلاش دوباره
+                        </button>
+                      </div>
+                    </section>
+                  ) : quotesLoading ? (
+                    <section className="quick-plans-empty" aria-live="polite">
+                      <RefreshCw className="spin" size={24} aria-hidden="true" />
+                      <div>
+                        <strong>قیمت، ظرفیت و تناسب چینش‌ها در حال بررسی است.</strong>
+                        <p>فقط پیشنهادهای قابل خرید وارد مقایسه می‌شوند.</p>
+                      </div>
+                    </section>
+                  ) : quotes.length === 0 && quotesNotice ? (
+                    <section className="quick-plans-empty" role="status">
+                      <ShieldCheck size={24} aria-hidden="true" />
+                      <div>
+                        <strong>{quotesNotice}</strong>
+                        <p>
+                          می‌تونی یک پاسخ را تغییر بدهی یا با همراهی ابرچین ادامه بدهی.
+                        </p>
+                      </div>
+                    </section>
+                  ) : (
+                    <>
+                      {quotesNotice ? (
+                        <div className="recommendation-caveat">
+                          <CircleHelp size={18} aria-hidden="true" />
+                          <p>{quotesNotice}</p>
+                        </div>
+                      ) : null}
+                      <QuickCloudPlans quotes={quotes} signedIn={signedIn} compact />
+                    </>
+                  )}
                 </div>
 
                 <div className="conversation-result-actions">

@@ -4,7 +4,11 @@ import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/db";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
-import { assertPositiveIntegerToman, tomanToRial } from "@/lib/money";
+import { assertPositiveIntegerToman } from "@/lib/money";
+import {
+  compatibleImageCodes,
+  resolveCatalogItemPricing,
+} from "@/lib/pricing/plan-pricing";
 import { readRequestMeta } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -17,31 +21,78 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const admin = await requireAdminUser();
     const meta = await readRequestMeta(request);
     const { id } = await params;
-    const before = await prisma.infrastructurePlan.findUnique({ where: { id } });
+    const before = await prisma.infrastructurePlan.findUnique({
+      where: { id },
+      include: { catalogItem: true },
+    });
     if (!before) return jsonError("پلن پیدا نشد.", 404);
 
     const body = (await request.json()) as Record<string, unknown>;
     const data: Record<string, unknown> = { updatedById: admin.id };
+    if (
+      "salePriceToman" in body ||
+      "renewalPriceToman" in body ||
+      "estimatedProviderCostToman" in body ||
+      "vcpu" in body ||
+      "ramGb" in body ||
+      "storageGb" in body ||
+      "regionCode" in body ||
+      "sizeCode" in body
+    ) {
+      return jsonError("قیمت، منابع، Region و Size فقط از Catalog Item خوانده می‌شوند.", 400);
+    }
 
     if (typeof body.title === "string") data.title = body.title.trim();
     if (typeof body.description === "string") data.description = body.description.trim();
     if (body.deliveryMode === "MANAGED" || body.deliveryMode === "RAW") {
       data.deliveryMode = body.deliveryMode as DeliveryMode;
     }
-    if (typeof body.regionCode === "string") data.regionCode = body.regionCode.trim();
-    if (typeof body.sizeCode === "string") data.sizeCode = body.sizeCode.trim();
-    if (typeof body.imageCode === "string") data.imageCode = body.imageCode.trim();
-    if (body.vcpu != null) data.vcpu = assertPositiveIntegerToman(body.vcpu);
-    if (body.ramGb != null) data.ramGb = assertPositiveIntegerToman(body.ramGb);
-    if (body.storageGb != null) data.storageGb = assertPositiveIntegerToman(body.storageGb);
-    if (body.salePriceToman != null) data.salePriceRial = tomanToRial(assertPositiveIntegerToman(body.salePriceToman));
-    if (body.renewalPriceToman != null) {
-      data.renewalPriceRial = tomanToRial(assertPositiveIntegerToman(body.renewalPriceToman));
+    const catalogItemId =
+      typeof body.catalogItemId === "string"
+        ? body.catalogItemId.trim()
+        : before.catalogItemId;
+    const catalogItem = catalogItemId
+      ? await prisma.providerCatalogItem.findUnique({ where: { id: catalogItemId } })
+      : null;
+    if (!catalogItem || catalogItem.provider !== before.provider) {
+      return jsonError("Catalog Item معتبر نیست.", 400);
     }
-    if (body.estimatedProviderCostToman != null) {
-      data.estimatedProviderCostRial = tomanToRial(assertPositiveIntegerToman(body.estimatedProviderCostToman));
+    const imageCode =
+      typeof body.imageCode === "string" ? body.imageCode.trim() : before.imageCode;
+    if (!compatibleImageCodes(catalogItem).includes(imageCode)) {
+      return jsonError("Image با Catalog Item سازگار نیست.", 400);
     }
-    if (typeof body.active === "boolean") data.active = body.active;
+    const pricingConfig = await prisma.providerPricingConfig.findUnique({
+      where: { provider: before.provider },
+    });
+    const pricing = pricingConfig
+      ? resolveCatalogItemPricing(catalogItem, pricingConfig)
+      : null;
+    const requestedActive =
+      typeof body.active === "boolean" ? body.active : before.active;
+    if (requestedActive && !pricing) {
+      return jsonError("Catalog Item ناموجود یا فاقد قرارداد قیمت معتبر است.", 400);
+    }
+    Object.assign(data, {
+      catalogItemId: catalogItem.id,
+      catalogMappingStatus: "MAPPED",
+      catalogMappedAt: new Date(),
+      regionCode: catalogItem.regionCode,
+      sizeCode: catalogItem.sizeCode,
+      imageCode,
+      vcpu: catalogItem.vcpu,
+      ramGb:
+        catalogItem.ramMb == null ? null : Math.ceil(catalogItem.ramMb / 1024),
+      storageGb: catalogItem.diskGb,
+      active: requestedActive && pricing != null,
+      ...(pricing
+        ? {
+            salePriceRial: pricing.finalPriceRial,
+            renewalPriceRial: pricing.finalPriceRial,
+            estimatedProviderCostRial: pricing.providerBasePriceRial,
+          }
+        : {}),
+    });
     if (typeof body.sortOrder === "number") data.sortOrder = body.sortOrder;
     if (body.deliveryEstimateMinutes != null) {
       data.deliveryEstimateMinutes = assertPositiveIntegerToman(body.deliveryEstimateMinutes);

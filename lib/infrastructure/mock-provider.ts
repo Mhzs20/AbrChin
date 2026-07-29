@@ -10,8 +10,26 @@ import type {
 } from "@/lib/infrastructure/types";
 
 const MOCK_CATALOG: ProviderCatalog = {
+  priceContract: {
+    currencyCode: "IRR",
+    amountUnit: "TOMAN",
+    confirmed: true,
+  },
   regions: [{ code: "tehran11", name: "تهران" }],
-  sizes: [{ code: "irLinuxVPS4", name: "Linux VPS 4", regionCode: "tehran11" }],
+  sizes: [
+    {
+      code: "irLinuxVPS4",
+      name: "Linux VPS 4",
+      regionCode: "tehran11",
+      regionCodes: ["tehran11"],
+      available: true,
+      vcpu: 2,
+      memoryMb: 4096,
+      diskGb: 50,
+      priceHourly: "1200",
+      priceMonthly: "120000",
+    },
+  ],
   images: [{ code: "ubuntu24-cloudinit-qcow2", name: "Ubuntu 24", osFamily: "linux" }],
 };
 

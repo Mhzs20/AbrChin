@@ -41,7 +41,9 @@ function rejectReason(
     return "insufficient_resources";
   }
   if (!offer.deliveryModes.includes(profile.deliveryMode)) return "delivery_mode_mismatch";
-  if (profile.backupPolicy !== "NONE" && !offer.supportsBackup) return "missing_backup";
+  if (profile.backupPolicy === "DAILY" && !offer.supportsBackup) {
+    return "missing_backup";
+  }
   return null;
 }
 

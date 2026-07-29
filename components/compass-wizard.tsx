@@ -307,7 +307,7 @@ export function CompassWizard({ initialAnswers = {} }: { initialAnswers?: Compas
     `منابع اولیه: ${selectedPlan.cpu} vCPU / ${selectedPlan.ram} GB RAM / ${selectedPlan.storage} GB Storage`,
     `موقعیت: ${result.location}`,
     `سطح همراهی: ${result.management}`,
-    `پرچین: ${parchinIsActive ? "فعال" : "غیرفعال"}`,
+    `پرچین: ${parchinIsActive ? "پایه" : "ندارد"}`,
   ].join("\n");
 
   const contactHref = `mailto:hello@abrchin.ir?subject=${encodeURIComponent(`بررسی پیشنهاد ${result.project}`)}&body=${encodeURIComponent(`سلام ابرچین،\n\nاین پیشنهاد رو برای بررسی انتخاب کردم:\n${requestSummary}\n\nلطفاً قیمت روز و زمان راه‌اندازی رو اعلام کنید.`)}`;
@@ -370,8 +370,8 @@ export function CompassWizard({ initialAnswers = {} }: { initialAnswers?: Compas
               <span className="parchin-icon"><ShieldCheck size={24} aria-hidden="true" /></span>
               <span>
                 <small>قابلیت حفاظتی ابرچین</small>
-                <strong>پرچین {parchinIsActive ? "فعاله" : "اختیاریه"}</strong>
-                <p>امن‌سازی، پایش، بکاپ و هشدارهای ضروری.</p>
+                <strong>{parchinIsActive ? "پرچین پایه" : "بدون پرچین"}</strong>
+                <p>تحویل کنترل‌شده و دسترسی یک‌بارمصرف؛ بدون پایش یا بکاپ خودکار.</p>
               </span>
               <span className="toggle" aria-hidden="true"><span /></span>
             </button>
@@ -396,7 +396,7 @@ export function CompassWizard({ initialAnswers = {} }: { initialAnswers?: Compas
               <div><MapPin size={19} aria-hidden="true" /><span>موقعیت</span><strong>{result.location}</strong></div>
               <div><HeartHandshake size={19} aria-hidden="true" /><span>همراهی</span><strong>{result.management}</strong></div>
               <div><Clock3 size={19} aria-hidden="true" /><span>راه‌اندازی</span><strong>بعد از تأیید</strong></div>
-              <div><ShieldCheck size={19} aria-hidden="true" /><span>پرچین</span><strong>{parchinIsActive ? "فعال" : "اختیاری"}</strong></div>
+              <div><ShieldCheck size={19} aria-hidden="true" /><span>پرچین</span><strong>{parchinIsActive ? "پایه" : "ندارد"}</strong></div>
             </div>
 
             <div className="quote-box">

@@ -7,10 +7,12 @@ import { useToast } from "@/components/product/toast";
 
 export function OrderCheckoutPanel({
   planId,
+  quoteId,
   planTitle,
   priceToman,
 }: {
-  planId: string;
+  planId?: string;
+  quoteId?: string;
   planTitle: string;
   priceToman: string;
 }) {
@@ -24,14 +26,35 @@ export function OrderCheckoutPanel({
       const createRes = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId }),
+        body: JSON.stringify(quoteId ? { quoteId } : { planId }),
       });
       const createBody = await createRes.json();
-      if (!createRes.ok) throw new Error(createBody.error ?? "ساخت سفارش ناموفق بود");
+      if (!createRes.ok) {
+        if (createBody.replacementQuote?.id) {
+          showToast("قیمت تغییر کرده؛ پیشنهاد تازه نمایش داده شد.");
+          router.push(`/account/order/quote/${createBody.replacementQuote.id}`);
+          router.refresh();
+          return;
+        }
+        throw new Error(createBody.error ?? "ساخت سفارش ناموفق بود");
+      }
+      if (createBody.order.amountTomanFa !== priceToman) {
+        showToast("قیمت تغییر کرده است؛ قیمت تازه را بررسی و دوباره تأیید کنید.");
+        router.refresh();
+        return;
+      }
 
       const payRes = await fetch(`/api/orders/${createBody.order.id}/pay-with-wallet`, { method: "POST" });
       const payBody = await payRes.json();
-      if (!payRes.ok) throw new Error(payBody.error ?? "پرداخت ناموفق بود");
+      if (!payRes.ok) {
+        if (payBody.replacementQuote?.id) {
+          showToast("قیمت تغییر کرده؛ پیشنهاد تازه نمایش داده شد.");
+          router.push(`/account/order/quote/${payBody.replacementQuote.id}`);
+          router.refresh();
+          return;
+        }
+        throw new Error(payBody.error ?? "پرداخت ناموفق بود");
+      }
 
       showToast(`سفارش ${planTitle} با موفقیت پرداخت شد.`);
       router.push("/account/orders");

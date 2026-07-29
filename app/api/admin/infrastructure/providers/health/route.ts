@@ -46,6 +46,15 @@ export async function POST(request: Request) {
           regionCount: state.regionCount,
           sizeCount: state.sizeCount,
           imageCount: state.imageCount,
+          catalogItemCount: state.catalogItemCount,
+          pricedItemCount: state.pricedItemCount,
+          unavailableItemCount: state.unavailableItemCount,
+          markupBasisPoints:
+            (
+              await prisma.providerPricingConfig.findUnique({
+                where: { provider: InfrastructureProvider.PARSPACK },
+              })
+            )?.markupBasisPoints ?? 0,
           lastError: state.lastError,
           configured: false,
         },
@@ -68,6 +77,15 @@ export async function POST(request: Request) {
         regionCount: state.regionCount,
         sizeCount: state.sizeCount,
         imageCount: state.imageCount,
+        catalogItemCount: state.catalogItemCount,
+        pricedItemCount: state.pricedItemCount,
+        unavailableItemCount: state.unavailableItemCount,
+        markupBasisPoints:
+          (
+            await prisma.providerPricingConfig.findUnique({
+              where: { provider: InfrastructureProvider.PARSPACK },
+            })
+          )?.markupBasisPoints ?? 0,
         lastError: state.lastError,
         configured: true,
       },

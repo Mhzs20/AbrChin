@@ -9,6 +9,8 @@ import { prisma } from "@/lib/db";
 import { isProviderConfigured } from "@/lib/infrastructure/provider-factory";
 import { getWorkerHealthStatus } from "@/lib/infrastructure/provisioning-service";
 import { ensureGatewayConfigsSeeded } from "@/lib/payments/gateway-config";
+import { catalogItemBasePriceRial } from "@/lib/pricing/plan-pricing";
+import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
 
 export async function getAdminDashboardStats() {
   const todayStart = new Date();
@@ -73,6 +75,9 @@ export async function getSystemStatuses() {
   await ensureGatewayConfigsSeeded();
   const gateways = await prisma.paymentGatewayConfig.findMany();
   const catalog = await prisma.providerCatalogState.findUnique({ where: { provider: "PARSPACK" } });
+  const pricing = await prisma.providerPricingConfig.findUnique({
+    where: { provider: "PARSPACK" },
+  });
 
   let parspackStatus: "healthy" | "unconfigured" | "disabled" | "error" = "unconfigured";
   let parspackMessage = "تنظیم نشده";
@@ -109,6 +114,10 @@ export async function getSystemStatuses() {
       regionCount: catalog?.regionCount ?? 0,
       sizeCount: catalog?.sizeCount ?? 0,
       imageCount: catalog?.imageCount ?? 0,
+      catalogItemCount: catalog?.catalogItemCount ?? 0,
+      pricedItemCount: catalog?.pricedItemCount ?? 0,
+      unavailableItemCount: catalog?.unavailableItemCount ?? 0,
+      markupBasisPoints: pricing?.markupBasisPoints ?? 0,
       lastError: catalog?.lastError ?? null,
     },
     worker: {
@@ -120,6 +129,40 @@ export async function getSystemStatuses() {
       cyclesTotal: worker.cyclesTotal ?? 0,
     },
   };
+}
+
+export async function getProviderCatalogAdminView() {
+  const [items, pricing] = await Promise.all([
+    prisma.providerCatalogItem.findMany({
+      where: { provider: "PARSPACK", active: true },
+      orderBy: [{ regionCode: "asc" }, { sizeCode: "asc" }],
+      take: 200,
+    }),
+    prisma.providerPricingConfig.findUnique({
+      where: { provider: "PARSPACK" },
+    }),
+  ]);
+  const config = pricing ?? { markupBasisPoints: 0 };
+  return items.map((item) => {
+    const basePriceRial = catalogItemBasePriceRial(item);
+    const finalPriceRial =
+      basePriceRial == null
+        ? null
+        : calculateFinalPriceRial(basePriceRial, config.markupBasisPoints);
+    return {
+      id: item.id,
+      regionCode: item.regionCode,
+      sizeCode: item.sizeCode,
+      vcpu: item.vcpu,
+      ramMb: item.ramMb,
+      diskGb: item.diskGb,
+      available: item.available,
+      priced: basePriceRial != null,
+      basePriceRial: basePriceRial?.toString() ?? null,
+      finalPriceRial: finalPriceRial?.toString() ?? null,
+      lastSyncedAt: item.lastSyncedAt.toISOString(),
+    };
+  });
 }
 
 export async function getRecentAdminOperations() {

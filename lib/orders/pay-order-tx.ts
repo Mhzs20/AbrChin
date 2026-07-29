@@ -5,6 +5,8 @@ import {
   LedgerDirection,
   LedgerStatus,
   LedgerType,
+  RecommendationFlowStatus,
+  RecommendationQuoteStatus,
   ServiceOrderStatus,
   WalletStatus,
   type Prisma,
@@ -12,11 +14,20 @@ import {
 
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 import { WalletError } from "@/lib/wallet/errors";
+import {
+  resolvePlanPricing,
+  samePriceSnapshot,
+} from "@/lib/pricing/plan-pricing";
 
 export type PayOrderTxOptions = {
   /** Test-only: throw after debit ledger to verify full rollback. */
   testInjectFailureAfterDebit?: boolean;
 };
+
+const PAYABLE_QUOTE_STATUSES: RecommendationQuoteStatus[] = [
+  RecommendationQuoteStatus.ACTIVE,
+  RecommendationQuoteStatus.SELECTED,
+];
 
 export type PayOrderTxResult = {
   order: {
@@ -39,7 +50,13 @@ export async function executePayOrderWithWalletTx(
   orderId: string,
   options?: PayOrderTxOptions,
 ): Promise<PayOrderTxResult> {
-  const order = await tx.serviceOrder.findUnique({ where: { id: orderId } });
+  const order = await tx.serviceOrder.findUnique({
+    where: { id: orderId },
+    include: {
+      plan: { include: { catalogItem: true } },
+      recommendationQuote: { include: { session: true } },
+    },
+  });
   if (!order || order.userId !== userId) {
     throw new WalletError("not_found", "سفارش پیدا نشد.");
   }
@@ -58,12 +75,68 @@ export async function executePayOrderWithWalletTx(
       "اعتبار قیمت این سفارش تمام شده؛ قیمت را دوباره دریافت کنید.",
     );
   }
+  if (order.recommendationQuote) {
+    const quote = order.recommendationQuote;
+    if (!PAYABLE_QUOTE_STATUSES.includes(quote.status)) {
+      throw new WalletError("invalid_quote_status", "این پیشنهاد دیگر قابل پرداخت نیست.");
+    }
+    if (
+      quote.expiresAt.getTime() <= Date.now() ||
+      quote.session.expiresAt.getTime() <= Date.now()
+    ) {
+      throw new WalletError(
+        "quote_expired",
+        "اعتبار قیمت این سفارش تمام شده؛ قیمت را دوباره دریافت کنید.",
+      );
+    }
+    if (quote.amountRial !== order.amount || quote.planId !== order.planId) {
+      throw new WalletError("quote_mismatch", "جزئیات سفارش با پیشنهاد قفل‌شده همخوان نیست.");
+    }
+  }
 
-  const plan = order.planId
-    ? await tx.infrastructurePlan.findUnique({ where: { id: order.planId } })
-    : null;
-  if (!plan || !plan.active) {
+  const plan = order.plan;
+  if (!plan) {
     throw new WalletError("invalid_plan", "پلن سفارش معتبر نیست.");
+  }
+  const pricingConfig = await tx.providerPricingConfig.findUnique({
+    where: { provider: plan.provider },
+  });
+  const currentPricing = resolvePlanPricing(plan, pricingConfig);
+  if (!currentPricing) {
+    throw new WalletError(
+      "quote_unavailable",
+      "ظرفیت این سفارش دیگر موجود نیست؛ پرداخت متوقف شد.",
+    );
+  }
+  const snapshot = (order.planSnapshot ?? {}) as Record<string, unknown>;
+  const lockedSnapshot = order.recommendationQuote
+    ? order.recommendationQuote
+    : {
+        catalogItemId:
+          typeof snapshot.catalogItemId === "string" ? snapshot.catalogItemId : null,
+        providerBasePriceRialSnapshot:
+          typeof snapshot.providerBasePriceRialSnapshot === "string"
+            ? BigInt(snapshot.providerBasePriceRialSnapshot)
+            : null,
+        markupBasisPointsSnapshot:
+          typeof snapshot.markupBasisPointsSnapshot === "number"
+            ? snapshot.markupBasisPointsSnapshot
+            : null,
+        finalPriceRialSnapshot:
+          typeof snapshot.finalPriceRialSnapshot === "string"
+            ? BigInt(snapshot.finalPriceRialSnapshot)
+            : null,
+        currencySnapshot:
+          typeof snapshot.currency === "string" ? snapshot.currency : null,
+      };
+  if (
+    !samePriceSnapshot(currentPricing, lockedSnapshot) ||
+    currentPricing.finalPriceRial !== order.amount
+  ) {
+    throw new WalletError(
+      "quote_price_changed",
+      "قیمت تغییر کرده است؛ پیش از پرداخت قیمت تازه را تأیید کنید.",
+    );
   }
 
   const amountRial = order.amount;
@@ -137,7 +210,7 @@ export async function executePayOrderWithWalletTx(
       provider: plan.provider,
       deliveryMode: plan.deliveryMode,
       status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
-      requiredFundingRial: plan.estimatedProviderCostRial,
+      requiredFundingRial: currentPricing.providerBasePriceRial,
       desiredInstanceName: `abrchin-${order.id.slice(-12)}`,
     },
   });
@@ -151,6 +224,20 @@ export async function executePayOrderWithWalletTx(
       status: AdminNotificationStatus.UNREAD,
     },
   });
+
+  if (order.recommendationQuote) {
+    await tx.recommendationQuote.update({
+      where: { id: order.recommendationQuote.id },
+      data: {
+        status: RecommendationQuoteStatus.CONVERTED,
+        convertedAt: new Date(),
+      },
+    });
+    await tx.recommendationSession.update({
+      where: { id: order.recommendationQuote.sessionId },
+      data: { status: RecommendationFlowStatus.CONVERTED },
+    });
+  }
 
   const paidOrder = await tx.serviceOrder.findUniqueOrThrow({ where: { id: order.id } });
   return { order: paidOrder, infrastructureOrder };

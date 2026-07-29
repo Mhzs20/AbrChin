@@ -1,6 +1,11 @@
 import type { DeliveryMode, InfrastructureProvider } from "@prisma/client";
 
 export type ProviderCatalog = {
+  priceContract: {
+    currencyCode: string | null;
+    amountUnit: string | null;
+    confirmed: boolean;
+  };
   regions: Array<{
     code: string;
     name: string;
@@ -17,9 +22,10 @@ export type ProviderCatalog = {
     vcpu?: number;
     memoryMb?: number;
     diskGb?: number;
-    priceHourly?: number;
-    priceMonthly?: number;
+    priceHourly?: string;
+    priceMonthly?: string;
     transfer?: number;
+    rawUpdatedAt?: string;
   }>;
   images: Array<{
     code: string;

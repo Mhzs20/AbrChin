@@ -29,6 +29,7 @@ enum LedgerDirection {
 enum LedgerType {
   TOP_UP
   SERVICE_PURCHASE
+  SERVICE_RENEWAL
   REFUND
   ADMIN_ADJUSTMENT
 }
@@ -55,6 +56,44 @@ enum ServiceOrderStatus {
   PAID
   CANCELED
   REFUNDED
+}
+
+enum RecommendationFlowStatus {
+  DISCOVERY
+  PROFILING
+  READY_TO_COMPARE
+  COMPARING
+  QUOTED
+  CHECKOUT
+  CONVERTED
+  EXPIRED
+  ESCALATED
+}
+
+enum RecommendationQuoteRole {
+  ECONOMY
+  RECOMMENDED
+  GROWTH
+}
+
+enum RecommendationQuoteStatus {
+  ACTIVE
+  SELECTED
+  CONVERTED
+  EXPIRED
+  INVALIDATED
+}
+
+enum CatalogMappingStatus {
+  UNMAPPED
+  MAPPED
+}
+
+enum RenewalQuoteStatus {
+  ACTIVE
+  PAID
+  EXPIRED
+  INVALIDATED
 }
 
 enum InfrastructureProvider {
@@ -96,6 +135,8 @@ enum AdminNotificationType {
   INSTANCE_ACTIVE
   PAYMENT_FAILED
   PROVIDER_UNAVAILABLE
+  RENEWAL_PAID
+  RENEWAL_DUE
 }
 
 enum AdminNotificationStatus {
@@ -108,6 +149,21 @@ enum CloudInstanceStatus {
   PENDING
   ACTIVE
   FAILED
+  TERMINATED
+}
+
+enum InstanceCredentialStatus {
+  READY
+  REVEALED
+  REVOKED
+  EXPIRED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELED
   TERMINATED
 }
 
@@ -139,9 +195,14 @@ model User {
   walletTopUpSettingsUpdated WalletTopUpSettings[]         @relation("WalletTopUpSettingsUpdatedBy")
   infrastructureOrders       InfrastructureOrder[]
   cloudInstances             CloudInstance[]
+  recommendationSessions     RecommendationSession[]
+  credentialsCreated         InstanceCredential[]          @relation("CredentialCreatedBy")
+  subscriptions              ServiceSubscription[]
+  renewalQuotes              ServiceRenewalQuote[]
   fundingConfirmations       ProviderFundingConfirmation[] @relation("FundingConfirmedBy")
   auditLogs                  AuditLog[]                    @relation("AuditActor")
   infrastructurePlansUpdated InfrastructurePlan[]          @relation("PlanUpdatedBy")
+  providerPricingUpdated     ProviderPricingConfig[]       @relation("ProviderPricingUpdatedBy")
 }
 
 model OtpChallenge {
@@ -281,27 +342,85 @@ model PaymentGatewayAuditLog {
 }
 
 model ServiceOrder {
-  id                  String               @id @default(cuid())
-  userId              String
-  title               String
-  description         String?
-  amount              BigInt
-  currency            String               @default("IRR")
-  status              ServiceOrderStatus   @default(DRAFT)
-  planCode            String?
-  planId              String?
-  planSnapshot        Json?
-  quoteExpiresAt      DateTime?
-  paidAt              DateTime?
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan                InfrastructurePlan?  @relation(fields: [planId], references: [id], onDelete: SetNull)
-  infrastructureOrder InfrastructureOrder?
+  id                    String               @id @default(cuid())
+  userId                String
+  title                 String
+  description           String?
+  amount                BigInt
+  currency              String               @default("IRR")
+  status                ServiceOrderStatus   @default(DRAFT)
+  planCode              String?
+  planId                String?
+  planSnapshot          Json?
+  recommendationQuoteId String?              @unique
+  quoteExpiresAt        DateTime?
+  paidAt                DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                  InfrastructurePlan?  @relation(fields: [planId], references: [id], onDelete: SetNull)
+  recommendationQuote   RecommendationQuote? @relation(fields: [recommendationQuoteId], references: [id], onDelete: SetNull)
+  infrastructureOrder   InfrastructureOrder?
+  subscription          ServiceSubscription?
 
   @@index([userId, createdAt])
   @@index([status])
   @@index([planId])
+}
+
+model RecommendationSession {
+  id                     String                   @id @default(cuid())
+  userId                 String?
+  status                 RecommendationFlowStatus @default(DISCOVERY)
+  answers                Json
+  answerSources          Json
+  profile                Json?
+  confidence             String?
+  architectureEscalation Boolean                  @default(false)
+  expiresAt              DateTime
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  user                   User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  quotes                 RecommendationQuote[]
+
+  @@index([userId, createdAt])
+  @@index([status, expiresAt])
+}
+
+model RecommendationQuote {
+  id                            String                    @id @default(cuid())
+  sessionId                     String
+  planId                        String
+  role                          RecommendationQuoteRole
+  status                        RecommendationQuoteStatus @default(ACTIVE)
+  score                         Float
+  scoreBreakdown                Json
+  reasons                       Json
+  profileSnapshot               Json
+  planSnapshot                  Json
+  amountRial                    BigInt
+  renewalAmountRial             BigInt
+  catalogItemId                 String?
+  providerBasePriceRialSnapshot BigInt?
+  markupBasisPointsSnapshot     Int?
+  finalPriceRialSnapshot        BigInt?
+  currencySnapshot              String?
+  providerPriceCheckedAt        DateTime?
+  expiresAt                     DateTime
+  selectedAt                    DateTime?
+  convertedAt                   DateTime?
+  createdAt                     DateTime                  @default(now())
+  updatedAt                     DateTime                  @updatedAt
+  session                       RecommendationSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  plan                          InfrastructurePlan        @relation(fields: [planId], references: [id], onDelete: Restrict)
+  catalogItem                   ProviderCatalogItem?      @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  serviceOrder                  ServiceOrder?
+
+  @@unique([sessionId, role])
+  @@index([sessionId, status])
+  @@index([planId, expiresAt])
+  @@index([catalogItemId, expiresAt])
+  @@index([status, expiresAt])
 }
 
 model InfrastructurePlan {
@@ -324,15 +443,23 @@ model InfrastructurePlan {
   parchinIncluded           Boolean                @default(false)
   active                    Boolean                @default(true)
   sortOrder                 Int                    @default(0)
+  catalogItemId             String?
+  catalogMappingStatus      CatalogMappingStatus   @default(UNMAPPED)
+  catalogMappedAt           DateTime?
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt
   updatedById               String?
   updatedBy                 User?                  @relation("PlanUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  catalogItem               ProviderCatalogItem?   @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
   orders                    ServiceOrder[]
+  recommendationQuotes      RecommendationQuote[]
   infrastructureOrders      InfrastructureOrder[]
+  subscriptions             ServiceSubscription[]
 
   @@index([active, sortOrder])
   @@index([provider, active])
+  @@index([catalogItemId])
+  @@index([catalogMappingStatus, active])
 }
 
 model InfrastructureOrder {
@@ -431,9 +558,83 @@ model CloudInstance {
   updatedAt             DateTime               @updatedAt
   infrastructureOrder   InfrastructureOrder    @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
   user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credential            InstanceCredential?
+  subscription          ServiceSubscription?
 
   @@index([userId, createdAt])
   @@index([status])
+}
+
+model ServiceSubscription {
+  id                 String                @id @default(cuid())
+  cloudInstanceId    String                @unique
+  sourceOrderId      String                @unique
+  userId             String
+  planId             String
+  status             SubscriptionStatus    @default(ACTIVE)
+  renewalPriceRial   BigInt
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  nextRenewalAt      DateTime
+  graceEndsAt        DateTime
+  autoRenew          Boolean               @default(false)
+  canceledAt         DateTime?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  cloudInstance      CloudInstance         @relation(fields: [cloudInstanceId], references: [id], onDelete: Cascade)
+  sourceOrder        ServiceOrder          @relation(fields: [sourceOrderId], references: [id], onDelete: Restrict)
+  user               User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan               InfrastructurePlan    @relation(fields: [planId], references: [id], onDelete: Restrict)
+  renewalQuotes      ServiceRenewalQuote[]
+
+  @@index([userId, status, nextRenewalAt])
+  @@index([status, nextRenewalAt])
+}
+
+model ServiceRenewalQuote {
+  id                            String              @id @default(cuid())
+  subscriptionId                String
+  userId                        String
+  catalogItemId                 String
+  status                        RenewalQuoteStatus  @default(ACTIVE)
+  providerBasePriceRialSnapshot BigInt
+  markupBasisPointsSnapshot     Int
+  finalPriceRialSnapshot        BigInt
+  currency                      String              @default("IRR")
+  providerPriceCheckedAt        DateTime
+  periodStartSnapshot           DateTime
+  periodEndSnapshot             DateTime
+  expiresAt                     DateTime
+  paidAt                        DateTime?
+  createdAt                     DateTime            @default(now())
+  updatedAt                     DateTime            @updatedAt
+  subscription                  ServiceSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  user                          User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  catalogItem                   ProviderCatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+
+  @@index([subscriptionId, status, expiresAt])
+  @@index([userId, createdAt])
+  @@index([catalogItemId, createdAt])
+}
+
+model InstanceCredential {
+  id              String                   @id @default(cuid())
+  cloudInstanceId String                   @unique
+  createdById     String
+  username        String
+  ciphertext      String?
+  iv              String?
+  authTag         String?
+  status          InstanceCredentialStatus @default(READY)
+  expiresAt       DateTime
+  revealedAt      DateTime?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  cloudInstance   CloudInstance            @relation(fields: [cloudInstanceId], references: [id], onDelete: Cascade)
+  createdBy       User                     @relation("CredentialCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([status, expiresAt])
+  @@index([createdById, createdAt])
 }
 
 model AdminNotification {
@@ -500,13 +701,57 @@ model AuditLog {
 }
 
 model ProviderCatalogState {
-  id              String                 @id @default("parspack")
-  provider        InfrastructureProvider @unique
-  lastHealthCheck DateTime?
-  lastCatalogSync DateTime?
-  regionCount     Int                    @default(0)
-  sizeCount       Int                    @default(0)
-  imageCount      Int                    @default(0)
-  lastError       String?
-  updatedAt       DateTime               @updatedAt
+  id                   String                 @id @default("parspack")
+  provider             InfrastructureProvider @unique
+  lastHealthCheck      DateTime?
+  lastCatalogSync      DateTime?
+  regionCount          Int                    @default(0)
+  sizeCount            Int                    @default(0)
+  imageCount           Int                    @default(0)
+  catalogItemCount     Int                    @default(0)
+  pricedItemCount      Int                    @default(0)
+  unavailableItemCount Int                    @default(0)
+  lastError            String?
+  updatedAt            DateTime               @updatedAt
+}
+
+model ProviderCatalogItem {
+  id                   String                 @id @default(cuid())
+  provider             InfrastructureProvider
+  regionCode           String
+  sizeCode             String
+  sizeName             String
+  compatibleImageCodes Json
+  vcpu                 Int?
+  ramMb                Int?
+  diskGb               Int?
+  transfer             String?
+  available            Boolean                @default(false)
+  active               Boolean                @default(true)
+  priceHourlyAmount    BigInt?
+  priceMonthlyAmount   BigInt?
+  priceScale           Int                    @default(6)
+  currencyCode         String?
+  amountUnit           String?
+  lastSyncedAt         DateTime
+  rawUpdatedAt         DateTime?
+  unavailableAt        DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  plans                InfrastructurePlan[]
+  recommendationQuotes RecommendationQuote[]
+  renewalQuotes        ServiceRenewalQuote[]
+
+  @@unique([provider, regionCode, sizeCode])
+  @@index([provider, available, active])
+  @@index([provider, lastSyncedAt])
+}
+
+model ProviderPricingConfig {
+  id                String                 @id @default("parspack")
+  provider          InfrastructureProvider @unique
+  markupBasisPoints Int                    @default(0)
+  updatedAt         DateTime               @updatedAt
+  updatedById       String?
+  updatedBy         User?                  @relation("ProviderPricingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 }

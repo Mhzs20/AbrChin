@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { runProvisioningWorkerCycle, touchWorkerHeartbeat } from "@/lib/infrastructure/provisioning-service";
+import { processSubscriptionLifecycle } from "@/lib/subscriptions/service";
 import { getWorkerConfig } from "@/lib/worker/config";
 
 const config = getWorkerConfig();
+const SUBSCRIPTION_LIFECYCLE_INTERVAL_MS = 60_000;
 
 let stopping = false;
 process.on("SIGINT", () => {
@@ -19,10 +21,16 @@ async function sleep(ms: number) {
 async function main() {
   console.log(`[abrchin-worker] provisioning worker started id=${config.workerId}`);
   let idleRounds = 0;
+  let nextSubscriptionLifecycleAt = 0;
 
   while (!stopping) {
     try {
       const processed = await runProvisioningWorkerCycle();
+      if (Date.now() >= nextSubscriptionLifecycleAt) {
+        await processSubscriptionLifecycle();
+        nextSubscriptionLifecycleAt =
+          Date.now() + SUBSCRIPTION_LIFECYCLE_INTERVAL_MS;
+      }
       await touchWorkerHeartbeat({ cycleOk: true });
       if (processed) {
         idleRounds = 0;

@@ -27,6 +27,21 @@ function asNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function asDecimalString(value: unknown): string | undefined {
+  const raw =
+    typeof value === "number" && Number.isFinite(value)
+      ? String(value)
+      : typeof value === "string"
+        ? value.trim()
+        : "";
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) return undefined;
+  const [whole, fraction] = raw.split(".");
+  const normalizedWhole = BigInt(whole).toString();
+  if (fraction == null) return normalizedWhole;
+  const normalizedFraction = fraction.replace(/0+$/, "");
+  return normalizedFraction ? `${normalizedWhole}.${normalizedFraction}` : normalizedWhole;
+}
+
 function asBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
@@ -157,9 +172,10 @@ export function parseParsPackSizes(payload: unknown): ProviderCatalog["sizes"] {
         vcpu: asNumber(item.vcpus),
         memoryMb: asNumber(item.memory),
         diskGb: asNumber(item.disk),
-        priceHourly: asNumber(item.price_hourly),
-        priceMonthly: asNumber(item.price_monthly),
+        priceHourly: asDecimalString(item.price_hourly),
+        priceMonthly: asDecimalString(item.price_monthly),
         transfer: asNumber(item.transfer),
+        rawUpdatedAt: asString(item.updated_at) || undefined,
       };
     })
     .filter((item) => item.code.length > 0);

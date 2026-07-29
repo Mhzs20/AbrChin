@@ -41,11 +41,12 @@ export default function HelpPage() {
           <span className="live-dot" aria-hidden="true" />
           <span>جوابت رو یک آدم واقعی می‌ده.</span>
           <a href="mailto:hello@abrchin.ir" dir="ltr">hello@abrchin.ir</a>
+          <Link href="/status">وضعیت سرویس</Link>
         </div>
 
         <div className="service-transparency">
           <strong>شفافیت قبل از خرید</strong>
-          <p>منابع، قیمت، زمان تحویل و سطح پرچین قبل از ثبت نهایی با تو تأیید می‌شن.</p>
+          <p>منابع، قیمت، زمان تحویل و پوشش دقیق پرچین قبل از ثبت نهایی با تو تأیید می‌شن؛ بکاپ یا پایشِ درج‌نشده فروخته نمی‌شه.</p>
         </div>
       </div>
 

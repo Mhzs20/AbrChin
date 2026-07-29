@@ -11,7 +11,9 @@ import {
 import { confirmProviderFunding } from "../lib/infrastructure/funding.ts";
 import { retryFailedProvisioning } from "../lib/infrastructure/retry.ts";
 import { payOrderWithWallet, refundOrder } from "../lib/orders/service.ts";
+import { getActivePlanByCode, toPlanSnapshot } from "../lib/orders/plans.ts";
 import { tomanToRial } from "../lib/money.ts";
+import { decimalToScaledInteger } from "../lib/pricing/provider-pricing.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const prisma = databaseUrl ? new PrismaClient() : null;
@@ -42,12 +44,61 @@ async function cleanupMobile(mobile: string) {
 
 async function seedDevPlan() {
   if (!prisma) return null;
+  const syncedAt = new Date();
+  const catalogItem = await prisma.providerCatalogItem.upsert({
+    where: {
+      provider_regionCode_sizeCode: {
+        provider: "PARSPACK",
+        regionCode: "tehran11",
+        sizeCode: "irLinuxVPS4",
+      },
+    },
+    update: {
+      compatibleImageCodes: ["ubuntu24-cloudinit-qcow2"],
+      available: true,
+      active: true,
+      priceMonthlyAmount: decimalToScaledInteger("120000"),
+      priceScale: 6,
+      currencyCode: "IRR",
+      amountUnit: "TOMAN",
+      lastSyncedAt: syncedAt,
+    },
+    create: {
+      provider: "PARSPACK",
+      regionCode: "tehran11",
+      sizeCode: "irLinuxVPS4",
+      sizeName: "Development",
+      compatibleImageCodes: ["ubuntu24-cloudinit-qcow2"],
+      vcpu: 2,
+      ramMb: 4096,
+      diskGb: 50,
+      available: true,
+      active: true,
+      priceMonthlyAmount: decimalToScaledInteger("120000"),
+      priceScale: 6,
+      currencyCode: "IRR",
+      amountUnit: "TOMAN",
+      lastSyncedAt: syncedAt,
+    },
+  });
+  await prisma.providerPricingConfig.upsert({
+    where: { provider: "PARSPACK" },
+    update: { markupBasisPoints: 2500 },
+    create: {
+      id: "parspack",
+      provider: "PARSPACK",
+      markupBasisPoints: 2500,
+    },
+  });
   return prisma.infrastructurePlan.upsert({
     where: { code: "DEV_STARTER" },
     update: {
       salePriceRial: tomanToRial(150_000),
       estimatedProviderCostRial: tomanToRial(120_000),
       active: true,
+      catalogItemId: catalogItem.id,
+      catalogMappingStatus: "MAPPED",
+      catalogMappedAt: syncedAt,
     },
     create: {
       code: "DEV_STARTER",
@@ -59,6 +110,13 @@ async function seedDevPlan() {
       deliveryMode: "RAW",
       salePriceRial: tomanToRial(150_000),
       estimatedProviderCostRial: tomanToRial(120_000),
+      renewalPriceRial: tomanToRial(150_000),
+      vcpu: 2,
+      ramGb: 4,
+      storageGb: 50,
+      catalogItemId: catalogItem.id,
+      catalogMappingStatus: "MAPPED",
+      catalogMappedAt: syncedAt,
       active: true,
       sortOrder: 1,
     },
@@ -69,6 +127,10 @@ async function createPaidOrderFixture(mobile: string) {
   if (!prisma) throw new Error("no prisma");
   const plan = await seedDevPlan();
   assert.ok(plan);
+  const pricedPlan = await getActivePlanByCode(plan.code);
+  assert.ok(pricedPlan);
+  const createdAt = new Date();
+  const quoteExpiresAt = new Date(createdAt.getTime() + 10 * 60 * 1000);
   const user = await prisma.user.create({ data: { mobile } });
   await prisma.wallet.create({
     data: { userId: user.id, availableBalance: tomanToRial(2_000_000), status: WalletStatus.ACTIVE },
@@ -81,6 +143,11 @@ async function createPaidOrderFixture(mobile: string) {
       status: ServiceOrderStatus.PENDING_PAYMENT,
       planId: plan.id,
       planCode: plan.code,
+      planSnapshot: toPlanSnapshot(pricedPlan, {
+        createdAt,
+        expiresAt: quoteExpiresAt,
+      }),
+      quoteExpiresAt,
     },
   });
   return { user, plan, order };

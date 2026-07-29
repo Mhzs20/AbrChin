@@ -5,6 +5,7 @@ import { EmptyState, PageHeader, SectionCard, StatusBadge } from "@/components/p
 import { deliveryModeLabel } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
 import { listActivePlans } from "@/lib/orders/plans";
+import { parchinPlanLabel } from "@/lib/parchin/catalog";
 import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -36,6 +37,7 @@ export default async function AccountOrderPage() {
               {plan.ramGb ? <span className="product-tech">{plan.ramGb} GB RAM</span> : null}
               {plan.storageGb ? <span className="product-tech">{plan.storageGb} GB</span> : null}
               <span className="product-tech">{formatTomanFa(plan.salePriceRial)} تومان</span>
+              <span className="product-tech">{parchinPlanLabel(plan.parchinIncluded)}</span>
             </div>
             <Link href={`/account/order/${plan.id}`} className="product-btn product-btn--primary">
               ادامه و پرداخت

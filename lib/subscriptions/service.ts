@@ -1,0 +1,371 @@
+import {
+  AdminNotificationStatus,
+  AdminNotificationType,
+  LedgerDirection,
+  LedgerStatus,
+  LedgerType,
+  RenewalQuoteStatus,
+  SubscriptionStatus,
+  WalletStatus,
+} from "@prisma/client";
+
+import { prisma } from "@/lib/db";
+import {
+  resolvePlanPricing,
+  samePriceSnapshot,
+} from "@/lib/pricing/plan-pricing";
+import { addBillingMonth, addGracePeriod } from "@/lib/subscriptions/period";
+import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
+import { WalletError } from "@/lib/wallet/errors";
+import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
+
+export const RENEWAL_QUOTE_VALIDITY_MS = 10 * 60 * 1000;
+
+const RENEWABLE_STATUSES: SubscriptionStatus[] = [
+  SubscriptionStatus.ACTIVE,
+  SubscriptionStatus.PAST_DUE,
+  SubscriptionStatus.SUSPENDED,
+];
+
+export function toPublicRenewalQuote(quote: {
+  id: string;
+  finalPriceRialSnapshot: bigint;
+  currency: string;
+  providerPriceCheckedAt: Date;
+  periodStartSnapshot: Date;
+  periodEndSnapshot: Date;
+  expiresAt: Date;
+}) {
+  return {
+    id: quote.id,
+    finalPriceRial: quote.finalPriceRialSnapshot.toString(),
+    currency: quote.currency,
+    providerPriceCheckedAt: quote.providerPriceCheckedAt.toISOString(),
+    periodStart: quote.periodStartSnapshot.toISOString(),
+    periodEnd: quote.periodEndSnapshot.toISOString(),
+    expiresAt: quote.expiresAt.toISOString(),
+  };
+}
+
+export async function createRenewalQuote(params: {
+  instanceId: string;
+  userId: string;
+  now?: Date;
+}) {
+  await refreshProviderCatalogForPricing();
+  const now = params.now ?? new Date();
+  const subscription = await prisma.serviceSubscription.findUnique({
+    where: { cloudInstanceId: params.instanceId },
+    include: {
+      cloudInstance: true,
+      plan: { include: { catalogItem: true } },
+    },
+  });
+  if (!subscription || subscription.userId !== params.userId) {
+    throw new WalletError("not_found", "اشتراک این سرور پیدا نشد.");
+  }
+  if (!RENEWABLE_STATUSES.includes(subscription.status)) {
+    throw new WalletError("invalid_status", "این اشتراک قابل تمدید نیست.");
+  }
+  if (subscription.cloudInstance.status === "TERMINATED") {
+    throw new WalletError("instance_terminated", "سرور خاتمه یافته و قابل تمدید نیست.");
+  }
+  const config = await prisma.providerPricingConfig.findUnique({
+    where: { provider: subscription.plan.provider },
+  });
+  const currentPricing = resolvePlanPricing(subscription.plan, config);
+  if (!currentPricing) {
+    throw new WalletError(
+      "renewal_unavailable",
+      "قیمت یا ظرفیت فعلی این سرور قابل تأیید نیست؛ تمدید متوقف شد.",
+    );
+  }
+  const periodStart = subscription.currentPeriodEnd;
+  const periodEnd = addBillingMonth(periodStart);
+  const expiresAt = new Date(now.getTime() + RENEWAL_QUOTE_VALIDITY_MS);
+
+  return prisma.$transaction(async (tx) => {
+    await tx.serviceRenewalQuote.updateMany({
+      where: {
+        subscriptionId: subscription.id,
+        status: RenewalQuoteStatus.ACTIVE,
+      },
+      data: { status: RenewalQuoteStatus.INVALIDATED },
+    });
+    return tx.serviceRenewalQuote.create({
+      data: {
+        subscriptionId: subscription.id,
+        userId: params.userId,
+        catalogItemId: currentPricing.catalogItemId,
+        status: RenewalQuoteStatus.ACTIVE,
+        providerBasePriceRialSnapshot: currentPricing.providerBasePriceRial,
+        markupBasisPointsSnapshot: currentPricing.markupBasisPoints,
+        finalPriceRialSnapshot: currentPricing.finalPriceRial,
+        currency: currentPricing.currency,
+        providerPriceCheckedAt: currentPricing.providerPriceCheckedAt,
+        periodStartSnapshot: periodStart,
+        periodEndSnapshot: periodEnd,
+        expiresAt,
+      },
+    });
+  });
+}
+
+export async function payRenewalQuote(params: {
+  instanceId: string;
+  userId: string;
+  renewalQuoteId: string;
+}) {
+  await refreshProviderCatalogForPricing();
+  return prisma.$transaction(async (tx) => {
+    const quote = await tx.serviceRenewalQuote.findUnique({
+      where: { id: params.renewalQuoteId },
+      include: {
+        subscription: {
+          include: {
+            cloudInstance: true,
+            plan: { include: { catalogItem: true } },
+          },
+        },
+      },
+    });
+    if (
+      !quote ||
+      quote.userId !== params.userId ||
+      quote.subscription.cloudInstanceId !== params.instanceId
+    ) {
+      throw new WalletError("not_found", "پیشنهاد تمدید پیدا نشد.");
+    }
+    if (quote.status === RenewalQuoteStatus.PAID) {
+      return quote.subscription;
+    }
+    if (quote.status !== RenewalQuoteStatus.ACTIVE) {
+      throw new WalletError("invalid_quote_status", "این پیشنهاد تمدید معتبر نیست.");
+    }
+    if (quote.expiresAt.getTime() <= Date.now()) {
+      throw new WalletError(
+        "quote_expired",
+        "اعتبار قیمت تمدید تمام شده؛ قیمت تازه را دریافت کنید.",
+      );
+    }
+    const subscription = quote.subscription;
+    if (!RENEWABLE_STATUSES.includes(subscription.status)) {
+      throw new WalletError("invalid_status", "این اشتراک قابل تمدید نیست.");
+    }
+    if (subscription.cloudInstance.status === "TERMINATED") {
+      throw new WalletError("instance_terminated", "سرور خاتمه یافته و قابل تمدید نیست.");
+    }
+
+    const config = await tx.providerPricingConfig.findUnique({
+      where: { provider: subscription.plan.provider },
+    });
+    const currentPricing = resolvePlanPricing(subscription.plan, config);
+    if (!currentPricing) {
+      throw new WalletError(
+        "renewal_unavailable",
+        "ظرفیت فعلی ناموجود شده و تمدید متوقف شد.",
+      );
+    }
+    if (
+      !samePriceSnapshot(currentPricing, {
+        catalogItemId: quote.catalogItemId,
+        providerBasePriceRialSnapshot: quote.providerBasePriceRialSnapshot,
+        markupBasisPointsSnapshot: quote.markupBasisPointsSnapshot,
+        finalPriceRialSnapshot: quote.finalPriceRialSnapshot,
+        currencySnapshot: quote.currency,
+      })
+    ) {
+      throw new WalletError(
+        "quote_price_changed",
+        "قیمت تمدید تغییر کرده؛ قیمت تازه را تأیید کنید.",
+      );
+    }
+    if (
+      quote.periodStartSnapshot.getTime() !== subscription.currentPeriodEnd.getTime()
+    ) {
+      throw new WalletError("renewal_period_changed", "دوره اشتراک قبلاً تغییر کرده است.");
+    }
+
+    const idempotencyKey = `renewal_quote_pay_${quote.id}`;
+    const existingLedger = await tx.walletLedgerEntry.findUnique({
+      where: { idempotencyKey },
+    });
+    if (existingLedger?.status === LedgerStatus.COMPLETED) {
+      return tx.serviceSubscription.findUniqueOrThrow({
+        where: { id: subscription.id },
+      });
+    }
+    const wallet = await ensureWalletForUser(params.userId, tx);
+    if (wallet.status !== WalletStatus.ACTIVE) {
+      throw new WalletError("wallet_frozen", "کیف پول فعال نیست.");
+    }
+    const debited = await tx.wallet.updateMany({
+      where: {
+        id: wallet.id,
+        status: WalletStatus.ACTIVE,
+        availableBalance: { gte: quote.finalPriceRialSnapshot },
+      },
+      data: {
+        availableBalance: { decrement: quote.finalPriceRialSnapshot },
+      },
+    });
+    if (debited.count !== 1) {
+      throw new WalletError("insufficient_funds", "موجودی برای تمدید کافی نیست.");
+    }
+    const freshWallet = await tx.wallet.findUniqueOrThrow({
+      where: { id: wallet.id },
+    });
+    await tx.walletLedgerEntry.create({
+      data: {
+        walletId: wallet.id,
+        direction: LedgerDirection.DEBIT,
+        type: LedgerType.SERVICE_RENEWAL,
+        amount: quote.finalPriceRialSnapshot,
+        status: LedgerStatus.COMPLETED,
+        referenceType: "renewal_quote",
+        referenceId: quote.id,
+        idempotencyKey,
+        balanceAfter: freshWallet.availableBalance,
+        description: `تمدید سرور ${subscription.cloudInstance.name}`,
+        metadata: {
+          subscriptionId: subscription.id,
+          renewalQuoteId: quote.id,
+          markupBasisPointsSnapshot: quote.markupBasisPointsSnapshot,
+        },
+      },
+    });
+
+    const renewed = await tx.serviceSubscription.update({
+      where: { id: subscription.id },
+      data: {
+        status: SubscriptionStatus.ACTIVE,
+        renewalPriceRial: quote.finalPriceRialSnapshot,
+        currentPeriodStart: quote.periodStartSnapshot,
+        currentPeriodEnd: quote.periodEndSnapshot,
+        nextRenewalAt: quote.periodEndSnapshot,
+        graceEndsAt: addGracePeriod(quote.periodEndSnapshot),
+        autoRenew: false,
+      },
+    });
+    await tx.serviceRenewalQuote.update({
+      where: { id: quote.id },
+      data: {
+        status: RenewalQuoteStatus.PAID,
+        paidAt: new Date(),
+      },
+    });
+    await tx.adminNotification.create({
+      data: {
+        type: AdminNotificationType.RENEWAL_PAID,
+        title: "تمدید سرور پرداخت شد",
+        message: `اشتراک سرور ${subscription.cloudInstance.name} تا ${quote.periodEndSnapshot.toISOString()} تمدید شد.`,
+        status: AdminNotificationStatus.UNREAD,
+      },
+    });
+    return renewed;
+  });
+}
+
+async function markSubscriptionPastDue(
+  subscription: {
+    id: string;
+    cloudInstance: { infrastructureOrderId: string; name: string };
+  },
+  now: Date,
+) {
+  return prisma.$transaction(async (tx) => {
+    const changed = await tx.serviceSubscription.updateMany({
+      where: {
+        id: subscription.id,
+        status: SubscriptionStatus.ACTIVE,
+        currentPeriodEnd: { lte: now },
+      },
+      data: { status: SubscriptionStatus.PAST_DUE, autoRenew: false },
+    });
+    if (changed.count !== 1) return false;
+
+    await tx.adminNotification.create({
+      data: {
+        type: AdminNotificationType.RENEWAL_DUE,
+        infrastructureOrderId: subscription.cloudInstance.infrastructureOrderId,
+        title: "تمدید سرور سررسید شد",
+        message: `اشتراک سرور ${subscription.cloudInstance.name} وارد مهلت پرداخت شد.`,
+        status: AdminNotificationStatus.UNREAD,
+      },
+    });
+    return true;
+  });
+}
+
+async function markSubscriptionSuspended(
+  subscription: {
+    id: string;
+    cloudInstance: { infrastructureOrderId: string; name: string };
+  },
+  now: Date,
+) {
+  return prisma.$transaction(async (tx) => {
+    const changed = await tx.serviceSubscription.updateMany({
+      where: {
+        id: subscription.id,
+        status: SubscriptionStatus.PAST_DUE,
+        graceEndsAt: { lte: now },
+      },
+      data: { status: SubscriptionStatus.SUSPENDED, autoRenew: false },
+    });
+    if (changed.count !== 1) return false;
+
+    await tx.adminNotification.create({
+      data: {
+        type: AdminNotificationType.RENEWAL_DUE,
+        infrastructureOrderId: subscription.cloudInstance.infrastructureOrderId,
+        title: "مهلت تمدید سرور تمام شد",
+        message: `اشتراک سرور ${subscription.cloudInstance.name} معلق شد و نیاز به بررسی عملیاتی دارد.`,
+        status: AdminNotificationStatus.UNREAD,
+      },
+    });
+    return true;
+  });
+}
+
+export async function processSubscriptionLifecycle(now = new Date()) {
+  const due = await prisma.serviceSubscription.findMany({
+    where: {
+      status: SubscriptionStatus.ACTIVE,
+      currentPeriodEnd: { lte: now },
+    },
+    include: {
+      cloudInstance: {
+        select: { infrastructureOrderId: true, name: true },
+      },
+    },
+    orderBy: { currentPeriodEnd: "asc" },
+    take: 50,
+  });
+
+  let pastDue = 0;
+  for (const subscription of due) {
+    if (await markSubscriptionPastDue(subscription, now)) pastDue += 1;
+  }
+
+  const graceExpired = await prisma.serviceSubscription.findMany({
+    where: {
+      status: SubscriptionStatus.PAST_DUE,
+      graceEndsAt: { lte: now },
+    },
+    include: {
+      cloudInstance: {
+        select: { infrastructureOrderId: true, name: true },
+      },
+    },
+    orderBy: { graceEndsAt: "asc" },
+    take: 50,
+  });
+
+  let suspended = 0;
+  for (const subscription of graceExpired) {
+    if (await markSubscriptionSuspended(subscription, now)) suspended += 1;
+  }
+
+  return { renewed: 0, pastDue, suspended };
+}
