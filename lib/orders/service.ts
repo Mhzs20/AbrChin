@@ -19,7 +19,10 @@ import {
   revalidateLockedSelection,
 } from "@/lib/infrastructure/selection-revalidation";
 import type { CloudProviderAdapter } from "@/lib/infrastructure/cloud-provider-adapter";
-import { assessRefundResourceSafety } from "@/lib/infrastructure/resource-disposition";
+import {
+  absenceAuditMatchesAttempt,
+  assessRefundResourceSafety,
+} from "@/lib/infrastructure/resource-disposition";
 import {
   assertProductFlowOwnerStateTx,
   transitionProductFlowTx,
@@ -484,23 +487,13 @@ export async function refundOrder(params: {
             where: { idempotencyKey: absenceAuditKey },
           })
         : null;
-      const absenceAuditData =
-        absenceAudit?.afterData &&
-        typeof absenceAudit.afterData === "object" &&
-        !Array.isArray(absenceAudit.afterData)
-          ? (absenceAudit.afterData as Record<string, unknown>)
-          : {};
-      const absenceAuditMatches = Boolean(
-        absenceAudit &&
-          absenceAudit.action === AuditActions.RECONCILIATION &&
-          absenceAudit.entityType === "infrastructure_order" &&
-          absenceAudit.entityId === infra.id &&
-          absenceAuditData.noResourceConfirmed === true &&
-          absenceAuditData.provisioningJobId ===
-            infra.reconcileNoResourceConfirmedJobId &&
-          absenceAuditData.attempt ===
-            infra.reconcileNoResourceConfirmedAttempt,
-      );
+      const absenceAuditMatches = absenceAuditMatchesAttempt({
+        audit: absenceAudit,
+        infrastructureOrderId: infra.id,
+        provisioningJobId:
+          infra.reconcileNoResourceConfirmedJobId,
+        attempt: infra.reconcileNoResourceConfirmedAttempt,
+      });
       const resourceSafety = assessRefundResourceSafety({
         jobs: infra.provisioningJobs,
         cloudInstance: infra.cloudInstance,

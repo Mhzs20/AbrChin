@@ -18,7 +18,10 @@ import type {
   CloudProviderAdapter,
   ProviderTopologyVerificationMode,
 } from "@/lib/infrastructure/cloud-provider-adapter";
-import { runInfrastructureHealthCheck } from "@/lib/infrastructure/health-check-service";
+import {
+  parseDurableHealthResult,
+  runInfrastructureHealthCheck,
+} from "@/lib/infrastructure/health-check-service";
 import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
 import { parseLockedProvisioningSelection } from "@/lib/infrastructure/provisioning-service";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
@@ -1313,6 +1316,58 @@ export async function processHealthCheckRetryJob(
   ) {
     throw new Error("provider_resource_identity_conflict");
   }
+  const persistedHealthResult = parseDurableHealthResult(
+    job.healthResultSnapshot,
+  );
+  if (persistedHealthResult) {
+    let finalizePending = false;
+    try {
+      await finalizeHealthRetryJob({
+        jobId: job.id,
+        workerFence,
+        healthy: persistedHealthResult.healthy,
+        beforeFinalize: options?.beforeFinalizeJob,
+      });
+    } catch (error) {
+      if (isWorkerLeaseLostError(error)) return null;
+      finalizePending = true;
+    }
+    if (finalizePending) {
+      return {
+        healthy: persistedHealthResult.healthy,
+        delivered: persistedHealthResult.delivered,
+        finalizePending: true as const,
+      };
+    }
+    if (!persistedHealthResult.healthy && !isManualRecovery) {
+      try {
+        await scheduleAutomaticHealthRetry({
+          infrastructureOrderId: order.id,
+          sourceCheckId: job.id,
+        });
+      } catch {
+        console.error(
+          "[health-retry-schedule]",
+          "schedule_pending",
+        );
+      }
+    }
+    if (persistedHealthResult.healthy && isManualRecovery) {
+      try {
+        await notifyManualRecoverySuccess(order.id);
+      } catch {
+        console.error(
+          "[health-recovery-notification]",
+          "notification_pending",
+        );
+      }
+    }
+    return {
+      healthy: persistedHealthResult.healthy,
+      delivered: persistedHealthResult.delivered,
+      finalizeOnly: true as const,
+    };
+  }
   if (isManualRecovery) {
     if (
       order.productFlowState === "ACTIVE" ||
@@ -1433,6 +1488,10 @@ export async function processHealthCheckRetryJob(
       infrastructureOrderId: order.id,
       probe: options?.healthProbe,
       workerFence,
+      durableJob: {
+        jobId: job.id,
+        workerFence,
+      },
       afterTransition: options?.afterHealthTransition,
       retryTransition: {
         idempotencyKey: `health-retry-start:${job.id}`,
@@ -1447,6 +1506,13 @@ export async function processHealthCheckRetryJob(
     });
   } catch (error) {
     if (isWorkerLeaseLostError(error)) return null;
+    const persisted = await prisma.provisioningJob.findUnique({
+      where: { id: job.id },
+      select: { healthResultSnapshot: true },
+    });
+    const durableFailure = parseDurableHealthResult(
+      persisted?.healthResultSnapshot,
+    );
     await ensureHealthFailureIsRecoverable({
       infrastructureOrderId: order.id,
       jobId: job.id,
@@ -1457,7 +1523,10 @@ export async function processHealthCheckRetryJob(
       resultCode: "health_execution_failed",
     });
     manualFailureHandled = isManualRecovery;
-    result = { healthy: false, delivered: false };
+    result = durableFailure ?? {
+      healthy: false,
+      delivered: false,
+    };
   }
 
   if (
@@ -1509,10 +1578,17 @@ export async function processHealthCheckRetryJob(
 
   if (!result.healthy) {
     if (!isManualRecovery) {
-      await scheduleAutomaticHealthRetry({
-        infrastructureOrderId: order.id,
-        sourceCheckId: job.id,
-      });
+      try {
+        await scheduleAutomaticHealthRetry({
+          infrastructureOrderId: order.id,
+          sourceCheckId: job.id,
+        });
+      } catch {
+        console.error(
+          "[health-retry-schedule]",
+          "schedule_pending",
+        );
+      }
     }
   } else if (isManualRecovery) {
     try {

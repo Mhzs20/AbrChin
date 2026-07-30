@@ -253,6 +253,9 @@ test("health recovery has durable command receipts and lease fencing", async () 
   const provisioning = await source(
     "lib/infrastructure/provisioning-service.ts",
   );
+  const durableHealth = await source(
+    "lib/infrastructure/health-check-service.ts",
+  );
   assert.match(retry, /adminCommandReceipt/);
   assert.match(retry, /replayAdminHealthReceiptTx/);
   assert.match(retry, /resultSnapshot/);
@@ -263,6 +266,30 @@ test("health recovery has durable command receipts and lease fencing", async () 
   assert.match(fence, /leaseExpiresAt: \{ gt: new Date\(\) \}/);
   assert.match(provisioning, /randomUUID\(\)/);
   assert.match(provisioning, /claimToken: null/);
+  assert.match(provisioning, /if \(!options\?\.claimToken\) return null/);
+  assert.match(durableHealth, /HEALTH_RESULT_PERSISTED/);
+  assert.match(provisioning, /ProvisioningNotificationOutbox|provisioningNotificationOutbox/);
+});
+
+test("V5 repair is monotonic, semantic, and financially isolated", async () => {
+  const migration = await source(
+    "prisma/migrations/20260731043000_terminal_and_worker_recovery_v5/migration.sql",
+  );
+  assert.match(migration, /hasV4RevisionRegression/);
+  assert.match(migration, /maxTransitionRevision/);
+  assert.match(migration, /semanticValid/);
+  assert.match(migration, /targetRevision/);
+  assert.match(
+    migration,
+    /"toRevision" <=\s+v4_transition\."fromRevision"/,
+  );
+  assert.doesNotMatch(migration, /UPDATE "Wallet"/);
+  assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
+  assert.doesNotMatch(migration, /UPDATE "PaymentTransaction"/);
+  assert.doesNotMatch(
+    migration,
+    /SET[\s\S]{0,80}"providerSelectionSnapshot"/,
+  );
 });
 
 test("refund and provisioning retry fail closed on provider attempt evidence", async () => {

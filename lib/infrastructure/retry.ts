@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
 import type { CloudProviderAdapter } from "@/lib/infrastructure/cloud-provider-adapter";
 import {
+  absenceAuditMatchesAttempt,
   assessRefundResourceSafety,
   latestCreateAttempt,
 } from "@/lib/infrastructure/resource-disposition";
@@ -360,12 +361,6 @@ export async function retryFailedProvisioning(params: {
           where: { idempotencyKey: absenceAuditKey },
         })
       : null;
-    const absenceAuditData =
-      absenceAudit?.afterData &&
-      typeof absenceAudit.afterData === "object" &&
-      !Array.isArray(absenceAudit.afterData)
-        ? (absenceAudit.afterData as Record<string, unknown>)
-        : {};
     const resourceSafety = assessRefundResourceSafety({
       jobs: order.provisioningJobs,
       cloudInstance: null,
@@ -375,14 +370,13 @@ export async function retryFailedProvisioning(params: {
         order.reconcileNoResourceConfirmedJobId,
       reconcileNoResourceConfirmedAttempt:
         order.reconcileNoResourceConfirmedAttempt,
-      absenceAuditMatches: Boolean(
-        absenceAudit &&
-          absenceAuditData.noResourceConfirmed === true &&
-          absenceAuditData.provisioningJobId ===
-            order.reconcileNoResourceConfirmedJobId &&
-          absenceAuditData.attempt ===
-            order.reconcileNoResourceConfirmedAttempt,
-      ),
+      absenceAuditMatches: absenceAuditMatchesAttempt({
+        audit: absenceAudit,
+        infrastructureOrderId: order.id,
+        provisioningJobId:
+          order.reconcileNoResourceConfirmedJobId,
+        attempt: order.reconcileNoResourceConfirmedAttempt,
+      }),
     });
     if (!resourceSafety.safe) {
       throw new WalletError(

@@ -566,29 +566,29 @@ model InfrastructurePlan {
 }
 
 model InfrastructureOrder {
-  id                                  String                        @id @default(cuid())
-  serviceOrderId                      String                        @unique
+  id                                  String                           @id @default(cuid())
+  serviceOrderId                      String                           @unique
   userId                              String
   planId                              String
   provider                            InfrastructureProvider
-  providerApiVersion                  String                        @default("v1")
-  productKind                         InfrastructureProductKind     @default(READY_INSTANT_SERVER)
+  providerApiVersion                  String                           @default("v1")
+  productKind                         InfrastructureProductKind        @default(READY_INSTANT_SERVER)
   parchinLevel                        ParchinLevel?
   providerSelectionSnapshot           Json?
   productFlowState                    String?
-  productFlowRevision                 Int                           @default(0)
+  productFlowRevision                 Int                              @default(0)
   deliveryMode                        DeliveryMode
-  status                              InfrastructureOrderStatus     @default(WAITING_ADMIN_FUNDING)
+  status                              InfrastructureOrderStatus        @default(WAITING_ADMIN_FUNDING)
   requiredFundingRial                 BigInt
-  desiredInstanceName                 String?                       @unique
+  desiredInstanceName                 String?                          @unique
   reconcileNoResourceConfirmedAt      DateTime?
   reconcileNoResourceConfirmedJobId   String?
   reconcileNoResourceConfirmedAttempt Int?
-  createdAt                           DateTime                      @default(now())
-  updatedAt                           DateTime                      @updatedAt
-  serviceOrder                        ServiceOrder                  @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
-  user                                User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan                                InfrastructurePlan            @relation(fields: [planId], references: [id], onDelete: Restrict)
+  createdAt                           DateTime                         @default(now())
+  updatedAt                           DateTime                         @updatedAt
+  serviceOrder                        ServiceOrder                     @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  user                                User                             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                                InfrastructurePlan               @relation(fields: [planId], references: [id], onDelete: Restrict)
   fundingConfirmations                ProviderFundingConfirmation[]
   provisioningJobs                    ProvisioningJob[]
   cloudInstance                       CloudInstance?
@@ -597,6 +597,7 @@ model InfrastructureOrder {
   healthChecks                        InfrastructureHealthCheck[]
   secureDeliveryEvents                SecureDeliveryEvent[]
   adminCommandReceipts                AdminCommandReceipt[]
+  notificationOutbox                  ProvisioningNotificationOutbox[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -626,41 +627,65 @@ model ProviderFundingConfirmation {
 }
 
 model ProvisioningJob {
-  id                    String                 @id @default(cuid())
-  infrastructureOrderId String
-  operation             String
-  status                ProvisioningJobStatus  @default(QUEUED)
-  idempotencyKey        String                 @unique
-  attempt               Int                    @default(1)
-  runCount              Int                    @default(0)
-  claimCount            Int                    @default(0)
-  workerId              String?
-  claimToken            String?
-  lockedAt              DateTime?
-  leaseExpiresAt        DateTime?
-  availableAt           DateTime               @default(now())
-  jobMetadata           Json?
-  createSentAt          DateTime?
-  providerRequestId     String?
-  providerTaskId        String?
-  providerActionId      String?
-  reconciliationKey     String?
-  providerResourceId    String?
-  lastPolledAt          DateTime?
-  lastErrorCode         String?
-  lastErrorMessage      String?
-  startedAt             DateTime?
-  finishedAt            DateTime?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  infrastructureOrder   InfrastructureOrder    @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
-  operationLogs         ProviderOperationLog[]
+  id                      String                 @id @default(cuid())
+  infrastructureOrderId   String
+  operation               String
+  status                  ProvisioningJobStatus  @default(QUEUED)
+  idempotencyKey          String                 @unique
+  attempt                 Int                    @default(1)
+  runCount                Int                    @default(0)
+  claimCount              Int                    @default(0)
+  workerId                String?
+  claimToken              String?
+  lockedAt                DateTime?
+  leaseExpiresAt          DateTime?
+  availableAt             DateTime               @default(now())
+  jobMetadata             Json?
+  phase                   String                 @default("PROVIDER")
+  createSentAt            DateTime?
+  providerRequestId       String?
+  providerTaskId          String?
+  providerActionId        String?
+  reconciliationKey       String?
+  providerResourceId      String?
+  lastPolledAt            DateTime?
+  healthCheckId           String?
+  healthResultSnapshot    Json?
+  healthResultPersistedAt DateTime?
+  lastErrorCode           String?
+  lastErrorMessage        String?
+  startedAt               DateTime?
+  finishedAt              DateTime?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  infrastructureOrder     InfrastructureOrder    @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+  operationLogs           ProviderOperationLog[]
 
   @@index([infrastructureOrderId, createdAt])
   @@index([status, createdAt])
   @@index([infrastructureOrderId, operation, status])
   @@index([status, availableAt, createdAt])
   @@index([id, claimToken, leaseExpiresAt])
+  @@index([healthCheckId])
+}
+
+model ProvisioningNotificationOutbox {
+  id                    String                @id @default(cuid())
+  idempotencyKey        String                @unique
+  infrastructureOrderId String
+  type                  AdminNotificationType
+  title                 String
+  message               String
+  status                String                @default("PENDING")
+  attemptCount          Int                   @default(0)
+  lastError             String?
+  processedAt           DateTime?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  infrastructureOrder   InfrastructureOrder   @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([infrastructureOrderId, createdAt])
 }
 
 model CloudInstance {

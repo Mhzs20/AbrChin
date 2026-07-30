@@ -52,6 +52,8 @@ const terminalRecovery =
   "20260730234500_terminal_order_recovery";
 const multiOrderTerminalRecovery =
   "20260731003000_multi_order_terminal_recovery_v4";
+const terminalAndWorkerRecoveryV5 =
+  "20260731043000_terminal_and_worker_recovery_v5";
 
 async function copyThrough(lastName: string) {
   for (const name of migrationNames.filter((entry) => entry <= lastName)) {
@@ -1203,6 +1205,205 @@ try {
   `);
   assert.deepEqual(v4FinancialAfter, v4FinancialBefore);
 
+  const v4RegressionEvidence = await db.$queryRawUnsafe<
+    Array<{
+      sessionId: string;
+      fromRevision: number;
+      toRevision: number;
+      currentRevision: number;
+    }>
+  >(`
+    SELECT
+      transition."recommendationSessionId" AS "sessionId",
+      transition."fromRevision",
+      transition."toRevision",
+      session."productFlowRevision" AS "currentRevision"
+    FROM "ProductFlowTransition" transition
+    JOIN "RecommendationSession" session
+      ON session.id = transition."recommendationSessionId"
+    WHERE transition."idempotencyKey" IN (
+      'migration:v4:session-restore:v4-mixed-refund-paid',
+      'migration:v4:session-restore:v4-mixed-cancel-pending'
+    )
+    ORDER BY transition."recommendationSessionId"
+  `);
+  assert.equal(v4RegressionEvidence.length, 2);
+  assert.ok(
+    v4RegressionEvidence.every(
+      (row) =>
+        row.toRevision <= row.fromRevision &&
+        row.currentRevision === row.toRevision,
+    ),
+  );
+
+  await executeStatements(db, `
+    INSERT INTO "RecommendationSession" (
+      id, "userId", status, answers, "answerSources",
+      "productFlowState", "productFlowRevision",
+      "expiresAt", "createdAt", "updatedAt"
+    ) VALUES (
+      'v5-semantic-invalid', 'migration-user', 'CHECKOUT',
+      '{}', '{}', 'ACTIVE', 44,
+      CURRENT_TIMESTAMP + INTERVAL '1 hour',
+      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    );
+
+    INSERT INTO "RecommendationQuote"
+    SELECT (
+      jsonb_populate_record(
+        NULL::"RecommendationQuote",
+        to_jsonb(template) || jsonb_build_object(
+          'id', 'v5-quote-semantic-invalid',
+          'sessionId', 'v5-semantic-invalid',
+          'status', 'SELECTED',
+          'role', 'RECOMMENDED'
+        )
+      )
+    ).*
+    FROM "RecommendationQuote" template
+    WHERE template.id = 'quote-valid';
+
+    INSERT INTO "ServiceOrder" (
+      id, "userId", title, amount, status, "planId",
+      "planSnapshot", "recommendationQuoteId", "quoteExpiresAt",
+      provider, "providerApiVersion", "productKind", "parchinLevel",
+      "productFlowState", "productFlowRevision", "updatedAt"
+    ) VALUES (
+      'v5-order-semantic-invalid', 'migration-user',
+      'Semantic invalid', 6250000, 'PENDING_PAYMENT',
+      'migration-plan', '{"immutable":"semantic-invalid"}',
+      'v5-quote-semantic-invalid',
+      CURRENT_TIMESTAMP + INTERVAL '10 minutes',
+      'PARSPACK', 'v1', 'READY_INSTANT_SERVER',
+      'PARCHIN_START', 'ACTIVE', 44, CURRENT_TIMESTAMP
+    );
+  `);
+
+  await copyThrough(terminalAndWorkerRecoveryV5);
+  await deploy();
+
+  const v5Repaired = await db.$queryRawUnsafe<
+    Array<{
+      sessionId: string;
+      sessionRevision: number;
+      serviceRevision: number;
+      infrastructureRevision: number | null;
+      maxPreviousRevision: number;
+    }>
+  >(`
+    SELECT
+      session.id AS "sessionId",
+      session."productFlowRevision" AS "sessionRevision",
+      service_order."productFlowRevision" AS "serviceRevision",
+      infrastructure_order."productFlowRevision"
+        AS "infrastructureRevision",
+      greatest(
+        v4_transition."fromRevision",
+        v4_transition."toRevision"
+      ) AS "maxPreviousRevision"
+    FROM "RecommendationSession" session
+    JOIN "RecommendationQuote" quote
+      ON quote."sessionId" = session.id
+    JOIN "ServiceOrder" service_order
+      ON service_order."recommendationQuoteId" = quote.id
+     AND service_order.status NOT IN ('REFUNDED', 'CANCELED')
+    LEFT JOIN "InfrastructureOrder" infrastructure_order
+      ON infrastructure_order."serviceOrderId" = service_order.id
+    JOIN "ProductFlowTransition" v4_transition
+      ON v4_transition."idempotencyKey" =
+        'migration:v4:session-restore:' || session.id
+    WHERE session.id IN (
+      'v4-mixed-refund-paid',
+      'v4-mixed-cancel-pending'
+    )
+    ORDER BY session.id
+  `);
+  assert.equal(v5Repaired.length, 2);
+  assert.ok(
+    v5Repaired.every(
+      (row) =>
+        row.sessionRevision > row.maxPreviousRevision &&
+        row.serviceRevision === row.sessionRevision &&
+        (row.infrastructureRevision == null ||
+          row.infrastructureRevision === row.sessionRevision),
+    ),
+  );
+  const invalidRepairTransitions =
+    await db.productFlowTransition.count({
+      where: {
+        idempotencyKey: {
+          startsWith: "migration:v5:",
+        },
+        toRevision: { lte: 0 },
+      },
+    });
+  assert.equal(invalidRepairTransitions, 0);
+  const nonIncreasingV5 = await db.$queryRawUnsafe<
+    Array<{ count: bigint }>
+  >(`
+    SELECT count(*) AS count
+    FROM "ProductFlowTransition"
+    WHERE "idempotencyKey" LIKE 'migration:v5:%'
+      AND "toRevision" <= "fromRevision"
+  `);
+  assert.equal(nonIncreasingV5[0]?.count, 0n);
+  const semanticCase =
+    await db.productFlowRemediationCase.findUnique({
+      where: {
+        idempotencyKey:
+          "migration:v5:manual:v5-semantic-invalid",
+      },
+    });
+  assert.ok(semanticCase);
+  const semanticInvalidOwner =
+    await db.recommendationSession.findUniqueOrThrow({
+      where: { id: "v5-semantic-invalid" },
+      select: {
+        productFlowState: true,
+        productFlowRevision: true,
+      },
+    });
+  assert.deepEqual(semanticInvalidOwner, {
+    productFlowState: "ACTIVE",
+    productFlowRevision: 44,
+  });
+
+  const v5FinancialAfter = await db.$queryRawUnsafe<
+    typeof v4FinancialBefore
+  >(`
+    SELECT
+      wallet."availableBalance" AS "walletBalance",
+      (
+        SELECT jsonb_agg(to_jsonb(entry) ORDER BY entry.id)
+        FROM "WalletLedgerEntry" entry
+        WHERE entry.id LIKE 'v4-ledger-%'
+      ) AS "ledgerSnapshot",
+      jsonb_build_object(
+        'amount', paid.amount,
+        'paidAt', paid."paidAt",
+        'planSnapshot', paid."planSnapshot"
+      ) AS "paidOrderSnapshot",
+      jsonb_build_object(
+        'amountRial', quote."amountRial",
+        'renewalAmountRial', quote."renewalAmountRial",
+        'providerBasePriceRialSnapshot',
+          quote."providerBasePriceRialSnapshot",
+        'finalPriceRialSnapshot',
+          quote."finalPriceRialSnapshot",
+        'lineItemsSnapshot', quote."lineItemsSnapshot",
+        'planSnapshot', quote."planSnapshot"
+      ) AS "paidQuoteSnapshot",
+      infra."providerSelectionSnapshot" AS "paidProviderSnapshot"
+    FROM "Wallet" wallet
+    JOIN "ServiceOrder" paid ON paid.id = 'v4-order-paid'
+    JOIN "RecommendationQuote" quote
+      ON quote.id = paid."recommendationQuoteId"
+    JOIN "InfrastructureOrder" infra
+      ON infra."serviceOrderId" = paid.id
+    WHERE wallet.id = 'migration-wallet'
+  `);
+  assert.deepEqual(v5FinancialAfter, v4FinancialBefore);
+
   const terminalRecovered = await db.$queryRawUnsafe<
     Array<{
       id: string;
@@ -1553,6 +1754,44 @@ try {
     transitionProductFlow,
   } = await import(
     "../lib/product-flow/service.ts"
+  );
+  const v5BeforeRuntimeTransition =
+    await flowDb.recommendationSession.findUniqueOrThrow({
+      where: { id: "v4-mixed-cancel-pending" },
+      select: { productFlowRevision: true },
+    });
+  const v5RuntimeTransition = await transitionProductFlow({
+    owner: {
+      recommendationSessionId:
+        "v4-mixed-cancel-pending",
+      serviceOrderId: "v4-order-pending",
+    },
+    from: "AWAITING_PAYMENT",
+    to: "PAYMENT_REVIEW",
+    idempotencyKey: "v5-next-transition-once",
+    reason: "v5_post_migration_runtime_transition",
+  });
+  assert.equal(
+    v5RuntimeTransition.fromRevision,
+    v5BeforeRuntimeTransition.productFlowRevision,
+  );
+  assert.equal(
+    v5RuntimeTransition.toRevision,
+    v5BeforeRuntimeTransition.productFlowRevision + 1,
+  );
+  await assert.rejects(
+    transitionProductFlow({
+      owner: {
+        recommendationSessionId:
+          "v4-mixed-cancel-pending",
+        serviceOrderId: "v4-order-pending",
+      },
+      from: "AWAITING_PAYMENT",
+      to: "PAYMENT_REVIEW",
+      idempotencyKey: "v5-stale-revision-transition",
+      reason: "v5_stale_revision_must_conflict",
+    }),
+    /product_flow_state_conflict/,
   );
   await flowDb.$transaction((tx) =>
     assertProductFlowOwnerStateTx(
@@ -2735,6 +2974,7 @@ try {
   );
   const {
     claimNextProvisioningJob,
+    processProvisioningJob,
     recoverExpiredProvisioningJobs,
   } = await import("../lib/infrastructure/provisioning-service.ts");
 
@@ -3721,8 +3961,477 @@ try {
     auditNotificationFailure.createCallsBefore,
   );
 
+  async function seedMainProvisioning(input: {
+    id: string;
+  }) {
+    const seeded = await seedRuntimeOrder({
+      id: input.id,
+      infrastructureStatus: InfrastructureOrderStatus.QUEUED,
+      productFlowState: "PROVISIONING_SUBMITTED",
+    });
+    const job = await db.provisioningJob.create({
+      data: {
+        infrastructureOrderId: seeded.infrastructureOrder.id,
+        operation: "create_instance",
+        status: ProvisioningJobStatus.QUEUED,
+        idempotencyKey: `main-provisioning:${input.id}`,
+        attempt: 1,
+        availableAt: new Date(0),
+      },
+    });
+    return { ...seeded, job };
+  }
+
+  async function claimOnly(
+    jobId: string,
+    workerId: string,
+  ) {
+    await db.provisioningJob.updateMany({
+      where: {
+        status: ProvisioningJobStatus.QUEUED,
+        id: { not: jobId },
+      },
+      data: {
+        availableAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    });
+    const claimed = await claimNextProvisioningJob(workerId);
+    assert.equal(claimed?.id, jobId);
+    assert.ok(claimed?.claimToken);
+    return claimed!;
+  }
+
+  function mainAdapter() {
+    return new FakeCloudProviderAdapter({
+      provider: InfrastructureProvider.PARSPACK,
+      observedResource: {
+        state: "active",
+        ipv4: "192.0.2.80",
+        networkIds: null,
+        securityIds: null,
+      },
+    });
+  }
+
+  const noToken = await seedMainProvisioning({
+    id: "claim-token-required",
+  });
+  const noTokenClaim = await claimOnly(
+    noToken.job.id,
+    "main-no-token-worker",
+  );
+  const noTokenBefore =
+    await db.provisioningJob.findUniqueOrThrow({
+      where: { id: noTokenClaim.id },
+    });
+  assert.equal(
+    await processProvisioningJob(
+      noTokenClaim.id,
+      mainAdapter(),
+      undefined,
+    ),
+    null,
+  );
+  const noTokenAfter =
+    await db.provisioningJob.findUniqueOrThrow({
+      where: { id: noTokenClaim.id },
+    });
+  assert.equal(noTokenAfter.status, noTokenBefore.status);
+  assert.equal(noTokenAfter.claimToken, noTokenBefore.claimToken);
+  assert.equal(noTokenAfter.createSentAt, null);
+  await db.provisioningJob.update({
+    where: { id: noTokenClaim.id },
+    data: {
+      status: ProvisioningJobStatus.FAILED,
+      claimToken: null,
+      workerId: null,
+      leaseExpiresAt: null,
+      finishedAt: new Date(),
+    },
+  });
+
+  const staleMain = await seedMainProvisioning({
+    id: "stale-create-fence",
+  });
+  const staleAdapter = mainAdapter();
+  const originalCreate =
+    staleAdapter.createServer.bind(staleAdapter);
+  let providerAccepted!: () => void;
+  let releaseProviderResponse!: () => void;
+  const providerAcceptedPromise = new Promise<void>((resolve) => {
+    providerAccepted = resolve;
+  });
+  const releaseProviderPromise = new Promise<void>((resolve) => {
+    releaseProviderResponse = resolve;
+  });
+  staleAdapter.createServer = async (input) => {
+    const task = await originalCreate(input);
+    providerAccepted();
+    await releaseProviderPromise;
+    return task;
+  };
+  const workerA = await claimOnly(
+    staleMain.job.id,
+    "main-stale-worker-a",
+  );
+  const workerAPromise = processProvisioningJob(
+    workerA.id,
+    staleAdapter,
+    {
+      claimToken: workerA.claimToken!,
+      healthProbe: async () => true,
+    },
+  );
+  await providerAcceptedPromise;
+  await db.provisioningJob.update({
+    where: { id: workerA.id },
+    data: { leaseExpiresAt: new Date(Date.now() - 1000) },
+  });
+  await recoverExpiredProvisioningJobs();
+  const workerB = await claimOnly(
+    staleMain.job.id,
+    "main-stale-worker-b",
+  );
+  const workerBResult = await processProvisioningJob(
+    workerB.id,
+    staleAdapter,
+    {
+      claimToken: workerB.claimToken!,
+      healthProbe: async () => true,
+    },
+  );
+  releaseProviderResponse();
+  const workerAResult = await workerAPromise;
+  assert.equal(workerAResult, null);
+  assert.equal(workerBResult?.healthy, true);
+  assert.equal(staleAdapter.createCalls.length, 1);
+  const staleFinal =
+    await db.provisioningJob.findUniqueOrThrow({
+      where: { id: staleMain.job.id },
+    });
+  assert.equal(staleFinal.status, ProvisioningJobStatus.SUCCEEDED);
+  assert.equal(staleFinal.workerId, null);
+  assert.equal(staleFinal.claimToken, null);
+  assert.equal(
+    (
+      await db.infrastructureOrder.findUniqueOrThrow({
+        where: { id: staleMain.infrastructureOrder.id },
+      })
+    ).status,
+    InfrastructureOrderStatus.ACTIVE,
+  );
+
+  const notificationFailure = await seedMainProvisioning({
+    id: "main-notification-outbox",
+  });
+  const notificationAdapter = mainAdapter();
+  const notificationClaim = await claimOnly(
+    notificationFailure.job.id,
+    "main-notification-worker",
+  );
+  await processProvisioningJob(
+    notificationClaim.id,
+    notificationAdapter,
+    {
+      claimToken: notificationClaim.claimToken!,
+      healthProbe: async () => true,
+      beforeNotificationDelivery: () => {
+        throw new Error("injected_notification_failure");
+      },
+    },
+  );
+  const activeOwners = await db.$queryRawUnsafe<
+    Array<{
+      sessionState: string;
+      serviceState: string;
+      infrastructureState: string;
+      sessionRevision: number;
+      serviceRevision: number;
+      infrastructureRevision: number;
+      infrastructureStatus: string;
+      cloudStatus: string;
+      jobStatus: string;
+    }>
+  >(`
+    SELECT
+      session."productFlowState" AS "sessionState",
+      service_order."productFlowState" AS "serviceState",
+      infrastructure_order."productFlowState"
+        AS "infrastructureState",
+      session."productFlowRevision" AS "sessionRevision",
+      service_order."productFlowRevision" AS "serviceRevision",
+      infrastructure_order."productFlowRevision"
+        AS "infrastructureRevision",
+      infrastructure_order.status::text
+        AS "infrastructureStatus",
+      cloud.status::text AS "cloudStatus",
+      job.status::text AS "jobStatus"
+    FROM "InfrastructureOrder" infrastructure_order
+    JOIN "ServiceOrder" service_order
+      ON service_order.id =
+        infrastructure_order."serviceOrderId"
+    JOIN "RecommendationQuote" quote
+      ON quote.id = service_order."recommendationQuoteId"
+    JOIN "RecommendationSession" session
+      ON session.id = quote."sessionId"
+    JOIN "CloudInstance" cloud
+      ON cloud."infrastructureOrderId" =
+        infrastructure_order.id
+    JOIN "ProvisioningJob" job
+      ON job."infrastructureOrderId" =
+        infrastructure_order.id
+     AND job.operation = 'create_instance'
+    WHERE infrastructure_order.id =
+      '${notificationFailure.infrastructureOrder.id}'
+  `);
+  assert.deepEqual(
+    activeOwners.map((row) => ({
+      states: [
+        row.sessionState,
+        row.serviceState,
+        row.infrastructureState,
+      ],
+      revisions: [
+        row.sessionRevision,
+        row.serviceRevision,
+        row.infrastructureRevision,
+      ],
+      infrastructureStatus: row.infrastructureStatus,
+      cloudStatus: row.cloudStatus,
+      jobStatus: row.jobStatus,
+    })),
+    [
+      {
+        states: ["ACTIVE", "ACTIVE", "ACTIVE"],
+        revisions: [4, 4, 4],
+        infrastructureStatus: "ACTIVE",
+        cloudStatus: "ACTIVE",
+        jobStatus: "SUCCEEDED",
+      },
+    ],
+  );
+  const pendingNotification =
+    await db.provisioningNotificationOutbox.findUniqueOrThrow({
+      where: {
+        idempotencyKey:
+          `instance-active:${notificationFailure.infrastructureOrder.id}`,
+      },
+    });
+  assert.equal(pendingNotification.status, "PENDING");
+
+  async function assertFinalizeOnly(input: {
+    id: string;
+    healthy: boolean;
+  }) {
+    const seeded = await seedMainProvisioning({ id: input.id });
+    const adapter = mainAdapter();
+    const claimed = await claimOnly(
+      seeded.job.id,
+      `main-finalize-a-${input.id}`,
+    );
+    let probeCalls = 0;
+    const first = await processProvisioningJob(
+      claimed.id,
+      adapter,
+      {
+        claimToken: claimed.claimToken!,
+        healthProbe: async () => {
+          probeCalls += 1;
+          return input.healthy;
+        },
+        beforeFinalizeJob: () => {
+          throw new Error("injected_finalize_failure");
+        },
+        ...(input.healthy
+          ? {}
+          : {
+              beforeHealthRetrySchedule: () => {
+                throw new Error("injected_schedule_failure");
+              },
+            }),
+      },
+    );
+    assert.equal(first?.finalizePending, true);
+    const probeCallsBeforeRecovery = probeCalls;
+    assert.equal(
+      probeCallsBeforeRecovery,
+      input.healthy ? 1 : 3,
+    );
+    const persistedBeforeRecovery =
+      await db.provisioningJob.findUniqueOrThrow({
+        where: { id: seeded.job.id },
+      });
+    assert.ok(persistedBeforeRecovery.healthResultSnapshot);
+    const checkCountBefore =
+      await db.infrastructureHealthCheck.count({
+        where: {
+          infrastructureOrderId:
+            seeded.infrastructureOrder.id,
+        },
+      });
+    assert.equal(checkCountBefore, 1);
+    await db.provisioningJob.update({
+      where: { id: seeded.job.id },
+      data: {
+        leaseExpiresAt: new Date(Date.now() - 1000),
+      },
+    });
+    await recoverExpiredProvisioningJobs();
+    const replacement = await claimOnly(
+      seeded.job.id,
+      `main-finalize-b-${input.id}`,
+    );
+    const replay = await processProvisioningJob(
+      replacement.id,
+      adapter,
+      {
+        claimToken: replacement.claimToken!,
+        healthProbe: async () => {
+          probeCalls += 1;
+          throw new Error("health_probe_must_not_replay");
+        },
+        ...(input.healthy
+          ? {}
+          : {
+              beforeHealthRetrySchedule: () => {
+                throw new Error("injected_schedule_failure");
+              },
+            }),
+      },
+    );
+    assert.equal(replay?.finalizeOnly, true);
+    assert.equal(replay?.healthy, input.healthy);
+    assert.equal(probeCalls, probeCallsBeforeRecovery);
+    assert.equal(
+      await db.infrastructureHealthCheck.count({
+        where: {
+          infrastructureOrderId:
+            seeded.infrastructureOrder.id,
+        },
+      }),
+      1,
+    );
+    assert.equal(
+      await db.infrastructureHealthCheck.count({
+        where: {
+          infrastructureOrderId:
+            seeded.infrastructureOrder.id,
+          status: "RUNNING",
+        },
+      }),
+      0,
+    );
+    assert.equal(adapter.createCalls.length, 1);
+    assert.equal(
+      (
+        await db.provisioningJob.findUniqueOrThrow({
+          where: { id: seeded.job.id },
+        })
+      ).status,
+      ProvisioningJobStatus.SUCCEEDED,
+    );
+  }
+
+  await assertFinalizeOnly({
+    id: "main-finalize-success",
+    healthy: true,
+  });
+  await assertFinalizeOnly({
+    id: "main-finalize-failure",
+    healthy: false,
+  });
+
+  const adminSafety = await seedRuntimeOrder({
+    id: "admin-safety-source-of-truth",
+    infrastructureStatus: InfrastructureOrderStatus.FAILED,
+    productFlowState: "PROVISIONING_MANUAL_REVIEW",
+  });
+  const adminSafetyJob = await db.provisioningJob.create({
+    data: {
+      infrastructureOrderId:
+        adminSafety.infrastructureOrder.id,
+      operation: "create_instance",
+      status: ProvisioningJobStatus.FAILED,
+      idempotencyKey: "admin-safety-create-attempt",
+      attempt: 1,
+      createSentAt: new Date(),
+      lastErrorCode: "provider_ambiguous",
+      finishedAt: new Date(),
+    },
+  });
+  await db.infrastructureOrder.update({
+    where: { id: adminSafety.infrastructureOrder.id },
+    data: {
+      reconcileNoResourceConfirmedAt: new Date(),
+      reconcileNoResourceConfirmedJobId: adminSafetyJob.id,
+      reconcileNoResourceConfirmedAttempt: 1,
+    },
+  });
+  const { listInfrastructureOrders } = await import(
+    "../lib/admin/dashboard.ts"
+  );
+  const adminWithoutAudit = (
+    await listInfrastructureOrders()
+  ).find(
+    (order) =>
+      order.id === adminSafety.infrastructureOrder.id,
+  );
+  assert.ok(adminWithoutAudit);
+  assert.deepEqual(adminWithoutAudit.recovery.allowedActions, [
+    "reconcile",
+    "confirm-no-resource",
+  ]);
+  assert.equal(
+    adminWithoutAudit.recovery.resourceDispositionReason,
+    "RECONCILIATION_REQUIRED",
+  );
+  const absenceKey =
+    `provider-absence-confirmed:${adminSafety.infrastructureOrder.id}:${adminSafetyJob.id}:1`;
+  await db.auditLog.create({
+    data: {
+      actorUserId: "migration-admin",
+      action: "reconciliation",
+      entityType: "infrastructure_order",
+      entityId: adminSafety.infrastructureOrder.id,
+      afterData: {
+        noResourceConfirmed: true,
+        provisioningJobId: adminSafetyJob.id,
+        attempt: 1,
+      },
+      idempotencyKey: absenceKey,
+    },
+  });
+  const adminWithAudit = (
+    await listInfrastructureOrders()
+  ).find(
+    (order) =>
+      order.id === adminSafety.infrastructureOrder.id,
+  );
+  assert.ok(adminWithAudit);
+  assert.deepEqual(adminWithAudit.recovery.allowedActions, [
+    "retry",
+    "refund",
+  ]);
+  assert.equal(
+    adminWithAudit.recovery.resourceDispositionReason,
+    "LATEST_ATTEMPT_CONFIRMED_ABSENT",
+  );
+  await db.auditLog.delete({
+    where: { idempotencyKey: absenceKey },
+  });
+  const adminAfterAuditRemoval = (
+    await listInfrastructureOrders()
+  ).find(
+    (order) =>
+      order.id === adminSafety.infrastructureOrder.id,
+  );
+  assert.deepEqual(
+    adminAfterAuditRemoval?.recovery.allowedActions,
+    ["reconcile", "confirm-no-resource"],
+  );
+
   console.log(
-    "PostgreSQL integration passed (59 scenarios): multi-order V4 terminal recovery and V3 repair, live-sibling protection, all-terminal alignment, conflict remediation, no V4 synthetic terminal transitions, immutable ledger/wallet/financial/provider snapshots, transactional runtime refund and rollback/replay, fail-closed create/task/resource/ambiguous refund checks, formally reconciled absence and terminated-resource refund, funding/audit/health idempotency conflicts, concurrent audit replay/conflict, graph-level multi-quote recovery, invalid graph determinism, paid graph immutability, payment flow alignment, Prisma deployment no-op, real transition concurrency, direct-catalog audited bootstrap, provider-capability health verification, exclusive retry claims, durable admin retry receipts before/after auto-job completion/failure, three-attempt exhaustion, manual Provider observation, manual recovery success/failure/concurrency, finalize-pending active preservation, stale-worker fencing, post-transition failure alignment, audit/notification failure isolation, and zero duplicate create during recovery",
+    "PostgreSQL integration passed (72 scenarios): V5 monotonic revision repair after V3/V4 regression, semantic remediation cases, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, idempotency conflicts, direct-catalog audit, provider-capability health verification, durable admin receipts, manual recovery, mandatory main-worker claim tokens, fenced stale-worker create recovery, one-create reconciliation, ACTIVE notification outbox isolation, finalize-only replay for successful and failed health results, and Admin actions derived from the same audited Backend disposition",
   );
 } finally {
   await flowDb?.$disconnect();

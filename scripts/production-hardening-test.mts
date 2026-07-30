@@ -146,7 +146,9 @@ test("failure before create leaves order retryable without cloud instance", asyn
   const claimed = await claimNextProvisioningJob("worker-a");
   assert.ok(claimed);
   assert.equal(claimed.id, job.id);
-  await processProvisioningJob(claimed.id, provider);
+  await processProvisioningJob(claimed.id, provider, {
+    claimToken: claimed.claimToken!,
+  });
   const refreshed = await db.infrastructureOrder.findUniqueOrThrow({ where: { id: infra.id } });
   const cloud = await db.cloudInstance.count({ where: { infrastructureOrderId: infra.id } });
   assert.equal(cloud, 0);
@@ -164,7 +166,13 @@ test("timeout after create marks NEEDS_RECONCILIATION without second create", as
   const { infra, job } = await seedInfra(mobile, "timeout");
   await db.provisioningJob.update({
     where: { id: job.id },
-    data: { createSentAt: new Date(), status: ProvisioningJobStatus.RUNNING, startedAt: new Date() },
+    data: {
+      createSentAt: new Date(),
+      status: ProvisioningJobStatus.RUNNING,
+      startedAt: new Date(),
+      claimToken: "hardening-timeout-claim",
+      leaseExpiresAt: new Date(Date.now() + 60_000),
+    },
   });
   await db.$transaction([
     db.serviceOrder.update({
@@ -180,7 +188,9 @@ test("timeout after create marks NEEDS_RECONCILIATION without second create", as
     provider: InfrastructureProvider.PARSPACK,
     createBehavior: "timeout_after_accept",
   });
-  await processProvisioningJob(job.id, provider);
+  await processProvisioningJob(job.id, provider, {
+    claimToken: "hardening-timeout-claim",
+  });
   const refreshed = await db.infrastructureOrder.findUniqueOrThrow({ where: { id: infra.id } });
   assert.equal(refreshed.status, InfrastructureOrderStatus.NEEDS_RECONCILIATION);
   const cloud = await db.cloudInstance.count({ where: { infrastructureOrderId: infra.id } });

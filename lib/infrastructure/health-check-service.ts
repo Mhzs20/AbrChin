@@ -15,6 +15,7 @@ import type { ProviderTopologyVerificationMode } from "@/lib/infrastructure/clou
 import {
   assertProvisioningJobFenceTx,
   type ProvisioningJobFence,
+  WorkerLeaseLostError,
 } from "@/lib/infrastructure/worker-fence";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
 import { addBillingMonth, addGracePeriod } from "@/lib/subscriptions/period";
@@ -68,6 +69,33 @@ export type ConnectivityProbe = (input: {
   timeoutMs: number;
   attempt: number;
 }) => Promise<boolean>;
+
+export type DurableHealthResult = {
+  healthCheckId: string;
+  healthy: boolean;
+  delivered: boolean;
+  resultCode: string;
+};
+
+export function parseDurableHealthResult(
+  value: Prisma.JsonValue | null | undefined,
+): DurableHealthResult | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const row = value as Record<string, unknown>;
+  return typeof row.healthCheckId === "string" &&
+    typeof row.healthy === "boolean" &&
+    typeof row.delivered === "boolean" &&
+    typeof row.resultCode === "string"
+    ? {
+        healthCheckId: row.healthCheckId,
+        healthy: row.healthy,
+        delivered: row.delivered,
+        resultCode: row.resultCode,
+      }
+    : null;
+}
 
 export const tcpConnectivityProbe: ConnectivityProbe = ({
   host,
@@ -282,6 +310,10 @@ export async function runInfrastructureHealthCheck(input: {
     reason?: string;
   };
   workerFence?: ProvisioningJobFence;
+  durableJob?: {
+    jobId: string;
+    workerFence: ProvisioningJobFence;
+  };
 }) {
   const probe = input.probe ?? tcpConnectivityProbe;
   const maxAttempts = Math.min(
@@ -350,31 +382,64 @@ export async function runInfrastructureHealthCheck(input: {
     } else if (currentState !== "HEALTH_CHECKING") {
       throw new Error("health_check_state_conflict");
     }
-    const prior = await tx.infrastructureHealthCheck.count({
-      where: { infrastructureOrderId: order.id },
-    });
-    const check = await tx.infrastructureHealthCheck.create({
-      data: {
-        infrastructureOrderId: order.id,
-        cloudInstanceId: instance.id,
-        attempt: prior + 1,
-        status: InfrastructureHealthCheckStatus.RUNNING,
-        providerState: instance.providerState,
-        expectedIpv4: instance.ipv4,
-        observedIpv4: instance.ipv4,
-        expectedNetworkId,
-        observedNetworkId: instance.networkId,
-        expectedSecurityId,
-        observedSecurityId: instance.securityId,
-        topologyVerificationMode,
-        providerObservedAt: instance.providerObservedAt,
-        connectivityProtocol: instance.image
-          .toLowerCase()
-          .includes("windows")
-          ? "tcp:3389"
-          : "tcp:22",
-      },
-    });
+    const durableJob = input.durableJob
+      ? await tx.provisioningJob.findUniqueOrThrow({
+          where: { id: input.durableJob.jobId },
+          select: { healthCheckId: true },
+        })
+      : null;
+    let check = durableJob?.healthCheckId
+      ? await tx.infrastructureHealthCheck.findUnique({
+          where: { id: durableJob.healthCheckId },
+        })
+      : null;
+    if (check && check.status !== InfrastructureHealthCheckStatus.RUNNING) {
+      throw new Error("durable_health_result_requires_finalize");
+    }
+    if (!check) {
+      const prior = await tx.infrastructureHealthCheck.count({
+        where: { infrastructureOrderId: order.id },
+      });
+      check = await tx.infrastructureHealthCheck.create({
+        data: {
+          infrastructureOrderId: order.id,
+          cloudInstanceId: instance.id,
+          attempt: prior + 1,
+          status: InfrastructureHealthCheckStatus.RUNNING,
+          providerState: instance.providerState,
+          expectedIpv4: instance.ipv4,
+          observedIpv4: instance.ipv4,
+          expectedNetworkId,
+          observedNetworkId: instance.networkId,
+          expectedSecurityId,
+          observedSecurityId: instance.securityId,
+          topologyVerificationMode,
+          providerObservedAt: instance.providerObservedAt,
+          connectivityProtocol: instance.image
+            .toLowerCase()
+            .includes("windows")
+            ? "tcp:3389"
+            : "tcp:22",
+        },
+      });
+      if (input.durableJob) {
+        const linked = await tx.provisioningJob.updateMany({
+          where: {
+            id: input.durableJob.jobId,
+            status: "RUNNING",
+            claimToken: input.durableJob.workerFence.claimToken,
+            leaseExpiresAt: { gt: new Date() },
+          },
+          data: {
+            phase: "HEALTH",
+            healthCheckId: check.id,
+          },
+        });
+        if (linked.count !== 1) {
+          throw new WorkerLeaseLostError();
+        }
+      }
+    }
     const observation = assessProviderObservation({
       topologyVerificationMode,
       providerState: instance.providerState,
@@ -396,7 +461,74 @@ export async function runInfrastructureHealthCheck(input: {
     };
   });
 
-  await input.afterTransition?.();
+  try {
+    await input.afterTransition?.();
+  } catch (error) {
+    await prisma.$transaction(async (tx) => {
+      if (input.workerFence) {
+        await assertProvisioningJobFenceTx(tx, input.workerFence);
+      }
+      const order = await tx.infrastructureOrder.findUniqueOrThrow({
+        where: { id: prepared.order.id },
+        include: {
+          serviceOrder: { include: { recommendationQuote: true } },
+        },
+      });
+      await tx.infrastructureHealthCheck.updateMany({
+        where: {
+          id: prepared.check.id,
+          status: InfrastructureHealthCheckStatus.RUNNING,
+        },
+        data: {
+          status: InfrastructureHealthCheckStatus.FAILED,
+          resultCode: "health_execution_failed",
+          finishedAt: new Date(),
+          metadata: {
+            containsSecret: false,
+            topologyVerificationMode:
+              prepared.topologyVerificationMode,
+            failurePhase: "after_transition",
+          },
+        },
+      });
+      if (order.productFlowState === "HEALTH_CHECKING") {
+        await transitionProductFlowTx(tx, {
+          owner: owner(order),
+          from: "HEALTH_CHECKING",
+          to: "HEALTH_CHECK_FAILED",
+          reason: "health_execution_failed",
+          idempotencyKey:
+            `health-execution-failed:${prepared.check.id}`,
+        });
+      }
+      if (input.durableJob) {
+        const result: DurableHealthResult = {
+          healthCheckId: prepared.check.id,
+          healthy: false,
+          delivered: false,
+          resultCode: "health_execution_failed",
+        };
+        const persisted = await tx.provisioningJob.updateMany({
+          where: {
+            id: input.durableJob.jobId,
+            status: "RUNNING",
+            claimToken: input.durableJob.workerFence.claimToken,
+            leaseExpiresAt: { gt: new Date() },
+          },
+          data: {
+            phase: "HEALTH_RESULT_PERSISTED",
+            healthResultSnapshot:
+              result as unknown as Prisma.InputJsonValue,
+            healthResultPersistedAt: new Date(),
+          },
+        });
+        if (persisted.count !== 1) {
+          throw new WorkerLeaseLostError();
+        }
+      }
+    });
+    throw error;
+  }
 
   const startedAt = Date.now();
   if (!prepared.providerContractReady) {
@@ -432,6 +564,31 @@ export async function runInfrastructureHealthCheck(input: {
         reason: prepared.providerObservationCode,
         idempotencyKey: `health-observation-failed:${prepared.check.id}`,
       });
+      const result: DurableHealthResult = {
+        healthCheckId: prepared.check.id,
+        healthy: false,
+        delivered: false,
+        resultCode: prepared.providerObservationCode,
+      };
+      if (input.durableJob) {
+        const persisted = await tx.provisioningJob.updateMany({
+          where: {
+            id: input.durableJob.jobId,
+            status: "RUNNING",
+            claimToken: input.durableJob.workerFence.claimToken,
+            leaseExpiresAt: { gt: new Date() },
+          },
+          data: {
+            phase: "HEALTH_RESULT_PERSISTED",
+            healthResultSnapshot:
+              result as unknown as Prisma.InputJsonValue,
+            healthResultPersistedAt: new Date(),
+          },
+        });
+        if (persisted.count !== 1) {
+          throw new WorkerLeaseLostError();
+        }
+      }
       return { healthy: false as const, delivered: false as const };
     });
   }
@@ -490,6 +647,31 @@ export async function runInfrastructureHealthCheck(input: {
         reason: "connectivity_check_failed",
         idempotencyKey: `health-failed:${prepared.check.id}`,
       });
+      const result: DurableHealthResult = {
+        healthCheckId: prepared.check.id,
+        healthy: false,
+        delivered: false,
+        resultCode: "port_unreachable",
+      };
+      if (input.durableJob) {
+        const persisted = await tx.provisioningJob.updateMany({
+          where: {
+            id: input.durableJob.jobId,
+            status: "RUNNING",
+            claimToken: input.durableJob.workerFence.claimToken,
+            leaseExpiresAt: { gt: new Date() },
+          },
+          data: {
+            phase: "HEALTH_RESULT_PERSISTED",
+            healthResultSnapshot:
+              result as unknown as Prisma.InputJsonValue,
+            healthResultPersistedAt: new Date(),
+          },
+        });
+        if (persisted.count !== 1) {
+          throw new WorkerLeaseLostError();
+        }
+      }
       return { healthy: false as const, delivered: false as const };
     }
 
@@ -512,6 +694,31 @@ export async function runInfrastructureHealthCheck(input: {
       instance.credential?.status === "READY"
     ) {
       await activateDeliveredServiceTx(tx, order.id);
+      if (input.durableJob) {
+        const result: DurableHealthResult = {
+          healthCheckId: prepared.check.id,
+          healthy: true,
+          delivered: true,
+          resultCode: "service_active",
+        };
+        const persisted = await tx.provisioningJob.updateMany({
+          where: {
+            id: input.durableJob.jobId,
+            status: "RUNNING",
+            claimToken: input.durableJob.workerFence.claimToken,
+            leaseExpiresAt: { gt: new Date() },
+          },
+          data: {
+            phase: "HEALTH_RESULT_PERSISTED",
+            healthResultSnapshot:
+              result as unknown as Prisma.InputJsonValue,
+            healthResultPersistedAt: new Date(),
+          },
+        });
+        if (persisted.count !== 1) {
+          throw new WorkerLeaseLostError();
+        }
+      }
       return { healthy: true as const, delivered: true as const };
     }
     await tx.secureDeliveryEvent.create({
@@ -531,6 +738,31 @@ export async function runInfrastructureHealthCheck(input: {
       reason: "secure_delivery_pending",
       idempotencyKey: `delivery-pending:${prepared.check.id}`,
     });
+    if (input.durableJob) {
+      const result: DurableHealthResult = {
+        healthCheckId: prepared.check.id,
+        healthy: true,
+        delivered: false,
+        resultCode: "secure_delivery_pending",
+      };
+      const persisted = await tx.provisioningJob.updateMany({
+        where: {
+          id: input.durableJob.jobId,
+          status: "RUNNING",
+          claimToken: input.durableJob.workerFence.claimToken,
+          leaseExpiresAt: { gt: new Date() },
+        },
+        data: {
+          phase: "HEALTH_RESULT_PERSISTED",
+          healthResultSnapshot:
+            result as unknown as Prisma.InputJsonValue,
+          healthResultPersistedAt: new Date(),
+        },
+      });
+      if (persisted.count !== 1) {
+        throw new WorkerLeaseLostError();
+      }
+    }
     return { healthy: true as const, delivered: false as const };
   });
 }

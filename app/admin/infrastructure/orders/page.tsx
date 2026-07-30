@@ -17,10 +17,6 @@ import {
   infrastructureOrderStatusLabel,
 } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
-import {
-  latestCreateAttempt,
-  providerAttemptMayHaveResource,
-} from "@/lib/infrastructure/resource-disposition";
 
 export const metadata: Metadata = {
   title: "سفارش‌های تأمین | پنل مدیریت | ابرچین",
@@ -43,38 +39,6 @@ export default async function AdminInfrastructureOrdersPage() {
     { key: "status", header: "وضعیت" },
     { key: "actions", header: "عملیات" },
   ];
-
-  function recoveryFlags(
-    order: Awaited<ReturnType<typeof listInfrastructureOrders>>[number],
-  ) {
-    const latestAttempt = latestCreateAttempt(
-      order.provisioningJobs,
-    );
-    const hasProviderRisk = order.provisioningJobs.some(
-      providerAttemptMayHaveResource,
-    );
-    const hasCurrentNoResourceConfirmation = Boolean(
-      latestAttempt &&
-        order.reconcileNoResourceConfirmedAt &&
-        order.reconcileNoResourceConfirmedJobId ===
-          latestAttempt.id &&
-        order.reconcileNoResourceConfirmedAttempt ===
-          latestAttempt.attempt,
-    );
-    const resourceTerminated = Boolean(
-      order.cloudInstance?.status === "TERMINATED" &&
-        order.cloudInstance.terminatedAt,
-    );
-    return {
-      hasProviderRisk,
-      hasCurrentNoResourceConfirmation,
-      canRefundSafely:
-        resourceTerminated ||
-        (!order.cloudInstance &&
-          (!hasProviderRisk ||
-            hasCurrentNoResourceConfirmation)),
-    };
-  }
 
   const rows = orders.map((order) => ({
     id: order.id,
@@ -102,10 +66,10 @@ export default async function AdminInfrastructureOrdersPage() {
           <InfrastructureOrderActions
             orderId={order.id}
             serviceOrderId={order.serviceOrderId}
-            status={order.status}
-            hasCloudInstance={Boolean(order.cloudInstance)}
-            {...recoveryFlags(order)}
-            productFlowState={order.productFlowState}
+            allowedActions={order.recovery.allowedActions}
+            resourceDispositionReason={
+              order.recovery.resourceDispositionReason
+            }
           />
         ),
     },
@@ -131,10 +95,10 @@ export default async function AdminInfrastructureOrdersPage() {
         <InfrastructureOrderActions
           orderId={order.id}
           serviceOrderId={order.serviceOrderId}
-          status={order.status}
-          hasCloudInstance={Boolean(order.cloudInstance)}
-          {...recoveryFlags(order)}
-          productFlowState={order.productFlowState}
+          allowedActions={order.recovery.allowedActions}
+          resourceDispositionReason={
+            order.recovery.resourceDispositionReason
+          }
         />
       ),
   }));

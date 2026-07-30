@@ -15,6 +15,7 @@ import { getWorkerHealthStatus } from "@/lib/infrastructure/provisioning-service
 import { ensureGatewayConfigsSeeded } from "@/lib/payments/gateway-config";
 import { catalogItemBasePriceRial } from "@/lib/pricing/plan-pricing";
 import { calculateQuotePricing } from "@/lib/pricing/quote-line-items";
+import { assessInfrastructureRecoveryActions } from "@/lib/infrastructure/resource-disposition";
 
 export async function getAdminDashboardStats() {
   const todayStart = new Date();
@@ -352,7 +353,7 @@ export async function getAdminUserDetail(userId: string) {
 }
 
 export async function listInfrastructureOrders() {
-  return prisma.infrastructureOrder.findMany({
+  const orders = await prisma.infrastructureOrder.findMany({
     orderBy: { createdAt: "desc" },
     take: 100,
     include: {
@@ -363,5 +364,39 @@ export async function listInfrastructureOrders() {
       provisioningJobs: { orderBy: { createdAt: "asc" } },
       cloudInstance: true,
     },
+  });
+  const auditKeys = orders
+    .filter(
+      (order) =>
+        order.reconcileNoResourceConfirmedJobId &&
+        order.reconcileNoResourceConfirmedAttempt != null,
+    )
+    .map(
+      (order) =>
+        `provider-absence-confirmed:${order.id}:${order.reconcileNoResourceConfirmedJobId}:${order.reconcileNoResourceConfirmedAttempt}`,
+    );
+  const audits = auditKeys.length
+    ? await prisma.auditLog.findMany({
+        where: { idempotencyKey: { in: auditKeys } },
+      })
+    : [];
+  const auditByKey = new Map(
+    audits.map((audit) => [audit.idempotencyKey, audit]),
+  );
+  return orders.map((order) => {
+    const auditKey =
+      order.reconcileNoResourceConfirmedJobId &&
+      order.reconcileNoResourceConfirmedAttempt != null
+        ? `provider-absence-confirmed:${order.id}:${order.reconcileNoResourceConfirmedJobId}:${order.reconcileNoResourceConfirmedAttempt}`
+        : null;
+    return {
+      ...order,
+      recovery: assessInfrastructureRecoveryActions({
+        ...order,
+        absenceAudit: auditKey
+          ? (auditByKey.get(auditKey) ?? null)
+          : null,
+      }),
+    };
   });
 }

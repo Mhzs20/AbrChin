@@ -67,21 +67,13 @@ const actionConfig: Record<
 export function InfrastructureOrderActions({
   orderId,
   serviceOrderId,
-  status,
-  hasCloudInstance,
-  hasProviderRisk,
-  hasCurrentNoResourceConfirmation,
-  canRefundSafely,
-  productFlowState,
+  allowedActions,
+  resourceDispositionReason,
 }: {
   orderId: string;
   serviceOrderId: string;
-  status: string;
-  hasCloudInstance: boolean;
-  hasProviderRisk: boolean;
-  hasCurrentNoResourceConfirmation: boolean;
-  canRefundSafely: boolean;
-  productFlowState: string | null;
+  allowedActions: ActionKind[];
+  resourceDispositionReason: string;
 }) {
   const [kind, setKind] = useState<ActionKind | null>(null);
   const [reason, setReason] = useState("");
@@ -89,53 +81,16 @@ export function InfrastructureOrderActions({
   const [error, setError] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState("");
 
-  const available: ActionKind[] = [];
-  if (status === "NEEDS_RECONCILIATION" && !hasCloudInstance) {
-    available.push("reconcile", "confirm-no-resource");
-  }
-  if (
-    (status === "FAILED" || status === "MANUAL_REVIEW") &&
-    !hasCloudInstance
-  ) {
-    if (
-      productFlowState === "PROVISIONING_MANUAL_REVIEW"
-    ) {
-      if (
-        hasProviderRisk &&
-        !hasCurrentNoResourceConfirmation
-      ) {
-        available.push("reconcile", "confirm-no-resource");
-      } else if (hasCurrentNoResourceConfirmation) {
-        available.push("retry", "refund");
-      } else {
-        available.push("refund");
-      }
-    } else if (
-      productFlowState === "PROVISIONING_RETRYABLE" &&
-      (!hasProviderRisk || hasCurrentNoResourceConfirmation)
-    ) {
-      available.push("retry", "refund");
-    }
-  }
-  if (
-    productFlowState === "HEALTH_CHECK_FAILED" &&
-    hasCloudInstance
-  ) {
-    available.push("health-retry");
-  }
-  if (
-    status === "MANUAL_REVIEW" &&
-    productFlowState === "PROVISIONING_MANUAL_REVIEW" &&
-    hasCloudInstance
-  ) {
-    available.push(
-      "health-observe",
-      "health-recovery",
+  if (allowedActions.length === 0) {
+    return (
+      <span
+        className="product-tech"
+        title={resourceDispositionReason}
+      >
+        —
+      </span>
     );
-    if (canRefundSafely) available.push("refund");
   }
-
-  if (available.length === 0) return <>—</>;
 
   async function submit() {
     if (!kind) return;
@@ -179,7 +134,7 @@ export function InfrastructureOrderActions({
   return (
     <>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {available.map((action) => (
+        {allowedActions.map((action) => (
           <button
             key={action}
             type="button"
