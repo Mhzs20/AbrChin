@@ -7,6 +7,11 @@ import {
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { prisma } from "@/lib/db";
 import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
+import type { CloudProviderAdapter } from "@/lib/infrastructure/cloud-provider-adapter";
+import {
+  assessRefundResourceSafety,
+  latestCreateAttempt,
+} from "@/lib/infrastructure/resource-disposition";
 import {
   buildDesiredInstanceName,
   parseLockedProvisioningSelection,
@@ -25,7 +30,7 @@ export async function reconcileInfrastructureOrder(params: {
   reason: string;
   ip?: string | null;
   userAgent?: string | null;
-}) {
+}, providerOverride?: CloudProviderAdapter) {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "InfrastructureOrder" WHERE id = ${params.infrastructureOrderId} FOR UPDATE`;
     const order = await tx.infrastructureOrder.findUnique({
@@ -37,7 +42,15 @@ export async function reconcileInfrastructureOrder(params: {
       },
     });
     if (!order) throw new WalletError("not_found", "سفارش زیرساخت پیدا نشد.");
-    if (order.status !== InfrastructureOrderStatus.NEEDS_RECONCILIATION) {
+    const reconciling =
+      order.status === InfrastructureOrderStatus.NEEDS_RECONCILIATION &&
+      order.productFlowState === "PROVISIONING_RECONCILING";
+    const manualWithoutInstance =
+      !order.cloudInstance &&
+      (order.status === InfrastructureOrderStatus.FAILED ||
+        order.status === InfrastructureOrderStatus.MANUAL_REVIEW) &&
+      order.productFlowState === "PROVISIONING_MANUAL_REVIEW";
+    if (!reconciling && !manualWithoutInstance) {
       throw new WalletError("invalid_status", "این سفارش در وضعیت تطبیق نیست.");
     }
 
@@ -48,10 +61,12 @@ export async function reconcileInfrastructureOrder(params: {
       providerApiVersion: order.providerApiVersion,
       productKind: order.productKind,
     });
-    const provider = createCloudProviderAdapter(
-      order.provider,
-      order.providerApiVersion,
-    );
+    const provider =
+      providerOverride ??
+      createCloudProviderAdapter(
+        order.provider,
+        order.providerApiVersion,
+      );
     const providerInstanceId =
       order.cloudInstance?.providerInstanceId ??
       order.provisioningJobs.find((job) => job.providerResourceId)
@@ -126,13 +141,25 @@ export async function reconcileInfrastructureOrder(params: {
       where: { id: order.id },
       data: { status: InfrastructureOrderStatus.PROVISIONING, desiredInstanceName: desiredName },
     });
+    const flowOwner = {
+      recommendationSessionId:
+        order.serviceOrder.recommendationQuote?.sessionId ?? null,
+      serviceOrderId: order.serviceOrderId,
+      infrastructureOrderId: order.id,
+    };
+    if (manualWithoutInstance) {
+      await transitionProductFlowTx(tx, {
+        owner: flowOwner,
+        from: "PROVISIONING_MANUAL_REVIEW",
+        to: "PROVISIONING_RECONCILING",
+        reason: "manual_review_resource_found",
+        idempotencyKey:
+          `manual-resource-found:${order.id}:${instance.id}`,
+        actorUserId: params.adminUserId,
+      });
+    }
     await transitionProductFlowTx(tx, {
-      owner: {
-        recommendationSessionId:
-          order.serviceOrder.recommendationQuote?.sessionId ?? null,
-        serviceOrderId: order.serviceOrderId,
-        infrastructureOrderId: order.id,
-      },
+      owner: flowOwner,
       from: "PROVISIONING_RECONCILING",
       to: "PROVISIONING",
       reason: "provider_resource_reconciled",
@@ -163,7 +190,14 @@ export async function confirmNoProviderResource(params: {
   reason: string;
   ip?: string | null;
   userAgent?: string | null;
-}) {
+}, providerOverride?: CloudProviderAdapter) {
+  const reason = params.reason.trim();
+  if (reason.length < 3 || reason.length > 500) {
+    throw new WalletError(
+      "invalid_reason",
+      "دلیل تأیید باید بین ۳ تا ۵۰۰ کاراکتر باشد.",
+    );
+  }
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "InfrastructureOrder" WHERE id = ${params.infrastructureOrderId} FOR UPDATE`;
     const order = await tx.infrastructureOrder.findUnique({
@@ -171,10 +205,19 @@ export async function confirmNoProviderResource(params: {
       include: {
         cloudInstance: true,
         serviceOrder: { include: { recommendationQuote: true } },
+        provisioningJobs: { orderBy: { createdAt: "asc" } },
       },
     });
     if (!order) throw new WalletError("not_found", "سفارش زیرساخت پیدا نشد.");
-    if (order.status !== InfrastructureOrderStatus.NEEDS_RECONCILIATION) {
+    const reconciling =
+      order.status === InfrastructureOrderStatus.NEEDS_RECONCILIATION &&
+      order.productFlowState === "PROVISIONING_RECONCILING";
+    const manualWithoutInstance =
+      !order.cloudInstance &&
+      (order.status === InfrastructureOrderStatus.FAILED ||
+        order.status === InfrastructureOrderStatus.MANUAL_REVIEW) &&
+      order.productFlowState === "PROVISIONING_MANUAL_REVIEW";
+    if (!reconciling && !manualWithoutInstance) {
       throw new WalletError("invalid_status", "فقط سفارش‌های نیازمند تطبیق قابل تأیید هستند.");
     }
     if (order.cloudInstance) {
@@ -188,14 +231,25 @@ export async function confirmNoProviderResource(params: {
       providerApiVersion: order.providerApiVersion,
       productKind: order.productKind,
     });
-    const provider = createCloudProviderAdapter(
-      order.provider,
-      order.providerApiVersion,
-    );
+    const createAttempt = latestCreateAttempt(order.provisioningJobs);
+    if (!createAttempt) {
+      throw new WalletError(
+        "invalid_status",
+        "هیچ Attempt ساختی ثبت نشده و سفارش بدون Reconciliation قابل لغو امن است.",
+      );
+    }
+    const provider =
+      providerOverride ??
+      createCloudProviderAdapter(
+        order.provider,
+        order.providerApiVersion,
+      );
     const found = await provider.findExistingResource({
       region: locked.region,
       orderPublicId: order.id,
       expectedName: desiredName,
+      providerResourceId:
+        createAttempt.providerResourceId ?? undefined,
     });
     if (found) {
       throw new WalletError("invalid_status", "منبع در Provider پیدا شد؛ از تطبیق استفاده کنید.");
@@ -205,6 +259,8 @@ export async function confirmNoProviderResource(params: {
       where: { id: order.id },
       data: {
         reconcileNoResourceConfirmedAt: new Date(),
+        reconcileNoResourceConfirmedJobId: createAttempt.id,
+        reconcileNoResourceConfirmedAttempt: createAttempt.attempt,
         status: InfrastructureOrderStatus.FAILED,
       },
     });
@@ -215,10 +271,13 @@ export async function confirmNoProviderResource(params: {
         serviceOrderId: order.serviceOrderId,
         infrastructureOrderId: order.id,
       },
-      from: "PROVISIONING_RECONCILING",
+      from: manualWithoutInstance
+        ? "PROVISIONING_MANUAL_REVIEW"
+        : "PROVISIONING_RECONCILING",
       to: "PROVISIONING_RETRYABLE",
       reason: "provider_absence_manually_confirmed",
-      idempotencyKey: `provider-absence-confirmed:${order.id}`,
+      idempotencyKey:
+        `provider-absence-flow:${order.id}:${createAttempt.id}:${createAttempt.attempt}`,
       actorUserId: params.adminUserId,
     });
 
@@ -228,9 +287,18 @@ export async function confirmNoProviderResource(params: {
         action: AuditActions.RECONCILIATION,
         entityType: "infrastructure_order",
         entityId: order.id,
-        afterData: { reason: params.reason, noResourceConfirmed: true },
+        afterData: {
+          reason,
+          noResourceConfirmed: true,
+          provisioningJobId: createAttempt.id,
+          attempt: createAttempt.attempt,
+          providerObservation: "NOT_FOUND",
+          containsSecret: false,
+        },
         ip: params.ip,
         userAgent: params.userAgent,
+        idempotencyKey:
+          `provider-absence-confirmed:${order.id}:${createAttempt.id}:${createAttempt.attempt}`,
       },
       tx,
     );
@@ -267,10 +335,7 @@ export async function retryFailedProvisioning(params: {
     }
 
     if (
-      order.cloudInstance ||
-      order.provisioningJobs.some(
-        (job) => job.providerResourceId || job.providerTaskId,
-      )
+      order.cloudInstance
     ) {
       throw new WalletError("invalid_status", "منبع Provider از قبل وجود دارد؛ Retry مجاز نیست.");
     }
@@ -279,15 +344,51 @@ export async function retryFailedProvisioning(params: {
       throw new WalletError("invalid_status", "فقط سفارش‌های ناموفق قابل Retry هستند.");
     }
 
-    if (!order.reconcileNoResourceConfirmedAt && order.provisioningJobs.some((job) => job.createSentAt)) {
-      throw new WalletError("invalid_status", "پس از ارسال Create، ابتدا وضعیت منبع را مشخص کنید.");
-    }
-
     const activeCreate = order.provisioningJobs.find(
       (job) => job.operation === "create_instance" && ACTIVE_JOB_STATUSES.includes(job.status),
     );
     if (activeCreate) {
       throw new WalletError("invalid_status", "Job فعال در حال اجراست.");
+    }
+    const absenceAuditKey =
+      order.reconcileNoResourceConfirmedJobId &&
+      order.reconcileNoResourceConfirmedAttempt != null
+        ? `provider-absence-confirmed:${order.id}:${order.reconcileNoResourceConfirmedJobId}:${order.reconcileNoResourceConfirmedAttempt}`
+        : null;
+    const absenceAudit = absenceAuditKey
+      ? await tx.auditLog.findUnique({
+          where: { idempotencyKey: absenceAuditKey },
+        })
+      : null;
+    const absenceAuditData =
+      absenceAudit?.afterData &&
+      typeof absenceAudit.afterData === "object" &&
+      !Array.isArray(absenceAudit.afterData)
+        ? (absenceAudit.afterData as Record<string, unknown>)
+        : {};
+    const resourceSafety = assessRefundResourceSafety({
+      jobs: order.provisioningJobs,
+      cloudInstance: null,
+      reconcileNoResourceConfirmedAt:
+        order.reconcileNoResourceConfirmedAt,
+      reconcileNoResourceConfirmedJobId:
+        order.reconcileNoResourceConfirmedJobId,
+      reconcileNoResourceConfirmedAttempt:
+        order.reconcileNoResourceConfirmedAttempt,
+      absenceAuditMatches: Boolean(
+        absenceAudit &&
+          absenceAuditData.noResourceConfirmed === true &&
+          absenceAuditData.provisioningJobId ===
+            order.reconcileNoResourceConfirmedJobId &&
+          absenceAuditData.attempt ===
+            order.reconcileNoResourceConfirmedAttempt,
+      ),
+    });
+    if (!resourceSafety.safe) {
+      throw new WalletError(
+        "invalid_status",
+        "پیش از Retry باید نبود Resource برای آخرین Attempt قطعی و Audit شود.",
+      );
     }
 
     const lastAttempt = order.provisioningJobs.reduce((max, job) => Math.max(max, job.attempt), 0);
@@ -311,7 +412,12 @@ export async function retryFailedProvisioning(params: {
 
     await tx.infrastructureOrder.update({
       where: { id: order.id },
-      data: { status: InfrastructureOrderStatus.QUEUED },
+      data: {
+        status: InfrastructureOrderStatus.QUEUED,
+        reconcileNoResourceConfirmedAt: null,
+        reconcileNoResourceConfirmedJobId: null,
+        reconcileNoResourceConfirmedAttempt: null,
+      },
     });
     await transitionProductFlowTx(tx, {
       owner: {

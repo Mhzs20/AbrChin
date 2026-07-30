@@ -256,6 +256,7 @@ model User {
   renewalQuotes              ServiceRenewalQuote[]
   fundingConfirmations       ProviderFundingConfirmation[] @relation("FundingConfirmedBy")
   auditLogs                  AuditLog[]                    @relation("AuditActor")
+  adminCommandReceipts       AdminCommandReceipt[]         @relation("AdminCommandActor")
   infrastructurePlansUpdated InfrastructurePlan[]          @relation("PlanUpdatedBy")
   providerPricingUpdated     ProviderPricingConfig[]       @relation("ProviderPricingUpdatedBy")
 }
@@ -430,29 +431,30 @@ model ServiceOrder {
 }
 
 model RecommendationSession {
-  id                            String                   @id @default(cuid())
+  id                            String                       @id @default(cuid())
   userId                        String?
   guestAccessTokenHash          String?
   claimedAt                     DateTime?
-  status                        RecommendationFlowStatus @default(DISCOVERY)
+  status                        RecommendationFlowStatus     @default(DISCOVERY)
   answers                       Json
   answerSources                 Json
   understandingSnapshot         Json?
   requirementsSummary           Json?
-  revision                      Int                      @default(0)
+  revision                      Int                          @default(0)
   profile                       Json?
   confidence                    String?
-  architectureEscalation        Boolean                  @default(false)
+  architectureEscalation        Boolean                      @default(false)
   productFlowState              String?
-  productFlowRevision           Int                      @default(0)
+  productFlowRevision           Int                          @default(0)
   selectedParchinLevel          ParchinLevel?
   deliveryConfiguration         Json?
-  catalogCheckoutIdempotencyKey String?                  @unique
+  catalogCheckoutIdempotencyKey String?                      @unique
   catalogCheckoutRequestHash    String?
+  remediationCases              ProductFlowRemediationCase[]
   expiresAt                     DateTime
-  createdAt                     DateTime                 @default(now())
-  updatedAt                     DateTime                 @updatedAt
-  user                          User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt                     DateTime                     @default(now())
+  updatedAt                     DateTime                     @updatedAt
+  user                          User?                        @relation(fields: [userId], references: [id], onDelete: SetNull)
   quotes                        RecommendationQuote[]
 
   @@index([userId, createdAt])
@@ -564,34 +566,37 @@ model InfrastructurePlan {
 }
 
 model InfrastructureOrder {
-  id                             String                        @id @default(cuid())
-  serviceOrderId                 String                        @unique
-  userId                         String
-  planId                         String
-  provider                       InfrastructureProvider
-  providerApiVersion             String                        @default("v1")
-  productKind                    InfrastructureProductKind     @default(READY_INSTANT_SERVER)
-  parchinLevel                   ParchinLevel?
-  providerSelectionSnapshot      Json?
-  productFlowState               String?
-  productFlowRevision            Int                           @default(0)
-  deliveryMode                   DeliveryMode
-  status                         InfrastructureOrderStatus     @default(WAITING_ADMIN_FUNDING)
-  requiredFundingRial            BigInt
-  desiredInstanceName            String?                       @unique
-  reconcileNoResourceConfirmedAt DateTime?
-  createdAt                      DateTime                      @default(now())
-  updatedAt                      DateTime                      @updatedAt
-  serviceOrder                   ServiceOrder                  @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
-  user                           User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan                           InfrastructurePlan            @relation(fields: [planId], references: [id], onDelete: Restrict)
-  fundingConfirmations           ProviderFundingConfirmation[]
-  provisioningJobs               ProvisioningJob[]
-  cloudInstance                  CloudInstance?
-  notifications                  AdminNotification[]
-  operationLogs                  ProviderOperationLog[]
-  healthChecks                   InfrastructureHealthCheck[]
-  secureDeliveryEvents           SecureDeliveryEvent[]
+  id                                  String                        @id @default(cuid())
+  serviceOrderId                      String                        @unique
+  userId                              String
+  planId                              String
+  provider                            InfrastructureProvider
+  providerApiVersion                  String                        @default("v1")
+  productKind                         InfrastructureProductKind     @default(READY_INSTANT_SERVER)
+  parchinLevel                        ParchinLevel?
+  providerSelectionSnapshot           Json?
+  productFlowState                    String?
+  productFlowRevision                 Int                           @default(0)
+  deliveryMode                        DeliveryMode
+  status                              InfrastructureOrderStatus     @default(WAITING_ADMIN_FUNDING)
+  requiredFundingRial                 BigInt
+  desiredInstanceName                 String?                       @unique
+  reconcileNoResourceConfirmedAt      DateTime?
+  reconcileNoResourceConfirmedJobId   String?
+  reconcileNoResourceConfirmedAttempt Int?
+  createdAt                           DateTime                      @default(now())
+  updatedAt                           DateTime                      @updatedAt
+  serviceOrder                        ServiceOrder                  @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  user                                User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                                InfrastructurePlan            @relation(fields: [planId], references: [id], onDelete: Restrict)
+  fundingConfirmations                ProviderFundingConfirmation[]
+  provisioningJobs                    ProvisioningJob[]
+  cloudInstance                       CloudInstance?
+  notifications                       AdminNotification[]
+  operationLogs                       ProviderOperationLog[]
+  healthChecks                        InfrastructureHealthCheck[]
+  secureDeliveryEvents                SecureDeliveryEvent[]
+  adminCommandReceipts                AdminCommandReceipt[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -630,6 +635,7 @@ model ProvisioningJob {
   runCount              Int                    @default(0)
   claimCount            Int                    @default(0)
   workerId              String?
+  claimToken            String?
   lockedAt              DateTime?
   leaseExpiresAt        DateTime?
   availableAt           DateTime               @default(now())
@@ -654,6 +660,7 @@ model ProvisioningJob {
   @@index([status, createdAt])
   @@index([infrastructureOrderId, operation, status])
   @@index([status, availableAt, createdAt])
+  @@index([id, claimToken, leaseExpiresAt])
 }
 
 model CloudInstance {
@@ -840,6 +847,37 @@ model AuditLog {
   @@index([actorUserId, createdAt])
   @@index([entityType, entityId])
   @@index([action, createdAt])
+}
+
+model AdminCommandReceipt {
+  id                    String              @id @default(cuid())
+  operation             String
+  idempotencyKey        String              @unique
+  requestFingerprint    String
+  actorUserId           String
+  infrastructureOrderId String
+  resultSnapshot        Json
+  createdAt             DateTime            @default(now())
+  actor                 User                @relation("AdminCommandActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  infrastructureOrder   InfrastructureOrder @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+
+  @@index([actorUserId, createdAt])
+  @@index([infrastructureOrderId, operation, createdAt])
+}
+
+model ProductFlowRemediationCase {
+  id                      String                @id @default(cuid())
+  recommendationSessionId String
+  reason                  String
+  status                  String                @default("OPEN")
+  evidence                Json
+  idempotencyKey          String                @unique
+  createdAt               DateTime              @default(now())
+  resolvedAt              DateTime?
+  recommendationSession   RecommendationSession @relation(fields: [recommendationSessionId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([recommendationSessionId, createdAt])
 }
 
 model ProviderCatalogState {

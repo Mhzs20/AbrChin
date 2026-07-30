@@ -360,6 +360,7 @@ export async function listInfrastructureOrders() {
       plan: true,
       serviceOrder: true,
       fundingConfirmations: { orderBy: { attempt: "desc" }, take: 1 },
+      provisioningJobs: { orderBy: { createdAt: "asc" } },
       cloudInstance: true,
     },
   });

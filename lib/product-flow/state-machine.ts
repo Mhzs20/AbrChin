@@ -116,6 +116,7 @@ const transitions: Record<ProductFlowState, readonly ProductFlowState[]> = {
   ],
   PROVISIONING_MANUAL_REVIEW: [
     "PROVISIONING_RECONCILING",
+    "PROVISIONING_RETRYABLE",
     "PROVISIONING_SUBMITTED",
     "HEALTH_CHECKING",
     "CANCELLED",

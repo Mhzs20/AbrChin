@@ -19,12 +19,12 @@ import {
   revalidateLockedSelection,
 } from "@/lib/infrastructure/selection-revalidation";
 import type { CloudProviderAdapter } from "@/lib/infrastructure/cloud-provider-adapter";
+import { assessRefundResourceSafety } from "@/lib/infrastructure/resource-disposition";
 import {
   assertProductFlowOwnerStateTx,
   transitionProductFlowTx,
 } from "@/lib/product-flow/service";
 import {
-  CloudInstanceStatus,
   InfrastructureOrderStatus,
   LedgerDirection,
   LedgerStatus,
@@ -411,9 +411,12 @@ export async function refundOrder(params: {
       throw new WalletError("invalid_status", "فقط سفارش پرداخت‌شده قابل بازگشت است.");
     }
 
-    const infra = await tx.infrastructureOrder.findUnique({
+    let infra = await tx.infrastructureOrder.findUnique({
       where: { serviceOrderId: order.id },
-      include: { cloudInstance: true },
+      include: {
+        cloudInstance: true,
+        provisioningJobs: { orderBy: { createdAt: "asc" } },
+      },
     });
     if (infra) {
       await tx.$queryRaw`
@@ -422,6 +425,13 @@ export async function refundOrder(params: {
         WHERE id = ${infra.id}
         FOR UPDATE
       `;
+      infra = await tx.infrastructureOrder.findUniqueOrThrow({
+        where: { id: infra.id },
+        include: {
+          cloudInstance: true,
+          provisioningJobs: { orderBy: { createdAt: "asc" } },
+        },
+      });
     }
     const sessionId = order.recommendationQuote?.sessionId ?? null;
     if (sessionId) {
@@ -446,12 +456,6 @@ export async function refundOrder(params: {
           "بازگشت وجه برای سفارش با منبع فعال یا در حال آماده‌سازی مجاز نیست.",
         );
       }
-      if (infra.cloudInstance && infra.cloudInstance.status !== CloudInstanceStatus.TERMINATED) {
-        throw new WalletError(
-          "refund_blocked",
-          "تا زمان خاتمه سرور، بازگشت وجه مجاز نیست.",
-        );
-      }
       const activeJob = await tx.provisioningJob.findFirst({
         where: {
           infrastructureOrderId: infra.id,
@@ -468,6 +472,50 @@ export async function refundOrder(params: {
         throw new WalletError(
           "refund_blocked",
           "تا پایان یا لغو قطعی عملیات Provider، بازگشت وجه مجاز نیست.",
+        );
+      }
+      const absenceAuditKey =
+        infra.reconcileNoResourceConfirmedJobId &&
+        infra.reconcileNoResourceConfirmedAttempt != null
+          ? `provider-absence-confirmed:${infra.id}:${infra.reconcileNoResourceConfirmedJobId}:${infra.reconcileNoResourceConfirmedAttempt}`
+          : null;
+      const absenceAudit = absenceAuditKey
+        ? await tx.auditLog.findUnique({
+            where: { idempotencyKey: absenceAuditKey },
+          })
+        : null;
+      const absenceAuditData =
+        absenceAudit?.afterData &&
+        typeof absenceAudit.afterData === "object" &&
+        !Array.isArray(absenceAudit.afterData)
+          ? (absenceAudit.afterData as Record<string, unknown>)
+          : {};
+      const absenceAuditMatches = Boolean(
+        absenceAudit &&
+          absenceAudit.action === AuditActions.RECONCILIATION &&
+          absenceAudit.entityType === "infrastructure_order" &&
+          absenceAudit.entityId === infra.id &&
+          absenceAuditData.noResourceConfirmed === true &&
+          absenceAuditData.provisioningJobId ===
+            infra.reconcileNoResourceConfirmedJobId &&
+          absenceAuditData.attempt ===
+            infra.reconcileNoResourceConfirmedAttempt,
+      );
+      const resourceSafety = assessRefundResourceSafety({
+        jobs: infra.provisioningJobs,
+        cloudInstance: infra.cloudInstance,
+        reconcileNoResourceConfirmedAt:
+          infra.reconcileNoResourceConfirmedAt,
+        reconcileNoResourceConfirmedJobId:
+          infra.reconcileNoResourceConfirmedJobId,
+        reconcileNoResourceConfirmedAttempt:
+          infra.reconcileNoResourceConfirmedAttempt,
+        absenceAuditMatches,
+      });
+      if (!resourceSafety.safe) {
+        throw new WalletError(
+          "refund_blocked",
+          "تا تعیین قطعی نبود یا خاتمه Resource در Provider، بازگشت وجه مجاز نیست.",
         );
       }
     }
@@ -487,8 +535,23 @@ export async function refundOrder(params: {
         "وضعیت جریان سفارش برای بازگشت وجه قطعی نیست.",
       );
     }
+    const liveSibling = sessionId
+      ? await tx.serviceOrder.findFirst({
+          where: {
+            id: { not: order.id },
+            recommendationQuote: { sessionId },
+            status: {
+              notIn: [
+                ServiceOrderStatus.REFUNDED,
+                ServiceOrderStatus.CANCELED,
+              ],
+            },
+          },
+          select: { id: true },
+        })
+      : null;
     const flowOwner = {
-      recommendationSessionId: sessionId,
+      recommendationSessionId: liveSibling ? null : sessionId,
       serviceOrderId: order.id,
       infrastructureOrderId: infra?.id ?? null,
     };

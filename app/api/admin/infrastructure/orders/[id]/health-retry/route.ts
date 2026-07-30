@@ -5,6 +5,7 @@ import {
   readIdempotencyKey,
   rejectCrossOrigin,
 } from "@/lib/http";
+import { isIdempotencyConflictError } from "@/lib/idempotency";
 import { scheduleManualHealthRetry } from "@/lib/infrastructure/health-retry-service";
 import { readRequestMeta } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/errors";
@@ -58,6 +59,11 @@ export async function POST(
         error.code === "idempotency_conflict" ? 409 : 400,
         { code: error.code },
       );
+    }
+    if (isIdempotencyConflictError(error)) {
+      return jsonError("شناسه یکتا با درخواست قبلی تعارض دارد.", 409, {
+        code: error.code,
+      });
     }
     if (error instanceof SyntaxError) {
       return jsonError("بدنه درخواست معتبر نیست.", 400);

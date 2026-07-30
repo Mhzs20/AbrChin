@@ -69,12 +69,18 @@ export function InfrastructureOrderActions({
   serviceOrderId,
   status,
   hasCloudInstance,
+  hasProviderRisk,
+  hasCurrentNoResourceConfirmation,
+  canRefundSafely,
   productFlowState,
 }: {
   orderId: string;
   serviceOrderId: string;
   status: string;
   hasCloudInstance: boolean;
+  hasProviderRisk: boolean;
+  hasCurrentNoResourceConfirmation: boolean;
+  canRefundSafely: boolean;
   productFlowState: string | null;
 }) {
   const [kind, setKind] = useState<ActionKind | null>(null);
@@ -87,8 +93,29 @@ export function InfrastructureOrderActions({
   if (status === "NEEDS_RECONCILIATION" && !hasCloudInstance) {
     available.push("reconcile", "confirm-no-resource");
   }
-  if (status === "FAILED" && !hasCloudInstance) {
-    available.push("retry");
+  if (
+    (status === "FAILED" || status === "MANUAL_REVIEW") &&
+    !hasCloudInstance
+  ) {
+    if (
+      productFlowState === "PROVISIONING_MANUAL_REVIEW"
+    ) {
+      if (
+        hasProviderRisk &&
+        !hasCurrentNoResourceConfirmation
+      ) {
+        available.push("reconcile", "confirm-no-resource");
+      } else if (hasCurrentNoResourceConfirmation) {
+        available.push("retry", "refund");
+      } else {
+        available.push("refund");
+      }
+    } else if (
+      productFlowState === "PROVISIONING_RETRYABLE" &&
+      (!hasProviderRisk || hasCurrentNoResourceConfirmation)
+    ) {
+      available.push("retry", "refund");
+    }
   }
   if (
     productFlowState === "HEALTH_CHECK_FAILED" &&
@@ -104,8 +131,8 @@ export function InfrastructureOrderActions({
     available.push(
       "health-observe",
       "health-recovery",
-      "refund",
     );
+    if (canRefundSafely) available.push("refund");
   }
 
   if (available.length === 0) return <>—</>;

@@ -214,6 +214,75 @@ test("terminal recovery and runtime refund preserve financial evidence", async (
   assert.match(refund, /refund-flow:/);
 });
 
+test("V4 scopes terminal remediation across the complete session graph", async () => {
+  const migration = await source(
+    "prisma/migrations/20260731003000_multi_order_terminal_recovery_v4/migration.sql",
+  );
+  assert.match(migration, /_AbrchinV4SessionGraph/);
+  assert.match(migration, /nonTerminalSignatureCount/);
+  assert.match(migration, /nonTerminalOwnersAligned/);
+  assert.match(migration, /ProductFlowRemediationCase/);
+  assert.match(
+    migration,
+    /v3_terminal_scope_repaired_from_live_sibling/,
+  );
+  assert.match(
+    migration,
+    /graph\."allTerminalGraphAligned"/,
+  );
+  assert.match(
+    migration,
+    /'migration:v4:terminal-order:' \|\| graph\."serviceOrderId",\s+NULL,/,
+  );
+  assert.doesNotMatch(migration, /UPDATE "Wallet"/);
+  assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
+  assert.doesNotMatch(migration, /UPDATE "PaymentTransaction"/);
+  assert.doesNotMatch(
+    migration,
+    /SET[\s\S]{0,80}"providerSelectionSnapshot"/,
+  );
+});
+
+test("health recovery has durable command receipts and lease fencing", async () => {
+  const retry = await source(
+    "lib/infrastructure/health-retry-service.ts",
+  );
+  const fence = await source(
+    "lib/infrastructure/worker-fence.ts",
+  );
+  const provisioning = await source(
+    "lib/infrastructure/provisioning-service.ts",
+  );
+  assert.match(retry, /adminCommandReceipt/);
+  assert.match(retry, /replayAdminHealthReceiptTx/);
+  assert.match(retry, /resultSnapshot/);
+  assert.match(retry, /finalizePending/);
+  assert.match(retry, /assertProvisioningJobFenceTx/);
+  assert.doesNotMatch(retry, /\.createServer\(/);
+  assert.match(fence, /claimToken/);
+  assert.match(fence, /leaseExpiresAt: \{ gt: new Date\(\) \}/);
+  assert.match(provisioning, /randomUUID\(\)/);
+  assert.match(provisioning, /claimToken: null/);
+});
+
+test("refund and provisioning retry fail closed on provider attempt evidence", async () => {
+  const disposition = await source(
+    "lib/infrastructure/resource-disposition.ts",
+  );
+  const refund = await source("lib/orders/service.ts");
+  const retry = await source("lib/infrastructure/retry.ts");
+  assert.match(disposition, /createSentAt/);
+  assert.match(disposition, /providerTaskId/);
+  assert.match(disposition, /providerResourceId/);
+  assert.match(disposition, /NEEDS_RECONCILIATION/);
+  assert.match(disposition, /LATEST_ATTEMPT_CONFIRMED_ABSENT/);
+  assert.match(disposition, /RESOURCE_TERMINATED/);
+  assert.match(refund, /assessRefundResourceSafety/);
+  assert.match(refund, /reconcileNoResourceConfirmedJobId/);
+  assert.match(retry, /provider-absence-confirmed:/);
+  assert.match(retry, /findExistingResource/);
+});
+
 test("idempotency compares stable request payloads", async () => {
   const audit = await source("lib/audit/service.ts");
   const funding = await source("lib/infrastructure/funding.ts");
@@ -225,12 +294,15 @@ test("idempotency compares stable request payloads", async () => {
   );
   assert.match(audit, /stableJson\(existing\.afterData/);
   assert.match(audit, /IdempotencyConflictError/);
+  assert.match(audit, /pg_advisory_xact_lock/);
+  assert.match(audit, /createMany/);
   assert.match(
     funding,
     /existingConfirmation\.fundedAmountRial !== fundedAmountRial/,
   );
   assert.match(retry, /requestFingerprint/);
   assert.match(retry, /assertHealthOperationReplay/);
+  assert.match(retry, /adminCommandReceipt/);
   assert.match(retryRoute, /idempotency_conflict/);
   assert.match(retryRoute, /409/);
 });

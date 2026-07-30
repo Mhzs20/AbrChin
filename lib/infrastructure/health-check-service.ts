@@ -12,6 +12,10 @@ import {
 
 import { prisma } from "@/lib/db";
 import type { ProviderTopologyVerificationMode } from "@/lib/infrastructure/cloud-provider-adapter";
+import {
+  assertProvisioningJobFenceTx,
+  type ProvisioningJobFence,
+} from "@/lib/infrastructure/worker-fence";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
 import { addBillingMonth, addGracePeriod } from "@/lib/subscriptions/period";
 
@@ -268,6 +272,7 @@ export async function runInfrastructureHealthCheck(input: {
   infrastructureOrderId: string;
   probe?: ConnectivityProbe;
   maxAttempts?: number;
+  afterTransition?: () => void | Promise<void>;
   retryTransition?: {
     idempotencyKey: string;
     actorUserId?: string | null;
@@ -276,6 +281,7 @@ export async function runInfrastructureHealthCheck(input: {
       | "PROVISIONING_MANUAL_REVIEW";
     reason?: string;
   };
+  workerFence?: ProvisioningJobFence;
 }) {
   const probe = input.probe ?? tcpConnectivityProbe;
   const maxAttempts = Math.min(
@@ -283,6 +289,9 @@ export async function runInfrastructureHealthCheck(input: {
     MAX_CONNECT_ATTEMPTS,
   );
   const prepared = await prisma.$transaction(async (tx) => {
+    if (input.workerFence) {
+      await assertProvisioningJobFenceTx(tx, input.workerFence);
+    }
     const order = await tx.infrastructureOrder.findUniqueOrThrow({
       where: { id: input.infrastructureOrderId },
       include: {
@@ -387,9 +396,14 @@ export async function runInfrastructureHealthCheck(input: {
     };
   });
 
+  await input.afterTransition?.();
+
   const startedAt = Date.now();
   if (!prepared.providerContractReady) {
     return prisma.$transaction(async (tx) => {
+      if (input.workerFence) {
+        await assertProvisioningJobFenceTx(tx, input.workerFence);
+      }
       const order = await tx.infrastructureOrder.findUniqueOrThrow({
         where: { id: prepared.order.id },
         include: {
@@ -439,6 +453,9 @@ export async function runInfrastructureHealthCheck(input: {
   }
 
   return prisma.$transaction(async (tx) => {
+    if (input.workerFence) {
+      await assertProvisioningJobFenceTx(tx, input.workerFence);
+    }
     const order = await tx.infrastructureOrder.findUniqueOrThrow({
       where: { id: prepared.order.id },
       include: {

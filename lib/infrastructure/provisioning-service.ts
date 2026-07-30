@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   AdminNotificationStatus,
   AdminNotificationType,
@@ -113,6 +115,7 @@ export async function recoverExpiredProvisioningJobs() {
         data: {
           status: ProvisioningJobStatus.QUEUED,
           workerId: null,
+          claimToken: null,
           lockedAt: null,
           leaseExpiresAt: null,
           startedAt: null,
@@ -129,6 +132,7 @@ export async function recoverExpiredProvisioningJobs() {
             status: ProvisioningJobStatus.NEEDS_RECONCILIATION,
             finishedAt: now,
             workerId: null,
+            claimToken: null,
             lockedAt: null,
             leaseExpiresAt: null,
             lastErrorCode: "provider_ambiguous",
@@ -149,6 +153,7 @@ export async function recoverExpiredProvisioningJobs() {
         data: {
           status: ProvisioningJobStatus.QUEUED,
           workerId: null,
+          claimToken: null,
           lockedAt: null,
           leaseExpiresAt: null,
           startedAt: null,
@@ -164,6 +169,7 @@ export async function claimNextProvisioningJob(workerId?: string) {
   const config = getWorkerConfig();
   const id = workerId ?? config.workerId;
   const leaseUntil = new Date(Date.now() + config.leaseMs);
+  const claimToken = randomUUID();
 
   await recoverExpiredProvisioningJobs();
 
@@ -185,6 +191,7 @@ export async function claimNextProvisioningJob(workerId?: string) {
       data: {
         status: ProvisioningJobStatus.RUNNING,
         workerId: id,
+        claimToken,
         lockedAt: new Date(),
         leaseExpiresAt: leaseUntil,
         startedAt: new Date(),
@@ -406,7 +413,10 @@ export async function getWorkerHealthStatus() {
 export async function processProvisioningJob(
   jobId: string,
   providerOverride?: CloudProviderAdapter,
-  options?: { healthProbe?: ConnectivityProbe },
+  options?: {
+    healthProbe?: ConnectivityProbe;
+    claimToken?: string | null;
+  },
 ) {
   const job = await prisma.provisioningJob.findUnique({
     where: { id: jobId },
@@ -422,6 +432,12 @@ export async function processProvisioningJob(
   });
   if (!job || job.status !== ProvisioningJobStatus.RUNNING) return;
   if (
+    options?.claimToken &&
+    job.claimToken !== options.claimToken
+  ) {
+    return;
+  }
+  if (
     job.operation === "health_check_retry" ||
     job.operation === "health_check_manual_recovery"
   ) {
@@ -430,6 +446,7 @@ export async function processProvisioningJob(
     );
     await processHealthCheckRetryJob(job.id, providerOverride, {
       healthProbe: options?.healthProbe,
+      claimToken: options?.claimToken ?? job.claimToken,
     });
     return;
   }
@@ -501,7 +518,7 @@ export async function processProvisioningJob(
       !job.providerResourceId &&
       !order.cloudInstance?.providerInstanceId &&
       !job.providerTaskId &&
-      (!job.createSentAt || order.reconcileNoResourceConfirmedAt != null);
+      !job.createSentAt;
     if (aboutToCreate) {
       await prisma.provisioningJob.update({
         where: { id: job.id },
@@ -519,7 +536,11 @@ export async function processProvisioningJob(
           job.providerResourceId ??
           order.cloudInstance?.providerInstanceId ??
           null,
-        noResourceConfirmedAt: order.reconcileNoResourceConfirmedAt,
+        noResourceConfirmedAt:
+          order.reconcileNoResourceConfirmedJobId === job.id &&
+          order.reconcileNoResourceConfirmedAttempt === job.attempt
+            ? order.reconcileNoResourceConfirmedAt
+            : null,
       },
       create: createInput,
     });
@@ -856,6 +877,8 @@ export async function runProvisioningWorkerCycle(
 ) {
   const job = await claimNextProvisioningJob(workerId);
   if (!job) return false;
-  await processProvisioningJob(job.id, providerOverride);
+  await processProvisioningJob(job.id, providerOverride, {
+    claimToken: job.claimToken,
+  });
   return true;
 }

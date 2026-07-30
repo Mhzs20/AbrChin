@@ -18,41 +18,84 @@ export type AuditInput = {
   idempotencyKey?: string | null;
 };
 
-export async function writeAuditLog(input: AuditInput, tx?: Prisma.TransactionClient) {
-  const client = tx ?? prisma;
+function assertAuditReplay(
+  existing: {
+    actorUserId: string;
+    action: string;
+    entityType: string;
+    entityId: string | null;
+    beforeData: Prisma.JsonValue | null;
+    afterData: Prisma.JsonValue | null;
+  },
+  input: AuditInput,
+) {
+  if (
+    existing.actorUserId !== input.actorUserId ||
+    existing.action !== input.action ||
+    existing.entityType !== input.entityType ||
+    existing.entityId !== (input.entityId ?? null) ||
+    stableJson(existing.beforeData ?? null) !==
+      stableJson(input.beforeData ?? null) ||
+    stableJson(existing.afterData ?? null) !==
+      stableJson(input.afterData ?? null)
+  ) {
+    throw new IdempotencyConflictError();
+  }
+}
+
+async function writeAuditLogTx(
+  tx: Prisma.TransactionClient,
+  input: AuditInput,
+) {
   if (input.idempotencyKey) {
-    const existing = await client.auditLog.findUnique({
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended(${`audit:${input.idempotencyKey}`}, 0)
+      )::text AS locked
+    `;
+    const existing = await tx.auditLog.findUnique({
       where: { idempotencyKey: input.idempotencyKey },
     });
     if (existing) {
-      if (
-        existing.actorUserId !== input.actorUserId ||
-        existing.action !== input.action ||
-        existing.entityType !== input.entityType ||
-        existing.entityId !== (input.entityId ?? null) ||
-        stableJson(existing.beforeData ?? null) !==
-          stableJson(input.beforeData ?? null) ||
-        stableJson(existing.afterData ?? null) !==
-          stableJson(input.afterData ?? null)
-      ) {
-        throw new IdempotencyConflictError();
-      }
+      assertAuditReplay(existing, input);
       return existing;
     }
   }
-  return client.auditLog.create({
-    data: {
-      actorUserId: input.actorUserId,
-      action: input.action,
-      entityType: input.entityType,
-      entityId: input.entityId ?? null,
-      beforeData: input.beforeData,
-      afterData: input.afterData,
-      ip: input.ip?.slice(0, 64) ?? null,
-      userAgent: input.userAgent?.slice(0, 255) ?? null,
-      idempotencyKey: input.idempotencyKey ?? null,
-    },
+  const data = {
+    actorUserId: input.actorUserId,
+    action: input.action,
+    entityType: input.entityType,
+    entityId: input.entityId ?? null,
+    beforeData: input.beforeData,
+    afterData: input.afterData,
+    ip: input.ip?.slice(0, 64) ?? null,
+    userAgent: input.userAgent?.slice(0, 255) ?? null,
+    idempotencyKey: input.idempotencyKey ?? null,
+  };
+  if (!input.idempotencyKey) {
+    return tx.auditLog.create({ data });
+  }
+  const inserted = await tx.auditLog.createMany({
+    data: [data],
+    skipDuplicates: true,
   });
+  const persisted = await tx.auditLog.findUniqueOrThrow({
+    where: { idempotencyKey: input.idempotencyKey },
+  });
+  if (inserted.count === 0) {
+    assertAuditReplay(persisted, input);
+  }
+  return persisted;
+}
+
+export async function writeAuditLog(
+  input: AuditInput,
+  tx?: Prisma.TransactionClient,
+) {
+  if (tx) return writeAuditLogTx(tx, input);
+  return prisma.$transaction((transaction) =>
+    writeAuditLogTx(transaction, input),
+  );
 }
 
 export const AuditActions = {

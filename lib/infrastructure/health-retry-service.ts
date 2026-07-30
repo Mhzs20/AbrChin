@@ -23,6 +23,12 @@ import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factor
 import { parseLockedProvisioningSelection } from "@/lib/infrastructure/provisioning-service";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
 import { WalletError } from "@/lib/wallet/errors";
+import {
+  assertProvisioningJobFenceTx,
+  isWorkerLeaseLostError,
+  type ProvisioningJobFence,
+  WorkerLeaseLostError,
+} from "@/lib/infrastructure/worker-fence";
 
 export const HEALTH_RETRY_OPERATION = "health_check_retry";
 export const HEALTH_MANUAL_RECOVERY_OPERATION =
@@ -107,6 +113,66 @@ function assertHealthOperationReplay(
   }
 }
 
+function adminHealthReceiptKey(idempotencyKey: string) {
+  return `health-retry-admin:${idempotencyKey}`;
+}
+
+function asHealthRetryReceipt(value: Prisma.JsonValue) {
+  const snapshot = asRecord(value);
+  if (
+    typeof snapshot.jobId !== "string" ||
+    typeof snapshot.status !== "string" ||
+    typeof snapshot.availableAt !== "string" ||
+    typeof snapshot.attempt !== "number"
+  ) {
+    throw new Error("health_retry_receipt_invalid");
+  }
+  return {
+    jobId: snapshot.jobId,
+    status: snapshot.status as ProvisioningJobStatus,
+    availableAt: new Date(snapshot.availableAt),
+    attempt: snapshot.attempt,
+  };
+}
+
+async function replayAdminHealthReceiptTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    idempotencyKey: string;
+    requestFingerprint: string;
+    infrastructureOrderId: string;
+    adminUserId: string;
+  },
+) {
+  const receipt = await tx.adminCommandReceipt.findUnique({
+    where: {
+      idempotencyKey: adminHealthReceiptKey(input.idempotencyKey),
+    },
+  });
+  if (!receipt) return null;
+  if (
+    receipt.operation !== "ADMIN_HEALTH_RETRY" ||
+    receipt.requestFingerprint !== input.requestFingerprint ||
+    receipt.infrastructureOrderId !== input.infrastructureOrderId ||
+    receipt.actorUserId !== input.adminUserId
+  ) {
+    throw new WalletError(
+      "idempotency_conflict",
+      "شناسه یکتا قبلاً برای درخواست دیگری استفاده شده است.",
+    );
+  }
+  const snapshot = asHealthRetryReceipt(receipt.resultSnapshot);
+  const job = await tx.provisioningJob.findUniqueOrThrow({
+    where: { id: snapshot.jobId },
+  });
+  return {
+    ...job,
+    status: snapshot.status,
+    availableAt: snapshot.availableAt,
+    attempt: snapshot.attempt,
+  };
+}
+
 function owner(order: {
   id: string;
   serviceOrderId: string;
@@ -148,6 +214,26 @@ async function moveHealthToManualReviewTx(
     source?: "AUTO" | "MANUAL";
   },
 ) {
+  let manualReviewReached =
+    order.productFlowState === "PROVISIONING_MANUAL_REVIEW";
+  if (order.productFlowState === "HEALTH_CHECKING") {
+    await transitionProductFlowTx(tx, {
+      owner: owner(order),
+      from: "HEALTH_CHECKING",
+      to: "HEALTH_CHECK_FAILED",
+      reason: `${reason}_health_failed`,
+      idempotencyKey:
+        `${options?.transitionIdempotencyKey ??
+          `health-manual-review:${order.id}:${retryCount}`}:failed`,
+      actorUserId: options?.actorUserId ?? null,
+      metadata: {
+        retryCount,
+        source: options?.source ?? "AUTO",
+        containsSecret: false,
+      },
+    });
+    order.productFlowState = "HEALTH_CHECK_FAILED";
+  }
   if (order.productFlowState === "HEALTH_CHECK_FAILED") {
     await transitionProductFlowTx(tx, {
       owner: owner(order),
@@ -177,11 +263,23 @@ async function moveHealthToManualReviewTx(
         containsSecret: false,
       },
     });
+    manualReviewReached = true;
   }
-  await tx.infrastructureOrder.update({
-    where: { id: order.id },
+  if (!manualReviewReached) {
+    throw new Error(
+      `manual_review_state_conflict:${order.productFlowState ?? "null"}`,
+    );
+  }
+  const updated = await tx.infrastructureOrder.updateMany({
+    where: {
+      id: order.id,
+      productFlowState: "PROVISIONING_MANUAL_REVIEW",
+    },
     data: { status: InfrastructureOrderStatus.MANUAL_REVIEW },
   });
+  if (updated.count !== 1) {
+    throw new Error("manual_review_state_conflict");
+  }
   await tx.adminNotification.create({
     data: {
       type: AdminNotificationType.NEEDS_RECONCILIATION,
@@ -279,7 +377,7 @@ async function scheduleHealthRetryTx(
   );
   if (active) {
     if (input.source === "ADMIN" && input.immediate) {
-      await tx.provisioningJob.update({
+      return tx.provisioningJob.update({
         where: { id: active.id },
         data: {
           availableAt: new Date(),
@@ -376,8 +474,29 @@ export async function scheduleManualHealthRetry(input: {
   if (admin?.role !== UserRole.ADMIN) {
     throw new WalletError("forbidden", "دسترسی مجاز نیست.");
   }
+  const requestFingerprint = healthOperationFingerprint({
+    infrastructureOrderId: input.infrastructureOrderId,
+    actorUserId: input.adminUserId,
+    reason,
+    source: "ADMIN",
+    operation: HEALTH_RETRY_OPERATION,
+  });
 
   const job = await prisma.$transaction(async (tx) => {
+    const receiptKey = adminHealthReceiptKey(input.idempotencyKey);
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended(${`command:${receiptKey}`}, 0)
+      )::text AS locked
+    `;
+    const replay = await replayAdminHealthReceiptTx(tx, {
+      idempotencyKey: input.idempotencyKey,
+      requestFingerprint,
+      infrastructureOrderId: input.infrastructureOrderId,
+      adminUserId: input.adminUserId,
+    });
+    if (replay) return replay;
+
     const job = await scheduleHealthRetryTx(tx, {
       infrastructureOrderId: input.infrastructureOrderId,
       source: "ADMIN",
@@ -387,6 +506,27 @@ export async function scheduleManualHealthRetry(input: {
       immediate: true,
     });
     if (!job) return null;
+    const resultSnapshot = {
+      jobId: job.id,
+      status: job.status,
+      availableAt: job.availableAt.toISOString(),
+      attempt: job.attempt,
+      requestFingerprint,
+      actorUserId: input.adminUserId,
+      reason,
+      infrastructureOrderId: input.infrastructureOrderId,
+      containsSecret: false,
+    };
+    await tx.adminCommandReceipt.create({
+      data: {
+        operation: "ADMIN_HEALTH_RETRY",
+        idempotencyKey: receiptKey,
+        requestFingerprint,
+        actorUserId: input.adminUserId,
+        infrastructureOrderId: input.infrastructureOrderId,
+        resultSnapshot,
+      },
+    });
     await writeAuditLog(
       {
         actorUserId: input.adminUserId,
@@ -398,13 +538,8 @@ export async function scheduleManualHealthRetry(input: {
           jobId: job.id,
           retryAttempt: job.attempt,
           idempotencyKey: input.idempotencyKey,
-          requestFingerprint: healthOperationFingerprint({
-            infrastructureOrderId: input.infrastructureOrderId,
-            actorUserId: input.adminUserId,
-            reason,
-            source: "ADMIN",
-            operation: HEALTH_RETRY_OPERATION,
-          }),
+          requestFingerprint,
+          receiptKey,
           containsSecret: false,
         },
         ip: input.ip,
@@ -571,26 +706,32 @@ async function persistProviderObservation(input: {
   observation: Awaited<
     ReturnType<typeof fetchLockedProviderObservation>
   >["observation"];
+  workerFence?: ProvisioningJobFence;
 }) {
-  const updated = await prisma.cloudInstance.updateMany({
-    where: {
-      id: input.cloudInstanceId,
-      providerInstanceId: input.providerInstanceId,
-    },
-    data: {
-      ipv4: input.observation.ipv4,
-      providerState: input.observation.state,
-      networkId: input.observation.networkId,
-      securityId: input.observation.securityId,
-      providerObservedAt: input.observation.observedAt,
-    },
+  return prisma.$transaction(async (tx) => {
+    if (input.workerFence) {
+      await assertProvisioningJobFenceTx(tx, input.workerFence);
+    }
+    const updated = await tx.cloudInstance.updateMany({
+      where: {
+        id: input.cloudInstanceId,
+        providerInstanceId: input.providerInstanceId,
+      },
+      data: {
+        ipv4: input.observation.ipv4,
+        providerState: input.observation.state,
+        networkId: input.observation.networkId,
+        securityId: input.observation.securityId,
+        providerObservedAt: input.observation.observedAt,
+      },
+    });
+    if (updated.count !== 1) {
+      throw new WalletError(
+        "provider_resource_identity_conflict",
+        "شناسه منبع Provider هنگام ثبت Observation تغییر کرده است.",
+      );
+    }
   });
-  if (updated.count !== 1) {
-    throw new WalletError(
-      "provider_resource_identity_conflict",
-      "شناسه منبع Provider هنگام ثبت Observation تغییر کرده است.",
-    );
-  }
 }
 
 function serializedObservation(
@@ -901,6 +1042,8 @@ async function recordManualRecoveryResult(
     delivered: boolean;
     resultCode: string;
   },
+  workerFence?: ProvisioningJobFence,
+  beforeAudit?: () => void | Promise<void>,
 ) {
   const metadata = asRecord(job.jobMetadata);
   const actorUserId =
@@ -910,21 +1053,24 @@ async function recordManualRecoveryResult(
   if (!actorUserId) {
     throw new Error("manual_recovery_actor_missing");
   }
-  return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`
-      SELECT id
-      FROM "InfrastructureOrder"
-      WHERE id = ${job.infrastructureOrderId}
-      FOR UPDATE
-    `;
-    const order = await tx.infrastructureOrder.findUniqueOrThrow({
-      where: { id: job.infrastructureOrderId },
-      include: {
-        cloudInstance: true,
-        serviceOrder: { include: { recommendationQuote: true } },
-      },
-    });
-    if (!input.healthy) {
+  if (!input.healthy) {
+    await prisma.$transaction(async (tx) => {
+      if (workerFence) {
+        await assertProvisioningJobFenceTx(tx, workerFence);
+      }
+      await tx.$queryRaw`
+        SELECT id
+        FROM "InfrastructureOrder"
+        WHERE id = ${job.infrastructureOrderId}
+        FOR UPDATE
+      `;
+      const order = await tx.infrastructureOrder.findUniqueOrThrow({
+        where: { id: job.infrastructureOrderId },
+        include: {
+          cloudInstance: true,
+          serviceOrder: { include: { recommendationQuote: true } },
+        },
+      });
       await moveHealthToManualReviewTx(
         tx,
         order,
@@ -938,36 +1084,166 @@ async function recordManualRecoveryResult(
           source: "MANUAL",
         },
       );
-    }
-    await writeAuditLog(
-      {
-        actorUserId,
-        action:
-          AuditActions.HEALTH_CHECK_MANUAL_RECOVERY_RESULT,
-        entityType: "infrastructure_order",
-        entityId: order.id,
-        afterData: {
-          jobId: job.id,
-          manualAttempt: job.attempt,
-          healthy: input.healthy,
-          delivered: input.delivered,
-          resultCode: input.resultCode,
-          lastProviderObservation: {
-            state: order.cloudInstance?.providerState ?? null,
-            ipv4: order.cloudInstance?.ipv4 ?? null,
-            networkId: order.cloudInstance?.networkId ?? null,
-            securityId: order.cloudInstance?.securityId ?? null,
-            observedAt:
-              order.cloudInstance?.providerObservedAt?.toISOString() ??
-              null,
-          },
-          containsSecret: false,
-        },
-        idempotencyKey:
-          `audit:health-manual-recovery-result:${job.id}`,
+    });
+  }
+  const order = await prisma.infrastructureOrder.findUniqueOrThrow({
+    where: { id: job.infrastructureOrderId },
+    include: { cloudInstance: true },
+  });
+  await beforeAudit?.();
+  await writeAuditLog({
+    actorUserId,
+    action: AuditActions.HEALTH_CHECK_MANUAL_RECOVERY_RESULT,
+    entityType: "infrastructure_order",
+    entityId: order.id,
+    afterData: {
+      jobId: job.id,
+      manualAttempt: job.attempt,
+      healthy: input.healthy,
+      delivered: input.delivered,
+      resultCode: input.resultCode,
+      lastProviderObservation: {
+        state: order.cloudInstance?.providerState ?? null,
+        ipv4: order.cloudInstance?.ipv4 ?? null,
+        networkId: order.cloudInstance?.networkId ?? null,
+        securityId: order.cloudInstance?.securityId ?? null,
+        observedAt:
+          order.cloudInstance?.providerObservedAt?.toISOString() ??
+          null,
       },
-      tx,
+      containsSecret: false,
+    },
+    idempotencyKey:
+      `audit:health-manual-recovery-result:${job.id}`,
+  });
+}
+
+async function finalizeHealthRetryJob(input: {
+  jobId: string;
+  workerFence: ProvisioningJobFence;
+  healthy: boolean;
+  beforeFinalize?: () => void | Promise<void>;
+}) {
+  await input.beforeFinalize?.();
+  return prisma.$transaction(async (tx) => {
+    await assertProvisioningJobFenceTx(tx, input.workerFence);
+    const finalized = await tx.provisioningJob.updateMany({
+      where: {
+        id: input.jobId,
+        status: ProvisioningJobStatus.RUNNING,
+        claimToken: input.workerFence.claimToken,
+        leaseExpiresAt: { gt: new Date() },
+      },
+      data: {
+        status: input.healthy
+          ? ProvisioningJobStatus.SUCCEEDED
+          : ProvisioningJobStatus.FAILED,
+        finishedAt: new Date(),
+        workerId: null,
+        claimToken: null,
+        lockedAt: null,
+        leaseExpiresAt: null,
+        lastErrorCode: input.healthy
+          ? null
+          : "health_check_failed",
+        lastErrorMessage: input.healthy
+          ? null
+          : "بررسی سلامت سرور نیاز به تلاش مجدد دارد.",
+      },
+    });
+    if (finalized.count !== 1) throw new WorkerLeaseLostError();
+  });
+}
+
+async function ensureHealthFailureIsRecoverable(input: {
+  infrastructureOrderId: string;
+  jobId: string;
+  attempt: number;
+  isManualRecovery: boolean;
+  actorUserId: string | null;
+  workerFence: ProvisioningJobFence;
+  resultCode: string;
+}) {
+  if (input.isManualRecovery) {
+    await recordManualRecoveryResult(
+      {
+        id: input.jobId,
+        attempt: input.attempt,
+        infrastructureOrderId: input.infrastructureOrderId,
+        jobMetadata: input.actorUserId
+          ? { actorUserId: input.actorUserId }
+          : null,
+      },
+      {
+        healthy: false,
+        delivered: false,
+        resultCode: input.resultCode,
+      },
+      input.workerFence,
     );
+    return;
+  }
+  await prisma.$transaction(async (tx) => {
+    await assertProvisioningJobFenceTx(tx, input.workerFence);
+    await tx.$queryRaw`
+      SELECT id
+      FROM "InfrastructureOrder"
+      WHERE id = ${input.infrastructureOrderId}
+      FOR UPDATE
+    `;
+    const order = await tx.infrastructureOrder.findUniqueOrThrow({
+      where: { id: input.infrastructureOrderId },
+      include: {
+        cloudInstance: true,
+        serviceOrder: { include: { recommendationQuote: true } },
+      },
+    });
+    if (order.productFlowState === "HEALTH_CHECKING") {
+      await transitionProductFlowTx(tx, {
+        owner: owner(order),
+        from: "HEALTH_CHECKING",
+        to: "HEALTH_CHECK_FAILED",
+        reason: input.resultCode,
+        idempotencyKey:
+          `health-execution-failed:${input.jobId}`,
+        actorUserId: input.actorUserId,
+      });
+    } else if (order.productFlowState !== "HEALTH_CHECK_FAILED") {
+      if (
+        order.productFlowState === "ACTIVE" ||
+        order.productFlowState === "DELIVERED" ||
+        order.productFlowState === "DELIVERY_RETRYABLE"
+      ) {
+        return;
+      }
+      throw new Error(
+        `health_failure_state_conflict:${order.productFlowState ?? "null"}`,
+      );
+    }
+  });
+}
+
+async function notifyManualRecoverySuccess(
+  infrastructureOrderId: string,
+) {
+  const existing = await prisma.adminNotification.findFirst({
+    where: {
+      infrastructureOrderId,
+      type: AdminNotificationType.INSTANCE_ACTIVE,
+      title: "Recovery سلامت تکمیل شد",
+    },
+    select: { id: true },
+  });
+  if (existing) return;
+  await prisma.adminNotification.create({
+    data: {
+      type: AdminNotificationType.INSTANCE_ACTIVE,
+      infrastructureOrderId,
+      title: "Recovery سلامت تکمیل شد",
+      message:
+        "منبع موجود دوباره بررسی شد و سرویس بدون ساخت مجدد فعال است.",
+      status: AdminNotificationStatus.UNREAD,
+    },
   });
 }
 
@@ -978,6 +1254,11 @@ export async function processHealthCheckRetryJob(
     healthProbe?: Parameters<
       typeof runInfrastructureHealthCheck
     >[0]["probe"];
+    claimToken?: string | null;
+    beforeFinalizeJob?: () => void | Promise<void>;
+    beforeResultAudit?: () => void | Promise<void>;
+    beforeSuccessNotification?: () => void | Promise<void>;
+    afterHealthTransition?: () => void | Promise<void>;
   },
 ) {
   const job = await prisma.provisioningJob.findUnique({
@@ -1002,6 +1283,24 @@ export async function processHealthCheckRetryJob(
   ) {
     return null;
   }
+  if (
+    !options?.claimToken ||
+    job.claimToken !== options.claimToken
+  ) {
+    return null;
+  }
+  const workerFence = {
+    jobId: job.id,
+    claimToken: options.claimToken,
+  };
+  try {
+    await prisma.$transaction((tx) =>
+      assertProvisioningJobFenceTx(tx, workerFence),
+    );
+  } catch (error) {
+    if (isWorkerLeaseLostError(error)) return null;
+    throw error;
+  }
   const order = job.infrastructureOrder;
   const instance = order.cloudInstance;
   if (!instance) throw new Error("provider_resource_not_ready");
@@ -1014,17 +1313,77 @@ export async function processHealthCheckRetryJob(
   ) {
     throw new Error("provider_resource_identity_conflict");
   }
-  if (
-    isManualRecovery &&
-    (order.status !== InfrastructureOrderStatus.MANUAL_REVIEW ||
+  if (isManualRecovery) {
+    if (
+      order.productFlowState === "ACTIVE" ||
+      order.productFlowState === "DELIVERED" ||
+      order.productFlowState === "DELIVERY_RETRYABLE"
+    ) {
+      let finalizePending = false;
+      try {
+        await finalizeHealthRetryJob({
+          jobId: job.id,
+          workerFence,
+          healthy: true,
+          beforeFinalize: options.beforeFinalizeJob,
+        });
+      } catch (error) {
+        finalizePending = true;
+        if (!isWorkerLeaseLostError(error)) {
+          console.error("[health-recovery-finalize]", "finalize_pending");
+        }
+      }
+      if (!finalizePending) {
+        try {
+          await options.beforeResultAudit?.();
+          await recordManualRecoveryResult(job, {
+            healthy: true,
+            delivered: order.productFlowState === "ACTIVE",
+            resultCode:
+              order.productFlowState === "ACTIVE"
+                ? "service_active"
+                : "secure_delivery_pending",
+          });
+        } catch {
+          console.error("[health-recovery-audit]", "audit_pending");
+        }
+        try {
+          await options.beforeSuccessNotification?.();
+          await notifyManualRecoverySuccess(order.id);
+        } catch {
+          console.error(
+            "[health-recovery-notification]",
+            "notification_pending",
+          );
+        }
+      }
+      return {
+        healthy: true as const,
+        delivered: order.productFlowState === "ACTIVE",
+        finalizePending,
+      };
+    }
+    if (
+      order.status !== InfrastructureOrderStatus.MANUAL_REVIEW ||
       order.productFlowState !==
-        "PROVISIONING_MANUAL_REVIEW")
-  ) {
-    throw new Error("manual_recovery_state_conflict");
+        "PROVISIONING_MANUAL_REVIEW"
+    ) {
+      throw new Error("manual_recovery_state_conflict");
+    }
   }
 
+  const metadata = asRecord(job.jobMetadata);
+  const actorUserId =
+    typeof metadata.actorUserId === "string"
+      ? metadata.actorUserId
+      : typeof metadata.manualActorUserId === "string"
+        ? metadata.manualActorUserId
+        : null;
+  let fetched: Awaited<
+    ReturnType<typeof fetchLockedProviderObservation>
+  >;
   try {
-    const fetched = await fetchLockedProviderObservation(
+    fetched = await fetchLockedProviderObservation(
       order.id,
       providerOverride,
     );
@@ -1032,18 +1391,49 @@ export async function processHealthCheckRetryJob(
       cloudInstanceId: instance.id,
       providerInstanceId: instance.providerInstanceId,
       observation: fetched.observation,
+      workerFence,
     });
+  } catch (error) {
+    if (isWorkerLeaseLostError(error)) return null;
+    await ensureHealthFailureIsRecoverable({
+      infrastructureOrderId: order.id,
+      jobId: job.id,
+      attempt: job.attempt,
+      isManualRecovery,
+      actorUserId,
+      workerFence,
+      resultCode: "provider_reconciliation_failed",
+    });
+    try {
+      await finalizeHealthRetryJob({
+        jobId: job.id,
+        workerFence,
+        healthy: false,
+      });
+    } catch (finalizeError) {
+      if (isWorkerLeaseLostError(finalizeError)) return null;
+      throw finalizeError;
+    }
+    if (!isManualRecovery) {
+      await scheduleAutomaticHealthRetry({
+        infrastructureOrderId: order.id,
+        sourceCheckId: job.id,
+      });
+    }
+    return { healthy: false as const, delivered: false as const };
+  }
 
-    const metadata = asRecord(job.jobMetadata);
-    const actorUserId =
-      typeof metadata.actorUserId === "string"
-        ? metadata.actorUserId
-        : typeof metadata.manualActorUserId === "string"
-          ? metadata.manualActorUserId
-          : null;
-    const result = await runInfrastructureHealthCheck({
+  let result: {
+    healthy: boolean;
+    delivered: boolean;
+  };
+  let manualFailureHandled = false;
+  try {
+    result = await runInfrastructureHealthCheck({
       infrastructureOrderId: order.id,
       probe: options?.healthProbe,
+      workerFence,
+      afterTransition: options?.afterHealthTransition,
       retryTransition: {
         idempotencyKey: `health-retry-start:${job.id}`,
         actorUserId,
@@ -1055,71 +1445,96 @@ export async function processHealthCheckRetryJob(
           : "health_check_retry",
       },
     });
-    await prisma.provisioningJob.update({
-      where: { id: job.id },
-      data: {
-        status: result.healthy
-          ? ProvisioningJobStatus.SUCCEEDED
-          : ProvisioningJobStatus.FAILED,
-        finishedAt: new Date(),
-        workerId: null,
-        lockedAt: null,
-        leaseExpiresAt: null,
-        lastErrorCode: result.healthy
-          ? null
-          : "health_check_failed",
-        lastErrorMessage: result.healthy
-          ? null
-          : "بررسی سلامت سرور نیاز به تلاش مجدد دارد.",
-      },
+  } catch (error) {
+    if (isWorkerLeaseLostError(error)) return null;
+    await ensureHealthFailureIsRecoverable({
+      infrastructureOrderId: order.id,
+      jobId: job.id,
+      attempt: job.attempt,
+      isManualRecovery,
+      actorUserId,
+      workerFence,
+      resultCode: "health_execution_failed",
     });
-    if (!result.healthy) {
-      if (isManualRecovery) {
-        await recordManualRecoveryResult(job, {
+    manualFailureHandled = isManualRecovery;
+    result = { healthy: false, delivered: false };
+  }
+
+  if (
+    !result.healthy &&
+    isManualRecovery &&
+    !manualFailureHandled
+  ) {
+    try {
+      await recordManualRecoveryResult(
+        job,
+        {
           ...result,
           resultCode: "health_check_failed",
+        },
+        workerFence,
+        options.beforeResultAudit,
+      );
+    } catch (error) {
+      if (isWorkerLeaseLostError(error)) return null;
+      const current =
+        await prisma.infrastructureOrder.findUniqueOrThrow({
+          where: { id: order.id },
+          select: { productFlowState: true },
         });
-      } else {
-        await scheduleAutomaticHealthRetry({
-          infrastructureOrderId: order.id,
-          sourceCheckId: job.id,
-        });
+      if (
+        current.productFlowState !==
+        "PROVISIONING_MANUAL_REVIEW"
+      ) {
+        throw error;
       }
-    } else if (isManualRecovery) {
+    }
+  }
+
+  try {
+    await finalizeHealthRetryJob({
+      jobId: job.id,
+      workerFence,
+      healthy: result.healthy,
+      beforeFinalize: options.beforeFinalizeJob,
+    });
+  } catch (error) {
+    if (isWorkerLeaseLostError(error)) return null;
+    console.error("[health-retry-finalize]", "finalize_pending");
+    return {
+      ...result,
+      finalizePending: true as const,
+    };
+  }
+
+  if (!result.healthy) {
+    if (!isManualRecovery) {
+      await scheduleAutomaticHealthRetry({
+        infrastructureOrderId: order.id,
+        sourceCheckId: job.id,
+      });
+    }
+  } else if (isManualRecovery) {
+    try {
+      await options.beforeResultAudit?.();
       await recordManualRecoveryResult(job, {
         ...result,
         resultCode: result.delivered
           ? "service_active"
           : "secure_delivery_pending",
       });
+    } catch {
+      console.error("[health-recovery-audit]", "audit_pending");
     }
-    return result;
-  } catch {
-    await prisma.provisioningJob.update({
-      where: { id: job.id },
-      data: {
-        status: ProvisioningJobStatus.FAILED,
-        finishedAt: new Date(),
-        workerId: null,
-        lockedAt: null,
-        leaseExpiresAt: null,
-        lastErrorCode: "health_reconciliation_failed",
-        lastErrorMessage:
-          "مشاهده وضعیت Provider برای بررسی سلامت ممکن نشد.",
-      },
-    });
-    if (isManualRecovery) {
-      await recordManualRecoveryResult(job, {
-        healthy: false,
-        delivered: false,
-        resultCode: "provider_reconciliation_failed",
-      });
-    } else {
-      await scheduleAutomaticHealthRetry({
-        infrastructureOrderId: order.id,
-        sourceCheckId: job.id,
-      });
+    try {
+      await options.beforeSuccessNotification?.();
+      await notifyManualRecoverySuccess(order.id);
+    } catch {
+      console.error(
+        "[health-recovery-notification]",
+        "notification_pending",
+      );
     }
-    return { healthy: false as const, delivered: false as const };
   }
+  return result;
 }
