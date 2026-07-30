@@ -271,6 +271,10 @@ export async function runInfrastructureHealthCheck(input: {
   retryTransition?: {
     idempotencyKey: string;
     actorUserId?: string | null;
+    from?:
+      | "HEALTH_CHECK_FAILED"
+      | "PROVISIONING_MANUAL_REVIEW";
+    reason?: string;
   };
 }) {
   const probe = input.probe ?? tcpConnectivityProbe;
@@ -313,15 +317,24 @@ export async function runInfrastructureHealthCheck(input: {
         reason: "provider_resource_active",
         idempotencyKey: `health-start:${order.id}:${instance.providerInstanceId}`,
       });
-    } else if (currentState === "HEALTH_CHECK_FAILED") {
+    } else if (
+      currentState === "HEALTH_CHECK_FAILED" ||
+      currentState === "PROVISIONING_MANUAL_REVIEW"
+    ) {
       if (!input.retryTransition?.idempotencyKey) {
         throw new Error("health_retry_context_required");
       }
+      const retryFrom =
+        input.retryTransition.from ?? "HEALTH_CHECK_FAILED";
+      if (retryFrom !== currentState) {
+        throw new Error("health_retry_state_conflict");
+      }
       await transitionProductFlowTx(tx, {
         owner: owner(order),
-        from: "HEALTH_CHECK_FAILED",
+        from: retryFrom,
         to: "HEALTH_CHECKING",
-        reason: "health_check_retry",
+        reason:
+          input.retryTransition.reason ?? "health_check_retry",
         idempotencyKey: input.retryTransition.idempotencyKey,
         actorUserId: input.retryTransition.actorUserId ?? null,
       });

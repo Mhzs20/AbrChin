@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
+import { stableJson } from "@/lib/idempotency";
 import {
   assertProductFlowTransition,
   isProductFlowState,
@@ -51,20 +52,6 @@ function ownerFingerprint(owner: ProductFlowOwner): string {
     throw new Error("product_flow_owner_required");
   }
   return values.join(":");
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(stableJson).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    const object = value as Record<string, unknown>;
-    return `{${Object.keys(object)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableJson(object[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 async function assertTransitionInvariant(

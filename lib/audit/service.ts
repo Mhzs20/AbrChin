@@ -1,6 +1,10 @@
 import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
+import {
+  IdempotencyConflictError,
+  stableJson,
+} from "@/lib/idempotency";
 
 export type AuditInput = {
   actorUserId: string;
@@ -20,7 +24,21 @@ export async function writeAuditLog(input: AuditInput, tx?: Prisma.TransactionCl
     const existing = await client.auditLog.findUnique({
       where: { idempotencyKey: input.idempotencyKey },
     });
-    if (existing) return existing;
+    if (existing) {
+      if (
+        existing.actorUserId !== input.actorUserId ||
+        existing.action !== input.action ||
+        existing.entityType !== input.entityType ||
+        existing.entityId !== (input.entityId ?? null) ||
+        stableJson(existing.beforeData ?? null) !==
+          stableJson(input.beforeData ?? null) ||
+        stableJson(existing.afterData ?? null) !==
+          stableJson(input.afterData ?? null)
+      ) {
+        throw new IdempotencyConflictError();
+      }
+      return existing;
+    }
   }
   return client.auditLog.create({
     data: {
@@ -49,6 +67,10 @@ export const AuditActions = {
   FUNDING_CONFIRMATION: "funding_confirmation",
   PROVISIONING_RETRY: "provisioning_retry",
   HEALTH_CHECK_RETRY: "health_check_retry",
+  HEALTH_CHECK_MANUAL_OBSERVE: "health_check_manual_observe",
+  HEALTH_CHECK_MANUAL_RECOVERY: "health_check_manual_recovery",
+  HEALTH_CHECK_MANUAL_RECOVERY_RESULT:
+    "health_check_manual_recovery_result",
   RECONCILIATION: "reconciliation",
   PROVIDER_TOGGLE: "provider_toggle",
   NOTIFICATION_RESOLVE: "notification_resolve",

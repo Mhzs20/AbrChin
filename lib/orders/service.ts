@@ -19,13 +19,17 @@ import {
   revalidateLockedSelection,
 } from "@/lib/infrastructure/selection-revalidation";
 import type { CloudProviderAdapter } from "@/lib/infrastructure/cloud-provider-adapter";
-import { transitionProductFlowTx } from "@/lib/product-flow/service";
+import {
+  assertProductFlowOwnerStateTx,
+  transitionProductFlowTx,
+} from "@/lib/product-flow/service";
 import {
   CloudInstanceStatus,
   InfrastructureOrderStatus,
   LedgerDirection,
   LedgerStatus,
   LedgerType,
+  ProvisioningJobStatus,
   RecommendationFlowStatus,
   RecommendationQuoteStatus,
   ServiceOrderStatus,
@@ -382,7 +386,25 @@ export async function refundOrder(params: {
   userAgent?: string | null;
 }) {
   return prisma.$transaction(async (tx) => {
-    const order = await tx.serviceOrder.findUnique({ where: { id: params.orderId } });
+    const reason = params.reason.trim();
+    if (reason.length < 3 || reason.length > 500) {
+      throw new WalletError(
+        "invalid_reason",
+        "دلیل بازگشت وجه باید بین ۳ تا ۵۰۰ کاراکتر باشد.",
+      );
+    }
+    await tx.$queryRaw`
+      SELECT id
+      FROM "ServiceOrder"
+      WHERE id = ${params.orderId}
+      FOR UPDATE
+    `;
+    const order = await tx.serviceOrder.findUnique({
+      where: { id: params.orderId },
+      include: {
+        recommendationQuote: { select: { sessionId: true } },
+      },
+    });
     if (!order) throw new WalletError("not_found", "سفارش پیدا نشد.");
     if (order.status === ServiceOrderStatus.REFUNDED) return order;
     if (order.status !== ServiceOrderStatus.PAID) {
@@ -394,12 +416,31 @@ export async function refundOrder(params: {
       include: { cloudInstance: true },
     });
     if (infra) {
-      const blockedStatuses: InfrastructureOrderStatus[] = [
-        InfrastructureOrderStatus.PROVISIONING,
-        InfrastructureOrderStatus.ACTIVE,
-        InfrastructureOrderStatus.NEEDS_RECONCILIATION,
+      await tx.$queryRaw`
+        SELECT id
+        FROM "InfrastructureOrder"
+        WHERE id = ${infra.id}
+        FOR UPDATE
+      `;
+    }
+    const sessionId = order.recommendationQuote?.sessionId ?? null;
+    if (sessionId) {
+      await tx.$queryRaw`
+        SELECT id
+        FROM "RecommendationSession"
+        WHERE id = ${sessionId}
+        FOR UPDATE
+      `;
+    }
+    if (infra) {
+      const refundableStatuses: InfrastructureOrderStatus[] = [
+        InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
+        InfrastructureOrderStatus.BLOCKED_PROVIDER_BALANCE,
+        InfrastructureOrderStatus.MANUAL_REVIEW,
+        InfrastructureOrderStatus.FAILED,
+        InfrastructureOrderStatus.CANCELED,
       ];
-      if (blockedStatuses.includes(infra.status)) {
+      if (!refundableStatuses.includes(infra.status)) {
         throw new WalletError(
           "refund_blocked",
           "بازگشت وجه برای سفارش با منبع فعال یا در حال آماده‌سازی مجاز نیست.",
@@ -411,7 +452,57 @@ export async function refundOrder(params: {
           "تا زمان خاتمه سرور، بازگشت وجه مجاز نیست.",
         );
       }
+      const activeJob = await tx.provisioningJob.findFirst({
+        where: {
+          infrastructureOrderId: infra.id,
+          status: {
+            in: [
+              ProvisioningJobStatus.QUEUED,
+              ProvisioningJobStatus.RUNNING,
+            ],
+          },
+        },
+        select: { id: true },
+      });
+      if (activeJob) {
+        throw new WalletError(
+          "refund_blocked",
+          "تا پایان یا لغو قطعی عملیات Provider، بازگشت وجه مجاز نیست.",
+        );
+      }
     }
+
+    const flowState = order.productFlowState;
+    const refundableFlowStates = new Set([
+      "PAID",
+      "PROVISIONING_RETRYABLE",
+      "PROVISIONING_MANUAL_REVIEW",
+      "HEALTH_CHECK_FAILED",
+      "DELIVERY_RETRYABLE",
+      "CANCELLED",
+    ]);
+    if (!flowState || !refundableFlowStates.has(flowState)) {
+      throw new WalletError(
+        "refund_blocked",
+        "وضعیت جریان سفارش برای بازگشت وجه قطعی نیست.",
+      );
+    }
+    const flowOwner = {
+      recommendationSessionId: sessionId,
+      serviceOrderId: order.id,
+      infrastructureOrderId: infra?.id ?? null,
+    };
+    await assertProductFlowOwnerStateTx(
+      tx,
+      flowOwner,
+      flowState as
+        | "PAID"
+        | "PROVISIONING_RETRYABLE"
+        | "PROVISIONING_MANUAL_REVIEW"
+        | "HEALTH_CHECK_FAILED"
+        | "DELIVERY_RETRYABLE"
+        | "CANCELLED",
+    );
 
     const debit = await tx.walletLedgerEntry.findFirst({
       where: {
@@ -426,24 +517,45 @@ export async function refundOrder(params: {
 
     const refundKey = `order_refund_${order.id}`;
     const existingRefund = await tx.walletLedgerEntry.findUnique({ where: { idempotencyKey: refundKey } });
-    if (!existingRefund) {
-      const priorReverse = await tx.walletLedgerEntry.findFirst({
+    const priorReverse =
+      existingRefund ??
+      (await tx.walletLedgerEntry.findFirst({
         where: {
           reversedEntryId: debit.id,
           type: LedgerType.REFUND,
           status: LedgerStatus.COMPLETED,
         },
+      }));
+    if (
+      priorReverse &&
+      (priorReverse.walletId !== debit.walletId ||
+        priorReverse.direction !== LedgerDirection.CREDIT ||
+        priorReverse.type !== LedgerType.REFUND ||
+        priorReverse.status !== LedgerStatus.COMPLETED ||
+        priorReverse.amount !== debit.amount ||
+        priorReverse.reversedEntryId !== debit.id)
+    ) {
+      throw new WalletError(
+        "idempotency_conflict",
+        "سند بازگشت وجه با سفارش مطابقت ندارد.",
+      );
+    }
+    let refundEntry = priorReverse;
+    if (!refundEntry) {
+      await tx.$queryRaw`
+        SELECT id
+        FROM "Wallet"
+        WHERE id = ${debit.walletId}
+        FOR UPDATE
+      `;
+      const wallet = await tx.wallet.findUniqueOrThrow({
+        where: { id: debit.walletId },
       });
-      if (priorReverse) {
-        throw new WalletError("already_refunded", "این سفارش قبلاً بازگشت داده شده است.");
-      }
-
-      const wallet = await tx.wallet.findUniqueOrThrow({ where: { id: debit.walletId } });
       const updated = await tx.wallet.update({
         where: { id: wallet.id },
         data: { availableBalance: { increment: debit.amount } },
       });
-      await tx.walletLedgerEntry.create({
+      refundEntry = await tx.walletLedgerEntry.create({
         data: {
           walletId: wallet.id,
           direction: LedgerDirection.CREDIT,
@@ -454,9 +566,30 @@ export async function refundOrder(params: {
           referenceId: debit.id,
           idempotencyKey: refundKey,
           balanceAfter: updated.availableBalance,
-          description: params.reason || "بازگشت وجه سفارش",
+          description: reason,
           metadata: { actorUserId: params.actorUserId },
           reversedEntryId: debit.id,
+        },
+      });
+    }
+
+    if (flowState !== "CANCELLED") {
+      await transitionProductFlowTx(tx, {
+        owner: flowOwner,
+        from: flowState as
+          | "PAID"
+          | "PROVISIONING_RETRYABLE"
+          | "PROVISIONING_MANUAL_REVIEW"
+          | "HEALTH_CHECK_FAILED"
+          | "DELIVERY_RETRYABLE",
+        to: "CANCELLED",
+        reason: "wallet_refund_completed",
+        idempotencyKey: `refund-flow:${order.id}`,
+        actorUserId: params.actorUserId,
+        metadata: {
+          refundLedgerEntryId: refundEntry.id,
+          reason,
+          containsSecret: false,
         },
       });
     }
@@ -469,12 +602,7 @@ export async function refundOrder(params: {
     if (infra) {
       await tx.infrastructureOrder.update({
         where: { id: infra.id },
-        data: {
-          status:
-            infra.status === InfrastructureOrderStatus.ACTIVE
-              ? InfrastructureOrderStatus.REFUNDED
-              : InfrastructureOrderStatus.CANCELED,
-        },
+        data: { status: InfrastructureOrderStatus.REFUNDED },
       });
     }
 
@@ -484,9 +612,25 @@ export async function refundOrder(params: {
         action: AuditActions.REFUND,
         entityType: "service_order",
         entityId: order.id,
-        afterData: { reason: params.reason } as Prisma.InputJsonValue,
+        beforeData: {
+          serviceOrderStatus: order.status,
+          infrastructureOrderStatus: infra?.status ?? null,
+          productFlowState: flowState,
+        },
+        afterData: {
+          reason,
+          serviceOrderStatus: ServiceOrderStatus.REFUNDED,
+          infrastructureOrderStatus: infra
+            ? InfrastructureOrderStatus.REFUNDED
+            : null,
+          productFlowState: "CANCELLED",
+          refundLedgerEntryId: refundEntry.id,
+          amountRial: refundEntry.amount.toString(),
+          containsSecret: false,
+        } as Prisma.InputJsonValue,
         ip: params.ip,
         userAgent: params.userAgent,
+        idempotencyKey: `audit:refund:${order.id}`,
       },
       tx,
     );

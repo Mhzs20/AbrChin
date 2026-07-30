@@ -171,16 +171,68 @@ test("health retry is a provider-read-only worker job with guarded admin recover
   );
   assert.match(retry, /HEALTH_RETRY_OPERATION/);
   assert.match(retry, /HEALTH_RETRY_LIMIT = 3/);
+  assert.match(retry, /HEALTH_MANUAL_RECOVERY_OPERATION/);
   assert.match(retry, /findExistingResource/);
   assert.match(retry, /availableAt/);
   assert.match(retry, /PROVISIONING_MANUAL_REVIEW/);
   assert.doesNotMatch(retry, /\.createServer\(/);
-  assert.match(provisioning, /operation === "health_check_retry"/);
+  assert.match(
+    provisioning,
+    /operation === "health_check_manual_recovery"/,
+  );
   assert.match(provisioning, /"availableAt" <= CURRENT_TIMESTAMP/);
   assert.match(route, /requireAdminUser/);
   assert.match(route, /rejectCrossOrigin/);
   assert.match(route, /readIdempotencyKey/);
   assert.match(route, /reason/);
+});
+
+test("terminal recovery and runtime refund preserve financial evidence", async () => {
+  const migration = await source(
+    "prisma/migrations/20260730234500_terminal_order_recovery/migration.sql",
+  );
+  const refund = await source("lib/orders/service.ts");
+  assert.match(
+    migration,
+    /refund\."reversedEntryId" = debit\.id/,
+  );
+  assert.match(
+    migration,
+    /so\.status IN \('DRAFT', 'PENDING_PAYMENT', 'CANCELED'\)/,
+  );
+  assert.match(
+    migration,
+    /ServiceOrder_terminal_status_guard/,
+  );
+  assert.doesNotMatch(
+    migration,
+    /UPDATE "WalletLedgerEntry"/,
+  );
+  assert.doesNotMatch(migration, /UPDATE "Wallet"/);
+  assert.match(refund, /wallet_refund_completed/);
+  assert.match(refund, /assertProductFlowOwnerStateTx/);
+  assert.match(refund, /refund-flow:/);
+});
+
+test("idempotency compares stable request payloads", async () => {
+  const audit = await source("lib/audit/service.ts");
+  const funding = await source("lib/infrastructure/funding.ts");
+  const retry = await source(
+    "lib/infrastructure/health-retry-service.ts",
+  );
+  const retryRoute = await source(
+    "app/api/admin/infrastructure/orders/[id]/health-retry/route.ts",
+  );
+  assert.match(audit, /stableJson\(existing\.afterData/);
+  assert.match(audit, /IdempotencyConflictError/);
+  assert.match(
+    funding,
+    /existingConfirmation\.fundedAmountRial !== fundedAmountRial/,
+  );
+  assert.match(retry, /requestFingerprint/);
+  assert.match(retry, /assertHealthOperationReplay/);
+  assert.match(retryRoute, /idempotency_conflict/);
+  assert.match(retryRoute, /409/);
 });
 
 test("direct catalog checkout uses audited bootstrap and request idempotency", async () => {

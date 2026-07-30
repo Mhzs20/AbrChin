@@ -36,7 +36,8 @@ export const infrastructureOrderCustomerMessage: Record<InfrastructureOrderStatu
   ACTIVE: "سرور آماده استفاده است.",
   BLOCKED_PROVIDER_BALANCE: "تأمین زیرساخت نیاز به بررسی دارد و تیم پشتیبانی در حال پیگیری است.",
   NEEDS_RECONCILIATION: "سفارش شما در حال بررسی توسط پشتیبانی است.",
-  MANUAL_REVIEW: "سرور ساخته شده و بررسی سلامت آن توسط پشتیبانی ادامه دارد.",
+  MANUAL_REVIEW:
+    "سرور ساخته شده و پشتیبانی در حال تطبیق Provider یا اجرای بررسی سلامت پس از اصلاح است.",
   FAILED: "آماده‌سازی با مشکل مواجه شده و توسط پشتیبانی در حال بررسی است.",
   CANCELED: "سفارش لغو شده است.",
   REFUNDED: "مبلغ سفارش به کیف پول شما بازگشت داده شد.",

@@ -5,7 +5,7 @@ import {
   readIdempotencyKey,
   rejectCrossOrigin,
 } from "@/lib/http";
-import { scheduleManualHealthRetry } from "@/lib/infrastructure/health-retry-service";
+import { observeManualReviewResource } from "@/lib/infrastructure/health-retry-service";
 import { readRequestMeta } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/errors";
 
@@ -22,9 +22,8 @@ export async function POST(
     const admin = await requireAdminUser();
     const idempotencyKey = readIdempotencyKey(request);
     if (!idempotencyKey) {
-      return jsonError("شناسه یکتای Retry الزامی است.", 400);
+      return jsonError("شناسه یکتای تطبیق الزامی است.", 400);
     }
-    const meta = await readRequestMeta(request);
     const { id } = await context.params;
     const body: unknown = await request.json();
     const reason =
@@ -34,7 +33,8 @@ export async function POST(
       typeof (body as { reason: unknown }).reason === "string"
         ? (body as { reason: string }).reason.trim()
         : "";
-    const job = await scheduleManualHealthRetry({
+    const meta = await readRequestMeta(request);
+    const observation = await observeManualReviewResource({
       infrastructureOrderId: id,
       adminUserId: admin.id,
       reason,
@@ -42,11 +42,7 @@ export async function POST(
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
-    return jsonOk({
-      jobId: job.id,
-      status: job.status,
-      availableAt: job.availableAt.toISOString(),
-    });
+    return jsonOk({ observation });
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) {
@@ -63,9 +59,9 @@ export async function POST(
       return jsonError("بدنه درخواست معتبر نیست.", 400);
     }
     console.error(
-      "[admin/health-retry]",
+      "[admin/health-observe]",
       error instanceof Error ? error.message : "unknown",
     );
-    return jsonError("Retry بررسی سلامت ممکن نیست.", 500);
+    return jsonError("تطبیق Provider ممکن نیست.", 500);
   }
 }

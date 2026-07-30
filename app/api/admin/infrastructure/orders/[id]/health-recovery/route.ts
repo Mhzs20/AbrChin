@@ -5,7 +5,7 @@ import {
   readIdempotencyKey,
   rejectCrossOrigin,
 } from "@/lib/http";
-import { scheduleManualHealthRetry } from "@/lib/infrastructure/health-retry-service";
+import { scheduleManualHealthRecovery } from "@/lib/infrastructure/health-retry-service";
 import { readRequestMeta } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/errors";
 
@@ -22,9 +22,8 @@ export async function POST(
     const admin = await requireAdminUser();
     const idempotencyKey = readIdempotencyKey(request);
     if (!idempotencyKey) {
-      return jsonError("شناسه یکتای Retry الزامی است.", 400);
+      return jsonError("شناسه یکتای Recovery الزامی است.", 400);
     }
-    const meta = await readRequestMeta(request);
     const { id } = await context.params;
     const body: unknown = await request.json();
     const reason =
@@ -34,7 +33,8 @@ export async function POST(
       typeof (body as { reason: unknown }).reason === "string"
         ? (body as { reason: string }).reason.trim()
         : "";
-    const job = await scheduleManualHealthRetry({
+    const meta = await readRequestMeta(request);
+    const job = await scheduleManualHealthRecovery({
       infrastructureOrderId: id,
       adminUserId: admin.id,
       reason,
@@ -45,6 +45,7 @@ export async function POST(
     return jsonOk({
       jobId: job.id,
       status: job.status,
+      manualAttempt: job.attempt,
       availableAt: job.availableAt.toISOString(),
     });
   } catch (error) {
@@ -55,7 +56,10 @@ export async function POST(
     if (error instanceof WalletError) {
       return jsonError(
         error.message,
-        error.code === "idempotency_conflict" ? 409 : 400,
+        error.code === "idempotency_conflict" ||
+          error.code === "manual_recovery_in_progress"
+          ? 409
+          : 400,
         { code: error.code },
       );
     }
@@ -63,9 +67,9 @@ export async function POST(
       return jsonError("بدنه درخواست معتبر نیست.", 400);
     }
     console.error(
-      "[admin/health-retry]",
+      "[admin/health-recovery]",
       error instanceof Error ? error.message : "unknown",
     );
-    return jsonError("Retry بررسی سلامت ممکن نیست.", 500);
+    return jsonError("Recovery بررسی سلامت ممکن نیست.", 500);
   }
 }

@@ -29,6 +29,8 @@ export async function confirmProviderFunding(params: {
   userAgent?: string | null;
 }) {
   const fundedAmountRial = tomanToRial(params.fundedAmountToman);
+  const receiptReference = params.receiptReference?.trim() || null;
+  const note = params.note?.trim() || null;
 
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "InfrastructureOrder" WHERE id = ${params.infrastructureOrderId} FOR UPDATE`;
@@ -53,6 +55,19 @@ export async function confirmProviderFunding(params: {
       where: { idempotencyKey: confirmationKey },
     });
     if (existingConfirmation) {
+      if (
+        existingConfirmation.infrastructureOrderId !==
+          params.infrastructureOrderId ||
+        existingConfirmation.confirmedById !== params.adminUserId ||
+        existingConfirmation.fundedAmountRial !== fundedAmountRial ||
+        existingConfirmation.receiptReference !== receiptReference ||
+        existingConfirmation.note !== note
+      ) {
+        throw new WalletError(
+          "idempotency_conflict",
+          "شناسه یکتا قبلاً برای تأیید شارژ دیگری استفاده شده است.",
+        );
+      }
       const job = await tx.provisioningJob.findFirst({
         where: {
           infrastructureOrderId: order.id,
@@ -102,8 +117,8 @@ export async function confirmProviderFunding(params: {
         provider: order.provider,
         requiredAmountRial: order.requiredFundingRial,
         fundedAmountRial,
-        receiptReference: params.receiptReference?.trim() || null,
-        note: params.note?.trim() || null,
+        receiptReference,
+        note,
         confirmedById: params.adminUserId,
         idempotencyKey: confirmationKey,
         ip: params.ip?.slice(0, 64) ?? null,
@@ -178,7 +193,8 @@ export async function confirmProviderFunding(params: {
         afterData: {
           attempt: nextAttempt,
           fundedAmountRial: fundedAmountRial.toString(),
-          receiptReference: params.receiptReference ?? null,
+          receiptReference,
+          note,
         },
         ip: params.ip,
         userAgent: params.userAgent,

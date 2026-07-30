@@ -421,7 +421,10 @@ export async function processProvisioningJob(
     },
   });
   if (!job || job.status !== ProvisioningJobStatus.RUNNING) return;
-  if (job.operation === "health_check_retry") {
+  if (
+    job.operation === "health_check_retry" ||
+    job.operation === "health_check_manual_recovery"
+  ) {
     const { processHealthCheckRetryJob } = await import(
       "@/lib/infrastructure/health-retry-service"
     );

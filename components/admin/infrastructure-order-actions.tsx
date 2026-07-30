@@ -8,6 +8,9 @@ type ActionKind =
   | "reconcile"
   | "retry"
   | "health-retry"
+  | "health-observe"
+  | "health-recovery"
+  | "refund"
   | "confirm-no-resource";
 
 const actionConfig: Record<
@@ -33,6 +36,26 @@ const actionConfig: Record<
       `/api/admin/infrastructure/orders/${id}/health-retry`,
     confirmLabel: "ثبت Retry سلامت",
   },
+  "health-observe": {
+    label: "مشاهده Provider",
+    title: "مشاهده و تطبیق مجدد Provider",
+    endpoint: (id) =>
+      `/api/admin/infrastructure/orders/${id}/health-observe`,
+    confirmLabel: "اجرای تطبیق فقط‌خواندنی",
+  },
+  "health-recovery": {
+    label: "بررسی سلامت پس از اصلاح",
+    title: "اجرای Recovery دستی سلامت",
+    endpoint: (id) =>
+      `/api/admin/infrastructure/orders/${id}/health-recovery`,
+    confirmLabel: "ثبت Recovery سلامت",
+  },
+  refund: {
+    label: "لغو و بازگشت وجه",
+    title: "بستن پرونده و بازگشت وجه",
+    endpoint: (id) => `/api/admin/orders/${id}/refund`,
+    confirmLabel: "تأیید بازگشت وجه",
+  },
   "confirm-no-resource": {
     label: "منبع ساخته نشده",
     title: "تأیید منبع ساخته‌نشده",
@@ -43,11 +66,13 @@ const actionConfig: Record<
 
 export function InfrastructureOrderActions({
   orderId,
+  serviceOrderId,
   status,
   hasCloudInstance,
   productFlowState,
 }: {
   orderId: string;
+  serviceOrderId: string;
   status: string;
   hasCloudInstance: boolean;
   productFlowState: string | null;
@@ -71,6 +96,17 @@ export function InfrastructureOrderActions({
   ) {
     available.push("health-retry");
   }
+  if (
+    status === "MANUAL_REVIEW" &&
+    productFlowState === "PROVISIONING_MANUAL_REVIEW" &&
+    hasCloudInstance
+  ) {
+    available.push(
+      "health-observe",
+      "health-recovery",
+      "refund",
+    );
+  }
 
   if (available.length === 0) return <>—</>;
 
@@ -84,11 +120,17 @@ export function InfrastructureOrderActions({
     setError("");
     try {
       const config = actionConfig[kind];
-      const response = await fetch(config.endpoint(orderId), {
+      const endpointId =
+        kind === "refund" ? serviceOrderId : orderId;
+      const response = await fetch(config.endpoint(endpointId), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(kind === "health-retry"
+          ...([
+            "health-retry",
+            "health-observe",
+            "health-recovery",
+          ].includes(kind)
             ? { "Idempotency-Key": idempotencyKey }
             : {}),
         },

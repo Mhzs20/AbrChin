@@ -65,6 +65,7 @@ export default async function AdminInfrastructureOrdersPage() {
         ) : (
           <InfrastructureOrderActions
             orderId={order.id}
+            serviceOrderId={order.serviceOrderId}
             status={order.status}
             hasCloudInstance={Boolean(order.cloudInstance)}
             productFlowState={order.productFlowState}
@@ -92,6 +93,7 @@ export default async function AdminInfrastructureOrdersPage() {
       ) : (
         <InfrastructureOrderActions
           orderId={order.id}
+          serviceOrderId={order.serviceOrderId}
           status={order.status}
           hasCloudInstance={Boolean(order.cloudInstance)}
           productFlowState={order.productFlowState}

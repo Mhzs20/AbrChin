@@ -295,6 +295,24 @@ Origin معتبر، دلیل اجباری و Idempotency Key می‌تواند R
 `MANUAL_REVIEW` می‌رود، آخرین State/IP/Network/Security و زمان مشاهده در
 Metadata انتقال ثبت و Notification مدیریتی ساخته می‌شود.
 
+`MANUAL_REVIEW` بن‌بست نیست. Admin دو عملیات مستقل و Idempotent دارد:
+`health_check_manual_observe` فقط Resource ID قفل‌شده را با GET/Reconciliation
+مشاهده و Observation تازه را Audit می‌کند؛
+`health_check_manual_recovery` پس از اصلاح انسانی، Job جداگانه‌ای می‌سازد و
+Transition رسمی `PROVISIONING_MANUAL_REVIEW → HEALTH_CHECKING` را اجرا
+می‌کند. موفقیت به Delivery/Activation ادامه می‌دهد و شکست بدون افزودن تلاش
+خودکار، همراه Actor/Reason/Observation به Manual Review بازمی‌گردد. شمارنده
+Manual از سقف سه Retry خودکار مستقل است و هیچ‌کدام `createServer` را صدا
+نمی‌زنند. یک Partial Unique Index اجرای هم‌زمان Retry و Recovery را برای یک
+Order منع می‌کند.
+
+Refund نیز در Transaction واحد انجام می‌شود: Service/Session/Infrastructure
+و Wallet Rowها قفل، سند Debit و Refund معکوس بررسی، Wallet/Ledger به‌شکل
+Idempotent ثبت و سپس State Machine با Reason
+`wallet_refund_completed` به `CANCELLED` منتقل می‌شود. فقط سفارش فاقد
+Resource فعال/مبهم و فاقد Job فعال قابل Refund است. هر شکست Transition تمام
+Wallet/Ledger updateها را Rollback می‌کند.
+
 ## Reconciliation و ایمنی
 
 قبل از Create، Order باید Paid، Provider قفل و Idempotency Key ثبت شده باشد.
@@ -373,3 +391,19 @@ Health آروان و ParsPack، Retry هم‌زمان، جلوگیری از Crea
 Manual Review پس از سه تلاش را پوشش می‌دهد. اجرای دوم `prisma migrate deploy`
 فقط no-op بودن سازوکار Deployment Prisma را ثابت می‌کند؛ ادعای اجرای دوبارهٔ
 SQL یک Migration ثبت‌شده نیست.
+
+Migration `20260730234500_terminal_order_recovery` سومین اصلاح Forward-only
+است و دو Migration قبلی را بازنویسی نمی‌کند:
+
+- ServiceOrder بازگشت‌وجه‌شده را فقط با Refund Ledger تکمیل‌شده‌ای بازیابی
+  می‌کند که از طریق `reversedEntryId` دقیقاً Debit تکمیل‌شده
+  `SERVICE_PURCHASE` همان Order را معکوس کرده باشد؛
+- `CANCELED` فقط با InfrastructureOrder صریحاً `CANCELED` بازیابی می‌شود و
+  برای رکورد فاقد شاهد هیچ Mapping حدسی انجام نمی‌شود؛
+- State و Revision Ownerهای موجود را به `CANCELLED` هم‌تراز می‌کند، بدون
+  تغییر Wallet، Ledger، Amount، `paidAt` یا Snapshot مالی/Provider؛
+- Trigger دیتابیس اجازه نمی‌دهد `PAID` به چیزی جز `REFUNDED` برود و
+  `REFUNDED/CANCELED` از وضعیت Terminal خارج شوند؛
+- تست PostgreSQL وضعیت مالی را قبل و بعد مقداربه‌مقدار مقایسه و Rollback
+  Runtime Refund، Conflictهای Idempotency و مسیر خروج Manual Review را روی
+  دیتابیس واقعی اجرا می‌کند.
