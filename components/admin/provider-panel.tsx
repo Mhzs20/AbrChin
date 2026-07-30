@@ -26,6 +26,7 @@ export function ProviderPanel({
     unavailableItemCount: number;
     staleItemCount: number;
     invalidPriceCount: number;
+    invalidResourceCount: number;
     networkCount: number;
     securityCount: number;
     apiVersion: string;
@@ -146,6 +147,7 @@ export function ProviderPanel({
         <StatCard label="ناموجود" value={state.unavailableItemCount.toLocaleString("fa-IR")} />
         <StatCard label="Stale" value={state.staleItemCount.toLocaleString("fa-IR")} />
         <StatCard label="قیمت نامعتبر" value={state.invalidPriceCount.toLocaleString("fa-IR")} />
+        <StatCard label="منابع نامعتبر" value={state.invalidResourceCount.toLocaleString("fa-IR")} />
         <StatCard label="Network" value={state.networkCount.toLocaleString("fa-IR")} />
         <StatCard label="Security" value={state.securityCount.toLocaleString("fa-IR")} />
         <StatCard

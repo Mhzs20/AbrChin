@@ -5,7 +5,7 @@ import {
   RecommendationFlowStatus,
   RecommendationQuoteRole,
   RecommendationQuoteStatus,
-  type Prisma,
+  Prisma,
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
@@ -16,9 +16,19 @@ import {
   toPlanSnapshot,
   type PricedInfrastructurePlan,
 } from "@/lib/orders/plans";
-import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
-import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
+import {
+  getCatalogFreshness,
+  requestCatalogSync,
+} from "@/lib/infrastructure/multi-provider-catalog-service";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
+import {
+  resolveProviderSelectionDefaults,
+  revalidateLockedSelection,
+} from "@/lib/infrastructure/selection-revalidation";
+import {
+  transitionProductFlowTx,
+  type ProductFlowTransitionInput,
+} from "@/lib/product-flow/service";
 import { adjustRecommendationProfile, buildRecommendation } from "@/lib/recommendation/engine";
 import { rankProviderOffers } from "@/lib/recommendation/provider-ranking";
 import type {
@@ -34,7 +44,10 @@ import type {
 } from "@/lib/recommendation/types";
 import { WalletError } from "@/lib/wallet/errors";
 import { serializeQuoteLineItems } from "@/lib/pricing/quote-line-items";
-import { requireConversationAccess } from "@/lib/recommendation/session-service";
+import {
+  createGuestSessionCredential,
+  requireConversationAccess,
+} from "@/lib/recommendation/session-service";
 import {
   assertParchinLevelAllowed,
   recommendedParchinLevel,
@@ -46,12 +59,76 @@ const CLOUD_SERVER_PROFILE_SOURCE = "CLOUD_SERVER";
 
 export { recommendedParchinLevel } from "@/lib/parchin/recommendation";
 
-type SelectedQuote = {
+export type SelectedQuote = {
   role: RecommendationOfferRole;
   profile: ResourceProfile;
   rankedOffer: RankedProviderOffer;
   plan: PricedInfrastructurePlan;
 };
+
+type LockedDeliveryConfiguration = {
+  provider: InfrastructureProvider;
+  providerApiVersion: string;
+  productKind: InfrastructureProductKind;
+  region: string;
+  regionLabel: string;
+  externalPlanId: string;
+  externalImageId: string;
+  externalNetworkId: string | null;
+  externalSecurityId: string | null;
+  operatingSystem: string;
+  accessMethod:
+    | "SSH_KEY_OR_PASSWORD"
+    | "ONE_TIME_PASSWORD"
+    | "SSH_KEY"
+    | "WINDOWS_PASSWORD";
+  planId?: string;
+  catalogItemId?: string | null;
+  imageAssetId?: string;
+  sshKeyName?: string | null;
+  configuredAt: string;
+};
+
+function parseLockedDeliveryConfiguration(
+  value: Prisma.JsonValue | null,
+): LockedDeliveryConfiguration | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const configuration = value as Record<string, unknown>;
+  if (
+    configuration.provider !== InfrastructureProvider.ARVAN ||
+    configuration.providerApiVersion !== "v1" ||
+    configuration.productKind !== InfrastructureProductKind.CLOUD_SERVER ||
+    typeof configuration.planId !== "string" ||
+    typeof configuration.region !== "string" ||
+    typeof configuration.externalPlanId !== "string" ||
+    typeof configuration.externalImageId !== "string" ||
+    typeof configuration.externalNetworkId !== "string" ||
+    typeof configuration.externalSecurityId !== "string" ||
+    typeof configuration.operatingSystem !== "string" ||
+    ![
+      "ONE_TIME_PASSWORD",
+      "SSH_KEY",
+      "WINDOWS_PASSWORD",
+    ].includes(String(configuration.accessMethod))
+  ) {
+    return null;
+  }
+  return configuration as unknown as LockedDeliveryConfiguration;
+}
+
+function sessionAnswers(value: Prisma.JsonValue): RecommendationAnswers {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as RecommendationAnswers)
+    : {};
+}
+
+function sessionSources(value: Prisma.JsonValue): AnswerSources {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as AnswerSources)
+    : {};
+}
 
 const selections: Array<{
   role: RecommendationOfferRole;
@@ -68,6 +145,80 @@ function bigintToSafeNumber(value: bigint): number {
     throw new Error("invalid_plan_price");
   }
   return numeric;
+}
+
+async function requireFreshCatalog(provider: InfrastructureProvider) {
+  const freshness = await getCatalogFreshness(provider);
+  if (!freshness.fresh) {
+    await requestCatalogSync(provider);
+    throw new WalletError(
+      "quote_unavailable",
+      "کاتالوگ در حال به‌روزرسانی است؛ کمی بعد دوباره تلاش کن.",
+    );
+  }
+}
+
+async function lockAndRevalidatePlan(
+  plan: PricedInfrastructurePlan,
+): Promise<{
+  configuration: LockedDeliveryConfiguration;
+  providerPriceCheckedAt: Date;
+}> {
+  assertProviderRoute({
+    productKind: plan.productKind,
+    provider: plan.provider,
+    apiVersion: plan.providerApiVersion,
+  });
+  const externalPlanId =
+    plan.catalogItem.externalPlanId ?? plan.sizeCode;
+  const defaults =
+    plan.provider === InfrastructureProvider.ARVAN
+      ? await resolveProviderSelectionDefaults({
+          provider: plan.provider,
+          providerApiVersion: plan.providerApiVersion,
+          productKind: plan.productKind,
+          region: plan.regionCode,
+        })
+      : null;
+  const selection = {
+    provider: plan.provider,
+    providerApiVersion: plan.providerApiVersion,
+    productKind: plan.productKind,
+    region: plan.regionCode,
+    externalPlanId,
+    externalImageId: plan.imageCode,
+    externalNetworkId: defaults?.externalNetworkId ?? null,
+    externalSecurityId: defaults?.externalSecurityId ?? null,
+  };
+  const current = await revalidateLockedSelection(selection);
+  if (
+    current.monthlyPriceIrr !==
+      plan.pricing.providerBasePriceRial ||
+    current.currency !== plan.pricing.currency
+  ) {
+    await requestCatalogSync(plan.provider);
+    throw new WalletError(
+      "quote_revalidation_failed",
+      "قیمت ارائه‌دهنده تغییر کرده است؛ کاتالوگ در حال به‌روزرسانی است.",
+    );
+  }
+  return {
+    configuration: {
+      provider: plan.provider,
+      providerApiVersion: plan.providerApiVersion,
+      productKind: plan.productKind,
+      region: plan.regionCode,
+      regionLabel: plan.regionCode,
+      externalPlanId,
+      externalImageId: plan.imageCode,
+      externalNetworkId: defaults?.externalNetworkId ?? null,
+      externalSecurityId: defaults?.externalSecurityId ?? null,
+      operatingSystem: plan.imageCode,
+      accessMethod: "SSH_KEY_OR_PASSWORD",
+      configuredAt: current.checkedAt.toISOString(),
+    },
+    providerPriceCheckedAt: current.checkedAt,
+  };
 }
 
 function planToProviderOffer(
@@ -122,7 +273,7 @@ function quoteReasons(
   return [...new Set(reasons)].slice(0, 5);
 }
 
-function selectQuotes(
+export function selectQuotes(
   recommendation: RecommendationResult,
   plans: PricedInfrastructurePlan[],
   now: Date,
@@ -244,11 +395,7 @@ async function createCatalogServerQuote(params: {
   } catch {
     throw new WalletError("quote_unavailable", "این انتخاب معتبر نیست.");
   }
-  if (route.provider === InfrastructureProvider.ARVAN) {
-    await refreshMultiProviderCatalog(InfrastructureProvider.ARVAN);
-  } else {
-    await refreshProviderCatalogForPricing();
-  }
+  await requireFreshCatalog(route.provider);
   const plan =
     params.expectedProductKind ===
     InfrastructureProductKind.READY_INSTANT_SERVER
@@ -260,6 +407,7 @@ async function createCatalogServerQuote(params: {
       "این سرور دیگر قیمت یا ظرفیت معتبر ندارد.",
     );
   }
+  const locked = await lockAndRevalidatePlan(plan);
 
   const now = params.now ?? new Date();
   const expiresAt = new Date(now.getTime() + RECOMMENDATION_QUOTE_VALIDITY_MS);
@@ -278,22 +426,30 @@ async function createCatalogServerQuote(params: {
     ramGb: plan.pricing.ramGb,
     storageGb: plan.pricing.storageGb,
   } satisfies Prisma.InputJsonObject;
-  const session = await prisma.recommendationSession.create({
-    data: {
-      userId: params.userId ?? null,
-      status: RecommendationFlowStatus.QUOTED,
-      productFlowState: "QUOTED",
-      answers: {
-        source: profileSource,
-        planId: plan.id,
-      },
-      answerSources: {},
-      profile: profileSnapshot,
-      confidence: "high",
-      architectureEscalation: false,
-      expiresAt,
-      quotes: {
-        create: {
+  const guestCredential = params.userId
+    ? null
+    : createGuestSessionCredential();
+  const session = await prisma.$transaction(async (tx) => {
+    const created = await tx.recommendationSession.create({
+      data: {
+        userId: params.userId ?? null,
+        guestAccessTokenHash: guestCredential?.hash ?? null,
+        status: RecommendationFlowStatus.QUOTED,
+        productFlowState: "DELIVERY_CONFIGURED",
+        answers: {
+          source: profileSource,
+          planId: plan.id,
+        },
+        answerSources: {},
+        profile: profileSnapshot,
+        confidence: "high",
+        architectureEscalation: false,
+        selectedParchinLevel: plan.pricing.parchinLevel,
+        deliveryConfiguration:
+          locked.configuration as unknown as Prisma.InputJsonValue,
+        expiresAt,
+        quotes: {
+          create: {
           role: RecommendationQuoteRole.RECOMMENDED,
           status: RecommendationQuoteStatus.ACTIVE,
           planId: plan.id,
@@ -319,19 +475,23 @@ async function createCatalogServerQuote(params: {
           markupBasisPointsSnapshot: plan.pricing.markupBasisPoints,
           finalPriceRialSnapshot: plan.pricing.finalPriceRial,
           currencySnapshot: plan.pricing.currency,
-          providerPriceCheckedAt: plan.pricing.providerPriceCheckedAt,
+          providerPriceCheckedAt: locked.providerPriceCheckedAt,
           provider: plan.provider,
           providerApiVersion: plan.providerApiVersion,
           productKind: plan.productKind,
           providerRegion: plan.regionCode,
           externalPlanId:
             plan.catalogItem.externalPlanId ?? plan.sizeCode,
-          externalImageId: plan.imageCode,
+          externalImageId: locked.configuration.externalImageId,
+          externalNetworkId:
+            locked.configuration.externalNetworkId,
+          externalSecurityId:
+            locked.configuration.externalSecurityId,
           vcpuSnapshot: plan.pricing.vcpu,
           ramMbSnapshot:
             plan.pricing.ramGb == null ? null : plan.pricing.ramGb * 1024,
           diskGbSnapshot: plan.pricing.storageGb,
-          operatingSystemSnapshot: plan.imageCode,
+          operatingSystemSnapshot: locked.configuration.operatingSystem,
           providerHourlyPriceIrr:
             plan.catalogItem.providerHourlyPriceIrr,
           providerMonthlyPriceIrr: plan.pricing.providerBasePriceRial,
@@ -339,6 +499,8 @@ async function createCatalogServerQuote(params: {
           parchinLevel: plan.pricing.parchinLevel,
           parchinPriceIrr: plan.pricing.parchinPriceRial,
           providerAddonsSnapshot: [],
+          deliveryConfigurationSnapshot:
+            locked.configuration as unknown as Prisma.InputJsonValue,
           taxBasisPointsSnapshot: plan.pricing.taxBasisPoints,
           taxAmountIrr: plan.pricing.taxAmountRial,
           lineItemsSnapshot: serializeQuoteLineItems(
@@ -348,16 +510,31 @@ async function createCatalogServerQuote(params: {
           catalogVersion: plan.catalogItem.catalogVersion,
           providerPayloadHash: plan.catalogItem.payloadHash,
           expiresAt,
+          },
         },
       },
-    },
-    include: { quotes: true },
+      include: { quotes: true },
+    });
+    await transitionProductFlowTx(tx, {
+      owner: { recommendationSessionId: created.id },
+      from: "DELIVERY_CONFIGURED",
+      to: "QUOTED",
+      reason: "catalog_selection_quoted",
+      idempotencyKey: `catalog-quote:${created.id}`,
+      actorUserId: params.userId ?? null,
+      metadata: {
+        planId: plan.id,
+        productKind: plan.productKind,
+      },
+    });
+    return created;
   });
   const quote = session.quotes[0];
   if (!quote) throw new Error("ready_server_quote_not_created");
 
   return {
     sessionId: session.id,
+    guestToken: guestCredential?.token ?? null,
     quote: toPublicRecommendationQuote(quote),
     expiresAt,
   };
@@ -387,8 +564,6 @@ export async function createCloudServerQuote(params: {
 }
 
 export async function createRecommendationQuotes(params: {
-  answers: RecommendationAnswers;
-  sources: AnswerSources;
   userId?: string | null;
   now?: Date;
   includeComparisons?: boolean;
@@ -399,35 +574,59 @@ export async function createRecommendationQuotes(params: {
   if (!params.sessionId) {
     throw new Error("conversation_session_required");
   }
-  await refreshMultiProviderCatalog(InfrastructureProvider.ARVAN);
-  const now = params.now ?? new Date();
-  const expiresAt = new Date(now.getTime() + RECOMMENDATION_QUOTE_VALIDITY_MS);
-  const recommendation = buildRecommendation(params.answers, params.sources);
-  const minimumParchinLevel = recommendedParchinLevel(params.answers);
-  const selectedParchinLevel =
-    params.requestedParchinLevel ?? minimumParchinLevel;
-  assertParchinLevelAllowed(selectedParchinLevel, minimumParchinLevel);
-  const plans = await listActivePlans(selectedParchinLevel);
   const existingSession = await requireConversationAccess({
     sessionId: params.sessionId,
     userId: params.userId,
     guestToken: params.guestToken,
   });
+  const initialFlowState = existingSession.productFlowState ?? "DRAFT";
   if (
-    !["REQUIREMENTS_COMPLETE", "QUOTED", "QUOTE_EXPIRED"].includes(
-      existingSession.productFlowState ?? "",
-    )
+    ![
+      "DELIVERY_CONFIGURED",
+      "QUOTED",
+      "QUOTE_EXPIRED",
+    ].includes(initialFlowState)
   ) {
     throw new Error("conversation_requirements_not_confirmed");
   }
+  await requireFreshCatalog(InfrastructureProvider.ARVAN);
+  const lockedConfiguration = parseLockedDeliveryConfiguration(
+    existingSession.deliveryConfiguration,
+  );
+  if (!lockedConfiguration || !existingSession.selectedParchinLevel) {
+    throw new Error("conversation_delivery_not_configured");
+  }
+  const now = params.now ?? new Date();
+  const expiresAt = new Date(
+    now.getTime() + RECOMMENDATION_QUOTE_VALIDITY_MS,
+  );
+  const authoritativeAnswers = sessionAnswers(existingSession.answers);
+  const authoritativeSources = sessionSources(
+    existingSession.answerSources,
+  );
+  const recommendation = buildRecommendation(
+    authoritativeAnswers,
+    authoritativeSources,
+  );
+  const minimumParchinLevel = recommendedParchinLevel(
+    authoritativeAnswers,
+  );
+  const selectedParchinLevel =
+    params.requestedParchinLevel ??
+    existingSession.selectedParchinLevel;
+  assertParchinLevelAllowed(selectedParchinLevel, minimumParchinLevel);
+  if (selectedParchinLevel !== existingSession.selectedParchinLevel) {
+    throw new Error("conversation_delivery_not_configured");
+  }
 
   if (recommendation.architectureEscalation) {
-    const sessionData = {
+    const session = await prisma.recommendationSession.update({
+      where: { id: existingSession.id },
+      data: {
         userId: params.userId ?? null,
         status: RecommendationFlowStatus.ESCALATED,
-        productFlowState: "REQUIREMENTS_COMPLETE",
-        answers: params.answers as Prisma.InputJsonValue,
-        answerSources: params.sources as Prisma.InputJsonValue,
+        answers: authoritativeAnswers as Prisma.InputJsonValue,
+        answerSources: authoritativeSources as Prisma.InputJsonValue,
         profile: {
           ...recommendation.profile,
           workloadClassification: recommendation.workloadClassification,
@@ -435,10 +634,8 @@ export async function createRecommendationQuotes(params: {
         confidence: recommendation.confidence,
         architectureEscalation: true,
         expiresAt,
-      };
-    const session = await prisma.recommendationSession.update({
-      where: { id: existingSession.id },
-      data: sessionData,
+        revision: { increment: 1 },
+      },
     });
     return {
       sessionId: session.id,
@@ -450,31 +647,86 @@ export async function createRecommendationQuotes(params: {
     };
   }
 
-  const selected = selectQuotes(recommendation, plans, now, expiresAt);
+  const plans = await listActivePlans(selectedParchinLevel);
+  const candidates = selectQuotes(recommendation, plans, now, expiresAt);
+  const configuredCandidate = candidates.find(
+    ({ plan }) => plan.id === lockedConfiguration.planId,
+  );
+  if (!configuredCandidate) {
+    throw new WalletError(
+      "quote_unavailable",
+      "چینش انتخاب‌شده دیگر حداقل‌های این نیاز را پوشش نمی‌دهد.",
+    );
+  }
+  const configuredPlan = configuredCandidate.plan;
+  const current = await revalidateLockedSelection({
+    provider: lockedConfiguration.provider,
+    providerApiVersion: lockedConfiguration.providerApiVersion,
+    productKind: lockedConfiguration.productKind,
+    region: lockedConfiguration.region,
+    externalPlanId: lockedConfiguration.externalPlanId,
+    externalImageId: lockedConfiguration.externalImageId,
+    externalNetworkId: lockedConfiguration.externalNetworkId,
+    externalSecurityId: lockedConfiguration.externalSecurityId,
+  });
+  if (
+    current.monthlyPriceIrr !==
+      configuredPlan.pricing.providerBasePriceRial ||
+    current.currency !== configuredPlan.pricing.currency
+  ) {
+    await requestCatalogSync(InfrastructureProvider.ARVAN);
+    throw new WalletError(
+      "quote_revalidation_failed",
+      "قیمت انتخاب تغییر کرده و کاتالوگ در حال به‌روزرسانی است.",
+    );
+  }
+  const main = {
+    ...configuredCandidate,
+    role: "RECOMMENDED" as const,
+    configuration: lockedConfiguration,
+    providerPriceCheckedAt: current.checkedAt,
+  };
+  const comparisons = params.includeComparisons
+    ? candidates
+        .filter(({ plan }) => plan.id !== configuredPlan.id)
+        .slice(0, 2)
+    : [];
+  const validatedComparisons = await Promise.allSettled(
+    comparisons.map(async (selected) => ({
+      ...selected,
+      ...(await lockAndRevalidatePlan(selected.plan)),
+    })),
+  );
+  const selected = [
+    main,
+    ...validatedComparisons.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value] : [],
+    ),
+  ];
   const status =
     selected.length > 0
       ? RecommendationFlowStatus.QUOTED
       : RecommendationFlowStatus.READY_TO_COMPARE;
-
-  await prisma.recommendationQuote.updateMany({
-    where: {
-      sessionId: existingSession.id,
-      status: {
-        in: [
-          RecommendationQuoteStatus.ACTIVE,
-          RecommendationQuoteStatus.SELECTED,
-        ],
+  const session = await prisma.$transaction(async (tx) => {
+    await tx.recommendationQuote.updateMany({
+      where: {
+        sessionId: existingSession.id,
+        status: {
+          in: [
+            RecommendationQuoteStatus.ACTIVE,
+            RecommendationQuoteStatus.SELECTED,
+          ],
+        },
       },
-    },
-    data: { status: RecommendationQuoteStatus.INVALIDATED },
-  });
-  const sessionData = {
+      data: { status: RecommendationQuoteStatus.INVALIDATED },
+    });
+    await tx.recommendationSession.update({
+      where: { id: existingSession.id },
+      data: {
       userId: params.userId ?? null,
       status,
-      productFlowState:
-        selected.length > 0 ? "QUOTED" : "REQUIREMENTS_COMPLETE",
-      answers: params.answers as Prisma.InputJsonValue,
-      answerSources: params.sources as Prisma.InputJsonValue,
+      answers: authoritativeAnswers as Prisma.InputJsonValue,
+      answerSources: authoritativeSources as Prisma.InputJsonValue,
       profile: {
         ...recommendation.profile,
         workloadClassification: recommendation.workloadClassification,
@@ -482,10 +734,49 @@ export async function createRecommendationQuotes(params: {
       confidence: recommendation.confidence,
       architectureEscalation: false,
       expiresAt,
-      quotes: {
-        create: selected.map(({ role, profile, rankedOffer, plan }) => ({
+      revision: { increment: 1 },
+      },
+    });
+
+    let currentState = initialFlowState as ProductFlowTransitionInput["from"];
+    if (currentState !== "DELIVERY_CONFIGURED") {
+      await transitionProductFlowTx(tx, {
+        owner: { recommendationSessionId: existingSession.id },
+        from: currentState,
+        to: "DELIVERY_CONFIGURED",
+        reason: "configured_selection_requoted",
+        idempotencyKey: `quote-reconfigure:${existingSession.id}:${existingSession.revision + 1}`,
+        actorUserId: params.userId ?? null,
+      });
+      currentState = "DELIVERY_CONFIGURED";
+    }
+    await transitionProductFlowTx(tx, {
+      owner: { recommendationSessionId: existingSession.id },
+      from: currentState,
+      to: "QUOTED",
+      reason: "configured_selection_quoted",
+      idempotencyKey: `quote-flow:${existingSession.id}:${existingSession.revision + 1}`,
+      actorUserId: params.userId ?? null,
+      metadata: {
+        planId: main.plan.id,
+        imageId: main.configuration.externalImageId,
+      },
+    });
+
+    if (selected.length > 0) {
+      await tx.recommendationQuote.createMany({
+        data: selected.map(
+          ({
+            role,
+            profile,
+            rankedOffer,
+            plan,
+            configuration,
+            providerPriceCheckedAt,
+          }) => ({
           role,
           status: RecommendationQuoteStatus.ACTIVE,
+          sessionId: existingSession.id,
           planId: plan.id,
           score: rankedOffer.score,
           scoreBreakdown: rankedOffer.scoreBreakdown as Prisma.InputJsonValue,
@@ -502,19 +793,21 @@ export async function createRecommendationQuotes(params: {
           markupBasisPointsSnapshot: plan.pricing.markupBasisPoints,
           finalPriceRialSnapshot: plan.pricing.finalPriceRial,
           currencySnapshot: plan.pricing.currency,
-          providerPriceCheckedAt: plan.pricing.providerPriceCheckedAt,
+          providerPriceCheckedAt,
           provider: plan.provider,
           providerApiVersion: plan.providerApiVersion,
           productKind: plan.productKind,
           providerRegion: plan.regionCode,
           externalPlanId:
             plan.catalogItem.externalPlanId ?? plan.sizeCode,
-          externalImageId: plan.imageCode,
+          externalImageId: configuration.externalImageId,
+          externalNetworkId: configuration.externalNetworkId,
+          externalSecurityId: configuration.externalSecurityId,
           vcpuSnapshot: plan.pricing.vcpu,
           ramMbSnapshot:
             plan.pricing.ramGb == null ? null : plan.pricing.ramGb * 1024,
           diskGbSnapshot: plan.pricing.storageGb,
-          operatingSystemSnapshot: plan.imageCode,
+          operatingSystemSnapshot: configuration.operatingSystem,
           providerHourlyPriceIrr:
             plan.catalogItem.providerHourlyPriceIrr,
           providerMonthlyPriceIrr: plan.pricing.providerBasePriceRial,
@@ -522,6 +815,8 @@ export async function createRecommendationQuotes(params: {
           parchinLevel: plan.pricing.parchinLevel,
           parchinPriceIrr: plan.pricing.parchinPriceRial,
           providerAddonsSnapshot: [],
+          deliveryConfigurationSnapshot:
+            configuration as unknown as Prisma.InputJsonValue,
           taxBasisPointsSnapshot: plan.pricing.taxBasisPoints,
           taxAmountIrr: plan.pricing.taxAmountRial,
           lineItemsSnapshot: serializeQuoteLineItems(
@@ -531,41 +826,22 @@ export async function createRecommendationQuotes(params: {
           catalogVersion: plan.catalogItem.catalogVersion,
           providerPayloadHash: plan.catalogItem.payloadHash,
           expiresAt,
-        })),
-      },
-    };
-  const session = await prisma.recommendationSession.update({
-    where: { id: existingSession.id },
-    data: sessionData,
-    include: {
+          }),
+        ),
+      });
+    }
+    return tx.recommendationSession.findUniqueOrThrow({
+      where: { id: existingSession.id },
+      include: {
       quotes: {
         where: {
           status: RecommendationQuoteStatus.ACTIVE,
           createdAt: { gte: now },
         },
       },
-    },
-  });
-  if (
-    selected.length > 0 &&
-    existingSession.productFlowState === "REQUIREMENTS_COMPLETE"
-  ) {
-    const flow = [
-      ["REQUIREMENTS_COMPLETE", "RECOMMENDED"],
-      ["RECOMMENDED", "PARCHIN_SELECTED"],
-      ["PARCHIN_SELECTED", "DELIVERY_CONFIGURED"],
-      ["DELIVERY_CONFIGURED", "QUOTED"],
-    ] as const;
-    await prisma.productFlowTransition.createMany({
-      data: flow.map(([fromState, toState], index) => ({
-        recommendationSessionId: existingSession.id,
-        fromState,
-        toState,
-        reason: "recommendation_quote_created",
-        idempotencyKey: `quote-flow:${existingSession.id}:${now.getTime()}:${index}`,
-      })),
+      },
     });
-  }
+  });
   const quoteNotice =
     selected.length === 0
       ? recommendation.profile.backupPolicy === "DAILY"
@@ -593,9 +869,10 @@ export async function createRecommendationQuotes(params: {
 export async function getActiveRecommendationQuote(
   id: string,
   userId?: string | null,
+  guestToken?: string | null,
   now = new Date(),
 ) {
-  return prisma.recommendationQuote.findFirst({
+  const quote = await prisma.recommendationQuote.findFirst({
     where: {
       id,
       status: { in: [RecommendationQuoteStatus.ACTIVE, RecommendationQuoteStatus.SELECTED] },
@@ -605,31 +882,49 @@ export async function getActiveRecommendationQuote(
         deliveryMode: "MANAGED",
         parchinIncluded: true,
       },
-      session: userId
-        ? {
-            OR: [{ userId }, { userId: null }],
-          }
-        : { userId: null },
     },
     include: { plan: true, session: true, serviceOrder: true },
   });
+  if (!quote) return null;
+  try {
+    await requireConversationAccess({
+      sessionId: quote.sessionId,
+      userId,
+      guestToken,
+    });
+    return quote;
+  } catch {
+    return null;
+  }
 }
 
 export async function getActiveReadyServerQuote(
   id: string,
   userId?: string | null,
+  guestToken?: string | null,
   now = new Date(),
 ) {
-  const quote = await getActiveRecommendationQuote(id, userId, now);
+  const quote = await getActiveRecommendationQuote(
+    id,
+    userId,
+    guestToken,
+    now,
+  );
   return quote && isReadyServerProfile(quote.session.profile) ? quote : null;
 }
 
 export async function getActiveCloudServerQuote(
   id: string,
   userId?: string | null,
+  guestToken?: string | null,
   now = new Date(),
 ) {
-  const quote = await getActiveRecommendationQuote(id, userId, now);
+  const quote = await getActiveRecommendationQuote(
+    id,
+    userId,
+    guestToken,
+    now,
+  );
   return quote && isCloudServerProfile(quote.session.profile) ? quote : null;
 }
 
@@ -666,8 +961,6 @@ export async function refreshRecommendationQuote(params: {
   }
   if (!replacement) {
     const refreshed = await createRecommendationQuotes({
-      answers: previous.session.answers as unknown as RecommendationAnswers,
-      sources: previous.session.answerSources as unknown as AnswerSources,
       userId: params.userId,
       sessionId: previous.session.id,
     });

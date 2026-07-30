@@ -35,10 +35,14 @@ test("customer recommendation UI does not reveal infrastructure providers", asyn
 test("checkout locks the quoted amount and rejects expired quotes", async () => {
   const service = await readFile("lib/orders/service.ts", "utf8");
   const payment = await readFile("lib/orders/pay-order-tx.ts", "utf8");
+  const quoteService = await readFile(
+    "lib/recommendation/quote-service.ts",
+    "utf8",
+  );
   const ordersRoute = await readFile("app/api/orders/route.ts", "utf8");
 
   assert.match(service, /quoteExpiresAt/);
-  assert.match(service, /10 \* 60 \* 1000/);
+  assert.match(quoteService, /10 \* 60 \* 1000/);
   assert.match(service, /createServiceOrderFromQuote/);
   assert.match(service, /recommendationQuoteId/);
   assert.match(service, /quote\.session\.userId !== userId/);
@@ -73,7 +77,8 @@ test("guided recommendation requests server-generated quotes instead of static c
 
   assert.match(conversation, /\/api\/recommendations\/quotes/);
   assert.match(conversation, /quotes=\{quotes\}/);
-  assert.match(quoteRoute, /parseRecommendationInput/);
+  assert.doesNotMatch(quoteRoute, /parseRecommendationInput/);
+  assert.match(quoteService, /authoritativeAnswers/);
   assert.match(quoteService, /RecommendationQuoteRole/);
   assert.match(quoteService, /rankProviderOffers/);
   assert.match(quoteService, /RECOMMENDATION_QUOTE_VALIDITY_MS/);

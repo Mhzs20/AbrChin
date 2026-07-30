@@ -86,6 +86,7 @@ export async function POST(request: Request) {
         unavailableItemCount: state.unavailableItemCount,
         staleItemCount: state.staleItemCount,
         invalidPriceCount: state.invalidPriceCount,
+        invalidResourceCount: state.invalidResourceCount,
         networkCount: state.networkCount,
         securityCount: state.securityCount,
         syncDurationMs: state.lastSyncDurationMs,

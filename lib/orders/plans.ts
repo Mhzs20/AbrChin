@@ -15,8 +15,10 @@ import {
 } from "@/lib/cloud-servers/catalog";
 import { prisma } from "@/lib/db";
 import { getEnv } from "@/lib/env";
-import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
-import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
+import {
+  getCatalogFreshness,
+  requestCatalogSync,
+} from "@/lib/infrastructure/multi-provider-catalog-service";
 import {
   type EffectivePlanPricing,
   catalogItemBaseHourlyPriceRial,
@@ -390,7 +392,11 @@ export async function listPublicPlanOffers() {
 
 export async function listLiveReadyServerOffers() {
   try {
-    await refreshProviderCatalogForPricing();
+    const freshness = await getCatalogFreshness("PARSPACK");
+    if (!freshness.fresh) {
+      await requestCatalogSync("PARSPACK");
+      throw new Error("catalog_stale");
+    }
     const offers = (await listReadyServerPlans()).map(toPublicPlanOffer);
     return {
       live: true as const,
@@ -408,7 +414,11 @@ export async function listLiveReadyServerOffers() {
 
 export async function listLiveCloudServerOffers() {
   try {
-    await refreshMultiProviderCatalog("ARVAN");
+    const freshness = await getCatalogFreshness("ARVAN");
+    if (!freshness.fresh) {
+      await requestCatalogSync("ARVAN");
+      throw new Error("catalog_stale");
+    }
     const offers = (await listCloudServerPlans()).map(toPublicPlanOffer);
     return {
       live: true as const,

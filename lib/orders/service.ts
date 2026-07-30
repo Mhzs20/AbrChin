@@ -2,7 +2,6 @@ import { type Prisma } from "@prisma/client";
 
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { prisma } from "@/lib/db";
-import { getActivePlanByCode, getActivePlanById, toPlanSnapshot } from "@/lib/orders/plans";
 import {
   executePayOrderWithWalletTx,
   type PayOrderTxOptions,
@@ -14,13 +13,19 @@ import {
   samePlanConfigurationSnapshot,
   samePriceSnapshot,
 } from "@/lib/pricing/plan-pricing";
-import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
-import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
+import {
+  resolveProviderSelectionDefaults,
+  revalidateLockedSelection,
+} from "@/lib/infrastructure/selection-revalidation";
+import { transitionProductFlowTx } from "@/lib/product-flow/service";
+import {
+  createCloudServerQuote,
+  createReadyServerQuote,
+} from "@/lib/recommendation/quote-service";
 import {
   CloudInstanceStatus,
   InfrastructureOrderStatus,
-  InfrastructureProvider,
   LedgerDirection,
   LedgerStatus,
   LedgerType,
@@ -29,115 +34,129 @@ import {
   ServiceOrderStatus,
 } from "@prisma/client";
 
-const QUOTE_VALIDITY_MS = 10 * 60 * 1000;
 const PURCHASABLE_QUOTE_STATUSES: RecommendationQuoteStatus[] = [
   RecommendationQuoteStatus.ACTIVE,
   RecommendationQuoteStatus.SELECTED,
 ];
 
-async function refreshCatalogForProvider(provider: InfrastructureProvider) {
-  if (provider === InfrastructureProvider.ARVAN) {
-    await refreshMultiProviderCatalog(InfrastructureProvider.ARVAN);
-    return;
+async function lockAndRevalidateLegacyOrder(plan: {
+  provider: "ARVAN" | "PARSPACK";
+  providerApiVersion: string;
+  productKind: "CLOUD_SERVER" | "READY_INSTANT_SERVER";
+  regionCode: string;
+  sizeCode: string;
+  imageCode: string;
+  catalogItem: {
+    externalPlanId: string | null;
+    providerMonthlyPriceIrr: bigint | null;
+  } | null;
+}) {
+  if (!plan.catalogItem?.providerMonthlyPriceIrr) {
+    throw new WalletError(
+      "quote_unavailable",
+      "قیمت ارائه‌دهنده برای این سفارش قدیمی قابل تأیید نیست.",
+    );
   }
-  await refreshProviderCatalogForPricing();
+  const defaults =
+    plan.provider === "ARVAN"
+      ? await resolveProviderSelectionDefaults({
+          provider: plan.provider,
+          providerApiVersion: plan.providerApiVersion,
+          productKind: plan.productKind,
+          region: plan.regionCode,
+        })
+      : null;
+  const current = await revalidateLockedSelection({
+    provider: plan.provider,
+    providerApiVersion: plan.providerApiVersion,
+    productKind: plan.productKind,
+    region: plan.regionCode,
+    externalPlanId: plan.catalogItem.externalPlanId ?? plan.sizeCode,
+    externalImageId: plan.imageCode,
+    externalNetworkId: defaults?.externalNetworkId ?? null,
+    externalSecurityId: defaults?.externalSecurityId ?? null,
+  });
+  if (
+    current.monthlyPriceIrr !== plan.catalogItem.providerMonthlyPriceIrr
+  ) {
+    throw new WalletError(
+      "quote_price_changed",
+      "قیمت این سفارش قدیمی تغییر کرده و باید Quote تازه ساخته شود.",
+    );
+  }
 }
 
 export async function createServiceOrder(userId: string, planCode: string) {
   const route = await prisma.infrastructurePlan.findUnique({
     where: { code: planCode },
-    select: { provider: true },
+    select: { id: true },
   });
   if (!route) {
     throw new WalletError("invalid_plan", "بسته انتخاب‌شده معتبر نیست.");
   }
-  await refreshCatalogForProvider(route.provider);
-  const plan = await getActivePlanByCode(planCode);
-  if (!plan) {
-    throw new WalletError("invalid_plan", "بسته انتخاب‌شده معتبر نیست.");
-  }
-  assertProviderRoute({
-    productKind: plan.productKind,
-    provider: plan.provider,
-    apiVersion: plan.providerApiVersion,
-  });
-
-  await ensureWalletForUser(userId);
-  const createdAt = new Date();
-  const expiresAt = new Date(createdAt.getTime() + QUOTE_VALIDITY_MS);
-  const snapshot = toPlanSnapshot(plan, { createdAt, expiresAt });
-
-  return prisma.serviceOrder.create({
-    data: {
-      userId,
-      title: plan.title,
-      description: plan.description,
-      amount: plan.pricing.finalPriceRial,
-      currency: "IRR",
-      status: ServiceOrderStatus.PENDING_PAYMENT,
-      planCode: plan.code,
-      planId: plan.id,
-      planSnapshot: snapshot,
-      quoteExpiresAt: expiresAt,
-      provider: plan.provider,
-      providerApiVersion: plan.providerApiVersion,
-      productKind: plan.productKind,
-      parchinLevel: plan.pricing.parchinLevel,
-      productFlowState: "AWAITING_PAYMENT",
-    },
-  });
+  return createServiceOrderByPlanId(userId, route.id);
 }
 
 export async function createServiceOrderByPlanId(userId: string, planId: string) {
   const route = await prisma.infrastructurePlan.findUnique({
     where: { id: planId },
-    select: { provider: true },
+    select: { productKind: true },
   });
   if (!route) throw new WalletError("invalid_plan", "بسته انتخاب‌شده معتبر نیست.");
-  await refreshCatalogForProvider(route.provider);
-  const plan = await getActivePlanById(planId);
-  if (!plan) throw new WalletError("invalid_plan", "بسته انتخاب‌شده معتبر نیست.");
-  assertProviderRoute({
-    productKind: plan.productKind,
-    provider: plan.provider,
-    apiVersion: plan.providerApiVersion,
-  });
-  await ensureWalletForUser(userId);
-  const createdAt = new Date();
-  const expiresAt = new Date(createdAt.getTime() + QUOTE_VALIDITY_MS);
-  return prisma.serviceOrder.create({
-    data: {
-      userId,
-      title: plan.title,
-      description: plan.description,
-      amount: plan.pricing.finalPriceRial,
-      currency: "IRR",
-      status: ServiceOrderStatus.PENDING_PAYMENT,
-      planCode: plan.code,
-      planId: plan.id,
-      planSnapshot: toPlanSnapshot(plan, { createdAt, expiresAt }),
-      quoteExpiresAt: expiresAt,
-      provider: plan.provider,
-      providerApiVersion: plan.providerApiVersion,
-      productKind: plan.productKind,
-      parchinLevel: plan.pricing.parchinLevel,
-      productFlowState: "AWAITING_PAYMENT",
-    },
-  });
+  const result =
+    route.productKind === "CLOUD_SERVER"
+      ? await createCloudServerQuote({ planId, userId })
+      : await createReadyServerQuote({ planId, userId });
+  return createServiceOrderFromQuote(userId, result.quote.id);
 }
 
 export async function createServiceOrderFromQuote(userId: string, quoteId: string) {
-  const route = await prisma.recommendationQuote.findUnique({
+  const preflight = await prisma.recommendationQuote.findUnique({
     where: { id: quoteId },
     select: {
       provider: true,
-      plan: { select: { provider: true } },
+      providerApiVersion: true,
+      productKind: true,
+      providerRegion: true,
+      externalPlanId: true,
+      externalImageId: true,
+      externalNetworkId: true,
+      externalSecurityId: true,
+      providerMonthlyPriceIrr: true,
+      session: { select: { userId: true } },
     },
   });
-  if (!route) {
+  if (
+    !preflight ||
+    preflight.session.userId !== userId ||
+    !preflight.provider ||
+    !preflight.providerApiVersion ||
+    !preflight.productKind ||
+    !preflight.providerRegion ||
+    !preflight.externalPlanId ||
+    !preflight.externalImageId
+  ) {
     throw new WalletError("invalid_quote", "پیشنهاد انتخاب‌شده پیدا نشد.");
   }
-  await refreshCatalogForProvider(route.provider ?? route.plan.provider);
+  const livePrice = await revalidateLockedSelection({
+    provider: preflight.provider,
+    providerApiVersion: preflight.providerApiVersion,
+    productKind: preflight.productKind,
+    region: preflight.providerRegion,
+    externalPlanId: preflight.externalPlanId,
+    externalImageId: preflight.externalImageId,
+    externalNetworkId: preflight.externalNetworkId,
+    externalSecurityId: preflight.externalSecurityId,
+  });
+  if (
+    preflight.providerMonthlyPriceIrr == null ||
+    livePrice.monthlyPriceIrr !== preflight.providerMonthlyPriceIrr
+  ) {
+    throw new WalletError(
+      "quote_price_changed",
+      "قیمت این پیشنهاد تغییر کرده؛ پیشنهاد تازه را دریافت کنید.",
+    );
+  }
   return prisma.$transaction(async (tx) => {
     const quote = await tx.recommendationQuote.findUnique({
       where: { id: quoteId },
@@ -151,8 +170,11 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
     if (!quote) {
       throw new WalletError("invalid_quote", "پیشنهاد انتخاب‌شده پیدا نشد.");
     }
-    if (quote.session.userId && quote.session.userId !== userId) {
-      throw new WalletError("quote_claimed", "این پیشنهاد به حساب دیگری تعلق دارد.");
+    if (quote.session.userId !== userId) {
+      throw new WalletError(
+        "quote_claimed",
+        "ابتدا این پیشنهاد را صریحاً به حساب خود متصل کن.",
+      );
     }
     if (quote.serviceOrder) {
       if (quote.serviceOrder.userId !== userId) {
@@ -260,7 +282,8 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
         providerApiVersion: quote.plan.providerApiVersion,
         productKind: quote.plan.productKind,
         parchinLevel: currentPricing.parchinLevel,
-        productFlowState: "AWAITING_PAYMENT",
+        productFlowState: "QUOTED",
+        productFlowRevision: quote.session.productFlowRevision,
       },
     });
 
@@ -274,21 +297,19 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
     await tx.recommendationSession.update({
       where: { id: quote.sessionId },
       data: {
-        userId,
         status: RecommendationFlowStatus.CHECKOUT,
-        productFlowState: "AWAITING_PAYMENT",
       },
     });
-    await tx.productFlowTransition.create({
-      data: {
+    await transitionProductFlowTx(tx, {
+      owner: {
         recommendationSessionId: quote.sessionId,
         serviceOrderId: order.id,
-        fromState: "QUOTED",
-        toState: "AWAITING_PAYMENT",
-        reason: "quote_selected_for_checkout",
-        idempotencyKey: `quote-checkout:${quote.id}`,
-        actorUserId: userId,
       },
+      from: "QUOTED",
+      to: "AWAITING_PAYMENT",
+      reason: "quote_selected_for_checkout",
+      idempotencyKey: `quote-checkout:${quote.id}`,
+      actorUserId: userId,
     });
 
     return order;
@@ -302,13 +323,42 @@ export async function payOrderWithWallet(
 ) {
   const existing = await prisma.serviceOrder.findFirst({
     where: { id: orderId, userId },
-    select: { status: true, provider: true },
+    include: {
+      recommendationQuote: true,
+      plan: { include: { catalogItem: true } },
+    },
   });
   if (existing?.status !== ServiceOrderStatus.PAID) {
-    if (existing?.provider === "ARVAN") {
-      await refreshMultiProviderCatalog("ARVAN");
-    } else {
-      await refreshProviderCatalogForPricing();
+    const quote = existing?.recommendationQuote;
+    if (
+      quote?.provider &&
+      quote.providerApiVersion &&
+      quote.productKind &&
+      quote.providerRegion &&
+      quote.externalPlanId &&
+      quote.externalImageId
+    ) {
+      const current = await revalidateLockedSelection({
+        provider: quote.provider,
+        providerApiVersion: quote.providerApiVersion,
+        productKind: quote.productKind,
+        region: quote.providerRegion,
+        externalPlanId: quote.externalPlanId,
+        externalImageId: quote.externalImageId,
+        externalNetworkId: quote.externalNetworkId,
+        externalSecurityId: quote.externalSecurityId,
+      });
+      if (
+        quote.providerMonthlyPriceIrr == null ||
+        current.monthlyPriceIrr !== quote.providerMonthlyPriceIrr
+      ) {
+        throw new WalletError(
+          "quote_price_changed",
+          "قیمت این پیشنهاد تغییر کرده؛ پیشنهاد تازه را دریافت کنید.",
+        );
+      }
+    } else if (existing?.plan?.catalogItem) {
+      await lockAndRevalidateLegacyOrder(existing.plan);
     }
   }
   return prisma.$transaction(async (tx) => executePayOrderWithWalletTx(tx, userId, orderId, options));

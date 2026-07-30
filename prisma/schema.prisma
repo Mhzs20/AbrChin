@@ -110,6 +110,7 @@ enum ProviderCatalogStatus {
   ACTIVE
   STALE
   UNAVAILABLE
+  INVALID_RESOURCE
   INVALID_PRICE
   DISABLED
 }
@@ -198,6 +199,18 @@ enum InstanceCredentialStatus {
   REVEALED
   REVOKED
   EXPIRED
+}
+
+enum InfrastructureHealthCheckStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum SecureDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
 }
 
 enum SubscriptionStatus {
@@ -400,6 +413,7 @@ model ServiceOrder {
   productKind           InfrastructureProductKind?
   parchinLevel          ParchinLevel?
   productFlowState      String?
+  productFlowRevision   Int                        @default(0)
   paidAt                DateTime?
   createdAt             DateTime                   @default(now())
   updatedAt             DateTime                   @updatedAt
@@ -429,6 +443,9 @@ model RecommendationSession {
   confidence             String?
   architectureEscalation Boolean                  @default(false)
   productFlowState       String?
+  productFlowRevision    Int                      @default(0)
+  selectedParchinLevel   ParchinLevel?
+  deliveryConfiguration  Json?
   expiresAt              DateTime
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime                 @updatedAt
@@ -477,6 +494,7 @@ model RecommendationQuote {
   parchinLevel                  ParchinLevel?
   parchinPriceIrr               BigInt?
   providerAddonsSnapshot        Json?
+  deliveryConfigurationSnapshot Json?
   taxBasisPointsSnapshot        Int?
   taxAmountIrr                  BigInt?
   lineItemsSnapshot             Json?
@@ -553,6 +571,7 @@ model InfrastructureOrder {
   parchinLevel                   ParchinLevel?
   providerSelectionSnapshot      Json?
   productFlowState               String?
+  productFlowRevision            Int                           @default(0)
   deliveryMode                   DeliveryMode
   status                         InfrastructureOrderStatus     @default(WAITING_ADMIN_FUNDING)
   requiredFundingRial            BigInt
@@ -568,6 +587,8 @@ model InfrastructureOrder {
   cloudInstance                  CloudInstance?
   notifications                  AdminNotification[]
   operationLogs                  ProviderOperationLog[]
+  healthChecks                   InfrastructureHealthCheck[]
+  secureDeliveryEvents           SecureDeliveryEvent[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -630,27 +651,34 @@ model ProvisioningJob {
 }
 
 model CloudInstance {
-  id                    String                 @id @default(cuid())
-  infrastructureOrderId String                 @unique
+  id                    String                      @id @default(cuid())
+  infrastructureOrderId String                      @unique
   userId                String
   provider              InfrastructureProvider
-  providerApiVersion    String                 @default("v1")
-  providerInstanceId    String                 @unique
+  providerApiVersion    String                      @default("v1")
+  providerInstanceId    String                      @unique
   name                  String
   region                String
   size                  String
   image                 String
   deliveryMode          DeliveryMode
   ipv4                  String?
-  status                CloudInstanceStatus    @default(PENDING)
+  providerState         String?
+  networkId             String?
+  securityId            String?
+  status                CloudInstanceStatus         @default(PENDING)
   provisionedAt         DateTime?
+  healthCheckedAt       DateTime?
+  deliveredAt           DateTime?
   terminatedAt          DateTime?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  infrastructureOrder   InfrastructureOrder    @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
-  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+  infrastructureOrder   InfrastructureOrder         @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+  user                  User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
   credential            InstanceCredential?
   subscription          ServiceSubscription?
+  healthChecks          InfrastructureHealthCheck[]
+  secureDeliveryEvents  SecureDeliveryEvent[]
 
   @@index([userId, createdAt])
   @@index([status])
@@ -821,11 +849,16 @@ model ProviderCatalogState {
   unavailableItemCount  Int                    @default(0)
   staleItemCount        Int                    @default(0)
   invalidPriceCount     Int                    @default(0)
+  invalidResourceCount  Int                    @default(0)
   networkCount          Int                    @default(0)
   securityCount         Int                    @default(0)
   lastSyncDurationMs    Int?
   lastSyncStatus        ProviderSyncStatus?
   catalogVersion        String?
+  freshnessSlaSeconds   Int                    @default(900)
+  syncRequestedAt       DateTime?
+  syncLeaseToken        String?
+  syncLeaseExpiresAt    DateTime?
   regionErrors          Json?
   lastProviderRequestId String?
   lastError             String?
@@ -933,6 +966,7 @@ model ProviderCatalogAsset {
   name         String
   status       ProviderCatalogStatus    @default(ACTIVE)
   available    Boolean                  @default(true)
+  isDefault    Boolean                  @default(false)
   lastSeenAt   DateTime
   lastSyncedAt DateTime
   rawUpdatedAt DateTime?
@@ -998,10 +1032,54 @@ model ProductFlowTransition {
   reason                  String?
   metadata                Json?
   idempotencyKey          String   @unique
+  ownerFingerprint        String
+  fromRevision            Int
+  toRevision              Int
   actorUserId             String?
   createdAt               DateTime @default(now())
 
   @@index([recommendationSessionId, createdAt])
   @@index([serviceOrderId, createdAt])
   @@index([infrastructureOrderId, createdAt])
+}
+
+model InfrastructureHealthCheck {
+  id                    String                          @id @default(cuid())
+  infrastructureOrderId String
+  cloudInstanceId       String
+  attempt               Int
+  status                InfrastructureHealthCheckStatus @default(RUNNING)
+  providerState         String?
+  expectedIpv4          String?
+  observedIpv4          String?
+  expectedNetworkId     String?
+  connectivityProtocol  String?
+  resultCode            String?
+  durationMs            Int?
+  checkedAt             DateTime                        @default(now())
+  finishedAt            DateTime?
+  metadata              Json?
+  infrastructureOrder   InfrastructureOrder             @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+  cloudInstance         CloudInstance                   @relation(fields: [cloudInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([infrastructureOrderId, attempt])
+  @@index([infrastructureOrderId, status, checkedAt])
+  @@index([cloudInstanceId, checkedAt])
+}
+
+model SecureDeliveryEvent {
+  id                    String               @id @default(cuid())
+  infrastructureOrderId String
+  cloudInstanceId       String
+  status                SecureDeliveryStatus @default(PENDING)
+  method                String
+  resultCode            String?
+  metadata              Json?
+  deliveredAt           DateTime?
+  createdAt             DateTime             @default(now())
+  infrastructureOrder   InfrastructureOrder  @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+  cloudInstance         CloudInstance        @relation(fields: [cloudInstanceId], references: [id], onDelete: Cascade)
+
+  @@index([infrastructureOrderId, status, createdAt])
+  @@index([cloudInstanceId, createdAt])
 }

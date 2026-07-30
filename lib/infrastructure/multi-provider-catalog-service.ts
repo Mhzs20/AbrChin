@@ -30,6 +30,17 @@ import {
 } from "@/lib/infrastructure/provider-routing";
 
 const ARVAN_PLAN_PREFIX = "CLOUD_ARVAN_V1_";
+const CATALOG_SYNC_LEASE_MS = 10 * 60 * 1000;
+
+export function catalogRamMbToPlanRamGb(
+  ramMb: number | null,
+): number | null {
+  if (ramMb == null) return null;
+  if (!Number.isInteger(ramMb) || ramMb <= 0 || ramMb % 1024 !== 0) {
+    throw new Error("invalid_catalog_ram_mb");
+  }
+  return ramMb / 1024;
+}
 
 type RegionFailure = {
   region: string;
@@ -71,6 +82,17 @@ function safeRegionError(error: unknown): { code: string; message: string } {
 }
 
 function catalogStatus(plan: ProviderPlan): ProviderCatalogStatus {
+  if (
+    !plan.resourceContractValid ||
+    plan.vcpu == null ||
+    plan.vcpu <= 0 ||
+    plan.ramMb == null ||
+    plan.ramMb <= 0 ||
+    plan.diskGb == null ||
+    plan.diskGb <= 0
+  ) {
+    return ProviderCatalogStatus.INVALID_RESOURCE;
+  }
   if (!plan.priceMonthlyIrr || plan.priceMonthlyIrr <= 0n) {
     return ProviderCatalogStatus.INVALID_PRICE;
   }
@@ -146,6 +168,9 @@ async function upsertAsset(
         ? ProviderCatalogStatus.ACTIVE
         : ProviderCatalogStatus.UNAVAILABLE,
       available: input.asset.available,
+      isDefault:
+        "isDefault" in input.asset &&
+        input.asset.isDefault === true,
       lastSeenAt: input.syncedAt,
       lastSyncedAt: input.syncedAt,
       rawUpdatedAt: input.asset.rawUpdatedAt,
@@ -164,6 +189,9 @@ async function upsertAsset(
         ? ProviderCatalogStatus.ACTIVE
         : ProviderCatalogStatus.UNAVAILABLE,
       available: input.asset.available,
+      isDefault:
+        "isDefault" in input.asset &&
+        input.asset.isDefault === true,
       lastSeenAt: input.syncedAt,
       lastSyncedAt: input.syncedAt,
       rawUpdatedAt: input.asset.rawUpdatedAt,
@@ -432,7 +460,7 @@ async function persistSuccessfulRegion(input: {
             imageCode: image?.externalId ?? "__unavailable__",
             deliveryMode: DeliveryMode.MANAGED,
             vcpu: item.vcpu,
-            ramGb: item.ramMb == null ? null : Math.ceil(item.ramMb / 1024),
+            ramGb: catalogRamMbToPlanRamGb(item.ramMb),
             storageGb: item.diskGb,
             salePriceRial: item.providerMonthlyPriceIrr ?? 1n,
             renewalPriceRial: item.providerMonthlyPriceIrr ?? 1n,
@@ -456,7 +484,7 @@ async function persistSuccessfulRegion(input: {
             imageCode: image?.externalId ?? "__unavailable__",
             deliveryMode: DeliveryMode.MANAGED,
             vcpu: item.vcpu,
-            ramGb: item.ramMb == null ? null : Math.ceil(item.ramMb / 1024),
+            ramGb: catalogRamMbToPlanRamGb(item.ramMb),
             storageGb: item.diskGb,
             salePriceRial: item.providerMonthlyPriceIrr ?? 1n,
             renewalPriceRial: item.providerMonthlyPriceIrr ?? 1n,
@@ -475,7 +503,7 @@ async function persistSuccessfulRegion(input: {
   });
 }
 
-export async function syncMultiProviderCatalog(
+async function syncMultiProviderCatalogUnlocked(
   adapter: CloudProviderAdapter,
   now = new Date(),
 ) {
@@ -634,6 +662,7 @@ export async function syncMultiProviderCatalog(
     unavailableItemCount,
     staleItemCount,
     invalidPriceCount,
+    invalidResourceCount,
   ] = await Promise.all([
     prisma.providerCatalogItem.count({
       where: { provider: adapter.provider, apiVersion: adapter.apiVersion },
@@ -665,6 +694,13 @@ export async function syncMultiProviderCatalog(
         provider: adapter.provider,
         apiVersion: adapter.apiVersion,
         status: ProviderCatalogStatus.INVALID_PRICE,
+      },
+    }),
+    prisma.providerCatalogItem.count({
+      where: {
+        provider: adapter.provider,
+        apiVersion: adapter.apiVersion,
+        status: ProviderCatalogStatus.INVALID_RESOURCE,
       },
     }),
   ]);
@@ -699,11 +735,13 @@ export async function syncMultiProviderCatalog(
         unavailableItemCount,
         staleItemCount,
         invalidPriceCount,
+        invalidResourceCount,
         networkCount,
         securityCount,
         lastSyncDurationMs: durationMs,
         lastSyncStatus: status,
         catalogVersion,
+        syncRequestedAt: null,
         regionErrors: jsonValue(failures),
         lastProviderRequestId,
         lastError:
@@ -724,6 +762,7 @@ export async function syncMultiProviderCatalog(
         unavailableItemCount,
         staleItemCount,
         invalidPriceCount,
+        invalidResourceCount,
         networkCount,
         securityCount,
         lastSyncDurationMs: durationMs,
@@ -789,9 +828,101 @@ export async function syncMultiProviderCatalog(
     unavailableItemCount,
     staleItemCount,
     invalidPriceCount,
+    invalidResourceCount,
     failures,
     durationMs,
   };
+}
+
+async function acquireCatalogSyncLease(
+  provider: InfrastructureProvider,
+  apiVersion: string,
+): Promise<string> {
+  const token = randomUUID();
+  const now = new Date();
+  await prisma.providerCatalogState.upsert({
+    where: { provider },
+    update: {},
+    create: {
+      id: `${provider.toLowerCase()}-${apiVersion}`,
+      provider,
+      apiVersion,
+    },
+  });
+  const acquired = await prisma.providerCatalogState.updateMany({
+    where: {
+      provider,
+      OR: [
+        { syncLeaseToken: null },
+        { syncLeaseExpiresAt: null },
+        { syncLeaseExpiresAt: { lte: now } },
+      ],
+    },
+    data: {
+      syncLeaseToken: token,
+      syncLeaseExpiresAt: new Date(now.getTime() + CATALOG_SYNC_LEASE_MS),
+    },
+  });
+  if (acquired.count !== 1) throw new Error("catalog_sync_already_running");
+  return token;
+}
+
+async function releaseCatalogSyncLease(
+  provider: InfrastructureProvider,
+  token: string,
+): Promise<void> {
+  await prisma.providerCatalogState.updateMany({
+    where: { provider, syncLeaseToken: token },
+    data: { syncLeaseToken: null, syncLeaseExpiresAt: null },
+  });
+}
+
+export async function syncMultiProviderCatalog(
+  adapter: CloudProviderAdapter,
+  now = new Date(),
+) {
+  return withCatalogSyncLease(adapter.provider, adapter.apiVersion, () =>
+    syncMultiProviderCatalogUnlocked(adapter, now),
+  );
+}
+
+export async function withCatalogSyncLease<T>(
+  provider: InfrastructureProvider,
+  apiVersion: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const token = await acquireCatalogSyncLease(provider, apiVersion);
+  try {
+    return await operation();
+  } finally {
+    await releaseCatalogSyncLease(provider, token);
+  }
+}
+
+export async function requestCatalogSync(
+  provider: InfrastructureProvider,
+): Promise<void> {
+  await prisma.providerCatalogState.updateMany({
+    where: { provider },
+    data: { syncRequestedAt: new Date() },
+  });
+}
+
+export async function getCatalogFreshness(
+  provider: InfrastructureProvider,
+  now = new Date(),
+) {
+  const state = await prisma.providerCatalogState.findUnique({
+    where: { provider },
+  });
+  const lastSync = state?.lastCatalogSync ?? null;
+  const slaSeconds = state?.freshnessSlaSeconds ?? 900;
+  const fresh =
+    state?.enabled === true &&
+    state.lastSyncStatus === ProviderSyncStatus.SUCCEEDED &&
+    lastSync != null &&
+    now.getTime() - lastSync.getTime() <= slaSeconds * 1000;
+  return { fresh, lastSync, slaSeconds, state };
 }
 
 export async function refreshMultiProviderCatalog(

@@ -1,7 +1,7 @@
 import { getClientIp, jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 import { ParchinLevel } from "@prisma/client";
 import { recommendationQuoteIpLimiter } from "@/lib/rate-limit";
-import { parseRecommendationInput } from "@/lib/recommendation/input";
+import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
 import { createRecommendationQuotes } from "@/lib/recommendation/quote-service";
 import { getCurrentUser } from "@/lib/session";
 
@@ -20,7 +20,6 @@ export async function POST(request: Request) {
 
   try {
     const body: unknown = await request.json();
-    const input = parseRecommendationInput(body);
     const includeComparisons =
       typeof body === "object" &&
       body !== null &&
@@ -41,14 +40,13 @@ export async function POST(request: Request) {
         : undefined;
     const user = await getCurrentUser();
     const result = await createRecommendationQuotes({
-      ...input,
       userId: user?.id ?? null,
       includeComparisons,
       sessionId,
       requestedParchinLevel,
-      guestToken: request.headers.get(
-        "x-recommendation-session-token",
-      ),
+      guestToken:
+        request.headers.get("x-recommendation-session-token") ??
+        (await getRecommendationGuestToken()),
     });
 
     return jsonOk({
@@ -67,9 +65,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof SyntaxError) return jsonError("درخواست نامعتبر است.", 400);
-    if (error instanceof Error && error.message.startsWith("invalid_recommendation_answer:")) {
-      return jsonError("برای ساخت پیشنهاد، پاسخ همه سؤال‌ها را کامل کن.", 400);
-    }
     if (
       error instanceof Error &&
       error.message === "parchin_level_below_minimum"
@@ -84,10 +79,11 @@ export async function POST(request: Request) {
       [
         "conversation_session_required",
         "conversation_requirements_not_confirmed",
+        "conversation_delivery_not_configured",
       ].includes(error.message)
     ) {
       return jsonError(
-        "ابتدا برداشت ابرچین و پاسخ‌های گفت‌وگو را تأیید کن.",
+        "ابتدا برداشت، پاسخ‌ها و تنظیمات تحویل گفت‌وگو را تأیید کن.",
         409,
       );
     }

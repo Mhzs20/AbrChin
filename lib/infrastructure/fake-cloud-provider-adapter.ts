@@ -68,6 +68,28 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
     return this.fixtures.securityByRegion?.[region] ?? [];
   }
 
+  async resolveSelectionDefaults(region: string) {
+    const network = (await this.syncNetworks(region)).find(
+      (candidate) => candidate.available && candidate.isDefault,
+    );
+    const security = (await this.syncSecurity(region)).find(
+      (candidate) => candidate.available && candidate.isDefault,
+    );
+    if (!network || !security) {
+      throw new InfrastructureError(
+        "provider_default_selection_missing",
+        "Fake provider defaults are unavailable",
+      );
+    }
+    return {
+      region,
+      externalNetworkId: network.externalId,
+      externalSecurityId: security.externalId,
+      checkedAt: new Date(),
+      providerRequestIds: [],
+    };
+  }
+
   async validateSelection(
     input: ProviderSelection,
   ): Promise<ValidationResult> {
@@ -84,6 +106,13 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
         checkedAt: new Date(),
       };
     }
+    if (!plan.resourceContractValid) {
+      return {
+        valid: false,
+        code: "invalid_resource_contract",
+        checkedAt: new Date(),
+      };
+    }
     if (!plan.priceMonthlyIrr || plan.priceMonthlyIrr <= 0n) {
       return { valid: false, code: "invalid_price", checkedAt: new Date() };
     }
@@ -91,6 +120,34 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
       return {
         valid: false,
         code: "image_incompatible",
+        checkedAt: new Date(),
+      };
+    }
+    if (
+      input.externalNetworkId &&
+      !(await this.syncNetworks(input.region)).some(
+        (network) =>
+          network.externalId === input.externalNetworkId &&
+          network.available,
+      )
+    ) {
+      return {
+        valid: false,
+        code: "network_unavailable",
+        checkedAt: new Date(),
+      };
+    }
+    if (
+      input.externalSecurityId &&
+      !(await this.syncSecurity(input.region)).some(
+        (security) =>
+          security.externalId === input.externalSecurityId &&
+          security.available,
+      )
+    ) {
+      return {
+        valid: false,
+        code: "security_unavailable",
         checkedAt: new Date(),
       };
     }

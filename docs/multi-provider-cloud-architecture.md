@@ -28,8 +28,9 @@ Root عملیاتی:
 https://napi.arvancloud.ir/ecc/v1
 ```
 
-مقدار `ARVAN_API_BASE_URL` می‌تواند مطابق تنظیم عملیاتی به `/regions` ختم شود؛
-Adapter آن را به Root بالا Normalise می‌کند. احراز هویت فقط Server-side است:
+`ARVAN_API_BASE_URL` باید همین Root باشد. مقدار قدیمی ختم‌شونده به `/regions`
+فقط برای سازگاری استقرار قبلی به Root بالا Normalise می‌شود و Warning
+ساختاریافتهٔ بدون URL/Secret می‌دهد. احراز هویت فقط Server-side است:
 
 ```http
 Authorization: Apikey ${ARVAN_API_KEY}
@@ -39,11 +40,12 @@ Accept: application/json
 Catalog از این GETها می‌آید:
 
 ```text
-GET /regions
+GET /details
 GET /regions/{region}/sizes
 GET /regions/{region}/images?type=distributions
 GET /regions/{region}/networks
 GET /regions/{region}/securities
+GET /regions/{region}/servers/options
 ```
 
 هیچ Region، Plan، Image یا قیمت فروش Hardcode نشده است. هویت Plan منطقه‌ای
@@ -56,6 +58,12 @@ arvan:v1:{region}:{externalPlanId}
 بنابراین یک `externalPlanId` در دو Region دو `ProviderCatalogItem` مستقل دارد.
 قیمت ماهانه فقط از `price_per_month` خوانده می‌شود؛ `price_per_hour × 720`
 مبنای Quote نیست.
+
+فیلد `memory` آروان در این قرارداد GB است و فقط داخل Adapter به MB تبدیل
+می‌شود. اگر `memory_in_bytes` معتبر موجود باشد مقدار دقیق آن ترجیح داده
+می‌شود؛ ناسازگاری دو فیلد فروش را با `INVALID_RESOURCE` متوقف می‌کند. Disk
+نیز با `disk_in_bytes` کنترل می‌شود. Network پیش‌فرض از `network_id` پاسخ
+`servers/options` و Security پیش‌فرض فقط از `real_name=arDefault` قفل می‌شود.
 
 مسیرها و Payloadهای Lifecycle از
 [`arvancloud/terraform-provider-arvan`](https://github.com/arvancloud/terraform-provider-arvan)
@@ -115,7 +123,7 @@ Size بدون Region قطعی با `__unscoped__` حفظ ولی غیرقابل �
 - Provider، API Version، Product Kind و کلید خارجی منطقه‌ای؛
 - vCPU، RAM، Disk و Imageهای سازگار؛
 - قیمت ساعتی و ماهانهٔ نرمال‌شده به IRR (`BigInt`)؛
-- `status` از `ACTIVE | STALE | UNAVAILABLE | INVALID_PRICE | DISABLED`؛
+- `status` از `ACTIVE | STALE | UNAVAILABLE | INVALID_PRICE | INVALID_RESOURCE | DISABLED`؛
 - `lastSeenAt`، `lastSyncedAt`، `rawUpdatedAt`، `catalogVersion`؛
 - Payload JSON و SHA-256 آن.
 
@@ -135,6 +143,12 @@ Sync دستی از پنل Admin در دسترس است. Worker نیز با
 `CATALOG_SYNC_INTERVAL_MS` (پیش‌فرض پنج دقیقه) Sync امن و Read-only هر
 Provider تنظیم‌شده را اجرا می‌کند؛ شکست یک Provider مانع Sync Provider دیگر
 یا پردازش Provisioning نمی‌شود.
+
+درخواست Customer Full Catalog Sync اجرا نمی‌کند. صفحه فقط Catalog تازهٔ
+دیتابیس را می‌خواند؛ اگر SLA گذشته باشد فروش Fail-closed و `syncRequestedAt`
+برای Worker ثبت می‌شود. Lease دیتابیسی از Sync همزمان جلوگیری می‌کند. فقط
+Selection قفل‌شده پیش از Quote و Payment با GETهای هدفمند Provider دوباره
+اعتبارسنجی می‌شود.
 
 ## پول، Markup، پرچین و مالیات
 
@@ -202,20 +216,44 @@ Availability، Image compatibility، Tax، Markup یا پرچین فقط هما�
 Renewal Auto-charge ندارد. هر تمدید Quote مستقل ده‌دقیقه‌ای و Snapshot مستقل
 می‌گیرد و پیش از برداشت دوباره Revalidate می‌شود.
 
+برای جلوگیری از Markup دوبل، Migration چندارائه‌دهنده Markup قدیمی ParsPack
+را فقط در `ProviderPricingConfig` نگه می‌دارد و
+`ProductPricingConfig` متناظر را با صفر Seed می‌کند. Runtime جمع این دو BPS
+را محاسبه می‌کند.
+
 ## Conversation و State Machine
 
 Session گفتگو در `RecommendationSession` Persist می‌شود. Token مهمان فقط
-به‌صورت SHA-256 در Database است؛ Browser اصل Token و State نمایشی را صرفاً به
-عنوان Cache در `sessionStorage` نگه می‌دارد. پس از Login، Endpoint Claim همان
-Session را به User وصل می‌کند.
+به‌صورت SHA-256 در Database و اصل آن فقط در Cookie `HttpOnly`, `SameSite=Lax`
+نگه‌داری می‌شود؛ `sessionStorage` صرفاً Cache نمایشی و Session ID است. GET
+اختصاصی Session همیشه Database را مرجع می‌گیرد و کاربر واردشده حتی پس از
+پاک‌شدن Storage آخرین گفت‌وگوی ناتمام را Resume می‌کند. Claim موفق Token
+مهمان را باطل می‌کند و Order فقط Session صریحاً Claim‌شده را می‌پذیرد.
 
 Discovery چهار سؤال ثابت پُراثر و حداکثر یک سؤال تطبیقی دارد. پاسخ‌های
 «نمی‌دانم»، توضیح و «کمکم کن انتخاب کنم» در قرارداد سؤال وجود دارند. ویرایش
 یک Answer فقط Quoteهای Active/Selected همان Session را Invalid می‌کند.
 
-State Machine مرجع سمت Server، مسیر `DRAFT` تا `ACTIVE` و وضعیت‌های Retry،
+State Machine یکتای سمت Server، مسیر `DRAFT` تا `ACTIVE` و وضعیت‌های Retry،
 Reconciliation، Manual Review، Health Check failure و Cancel را تعریف می‌کند.
-هر Transition با Idempotency Key در `ProductFlowTransition` ثبت می‌شود.
+هر Transition با Idempotency Key، Owner Fingerprint و Revision خوش‌بینانه در
+`ProductFlowTransition` ثبت می‌شود. Answerها نیز `expectedRevision` دارند و
+Conflict پاسخ `409` با Snapshot فعلی Sanitized می‌دهد. ویرایش Answer و
+باطل‌کردن Quote در یک Transaction انجام می‌شود.
+
+تنظیم تحویل واقعی شامل Region، Plan، Image و برای Arvan شبکه/Security
+پیش‌فرض واقعی است. Linux با رمز یک‌بارمصرف یا نام SSH Key ثبت‌شده و Windows
+فقط با مسیر رمز یک‌بارمصرف Windows پذیرفته می‌شود. Startup Script و Backup
+تا وقتی قابلیت و قیمت واقعی نداشته باشند `null` می‌مانند و به Customer وعده
+داده نمی‌شوند. این تنظیم همراه سطح پرچین پیش از
+`DELIVERY_CONFIGURED → QUOTED` Persist و Snapshot می‌شود؛ Quote دیگر این
+Transition را به‌صورت فرضی تولید نمی‌کند.
+
+پس از ساخت، صرف وجود IP کافی نیست: State Provider باید `active` و IP و شبکه
+باید با Snapshot قفل‌شده منطبق باشند. سپس اتصال TCP محدود SSH یا RDP Audit
+می‌شود. اشتراک فقط پس از Health Check موفق و تحویل امن Credential
+رمزنگاری‌شده فعال می‌شود؛ شکست به `HEALTH_CHECK_FAILED` یا
+`DELIVERY_RETRYABLE` می‌رود و مسیر Retry/Manual Review دارد.
 
 ## Reconciliation و ایمنی
 
@@ -243,3 +281,20 @@ Migration `20260730160000_multi_provider_routing` افزایشی است:
 
 Rollback کد می‌تواند فیلدهای Legacy را بخواند. Rollback دیتابیس نیازمند حذف
 داده نیست؛ جدول‌های جدید می‌توانند توسط نسخهٔ قبلی نادیده گرفته شوند.
+
+تست Integration مهاجرت عمداً به PostgreSQL واقعی نیاز دارد:
+
+```text
+POSTGRES_TEST_DATABASE_URL=postgresql://... npm run test:postgres
+```
+
+این تست در Schema موقت، Migrationها را مرحله‌ای Deploy می‌کند، ثابت می‌کند
+Markup قدیمی `2500 + 0` باقی می‌ماند، Mapping امن State را کنترل می‌کند و
+رقابت دو Update با Revision یکسان را می‌آزماید. نبود این متغیر خطاست و به
+عنوان Pass یا Skip گزارش نمی‌شود.
+
+Migration `20260730190000_provider_review_hardening` نیز Forward-only است و
+Revisionهای جریان، Lease/Freshness کاتالوگ، Snapshot تنظیم تحویل و جدول‌های
+Health Check/Secure Delivery را اضافه می‌کند. Stateهای Legacy مبهم به آخرین
+مرحلهٔ قابل اثبات عقب برده می‌شوند و هیچ مبلغ، Ledger یا Paid Order بازنویسی
+نمی‌شود.

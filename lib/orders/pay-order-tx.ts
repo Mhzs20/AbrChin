@@ -20,6 +20,7 @@ import {
   samePriceSnapshot,
 } from "@/lib/pricing/plan-pricing";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
+import { transitionProductFlowTx } from "@/lib/product-flow/service";
 
 export type PayOrderTxOptions = {
   /** Test-only: throw after debit ledger to verify full rollback. */
@@ -269,7 +270,6 @@ export async function executePayOrderWithWalletTx(
     data: {
       status: ServiceOrderStatus.PAID,
       paidAt: new Date(),
-      productFlowState: "PAID",
     },
   });
   if (paid.count !== 1) {
@@ -301,26 +301,37 @@ export async function executePayOrderWithWalletTx(
         region: plan.regionCode,
         externalPlanId:
           plan.catalogItem?.externalPlanId ?? plan.sizeCode,
-        externalImageId: plan.imageCode,
+        externalImageId:
+          order.recommendationQuote?.externalImageId ?? plan.imageCode,
+        externalNetworkId:
+          order.recommendationQuote?.externalNetworkId ?? null,
+        externalSecurityId:
+          order.recommendationQuote?.externalSecurityId ?? null,
+        deliveryConfiguration:
+          order.recommendationQuote?.deliveryConfigurationSnapshot ??
+          null,
         parchinLevel: currentPricing.parchinLevel,
       },
       deliveryMode: plan.deliveryMode,
       status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
       requiredFundingRial: currentPricing.providerBasePriceRial,
       desiredInstanceName: `abrchin-${order.id.slice(-12)}-1`,
-      productFlowState: "PAID",
+      productFlowState: "AWAITING_PAYMENT",
+      productFlowRevision: order.productFlowRevision,
     },
   });
-  await tx.productFlowTransition.create({
-    data: {
+  await transitionProductFlowTx(tx, {
+    owner: {
+      recommendationSessionId:
+        order.recommendationQuote?.sessionId ?? null,
       serviceOrderId: order.id,
       infrastructureOrderId: infrastructureOrder.id,
-      fromState: "AWAITING_PAYMENT",
-      toState: "PAID",
-      reason: "wallet_payment_completed",
-      idempotencyKey: `order-paid:${order.id}`,
-      actorUserId: userId,
     },
+    from: "AWAITING_PAYMENT",
+    to: "PAID",
+    reason: "wallet_payment_completed",
+    idempotencyKey: `order-paid:${order.id}`,
+    actorUserId: userId,
   });
   await tx.adminNotification.create({
     data: {
@@ -344,7 +355,6 @@ export async function executePayOrderWithWalletTx(
       where: { id: order.recommendationQuote.sessionId },
       data: {
         status: RecommendationFlowStatus.CONVERTED,
-        productFlowState: "PAID",
       },
     });
   }

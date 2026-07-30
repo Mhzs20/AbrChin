@@ -1,6 +1,22 @@
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
-import { createConversationSession } from "@/lib/recommendation/session-service";
+import { setRecommendationGuestCookie } from "@/lib/recommendation/guest-session-cookie";
+import {
+  createConversationSession,
+  getLatestConversationSession,
+} from "@/lib/recommendation/session-service";
 import { getCurrentUser } from "@/lib/session";
+
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return jsonError("ابتدا وارد حساب شو.", 401);
+  try {
+    return jsonOk({
+      session: await getLatestConversationSession(user.id),
+    });
+  } catch {
+    return jsonError("بازیابی گفتگو ممکن نیست.", 500);
+  }
+}
 
 export async function POST(request: Request) {
   const rejected = rejectCrossOrigin(request);
@@ -8,13 +24,16 @@ export async function POST(request: Request) {
   try {
     const user = await getCurrentUser();
     const session = await createConversationSession(user?.id ?? null);
-    return jsonOk({
+    const response = jsonOk({
       sessionId: session.id,
-      guestToken: session.guestToken,
+      revision: session.revision,
       expiresAt: session.expiresAt.toISOString(),
       state: session.state,
       nextQuestion: session.nextQuestion,
     });
+    return session.guestToken
+      ? setRecommendationGuestCookie(response, session.guestToken)
+      : response;
   } catch {
     return jsonError("شروع گفتگو ممکن نیست.", 500);
   }

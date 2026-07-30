@@ -10,6 +10,7 @@ import {
   readyServerLocation,
 } from "@/lib/cloud-servers/catalog";
 import { formatTomanFa } from "@/lib/money";
+import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
 import {
   getActiveReadyServerQuote,
   toPublicRecommendationQuote,
@@ -30,7 +31,11 @@ export default async function ReadyServerQuotePage({
 }) {
   const { id } = await params;
   const user = await getCurrentUser();
-  const record = await getActiveReadyServerQuote(id, user?.id ?? null);
+  const record = await getActiveReadyServerQuote(
+    id,
+    user?.id ?? null,
+    user ? null : await getRecommendationGuestToken(),
+  );
   if (!record) redirect("/ready-servers?quote=expired");
 
   const quote = toPublicRecommendationQuote(record);

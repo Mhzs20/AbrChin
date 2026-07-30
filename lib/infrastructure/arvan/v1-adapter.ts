@@ -45,6 +45,9 @@ type ProviderResponse = {
 };
 
 const DEFAULT_ROOT = "https://napi.arvancloud.ir/ecc/v1";
+const MEBIBYTE = 1_048_576;
+const GIBIBYTE = 1_073_741_824;
+const DEFAULT_SECURITY_REAL_NAME = "arDefault";
 const SAFE_RETRY_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const SECRET_KEYS = new Set([
   "authorization",
@@ -131,6 +134,91 @@ export function normalizeArvanV1BaseUrl(value = DEFAULT_ROOT): string {
   return parsed.toString().replace(/\/+$/, "");
 }
 
+function hasLegacyRegionsSuffix(value = DEFAULT_ROOT): boolean {
+  try {
+    return new URL(value).pathname.replace(/\/+$/, "").endsWith("/regions");
+  } catch {
+    return false;
+  }
+}
+
+function exactPositiveUnit(
+  value: unknown,
+  divisor: number,
+): number | null {
+  const integer = asInteger(value);
+  if (integer == null || integer <= 0 || integer % divisor !== 0) return null;
+  const normalized = integer / divisor;
+  return Number.isSafeInteger(normalized) && normalized > 0
+    ? normalized
+    : null;
+}
+
+export function normalizeArvanPlanResources(raw: UnknownRecord): {
+  ramMb: number | null;
+  diskGb: number | null;
+  valid: boolean;
+  error: string | null;
+} {
+  const memoryGb = asInteger(raw.memory);
+  const memoryFromBytes =
+    raw.memory_in_bytes == null
+      ? null
+      : exactPositiveUnit(raw.memory_in_bytes, MEBIBYTE);
+  const memoryFromGb =
+    memoryGb != null && memoryGb > 0 && memoryGb <= Number.MAX_SAFE_INTEGER / 1024
+      ? memoryGb * 1024
+      : null;
+  if (raw.memory_in_bytes != null && memoryFromBytes == null) {
+    return {
+      ramMb: null,
+      diskGb: null,
+      valid: false,
+      error: "invalid_memory_in_bytes",
+    };
+  }
+  if (memoryFromBytes != null && memoryFromGb != null && memoryFromBytes !== memoryFromGb) {
+    return {
+      ramMb: null,
+      diskGb: null,
+      valid: false,
+      error: "memory_unit_mismatch",
+    };
+  }
+  const ramMb = memoryFromBytes ?? memoryFromGb;
+  if (ramMb == null || !Number.isSafeInteger(ramMb) || ramMb <= 0) {
+    return {
+      ramMb: null,
+      diskGb: null,
+      valid: false,
+      error: "invalid_memory",
+    };
+  }
+
+  const diskGb = asInteger(raw.disk);
+  const diskFromBytes =
+    raw.disk_in_bytes == null
+      ? null
+      : exactPositiveUnit(raw.disk_in_bytes, GIBIBYTE);
+  if (
+    diskGb == null ||
+    diskGb <= 0 ||
+    (raw.disk_in_bytes != null && diskFromBytes == null) ||
+    (diskFromBytes != null && diskFromBytes !== diskGb)
+  ) {
+    return {
+      ramMb: null,
+      diskGb: null,
+      valid: false,
+      error:
+        diskFromBytes != null && diskGb != null && diskFromBytes !== diskGb
+          ? "disk_unit_mismatch"
+          : "invalid_disk",
+    };
+  }
+  return { ramMb, diskGb, valid: true, error: null };
+}
+
 export function redactProviderData(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactProviderData);
   if (!isRecord(value)) return value;
@@ -208,6 +296,14 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
     this.mutationsEnabled = config.mutationsEnabled === true;
     this.fetchImpl = config.fetchImpl ?? fetch;
     this.logger = config.logger ?? (() => undefined);
+    if (hasLegacyRegionsSuffix(config.baseUrl)) {
+      this.logger({
+        event: "provider_configuration_warning",
+        provider: this.provider,
+        apiVersion: this.apiVersion,
+        code: "legacy_regions_base_url_normalized",
+      });
+    }
     if (!this.apiKey) {
       throw new InfrastructureError(
         "provider_disabled",
@@ -360,7 +456,7 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
   }
 
   async syncRegions(): Promise<ProviderRegion[]> {
-    const response = await this.request("GET", "/regions");
+    const response = await this.request("GET", "/details");
     return unwrapCollection(response.body, ["regions", "details"])
       .filter(isRecord)
       .map((raw) => {
@@ -392,6 +488,8 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
       .filter(isRecord)
       .map((raw) => {
         const externalPlanId = asString(raw.id);
+        const resources = normalizeArvanPlanResources(raw);
+        const vcpu = asInteger(raw.cpu_count);
         let priceHourlyIrr: bigint | null = null;
         let priceMonthlyIrr: bigint | null = null;
         try {
@@ -413,11 +511,19 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
           externalPlanId,
           region,
           name: asString(raw.name) || externalPlanId,
-          vcpu: asInteger(raw.cpu_count),
-          ramMb: asInteger(raw.memory),
-          diskGb: asInteger(raw.disk),
+          vcpu,
+          ramMb: resources.ramMb,
+          diskGb: resources.diskGb,
+          resourceContractValid:
+            resources.valid && vcpu != null && vcpu > 0,
+          resourceContractError:
+            resources.error ??
+            (vcpu == null || vcpu <= 0 ? "invalid_cpu" : null),
           available:
             externalPlanId.length > 0 &&
+            resources.valid &&
+            vcpu != null &&
+            vcpu > 0 &&
             priceMonthlyIrr != null &&
             priceMonthlyIrr > 0n,
           priceHourlyIrr:
@@ -491,16 +597,27 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
   }
 
   async syncNetworks(region: string): Promise<ProviderNetwork[]> {
-    const response = await this.request(
-      "GET",
-      `/regions/${encodeURIComponent(region)}/networks`,
-    );
+    const [response, optionsResponse] = await Promise.all([
+      this.request(
+        "GET",
+        `/regions/${encodeURIComponent(region)}/networks`,
+      ),
+      this.request(
+        "GET",
+        `/regions/${encodeURIComponent(region)}/servers/options`,
+      ),
+    ]);
+    const options = unwrapRecord(optionsResponse.body);
+    const defaultNetworkId = asString(options.network_id);
     return unwrapCollection(response.body, ["networks"])
       .filter(isRecord)
       .map((raw) => ({
         externalId: asString(raw.id),
         region,
         name: asString(raw.name) || asString(raw.id),
+        isDefault:
+          defaultNetworkId.length > 0 &&
+          asString(raw.id) === defaultNetworkId,
         available:
           asBoolean(raw.admin_state_up, true) &&
           !["down", "error"].includes(asString(raw.status).toLowerCase()),
@@ -524,6 +641,9 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
         externalId: asString(raw.id),
         region,
         name: asString(raw.name) || asString(raw.id),
+        isDefault:
+          asString(raw.real_name) === DEFAULT_SECURITY_REAL_NAME ||
+          asString(raw.name) === DEFAULT_SECURITY_REAL_NAME,
         available: asString(raw.status).toLowerCase() !== "error",
         rawUpdatedAt: parseDate(raw.updated_at),
         rawPayload: redactProviderData(raw) as UnknownRecord,
@@ -532,6 +652,35 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
           : {}),
       }))
       .filter((security) => security.externalId.length > 0);
+  }
+
+  async resolveSelectionDefaults(region: string) {
+    const [networks, securities] = await Promise.all([
+      this.syncNetworks(region),
+      this.syncSecurity(region),
+    ]);
+    const network = networks.find(
+      (candidate) => candidate.available && candidate.isDefault,
+    );
+    const security = securities.find(
+      (candidate) => candidate.available && candidate.isDefault,
+    );
+    if (!network || !security) {
+      throw new InfrastructureError(
+        "provider_default_selection_missing",
+        "Arvan default network or security group is unavailable",
+      );
+    }
+    return {
+      region,
+      externalNetworkId: network.externalId,
+      externalSecurityId: security.externalId,
+      checkedAt: new Date(),
+      providerRequestIds: [
+        network.providerRequestId,
+        security.providerRequestId,
+      ].filter((value): value is string => Boolean(value)),
+    };
   }
 
   async validateSelection(
@@ -567,6 +716,13 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
       return {
         valid: false,
         code: "plan_unavailable",
+        checkedAt: new Date(),
+      };
+    }
+    if (!plan.resourceContractValid) {
+      return {
+        valid: false,
+        code: "invalid_resource_contract",
         checkedAt: new Date(),
       };
     }
@@ -675,19 +831,21 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
       provider: this.provider,
       apiVersion: this.apiVersion,
     });
+    if (!input.externalNetworkId || !input.externalSecurityId) {
+      throw new InfrastructureError(
+        "provider_default_selection_missing",
+        "Arvan network and security group must be locked before create",
+      );
+    }
     const response = await this.request(
       "POST",
       `/regions/${encodeURIComponent(input.region)}/servers`,
       {
         name: input.name,
-        network_ids: input.externalNetworkId
-          ? [input.externalNetworkId]
-          : [],
+        network_ids: [input.externalNetworkId],
         flavor_id: input.externalPlanId,
         image_id: input.externalImageId,
-        security_groups: input.externalSecurityId
-          ? [{ name: input.externalSecurityId }]
-          : [],
+        security_groups: [{ name: input.externalSecurityId }],
         ssh_key: input.sshKeyEnabled === true,
         key_name: input.sshKeyName ?? null,
         count: 1,

@@ -100,10 +100,11 @@ Cloud-init کنترل‌شده انتخاب می‌شود؛ Windows، MikroTik �
 رکورد فاقد Price Contract معتبر یا Availability در همان Sync غیرفعال و حفظ
 می‌شود.
 
-صفحه `/ready-servers` با `no-store` در هر بار Render کاتالوگ Provider را
-دوباره می‌خواند، Persist می‌کند و تمام انتخاب‌های معتبر را نمایش می‌دهد. اگر
-Provider یا قرارداد قیمت قابل تأیید نباشد، صفحه Fail-closed است و قیمت
-Cacheشده را به‌عنوان قیمت زنده نمایش نمی‌دهد.
+صفحه `/ready-servers` با `no-store` در هر Render فقط Catalog تازهٔ دیتابیس را
+می‌خواند. Sync کامل فقط در Worker یا Admin اجرا می‌شود؛ اگر Freshness SLA
+گذشته باشد صفحه Fail-closed و Sync برای Worker علامت‌گذاری می‌شود. پیش از
+Quote و Payment فقط Region/Size/Image همان انتخاب با GET هدفمند Provider
+دوباره بررسی می‌شود.
 
 `parchinIncluded` در پلن فعلی فقط «پرچین پایه» یعنی کنترل تحویل و دسترسی
 یک‌بارمصرف را نشان می‌دهد. این مقدار نباید به‌عنوان قابلیت Backup یا Monitoring

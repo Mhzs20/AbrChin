@@ -4,6 +4,7 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
+import { completeSecureDelivery } from "@/lib/infrastructure/health-check-service";
 import {
   decryptCredential,
   encryptCredential,
@@ -49,7 +50,12 @@ export async function storeInstanceCredential(params: {
   const instance = await prisma.cloudInstance.findUnique({
     where: { id: params.instanceId },
   });
-  if (!instance || instance.status !== CloudInstanceStatus.ACTIVE || !instance.ipv4) {
+  if (
+    !instance ||
+    !instance.ipv4 ||
+    (!instance.healthCheckedAt &&
+      instance.status !== CloudInstanceStatus.ACTIVE)
+  ) {
     throw new InstanceCredentialError(
       "instance_not_ready",
       "سرور هنوز Health Check و دریافت IP را کامل نکرده است.",
@@ -58,7 +64,7 @@ export async function storeInstanceCredential(params: {
 
   const encrypted = encryptCredential(params.secret);
   const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1_000);
-  return prisma.instanceCredential.upsert({
+  const credential = await prisma.instanceCredential.upsert({
     where: { cloudInstanceId: instance.id },
     update: {
       createdById: params.adminUserId,
@@ -77,6 +83,10 @@ export async function storeInstanceCredential(params: {
       expiresAt,
     },
   });
+  if (instance.status !== CloudInstanceStatus.ACTIVE) {
+    await completeSecureDelivery(instance.infrastructureOrderId);
+  }
+  return credential;
 }
 
 export async function revealInstanceCredential(params: {

@@ -18,6 +18,8 @@ export type ProviderPlan = {
   vcpu: number | null;
   ramMb: number | null;
   diskGb: number | null;
+  resourceContractValid: boolean;
+  resourceContractError?: string | null;
   available: boolean;
   priceHourlyIrr: bigint | null;
   priceMonthlyIrr: bigint | null;
@@ -46,6 +48,7 @@ export type ProviderNetwork = {
   externalId: string;
   region: string;
   name: string;
+  isDefault?: boolean;
   available: boolean;
   rawUpdatedAt: Date | null;
   rawPayload: Record<string, unknown>;
@@ -56,6 +59,7 @@ export type ProviderSecurity = {
   externalId: string;
   region: string;
   name: string;
+  isDefault?: boolean;
   available: boolean;
   rawUpdatedAt: Date | null;
   rawPayload: Record<string, unknown>;
@@ -71,6 +75,14 @@ export type ProviderSelection = {
   externalSecurityId?: string | null;
 };
 
+export type ProviderSelectionDefaults = {
+  region: string;
+  externalNetworkId: string;
+  externalSecurityId: string;
+  checkedAt: Date;
+  providerRequestIds: string[];
+};
+
 export type ValidationResult =
   | { valid: true; checkedAt: Date }
   | {
@@ -79,6 +91,7 @@ export type ValidationResult =
       code:
         | "region_unavailable"
         | "plan_unavailable"
+        | "invalid_resource_contract"
         | "invalid_price"
         | "image_incompatible"
         | "network_unavailable"
@@ -166,6 +179,9 @@ export interface CloudProviderAdapter {
   syncImages(region: string): Promise<ProviderImage[]>;
   syncNetworks(region: string): Promise<ProviderNetwork[]>;
   syncSecurity(region: string): Promise<ProviderSecurity[]>;
+  resolveSelectionDefaults(
+    region: string,
+  ): Promise<ProviderSelectionDefaults>;
 
   validateSelection(input: ProviderSelection): Promise<ValidationResult>;
   refreshPrice(input: ProviderSelection): Promise<ProviderPriceSnapshot>;

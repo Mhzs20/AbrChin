@@ -50,4 +50,9 @@ test("multi-provider migration preserves paid financial snapshots and adds regio
     migration.match(/UPDATE "ServiceOrder"[\s\S]*?;/)?.[0] ?? "";
   assert.doesNotMatch(serviceOrderBackfill, /"amount"/);
   assert.doesNotMatch(serviceOrderBackfill, /"status"/);
+  assert.match(
+    migration,
+    /'legacy-parspack-ready', 'PARSPACK', 'v1', 'READY_INSTANT_SERVER',\s*0,\s*"enabled"/,
+    "legacy provider markup must not be copied into product markup",
+  );
 });

@@ -13,19 +13,34 @@ import { derivePlatformReadinessStatus } from "../lib/monitoring/readiness.ts";
 
 test("product flow covers discovery, quote, provisioning recovery, and lifecycle", () => {
   assert.equal(new Set(productFlowStates).size, productFlowStates.length);
-  assert.equal(canTransitionProductFlow("ENTRY", "DISCOVERY"), true);
-  assert.equal(canTransitionProductFlow("PROFILE_REVIEW", "DISCOVERY"), true);
-  assert.equal(canTransitionProductFlow("QUOTED", "EXPIRED"), true);
-  assert.equal(canTransitionProductFlow("PROVISIONING", "RECONCILING"), true);
-  assert.equal(canTransitionProductFlow("RECONCILING", "HEALTH_CHECK"), true);
-  assert.equal(canTransitionProductFlow("ACTIVE", "RENEWAL_DUE"), true);
-  assert.equal(canTransitionProductFlow("PAID", "CHECKOUT"), false);
-  assert.deepEqual(nextProductFlowStates("TERMINATED"), []);
+  assert.equal(
+    canTransitionProductFlow("DRAFT", "UNDERSTANDING_CONFIRMED"),
+    true,
+  );
+  assert.equal(
+    canTransitionProductFlow("DELIVERY_CONFIGURED", "QUOTED"),
+    true,
+  );
+  assert.equal(
+    canTransitionProductFlow("PROVISIONING", "PROVISIONING_RECONCILING"),
+    true,
+  );
+  assert.equal(
+    canTransitionProductFlow("PROVISIONING_RECONCILING", "HEALTH_CHECKING"),
+    true,
+  );
+  assert.equal(canTransitionProductFlow("DELIVERED", "ACTIVE"), true);
+  assert.equal(canTransitionProductFlow("PAID", "AWAITING_PAYMENT"), false);
+  assert.deepEqual(nextProductFlowStates("ACTIVE"), []);
 });
 
 test("invalid product flow transitions fail closed", () => {
   assert.throws(
-    () => assertProductFlowTransition("PAYMENT_PENDING", "ACTIVE"),
+    () =>
+      assertProductFlowTransition(
+        "PAYMENT_PENDING" as never,
+        "ACTIVE",
+      ),
     /invalid_product_flow_transition:PAYMENT_PENDING:ACTIVE/,
   );
 });

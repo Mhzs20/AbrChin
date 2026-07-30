@@ -17,8 +17,10 @@ import {
 import { addBillingMonth, addGracePeriod } from "@/lib/subscriptions/period";
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 import { WalletError } from "@/lib/wallet/errors";
-import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
-import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
+import {
+  resolveProviderSelectionDefaults,
+  revalidateLockedSelection,
+} from "@/lib/infrastructure/selection-revalidation";
 import { serializeQuoteLineItems } from "@/lib/pricing/quote-line-items";
 
 export const RENEWAL_QUOTE_VALIDITY_MS = 10 * 60 * 1000;
@@ -28,6 +30,70 @@ const RENEWABLE_STATUSES: SubscriptionStatus[] = [
   SubscriptionStatus.PAST_DUE,
   SubscriptionStatus.SUSPENDED,
 ];
+
+async function revalidateRenewalSelection(subscription: {
+  plan: {
+    provider: "ARVAN" | "PARSPACK";
+    providerApiVersion: string;
+    productKind: "CLOUD_SERVER" | "READY_INSTANT_SERVER";
+    regionCode: string;
+    sizeCode: string;
+    imageCode: string;
+    catalogItem: {
+      externalPlanId: string | null;
+      providerMonthlyPriceIrr: bigint | null;
+    } | null;
+  };
+  sourceOrder: {
+    recommendationQuote: {
+      externalNetworkId: string | null;
+      externalSecurityId: string | null;
+    } | null;
+  };
+}) {
+  const item = subscription.plan.catalogItem;
+  if (!item?.providerMonthlyPriceIrr) {
+    throw new WalletError(
+      "renewal_unavailable",
+      "قیمت فعلی زیرساخت قابل تأیید نیست.",
+    );
+  }
+  const defaults =
+    subscription.plan.provider === "ARVAN" &&
+    !subscription.sourceOrder.recommendationQuote?.externalNetworkId
+      ? await resolveProviderSelectionDefaults({
+          provider: subscription.plan.provider,
+          providerApiVersion: subscription.plan.providerApiVersion,
+          productKind: subscription.plan.productKind,
+          region: subscription.plan.regionCode,
+        })
+      : null;
+  const current = await revalidateLockedSelection({
+    provider: subscription.plan.provider,
+    providerApiVersion: subscription.plan.providerApiVersion,
+    productKind: subscription.plan.productKind,
+    region: subscription.plan.regionCode,
+    externalPlanId:
+      subscription.plan.catalogItem?.externalPlanId ??
+      subscription.plan.sizeCode,
+    externalImageId: subscription.plan.imageCode,
+    externalNetworkId:
+      subscription.sourceOrder.recommendationQuote?.externalNetworkId ??
+      defaults?.externalNetworkId ??
+      null,
+    externalSecurityId:
+      subscription.sourceOrder.recommendationQuote?.externalSecurityId ??
+      defaults?.externalSecurityId ??
+      null,
+  });
+  if (current.monthlyPriceIrr !== item.providerMonthlyPriceIrr) {
+    throw new WalletError(
+      "renewal_price_changed",
+      "قیمت زیرساخت تغییر کرده؛ Quote تمدید تازه دریافت کن.",
+    );
+  }
+  return current;
+}
 
 export function toPublicRenewalQuote(quote: {
   id: string;
@@ -54,21 +120,13 @@ export async function createRenewalQuote(params: {
   userId: string;
   now?: Date;
 }) {
-  const providerRoute = await prisma.serviceSubscription.findUnique({
-    where: { cloudInstanceId: params.instanceId },
-    select: { plan: { select: { provider: true } } },
-  });
-  if (providerRoute?.plan.provider === "ARVAN") {
-    await refreshMultiProviderCatalog("ARVAN");
-  } else {
-    await refreshProviderCatalogForPricing();
-  }
   const now = params.now ?? new Date();
   const subscription = await prisma.serviceSubscription.findUnique({
     where: { cloudInstanceId: params.instanceId },
     include: {
       cloudInstance: true,
       plan: { include: { catalogItem: true } },
+      sourceOrder: { include: { recommendationQuote: true } },
     },
   });
   if (!subscription || subscription.userId !== params.userId) {
@@ -80,6 +138,7 @@ export async function createRenewalQuote(params: {
   if (subscription.cloudInstance.status === "TERMINATED") {
     throw new WalletError("instance_terminated", "سرور خاتمه یافته و قابل تمدید نیست.");
   }
+  const providerPrice = await revalidateRenewalSelection(subscription);
   const config = await prisma.providerPricingConfig.findUnique({
     where: { provider: subscription.plan.provider },
   });
@@ -139,7 +198,7 @@ export async function createRenewalQuote(params: {
         markupBasisPointsSnapshot: currentPricing.markupBasisPoints,
         finalPriceRialSnapshot: currentPricing.finalPriceRial,
         currency: currentPricing.currency,
-        providerPriceCheckedAt: currentPricing.providerPriceCheckedAt,
+        providerPriceCheckedAt: providerPrice.checkedAt,
         provider: subscription.plan.provider,
         providerApiVersion: subscription.plan.providerApiVersion,
         productKind: subscription.plan.productKind,
@@ -163,18 +222,31 @@ export async function payRenewalQuote(params: {
   userId: string;
   renewalQuoteId: string;
 }) {
-  const providerRoute = await prisma.serviceRenewalQuote.findUnique({
+  const preflight = await prisma.serviceRenewalQuote.findUnique({
     where: { id: params.renewalQuoteId },
-    select: {
+    include: {
       subscription: {
-        select: { plan: { select: { provider: true } } },
+        include: {
+          plan: { include: { catalogItem: true } },
+          sourceOrder: { include: { recommendationQuote: true } },
+        },
       },
     },
   });
-  if (providerRoute?.subscription.plan.provider === "ARVAN") {
-    await refreshMultiProviderCatalog("ARVAN");
-  } else {
-    await refreshProviderCatalogForPricing();
+  if (!preflight || preflight.userId !== params.userId) {
+    throw new WalletError("not_found", "پیشنهاد تمدید پیدا نشد.");
+  }
+  const providerPrice = await revalidateRenewalSelection(
+    preflight.subscription,
+  );
+  if (
+    providerPrice.monthlyPriceIrr !==
+    preflight.providerBasePriceRialSnapshot
+  ) {
+    throw new WalletError(
+      "renewal_price_changed",
+      "قیمت زیرساخت تغییر کرده؛ Quote تمدید تازه دریافت کن.",
+    );
   }
   return prisma.$transaction(async (tx) => {
     const quote = await tx.serviceRenewalQuote.findUnique({

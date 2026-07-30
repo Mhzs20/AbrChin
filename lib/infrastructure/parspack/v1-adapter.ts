@@ -89,6 +89,14 @@ export class ParsPackV1Adapter implements CloudProviderAdapter {
           vcpu: size.vcpu == null ? null : Math.trunc(size.vcpu),
           ramMb: size.memoryMb == null ? null : Math.trunc(size.memoryMb),
           diskGb: size.diskGb == null ? null : Math.trunc(size.diskGb),
+          resourceContractValid:
+            size.vcpu != null &&
+            size.vcpu > 0 &&
+            size.memoryMb != null &&
+            size.memoryMb > 0 &&
+            size.diskGb != null &&
+            size.diskGb > 0,
+          resourceContractError: null,
           available:
             size.available !== false &&
             priceMonthlyIrr != null &&
@@ -140,6 +148,16 @@ export class ParsPackV1Adapter implements CloudProviderAdapter {
     return Promise.resolve([]);
   }
 
+  resolveSelectionDefaults(region: string) {
+    return Promise.resolve({
+      region,
+      externalNetworkId: "provider-default",
+      externalSecurityId: "provider-default",
+      checkedAt: new Date(),
+      providerRequestIds: [],
+    });
+  }
+
   async validateSelection(
     input: ProviderSelection,
   ): Promise<ValidationResult> {
@@ -161,6 +179,13 @@ export class ParsPackV1Adapter implements CloudProviderAdapter {
       return {
         valid: false,
         code: "plan_unavailable",
+        checkedAt: new Date(),
+      };
+    }
+    if (!plan.resourceContractValid) {
+      return {
+        valid: false,
+        code: "invalid_resource_contract",
         checkedAt: new Date(),
       };
     }

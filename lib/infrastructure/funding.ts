@@ -9,6 +9,7 @@ import {
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { prisma } from "@/lib/db";
 import { isProviderConfigured } from "@/lib/infrastructure/provider-factory";
+import { transitionProductFlowTx } from "@/lib/product-flow/service";
 import { assertPositiveIntegerToman, tomanToRial } from "@/lib/money";
 import { WalletError } from "@/lib/wallet/errors";
 
@@ -36,7 +37,7 @@ export async function confirmProviderFunding(params: {
       where: { id: params.infrastructureOrderId },
       include: {
         fundingConfirmations: { orderBy: { attempt: "desc" } },
-        serviceOrder: true,
+        serviceOrder: { include: { recommendationQuote: true } },
         plan: true,
         cloudInstance: true,
       },
@@ -127,6 +128,19 @@ export async function confirmProviderFunding(params: {
     await tx.infrastructureOrder.update({
       where: { id: order.id },
       data: { status: InfrastructureOrderStatus.QUEUED },
+    });
+    await transitionProductFlowTx(tx, {
+      owner: {
+        recommendationSessionId:
+          order.serviceOrder.recommendationQuote?.sessionId ?? null,
+        serviceOrderId: order.serviceOrderId,
+        infrastructureOrderId: order.id,
+      },
+      from: "PAID",
+      to: "PROVISIONING_SUBMITTED",
+      reason: "provider_funding_confirmed",
+      idempotencyKey: `funding-flow:${fundingConfirmation.id}`,
+      actorUserId: params.adminUserId,
     });
 
     await tx.adminNotification.updateMany({

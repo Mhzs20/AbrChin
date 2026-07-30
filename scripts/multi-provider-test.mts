@@ -12,10 +12,12 @@ import {
 import {
   ArvanV1Adapter,
   normalizeArvanV1BaseUrl,
+  normalizeArvanPlanResources,
   redactProviderData,
 } from "../lib/infrastructure/arvan/v1-adapter.ts";
 import { FakeCloudProviderAdapter } from "../lib/infrastructure/fake-cloud-provider-adapter.ts";
 import { submitProvisioningOnce } from "../lib/infrastructure/provisioning-orchestrator.ts";
+import { catalogRamMbToPlanRamGb } from "../lib/infrastructure/multi-provider-catalog-service.ts";
 import {
   assertProviderRoute,
   catalogExternalKey,
@@ -287,7 +289,7 @@ test("Arvan v1 adapter maps regional catalog and uses price_per_month", async ()
     urls.push(url);
     methods.push(init?.method ?? "GET");
     let body: unknown;
-    if (url.endsWith("/regions")) {
+    if (url.endsWith("/details")) {
       body = [
         {
           code: "ir-thr-ba1",
@@ -303,7 +305,7 @@ test("Arvan v1 adapter maps regional catalog and uses price_per_month", async ()
           id: "same-plan",
           name: "Regional",
           cpu_count: 2,
-          memory: 4096,
+          memory: 4,
           disk: 50,
           price_per_hour: "7000",
           price_per_month: "4999999",
@@ -326,10 +328,12 @@ test("Arvan v1 adapter maps regional catalog and uses price_per_month", async ()
           ],
         },
       ];
+    } else if (url.endsWith("/servers/options")) {
+      body = { network_id: "net" };
     } else if (url.endsWith("/networks")) {
       body = [{ id: "net", name: "public", admin_state_up: true }];
     } else if (url.endsWith("/securities")) {
-      body = [{ id: "sec", name: "default" }];
+      body = [{ id: "sec", name: "default", real_name: "arDefault" }];
     } else {
       body = [];
     }
@@ -346,15 +350,58 @@ test("Arvan v1 adapter maps regional catalog and uses price_per_month", async ()
   const regions = await adapter.syncRegions();
   const plans = await adapter.syncPlans("ir-thr-ba1");
   const images = await adapter.syncImages("ir-thr-ba1");
+  const defaults = await adapter.resolveSelectionDefaults("ir-thr-ba1");
   assert.equal(regions.length, 1);
+  assert.equal(plans[0]?.ramMb, 4096);
   assert.equal(plans[0]?.priceMonthlyIrr, 4_999_999n);
   assert.notEqual(
     plans[0]?.priceMonthlyIrr,
     (plans[0]?.priceHourlyIrr ?? 0n) * 720n,
   );
   assert.equal(images[0]?.externalId, "ubuntu");
+  assert.deepEqual(
+    {
+      network: defaults.externalNetworkId,
+      security: defaults.externalSecurityId,
+    },
+    { network: "net", security: "sec" },
+  );
   assert.equal(methods.every((method) => method === "GET"), true);
   assert.equal(urls.some((url) => url.includes("/v3")), false);
+  assert.equal(
+    urls.some((url) => url.endsWith("/ecc/v1/details")),
+    true,
+  );
+});
+
+test("Arvan RAM and disk contracts normalize real GB fixtures and fail closed on disagreement", () => {
+  for (const memory of [1, 2, 4, 8, 32, 64]) {
+    const normalized = normalizeArvanPlanResources({
+      memory,
+      disk: 50,
+    });
+    assert.equal(normalized.valid, true);
+    assert.equal(normalized.ramMb, memory * 1024);
+    assert.equal(normalized.diskGb, 50);
+  }
+  const bytesPreferred = normalizeArvanPlanResources({
+    memory: 32,
+    memory_in_bytes: 32 * 1024 * 1024 * 1024,
+    disk: 80,
+    disk_in_bytes: 80 * 1024 * 1024 * 1024,
+  });
+  assert.equal(bytesPreferred.valid, true);
+  assert.equal(bytesPreferred.ramMb, 32 * 1024);
+  assert.equal(bytesPreferred.diskGb, 80);
+  assert.equal(catalogRamMbToPlanRamGb(bytesPreferred.ramMb), 32);
+
+  const mismatch = normalizeArvanPlanResources({
+    memory: 32,
+    memory_in_bytes: 64 * 1024 * 1024 * 1024,
+    disk: 80,
+  });
+  assert.equal(mismatch.valid, false);
+  assert.equal(mismatch.error, "memory_unit_mismatch");
 });
 
 test("Arvan v3 is rejected before any network call and mutations default disabled", async () => {

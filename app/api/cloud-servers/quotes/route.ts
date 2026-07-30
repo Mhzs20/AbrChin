@@ -1,5 +1,6 @@
 import { getClientIp, jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 import { readyServerQuoteIpLimiter } from "@/lib/rate-limit";
+import { setRecommendationGuestCookie } from "@/lib/recommendation/guest-session-cookie";
 import { createCloudServerQuote } from "@/lib/recommendation/quote-service";
 import { getCurrentUser } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/errors";
@@ -36,10 +37,13 @@ export async function POST(request: Request) {
       planId,
       userId: user?.id ?? null,
     });
-    return jsonOk({
+    const response = jsonOk({
       quote: result.quote,
       expiresAt: result.expiresAt.toISOString(),
     });
+    return result.guestToken
+      ? setRecommendationGuestCookie(response, result.guestToken)
+      : response;
   } catch (error) {
     if (error instanceof SyntaxError) {
       return jsonError("درخواست نامعتبر است.", 400);

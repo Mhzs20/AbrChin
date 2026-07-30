@@ -5,11 +5,15 @@ export const productFlowStates = [
   "RECOMMENDED",
   "PARCHIN_SELECTED",
   "DELIVERY_CONFIGURED",
+  "QUOTED",
   "AUTH_REQUIRED",
   "AWAITING_PAYMENT",
+  "PAID",
   "PROVISIONING_SUBMITTED",
+  "PROVISIONING",
   "HEALTH_CHECKING",
   "DELIVERED",
+  "ACTIVE",
   "QUOTE_EXPIRED",
   "PAYMENT_REVIEW",
   "PROVISIONING_RETRYABLE",
@@ -18,28 +22,6 @@ export const productFlowStates = [
   "HEALTH_CHECK_FAILED",
   "DELIVERY_RETRYABLE",
   "CANCELLED",
-  "ENTRY",
-  "DISCOVERY",
-  "PROFILE_REVIEW",
-  "COMPARING",
-  "QUOTED",
-  "CONFIGURING",
-  "AUTHENTICATING",
-  "CHECKOUT",
-  "PAYMENT_PENDING",
-  "PAID",
-  "WAITING_PROVIDER_FUNDING",
-  "PROVISIONING",
-  "RECONCILING",
-  "HEALTH_CHECK",
-  "SECURE_DELIVERY",
-  "ACTIVE",
-  "RENEWAL_DUE",
-  "SUSPENDED",
-  "TERMINATED",
-  "ESCALATED",
-  "EXPIRED",
-  "FAILED",
 ] as const;
 
 export type ProductFlowState = (typeof productFlowStates)[number];
@@ -57,15 +39,32 @@ const transitions: Record<ProductFlowState, readonly ProductFlowState[]> = {
     "CANCELLED",
   ],
   RECOMMENDED: [
+    "UNDERSTANDING_CONFIRMED",
     "REQUIREMENTS_COMPLETE",
     "PARCHIN_SELECTED",
     "CANCELLED",
   ],
-  PARCHIN_SELECTED: ["RECOMMENDED", "DELIVERY_CONFIGURED", "CANCELLED"],
-  DELIVERY_CONFIGURED: [
+  PARCHIN_SELECTED: [
+    "UNDERSTANDING_CONFIRMED",
     "REQUIREMENTS_COMPLETE",
+    "RECOMMENDED",
+    "DELIVERY_CONFIGURED",
+    "CANCELLED",
+  ],
+  DELIVERY_CONFIGURED: [
+    "UNDERSTANDING_CONFIRMED",
     "PARCHIN_SELECTED",
+    "REQUIREMENTS_COMPLETE",
     "QUOTED",
+    "CANCELLED",
+  ],
+  QUOTED: [
+    "AUTH_REQUIRED",
+    "AWAITING_PAYMENT",
+    "QUOTE_EXPIRED",
+    "DELIVERY_CONFIGURED",
+    "UNDERSTANDING_CONFIRMED",
+    "REQUIREMENTS_COMPLETE",
     "CANCELLED",
   ],
   AUTH_REQUIRED: ["AWAITING_PAYMENT", "QUOTE_EXPIRED", "CANCELLED"],
@@ -75,15 +74,29 @@ const transitions: Record<ProductFlowState, readonly ProductFlowState[]> = {
     "QUOTE_EXPIRED",
     "CANCELLED",
   ],
+  PAID: ["PROVISIONING_SUBMITTED", "PROVISIONING_MANUAL_REVIEW"],
   PROVISIONING_SUBMITTED: [
     "PROVISIONING",
     "PROVISIONING_RECONCILING",
     "PROVISIONING_RETRYABLE",
     "PROVISIONING_MANUAL_REVIEW",
   ],
+  PROVISIONING: [
+    "HEALTH_CHECKING",
+    "PROVISIONING_RECONCILING",
+    "PROVISIONING_RETRYABLE",
+    "PROVISIONING_MANUAL_REVIEW",
+  ],
   HEALTH_CHECKING: ["DELIVERED", "HEALTH_CHECK_FAILED"],
   DELIVERED: ["ACTIVE", "DELIVERY_RETRYABLE"],
-  QUOTE_EXPIRED: ["RECOMMENDED", "CANCELLED"],
+  ACTIVE: [],
+  QUOTE_EXPIRED: [
+    "UNDERSTANDING_CONFIRMED",
+    "REQUIREMENTS_COMPLETE",
+    "RECOMMENDED",
+    "DELIVERY_CONFIGURED",
+    "CANCELLED",
+  ],
   PAYMENT_REVIEW: ["AWAITING_PAYMENT", "PAID", "CANCELLED"],
   PROVISIONING_RETRYABLE: [
     "PROVISIONING_SUBMITTED",
@@ -100,6 +113,7 @@ const transitions: Record<ProductFlowState, readonly ProductFlowState[]> = {
   PROVISIONING_MANUAL_REVIEW: [
     "PROVISIONING_RECONCILING",
     "PROVISIONING_SUBMITTED",
+    "HEALTH_CHECKING",
     "CANCELLED",
   ],
   HEALTH_CHECK_FAILED: [
@@ -113,56 +127,20 @@ const transitions: Record<ProductFlowState, readonly ProductFlowState[]> = {
     "CANCELLED",
   ],
   CANCELLED: [],
-  ENTRY: ["DISCOVERY"],
-  DISCOVERY: ["PROFILE_REVIEW", "ESCALATED"],
-  PROFILE_REVIEW: ["DISCOVERY", "COMPARING", "ESCALATED"],
-  COMPARING: ["QUOTED", "PROFILE_REVIEW", "FAILED"],
-  QUOTED: [
-    "REQUIREMENTS_COMPLETE",
-    "AUTH_REQUIRED",
-    "AWAITING_PAYMENT",
-    "CONFIGURING",
-    "PROFILE_REVIEW",
-    "EXPIRED",
-    "QUOTE_EXPIRED",
-  ],
-  CONFIGURING: ["QUOTED", "AUTHENTICATING", "CHECKOUT", "EXPIRED"],
-  AUTHENTICATING: ["CHECKOUT", "CONFIGURING", "EXPIRED"],
-  CHECKOUT: ["PAYMENT_PENDING", "QUOTED", "EXPIRED"],
-  PAYMENT_PENDING: ["PAID", "CHECKOUT", "FAILED", "EXPIRED"],
-  PAID: [
-    "PROVISIONING_SUBMITTED",
-    "PROVISIONING_MANUAL_REVIEW",
-    "WAITING_PROVIDER_FUNDING",
-    "PROVISIONING",
-  ],
-  WAITING_PROVIDER_FUNDING: ["PROVISIONING", "FAILED"],
-  PROVISIONING: [
-    "HEALTH_CHECKING",
-    "PROVISIONING_RECONCILING",
-    "PROVISIONING_RETRYABLE",
-    "PROVISIONING_MANUAL_REVIEW",
-    "RECONCILING",
-    "HEALTH_CHECK",
-    "FAILED",
-  ],
-  RECONCILING: ["PROVISIONING", "HEALTH_CHECK", "FAILED"],
-  HEALTH_CHECK: ["SECURE_DELIVERY", "PROVISIONING", "ESCALATED", "FAILED"],
-  SECURE_DELIVERY: ["ACTIVE", "ESCALATED"],
-  ACTIVE: ["RENEWAL_DUE", "SUSPENDED", "TERMINATED"],
-  RENEWAL_DUE: ["ACTIVE", "SUSPENDED", "TERMINATED"],
-  SUSPENDED: ["ACTIVE", "TERMINATED"],
-  TERMINATED: [],
-  ESCALATED: ["DISCOVERY", "PROFILE_REVIEW", "PROVISIONING", "HEALTH_CHECK", "FAILED"],
-  EXPIRED: ["COMPARING"],
-  FAILED: ["COMPARING", "CHECKOUT", "PROVISIONING", "RECONCILING", "ESCALATED"],
 };
+
+export function isProductFlowState(value: unknown): value is ProductFlowState {
+  return (
+    typeof value === "string" &&
+    (productFlowStates as readonly string[]).includes(value)
+  );
+}
 
 export function canTransitionProductFlow(
   from: ProductFlowState,
   to: ProductFlowState,
 ): boolean {
-  return transitions[from].includes(to);
+  return transitions[from]?.includes(to) ?? false;
 }
 
 export function assertProductFlowTransition(
@@ -174,6 +152,8 @@ export function assertProductFlowTransition(
   }
 }
 
-export function nextProductFlowStates(state: ProductFlowState): readonly ProductFlowState[] {
+export function nextProductFlowStates(
+  state: ProductFlowState,
+): readonly ProductFlowState[] {
   return transitions[state];
 }

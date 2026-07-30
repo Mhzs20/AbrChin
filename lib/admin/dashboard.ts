@@ -137,6 +137,7 @@ export async function getSystemStatuses() {
     unavailableItemCount: state?.unavailableItemCount ?? 0,
     staleItemCount: state?.staleItemCount ?? 0,
     invalidPriceCount: state?.invalidPriceCount ?? 0,
+    invalidResourceCount: state?.invalidResourceCount ?? 0,
     networkCount: state?.networkCount ?? 0,
     securityCount: state?.securityCount ?? 0,
     syncDurationMs: state?.lastSyncDurationMs ?? null,

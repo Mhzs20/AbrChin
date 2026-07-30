@@ -24,7 +24,10 @@ test("billing months preserve calendar intent at month boundaries", () => {
 
 test("renewal requires a revalidated snapshot and never auto-charges", async () => {
   const renewal = await readFile("lib/subscriptions/service.ts", "utf8");
-  const provisioning = await readFile("lib/infrastructure/provisioning-service.ts", "utf8");
+  const delivery = await readFile(
+    "lib/infrastructure/health-check-service.ts",
+    "utf8",
+  );
   const worker = await readFile("scripts/provisioning-worker-entry.ts", "utf8");
   const migration = await readFile(
     "prisma/migrations/20260729120000_service_subscriptions/migration.sql",
@@ -45,7 +48,9 @@ test("renewal requires a revalidated snapshot and never auto-charges", async () 
   assert.doesNotMatch(renewal, /if \(subscription\.autoRenew\)/);
   assert.match(worker, /SUBSCRIPTION_LIFECYCLE_INTERVAL_MS/);
   assert.match(worker, /processSubscriptionLifecycle/);
-  assert.match(provisioning, /serviceSubscription\.upsert/);
+  assert.match(delivery, /serviceSubscription\.upsert/);
+  assert.match(delivery, /healthCheckedAt/);
+  assert.match(delivery, /SecureDeliveryStatus\.DELIVERED/);
   assert.match(migration, /Existing active instances receive a full period/);
   assert.match(migration, /CURRENT_TIMESTAMP \+ INTERVAL '1 month'/);
 });

@@ -297,7 +297,7 @@ INSERT INTO "ProductPricingConfig" (
 )
 SELECT
     'legacy-parspack-ready', 'PARSPACK', 'v1', 'READY_INSTANT_SERVER',
-    "markupBasisPoints", "enabled", CURRENT_TIMESTAMP
+    0, "enabled", CURRENT_TIMESTAMP
 FROM "ProviderPricingConfig"
 WHERE "provider" = 'PARSPACK'
 ON CONFLICT DO NOTHING;

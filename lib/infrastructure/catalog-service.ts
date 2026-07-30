@@ -5,6 +5,7 @@ import {
   InfrastructureProvider,
   ParchinLevel,
   ProviderCatalogStatus,
+  ProviderSyncStatus,
   type ProviderCatalogItem,
   type Prisma,
 } from "@prisma/client";
@@ -27,6 +28,7 @@ import {
   PROVIDER_PRICE_SCALE,
 } from "@/lib/pricing/provider-pricing";
 import { prisma } from "@/lib/db";
+import { withCatalogSyncLease } from "@/lib/infrastructure/multi-provider-catalog-service";
 import {
   createInfrastructureProvider,
   isProviderConfigured,
@@ -497,14 +499,20 @@ export async function refreshProviderCatalogForPricing(now = new Date()) {
     );
   }
   try {
-    const provider = createInfrastructureProvider();
-    const catalog = await provider.syncCatalog();
-    return await prisma.$transaction(async (tx) => {
-      const persisted = await persistProviderCatalog(tx, catalog, now);
-      await tx.providerCatalogState.upsert({
+    return await withCatalogSyncLease(
+      InfrastructureProvider.PARSPACK,
+      "v1",
+      async () => {
+        const provider = createInfrastructureProvider();
+        const catalog = await provider.syncCatalog();
+        return prisma.$transaction(async (tx) => {
+          const persisted = await persistProviderCatalog(tx, catalog, now);
+          await tx.providerCatalogState.upsert({
         where: { provider: InfrastructureProvider.PARSPACK },
         update: {
           lastCatalogSync: now,
+          syncRequestedAt: null,
+          lastSyncStatus: ProviderSyncStatus.SUCCEEDED,
           regionCount: catalog.regions.length,
           sizeCount: catalog.sizes.length,
           imageCount: catalog.images.length,
@@ -519,6 +527,8 @@ export async function refreshProviderCatalogForPricing(now = new Date()) {
           id: "parspack",
           provider: InfrastructureProvider.PARSPACK,
           lastCatalogSync: now,
+          syncRequestedAt: null,
+          lastSyncStatus: ProviderSyncStatus.SUCCEEDED,
           regionCount: catalog.regions.length,
           sizeCount: catalog.sizes.length,
           imageCount: catalog.images.length,
@@ -529,9 +539,11 @@ export async function refreshProviderCatalogForPricing(now = new Date()) {
             ? null
             : "واحد و ارز قیمت Provider هنوز با قرارداد رسمی تأیید نشده است.",
         },
-      });
-      return persisted;
-    });
+          });
+          return persisted;
+        });
+      },
+    );
   } catch (error) {
     if (error instanceof WalletError) throw error;
     throw new WalletError(

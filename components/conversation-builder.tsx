@@ -59,7 +59,7 @@ const backupLabels = {
 
 type StoredDraft = {
   sessionId?: string;
-  guestToken?: string | null;
+  revision?: number;
   answers: RecommendationAnswers;
   sources: AnswerSources;
   stepIndex: number;
@@ -69,6 +69,32 @@ type StoredDraft = {
   showComparisons: boolean;
   direction: RecommendationDirection;
   parchinLevel?: ParchinLevel;
+  deliveryConfigured?: boolean;
+};
+
+type ResumedConversation = {
+  sessionId: string;
+  revision: number;
+  productFlowState: string;
+  answers: RecommendationAnswers;
+  answerSources: AnswerSources;
+  understandingSnapshot?: unknown;
+  selectedParchinLevel?: ParchinLevel | null;
+};
+
+type DeliveryOption = {
+  id: string;
+  role: "RECOMMENDED" | "ECONOMY" | "GROWTH";
+  region: string;
+  title: string;
+  vcpu: number | null;
+  ramGb: number | null;
+  storageGb: number | null;
+  images: Array<{
+    id: string;
+    label: string;
+    windows: boolean;
+  }>;
 };
 
 function isStoredDraft(value: unknown): value is StoredDraft {
@@ -122,8 +148,20 @@ export function ConversationBuilder({
   const [quotesNotice, setQuotesNotice] = useState<string | null>(null);
   const [quotesRetry, setQuotesRetry] = useState(0);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [guestToken, setGuestToken] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
   const [savingAnswer, setSavingAnswer] = useState(false);
+  const [deliveryOptions, setDeliveryOptions] = useState<DeliveryOption[]>([]);
+  const [deliveryOptionsResolved, setDeliveryOptionsResolved] =
+    useState(false);
+  const [selectedDeliveryPlanId, setSelectedDeliveryPlanId] =
+    useState("");
+  const [selectedImageAssetId, setSelectedImageAssetId] = useState("");
+  const [accessMethod, setAccessMethod] = useState<
+    "ONE_TIME_PASSWORD" | "SSH_KEY" | "WINDOWS_PASSWORD"
+  >("ONE_TIME_PASSWORD");
+  const [sshKeyName, setSshKeyName] = useState("");
+  const [deliveryConfigured, setDeliveryConfigured] = useState(false);
+  const [savingDelivery, setSavingDelivery] = useState(false);
   const questionOrder = useMemo(() => getRecommendationQuestionOrder(answers), [answers]);
   const minimumParchinLevel = recommendedParchinLevel(answers);
   const selectedParchinLevel =
@@ -134,45 +172,137 @@ export function ConversationBuilder({
 
   useEffect(() => {
     if (!resume) return;
+    const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      try {
-        const raw = window.sessionStorage.getItem(storageKey);
-        const parsed: unknown = raw ? JSON.parse(raw) : null;
-        if (isStoredDraft(parsed)) {
-          setAnswers({
-            ...parsed.answers,
-            management:
-              parsed.answers.management === "raw"
-                ? "managed"
-                : parsed.answers.management,
-          });
-          setSources(parsed.sources);
-          const restoredOrder = getRecommendationQuestionOrder(parsed.answers);
-          setStepIndex(
-            Math.max(0, Math.min(parsed.stepIndex, restoredOrder.length - 1)),
-          );
-          setShowResult(parsed.showResult);
-          setShowUnderstanding(parsed.showUnderstanding ?? false);
-          setUnderstandingConfirmed(parsed.understandingConfirmed ?? false);
-          setShowComparisons(parsed.showComparisons ?? false);
-          setDirection(parsed.direction ?? "balanced");
-          if (
-            parsed.parchinLevel &&
-            parchinLevels.includes(parsed.parchinLevel)
-          ) {
-            setRequestedParchinLevel(parsed.parchinLevel);
+      void (async () => {
+        let cached: StoredDraft | null = null;
+        let cachedSessionId: string | null = null;
+        try {
+          const raw = window.sessionStorage.getItem(storageKey);
+          const parsed: unknown = raw ? JSON.parse(raw) : null;
+          if (isStoredDraft(parsed)) {
+            cached = parsed;
+            cachedSessionId = parsed.sessionId ?? null;
           }
-          setSessionId(parsed.sessionId ?? null);
-          setGuestToken(parsed.guestToken ?? null);
+        } catch {
+          window.sessionStorage.removeItem(storageKey);
+        }
+
+        let databaseSession: ResumedConversation | null = null;
+        try {
+          const endpoint = cachedSessionId
+            ? `/api/recommendations/sessions/${cachedSessionId}`
+            : signedIn
+              ? "/api/recommendations/sessions"
+              : null;
+          if (endpoint) {
+            const response = await fetch(endpoint, {
+              signal: controller.signal,
+            });
+            if (response.ok) {
+              const body = (await response.json()) as {
+                session?: ResumedConversation | null;
+              };
+              databaseSession = body.session ?? null;
+            }
+          }
+        } catch {
+          if (controller.signal.aborted) return;
+        }
+
+        if (databaseSession) {
+          const restoredAnswers = {
+            ...databaseSession.answers,
+            management:
+              databaseSession.answers.management === "raw"
+                ? "managed"
+                : databaseSession.answers.management,
+          };
+          setAnswers(restoredAnswers);
+          setSources(databaseSession.answerSources);
+          setSessionId(databaseSession.sessionId);
+          setRevision(databaseSession.revision);
+          const restoredOrder =
+            getRecommendationQuestionOrder(restoredAnswers);
+          const firstMissing = restoredOrder.findIndex(
+            (questionId) => !restoredAnswers[questionId],
+          );
+          setStepIndex(
+            firstMissing < 0
+              ? Math.max(0, restoredOrder.length - 1)
+              : firstMissing,
+          );
+          const state = databaseSession.productFlowState;
+          setUnderstandingConfirmed(state !== "DRAFT");
+          setShowUnderstanding(false);
+          setShowResult(
+            [
+              "REQUIREMENTS_COMPLETE",
+              "RECOMMENDED",
+              "PARCHIN_SELECTED",
+              "DELIVERY_CONFIGURED",
+              "QUOTED",
+              "QUOTE_EXPIRED",
+            ].includes(state),
+          );
+          setDeliveryConfigured(
+            ["DELIVERY_CONFIGURED", "QUOTED", "QUOTE_EXPIRED"].includes(
+              state,
+            ),
+          );
+          if (
+            databaseSession.selectedParchinLevel &&
+            parchinLevels.includes(databaseSession.selectedParchinLevel)
+          ) {
+            setRequestedParchinLevel(
+              databaseSession.selectedParchinLevel,
+            );
+          }
+          setRestored(true);
+        } else if (cached) {
+          setAnswers({
+            ...cached.answers,
+            management:
+              cached.answers.management === "raw"
+                ? "managed"
+                : cached.answers.management,
+          });
+          setSources(cached.sources);
+          const restoredOrder = getRecommendationQuestionOrder(
+            cached.answers,
+          );
+          setStepIndex(
+            Math.max(
+              0,
+              Math.min(cached.stepIndex, restoredOrder.length - 1),
+            ),
+          );
+          setShowResult(cached.showResult);
+          setShowUnderstanding(cached.showUnderstanding ?? false);
+          setUnderstandingConfirmed(
+            cached.understandingConfirmed ?? false,
+          );
+          setShowComparisons(cached.showComparisons ?? false);
+          setDirection(cached.direction ?? "balanced");
+          setDeliveryConfigured(cached.deliveryConfigured ?? false);
+          if (
+            cached.parchinLevel &&
+            parchinLevels.includes(cached.parchinLevel)
+          ) {
+            setRequestedParchinLevel(cached.parchinLevel);
+          }
+          setSessionId(cached.sessionId ?? null);
+          setRevision(cached.revision ?? 0);
           setRestored(true);
         }
-      } catch {
-        window.sessionStorage.removeItem(storageKey);
-      }
-      setHydrated(true);
+        setHydrated(true);
+      })();
     }, 0);
-    return () => window.clearTimeout(timer);
-  }, [resume]);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [resume, signedIn]);
 
   useEffect(() => {
     if (!hydrated || sessionId) return;
@@ -185,11 +315,11 @@ export function ConversationBuilder({
         if (!response.ok) return;
         const body = (await response.json()) as {
           sessionId?: string;
-          guestToken?: string | null;
+          revision?: number;
         };
         if (body.sessionId) {
           setSessionId(body.sessionId);
-          setGuestToken(body.guestToken ?? null);
+          setRevision(body.revision ?? 0);
         }
       })
       .catch(() => undefined);
@@ -200,7 +330,7 @@ export function ConversationBuilder({
     if (!hydrated) return;
     const draft: StoredDraft = {
       sessionId: sessionId ?? undefined,
-      guestToken,
+      revision,
       answers,
       sources,
       stepIndex,
@@ -210,13 +340,15 @@ export function ConversationBuilder({
       showComparisons,
       direction,
       parchinLevel: selectedParchinLevel,
+      deliveryConfigured,
     };
     window.sessionStorage.setItem(storageKey, JSON.stringify(draft));
   }, [
     answers,
     direction,
-    guestToken,
+    deliveryConfigured,
     hydrated,
+    revision,
     sessionId,
     selectedParchinLevel,
     showComparisons,
@@ -228,7 +360,7 @@ export function ConversationBuilder({
   ]);
 
   useEffect(() => {
-    if (!showResult) return;
+    if (!showResult || !deliveryConfigured) return;
 
     const controller = new AbortController();
 
@@ -238,9 +370,6 @@ export function ConversationBuilder({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(guestToken
-              ? { "x-recommendation-session-token": guestToken }
-              : {}),
           },
           body: JSON.stringify({
             answers,
@@ -276,13 +405,71 @@ export function ConversationBuilder({
     return () => controller.abort();
   }, [
     answers,
-    guestToken,
     quotesRetry,
     sessionId,
     selectedParchinLevel,
     showComparisons,
     showResult,
     sources,
+    deliveryConfigured,
+  ]);
+
+  useEffect(() => {
+    if (
+      !showResult ||
+      deliveryConfigured ||
+      !sessionId ||
+      deliveryOptionsResolved
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    void fetch(
+      `/api/recommendations/sessions/${sessionId}/delivery?parchinLevel=${selectedParchinLevel}`,
+      { signal: controller.signal },
+    )
+      .then(async (response) => {
+        const body = (await response.json()) as {
+          options?: DeliveryOption[];
+          revision?: number;
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(
+            body.error ?? "گزینه‌های تحویل در دسترس نیستند.",
+          );
+        }
+        const options = body.options ?? [];
+        setDeliveryOptions(options);
+        setRevision(body.revision ?? revision);
+        const preferred =
+          options.find((option) => option.role === "RECOMMENDED") ??
+          options[0];
+        setSelectedDeliveryPlanId(preferred?.id ?? "");
+        const image = preferred?.images[0];
+        setSelectedImageAssetId(image?.id ?? "");
+        setAccessMethod(
+          image?.windows ? "WINDOWS_PASSWORD" : "ONE_TIME_PASSWORD",
+        );
+        setDeliveryOptionsResolved(true);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setQuotesError(
+          error instanceof Error
+            ? error.message
+            : "گزینه‌های تحویل در دسترس نیستند.",
+        );
+        setDeliveryOptionsResolved(true);
+      });
+    return () => controller.abort();
+  }, [
+    deliveryConfigured,
+    deliveryOptionsResolved,
+    revision,
+    selectedParchinLevel,
+    sessionId,
+    showResult,
   ]);
 
   const questionId = questionOrder[Math.min(stepIndex, questionOrder.length - 1)];
@@ -299,7 +486,17 @@ export function ConversationBuilder({
   const completedAnswers = questionOrder
     .slice(0, stepIndex)
     .filter((id) => Boolean(answers[id]));
-  const quotesLoading = showResult && !quotesResolved && quotesError === null;
+  const quotesLoading =
+    showResult &&
+    deliveryConfigured &&
+    !quotesResolved &&
+    quotesError === null;
+  const selectedDeliveryOption = deliveryOptions.find(
+    (option) => option.id === selectedDeliveryPlanId,
+  );
+  const selectedDeliveryImage = selectedDeliveryOption?.images.find(
+    (image) => image.id === selectedImageAssetId,
+  );
 
   async function persistAnswer(
     id: QuestionId,
@@ -313,18 +510,27 @@ export function ConversationBuilder({
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          ...(guestToken
-            ? { "x-recommendation-session-token": guestToken }
-            : {}),
         },
         body: JSON.stringify({
           questionId: id,
           answer: value,
+          expectedRevision: revision,
           source: source ?? "user",
         }),
       },
     );
+    const body = (await response.json()) as {
+      revision?: number;
+      current?: ResumedConversation | null;
+    };
+    if (response.status === 409 && body.current) {
+      setAnswers(body.current.answers);
+      setSources(body.current.answerSources);
+      setRevision(body.current.revision);
+      throw new Error("conversation_revision_conflict");
+    }
     if (!response.ok) throw new Error("conversation_answer_not_saved");
+    setRevision(body.revision ?? revision + 1);
   }
 
   function choose(value: string, source: AnswerSources[QuestionId] = "user") {
@@ -334,6 +540,9 @@ export function ConversationBuilder({
     setQuotesResolved(false);
     setQuotesError(null);
     setQuotesNotice(null);
+    setDeliveryConfigured(false);
+    setDeliveryOptions([]);
+    setDeliveryOptionsResolved(false);
     if (questionId === "project") {
       setUnderstandingConfirmed(false);
     }
@@ -390,11 +599,9 @@ export function ConversationBuilder({
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            ...(guestToken
-              ? { "x-recommendation-session-token": guestToken }
-              : {}),
           },
           body: JSON.stringify({
+            expectedRevision: revision,
             understanding: {
               project: answers.project,
               label:
@@ -405,7 +612,18 @@ export function ConversationBuilder({
           }),
         },
       );
+      const body = (await response.json()) as {
+        revision?: number;
+        current?: ResumedConversation | null;
+      };
+      if (response.status === 409 && body.current) {
+        setAnswers(body.current.answers);
+        setSources(body.current.answerSources);
+        setRevision(body.current.revision);
+        throw new Error("conversation_revision_conflict");
+      }
       if (!response.ok) throw new Error("understanding_not_saved");
+      setRevision(body.revision ?? revision + 1);
       setUnderstandingConfirmed(true);
       setShowUnderstanding(false);
       setStepIndex(1);
@@ -446,8 +664,72 @@ export function ConversationBuilder({
     setQuotesError(null);
     setQuotesNotice(null);
     setSessionId(null);
-    setGuestToken(null);
+    setRevision(0);
+    setDeliveryOptions([]);
+    setDeliveryOptionsResolved(false);
+    setSelectedDeliveryPlanId("");
+    setSelectedImageAssetId("");
+    setAccessMethod("ONE_TIME_PASSWORD");
+    setSshKeyName("");
+    setDeliveryConfigured(false);
     window.sessionStorage.removeItem(storageKey);
+  }
+
+  async function confirmDelivery() {
+    if (
+      !sessionId ||
+      !selectedDeliveryPlanId ||
+      !selectedImageAssetId
+    ) {
+      setQuotesError("یک Region، سرور و سیستم‌عامل معتبر انتخاب کن.");
+      return;
+    }
+    setSavingDelivery(true);
+    setQuotesError(null);
+    try {
+      const response = await fetch(
+        `/api/recommendations/sessions/${sessionId}/delivery`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            expectedRevision: revision,
+            planId: selectedDeliveryPlanId,
+            imageAssetId: selectedImageAssetId,
+            parchinLevel: selectedParchinLevel,
+            accessMethod,
+            sshKeyName: accessMethod === "SSH_KEY" ? sshKeyName : null,
+          }),
+        },
+      );
+      const body = (await response.json()) as {
+        revision?: number;
+        current?: ResumedConversation | null;
+        error?: string;
+      };
+      if (response.status === 409 && body.current) {
+        setRevision(body.current.revision);
+        throw new Error(
+          "گفتگو در جای دیگری تغییر کرده؛ تنظیمات را دوباره بررسی کن.",
+        );
+      }
+      if (!response.ok) {
+        throw new Error(body.error ?? "ثبت تنظیمات تحویل ممکن نیست.");
+      }
+      setRevision(body.revision ?? revision + 1);
+      setDeliveryConfigured(true);
+      setQuotes([]);
+      setQuotesResolved(false);
+      setQuotesNotice(null);
+    } catch (error: unknown) {
+      setQuotesError(
+        error instanceof Error
+          ? error.message
+          : "ثبت تنظیمات تحویل ممکن نیست.",
+      );
+    } finally {
+      setSavingDelivery(false);
+    }
   }
 
   const transition = reduceMotion
@@ -789,6 +1071,11 @@ export function ConversationBuilder({
                         }
                         onClick={() => {
                           setRequestedParchinLevel(level);
+                          setDeliveryConfigured(false);
+                          setDeliveryOptions([]);
+                          setDeliveryOptionsResolved(false);
+                          setSelectedDeliveryPlanId("");
+                          setSelectedImageAssetId("");
                           setQuotes([]);
                           setQuotesResolved(false);
                           setQuotesError(null);
@@ -827,6 +1114,170 @@ export function ConversationBuilder({
                   </div>
                 ))}
 
+                {!deliveryConfigured ? (
+                  <section
+                    className="recommendation-details"
+                    aria-labelledby="delivery-configuration-title"
+                  >
+                    <div className="result-recommendation-head">
+                      <div>
+                        <span>تنظیمات تحویل</span>
+                        <h2 id="delivery-configuration-title">
+                          Region، سیستم‌عامل و روش دسترسی را تأیید کن
+                        </h2>
+                        <p>
+                          این انتخاب پیش از Quote با ظرفیت و قیمت واقعی
+                          دوباره بررسی و سپس قفل می‌شود.
+                        </p>
+                      </div>
+                    </div>
+
+                    {!deliveryOptionsResolved ? (
+                      <div className="quick-plans-empty" aria-live="polite">
+                        <RefreshCw className="spin" size={22} aria-hidden="true" />
+                        <div>
+                          <strong>در حال دریافت گزینه‌های قابل فروش…</strong>
+                        </div>
+                      </div>
+                    ) : deliveryOptions.length === 0 ? (
+                      <div className="quick-plans-empty" role="status">
+                        <ShieldCheck size={22} aria-hidden="true" />
+                        <div>
+                          <strong>
+                            در حال حاضر چینش معتبر و تازه‌ای برای این نیاز
+                            وجود ندارد.
+                          </strong>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="result-direction">
+                          <label>
+                            Region و منابع
+                            <select
+                              value={selectedDeliveryPlanId}
+                              onChange={(event) => {
+                                const planId = event.target.value;
+                                const option = deliveryOptions.find(
+                                  (item) => item.id === planId,
+                                );
+                                const image = option?.images[0];
+                                setSelectedDeliveryPlanId(planId);
+                                setSelectedImageAssetId(image?.id ?? "");
+                                setAccessMethod(
+                                  image?.windows
+                                    ? "WINDOWS_PASSWORD"
+                                    : "ONE_TIME_PASSWORD",
+                                );
+                              }}
+                            >
+                              {deliveryOptions.map((option) => (
+                                <option key={option.id} value={option.id}>
+                                  {option.region} — {option.vcpu} vCPU،{" "}
+                                  {option.ramGb} GB RAM، {option.storageGb} GB
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            سیستم‌عامل
+                            <select
+                              value={selectedImageAssetId}
+                              onChange={(event) => {
+                                const imageId = event.target.value;
+                                const image =
+                                  selectedDeliveryOption?.images.find(
+                                    (item) => item.id === imageId,
+                                  );
+                                setSelectedImageAssetId(imageId);
+                                setAccessMethod(
+                                  image?.windows
+                                    ? "WINDOWS_PASSWORD"
+                                    : "ONE_TIME_PASSWORD",
+                                );
+                              }}
+                            >
+                              {selectedDeliveryOption?.images.map((image) => (
+                                <option key={image.id} value={image.id}>
+                                  {image.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+
+                        <div
+                          className="result-direction"
+                          aria-label="روش دسترسی امن"
+                        >
+                          {selectedDeliveryImage?.windows ? (
+                            <button className="is-active" type="button">
+                              رمز یک‌بارمصرف Windows
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                className={
+                                  accessMethod === "ONE_TIME_PASSWORD"
+                                    ? "is-active"
+                                    : ""
+                                }
+                                type="button"
+                                onClick={() =>
+                                  setAccessMethod("ONE_TIME_PASSWORD")
+                                }
+                              >
+                                رمز یک‌بارمصرف
+                              </button>
+                              <button
+                                className={
+                                  accessMethod === "SSH_KEY"
+                                    ? "is-active"
+                                    : ""
+                                }
+                                type="button"
+                                onClick={() => setAccessMethod("SSH_KEY")}
+                              >
+                                SSH Key
+                              </button>
+                            </>
+                          )}
+                          {accessMethod === "SSH_KEY" ? (
+                            <label>
+                              نام SSH Key ثبت‌شده
+                              <input
+                                dir="ltr"
+                                maxLength={128}
+                                value={sshKeyName}
+                                onChange={(event) =>
+                                  setSshKeyName(event.target.value)
+                                }
+                                placeholder="my-production-key"
+                              />
+                            </label>
+                          ) : null}
+                        </div>
+
+                        <button
+                          className="button button-primary"
+                          disabled={
+                            savingDelivery ||
+                            !selectedImageAssetId ||
+                            (accessMethod === "SSH_KEY" && !sshKeyName.trim())
+                          }
+                          type="button"
+                          onClick={() => void confirmDelivery()}
+                        >
+                          {savingDelivery
+                            ? "در حال بررسی…"
+                            : "تأیید تنظیم تحویل و دریافت Quote"}
+                          <ArrowLeft size={17} aria-hidden="true" />
+                        </button>
+                      </>
+                    )}
+                  </section>
+                ) : null}
+
                 <div className="result-live-plans">
                   <div>
                     <span>
@@ -842,7 +1293,16 @@ export function ConversationBuilder({
                           : "ظرفیت‌های معتبر موجود نمایش داده شده‌اند"}
                     </strong>
                   </div>
-                  {quotesError ? (
+                  {!deliveryConfigured ? (
+                    <section className="quick-plans-empty" role="status">
+                      <Info size={24} aria-hidden="true" />
+                      <div>
+                        <strong>
+                          برای ساخت Quote ابتدا تنظیمات تحویل را تأیید کن.
+                        </strong>
+                      </div>
+                    </section>
+                  ) : quotesError ? (
                     <section className="quick-plans-empty" role="alert">
                       <CircleHelp size={24} aria-hidden="true" />
                       <div>

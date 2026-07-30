@@ -5,7 +5,6 @@ import {
   InfrastructureOrderStatus,
   InfrastructureProvider,
   ProvisioningJobStatus,
-  SubscriptionStatus,
   type Prisma,
 } from "@prisma/client";
 
@@ -17,12 +16,16 @@ import {
   isInsufficientBalanceError,
 } from "@/lib/infrastructure/errors";
 import { createInfrastructureProvider } from "@/lib/infrastructure/provider-factory";
+import {
+  runInfrastructureHealthCheck,
+  type ConnectivityProbe,
+} from "@/lib/infrastructure/health-check-service";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import type { InfrastructureProviderAdapter } from "@/lib/infrastructure/types";
 import {
-  addBillingMonth,
-  addGracePeriod,
-} from "@/lib/subscriptions/period";
+  transitionProductFlow,
+  transitionProductFlowTx,
+} from "@/lib/product-flow/service";
 import { getWorkerConfig } from "@/lib/worker/config";
 
 const POLL_ATTEMPTS = 8;
@@ -184,11 +187,38 @@ export async function claimNextProvisioningJob(workerId?: string) {
     });
     if (claimed.count !== 1) return null;
 
-    const job = await tx.provisioningJob.findUniqueOrThrow({ where: { id: row.id } });
+    const job = await tx.provisioningJob.findUniqueOrThrow({
+      where: { id: row.id },
+      include: {
+        infrastructureOrder: {
+          include: {
+            serviceOrder: { include: { recommendationQuote: true } },
+          },
+        },
+      },
+    });
     await tx.infrastructureOrder.updateMany({
       where: { id: job.infrastructureOrderId, status: InfrastructureOrderStatus.QUEUED },
       data: { status: InfrastructureOrderStatus.PROVISIONING },
     });
+    if (
+      job.infrastructureOrder.productFlowState ===
+      "PROVISIONING_SUBMITTED"
+    ) {
+      await transitionProductFlowTx(tx, {
+        owner: {
+          recommendationSessionId:
+            job.infrastructureOrder.serviceOrder.recommendationQuote
+              ?.sessionId ?? null,
+          serviceOrderId: job.infrastructureOrder.serviceOrderId,
+          infrastructureOrderId: job.infrastructureOrderId,
+        },
+        from: "PROVISIONING_SUBMITTED",
+        to: "PROVISIONING",
+        reason: "provisioning_job_claimed",
+        idempotencyKey: `provisioning-start:${job.id}`,
+      });
+    }
 
     return tx.provisioningJob.findUniqueOrThrow({
       where: { id: row.id },
@@ -275,18 +305,38 @@ export async function getWorkerHealthStatus() {
 export async function processProvisioningJob(
   jobId: string,
   providerOverride?: InfrastructureProviderAdapter,
+  options?: { healthProbe?: ConnectivityProbe },
 ) {
   const job = await prisma.provisioningJob.findUnique({
     where: { id: jobId },
     include: {
       infrastructureOrder: {
-        include: { plan: true, serviceOrder: true, cloudInstance: true, provisioningJobs: true },
+        include: {
+          plan: true,
+          serviceOrder: { include: { recommendationQuote: true } },
+          cloudInstance: true,
+          provisioningJobs: true,
+        },
       },
     },
   });
   if (!job || job.status !== ProvisioningJobStatus.RUNNING) return;
 
   const order = job.infrastructureOrder;
+  const providerSelection =
+    order.providerSelectionSnapshot &&
+    typeof order.providerSelectionSnapshot === "object" &&
+    !Array.isArray(order.providerSelectionSnapshot)
+      ? (order.providerSelectionSnapshot as Record<string, unknown>)
+      : {};
+  const lockedNetworkId =
+    typeof providerSelection.externalNetworkId === "string"
+      ? providerSelection.externalNetworkId
+      : null;
+  const lockedSecurityId =
+    typeof providerSelection.externalSecurityId === "string"
+      ? providerSelection.externalSecurityId
+      : null;
   if (order.cloudInstance?.status === CloudInstanceStatus.ACTIVE) {
     await prisma.provisioningJob.update({
       where: { id: job.id },
@@ -332,6 +382,7 @@ export async function processProvisioningJob(
             infrastructureOrderId: order.id,
             userId: order.userId,
             provider: order.provider,
+            providerApiVersion: order.providerApiVersion,
             providerInstanceId: existingInstance.id,
             name: existingInstance.name,
             region: existingInstance.region,
@@ -339,6 +390,9 @@ export async function processProvisioningJob(
             image: existingInstance.image,
             deliveryMode: order.deliveryMode,
             ipv4: existingInstance.ipv4,
+            providerState: existingInstance.status,
+            networkId: lockedNetworkId,
+            securityId: lockedSecurityId,
             status: CloudInstanceStatus.PENDING,
           },
         });
@@ -406,6 +460,7 @@ export async function processProvisioningJob(
             infrastructureOrderId: order.id,
             userId: order.userId,
             provider: order.provider,
+            providerApiVersion: order.providerApiVersion,
             providerInstanceId: created.id,
             name: created.name,
             region: created.region,
@@ -413,6 +468,9 @@ export async function processProvisioningJob(
             image: created.image,
             deliveryMode: order.deliveryMode,
             ipv4: created.ipv4,
+            providerState: created.status,
+            networkId: lockedNetworkId,
+            securityId: lockedSecurityId,
             status: CloudInstanceStatus.PENDING,
           },
         });
@@ -435,34 +493,22 @@ export async function processProvisioningJob(
       responseSummary: { id: final.id, status: final.status, ipv4: final.ipv4 },
     });
 
-    const isActive = final.status.toLowerCase() === "active" || Boolean(final.ipv4);
+    const isActive =
+      final.status.toLowerCase() === "active" && Boolean(final.ipv4);
     if (!isActive) {
       throw new InfrastructureError("provider_ambiguous", "Instance state ambiguous");
     }
-
-    const activatedAt = new Date();
-    const periodEnd = addBillingMonth(activatedAt);
-    const activeInstance = await prisma.cloudInstance.findUniqueOrThrow({
-      where: { infrastructureOrderId: order.id },
-    });
-    const paidSnapshot = (order.serviceOrder.planSnapshot ?? {}) as Record<string, unknown>;
-    const renewalPriceRial =
-      typeof paidSnapshot.finalPriceRialSnapshot === "string"
-        ? BigInt(paidSnapshot.finalPriceRialSnapshot)
-        : order.serviceOrder.amount;
 
     await prisma.$transaction([
       prisma.cloudInstance.updateMany({
         where: { infrastructureOrderId: order.id },
         data: {
           ipv4: final.ipv4,
-          status: CloudInstanceStatus.ACTIVE,
-          provisionedAt: activatedAt,
+          providerState: final.status,
+          networkId: lockedNetworkId,
+          securityId: lockedSecurityId,
+          status: CloudInstanceStatus.PENDING,
         },
-      }),
-      prisma.infrastructureOrder.update({
-        where: { id: order.id },
-        data: { status: InfrastructureOrderStatus.ACTIVE },
       }),
       prisma.provisioningJob.update({
         where: { id: job.id },
@@ -474,31 +520,19 @@ export async function processProvisioningJob(
           leaseExpiresAt: null,
         },
       }),
-      prisma.serviceSubscription.upsert({
-        where: { cloudInstanceId: activeInstance.id },
-        update: {},
-        create: {
-          cloudInstanceId: activeInstance.id,
-          sourceOrderId: order.serviceOrderId,
-          userId: order.userId,
-          planId: order.planId,
-          status: SubscriptionStatus.ACTIVE,
-          parchinLevel: order.parchinLevel,
-          renewalPriceRial,
-          currentPeriodStart: activatedAt,
-          currentPeriodEnd: periodEnd,
-          nextRenewalAt: periodEnd,
-          graceEndsAt: addGracePeriod(periodEnd),
-        },
-      }),
     ]);
-
-    await createAdminNotification({
-      type: AdminNotificationType.INSTANCE_ACTIVE,
+    const health = await runInfrastructureHealthCheck({
       infrastructureOrderId: order.id,
-      title: "سرور فعال شد",
-      message: `سرور سفارش ${order.serviceOrder.title} آماده است.`,
+      probe: options?.healthProbe,
     });
+    if (health.delivered) {
+      await createAdminNotification({
+        type: AdminNotificationType.INSTANCE_ACTIVE,
+        infrastructureOrderId: order.id,
+        title: "سرور فعال شد",
+        message: `سرور سفارش ${order.serviceOrder.title} آماده است.`,
+      });
+    }
   } catch (error) {
     const errorCode = error instanceof InfrastructureError ? error.code : "provider_unavailable";
     const errorMessage = customerSafeProviderMessage();
@@ -528,6 +562,18 @@ export async function processProvisioningJob(
         title: "کمبود اعتبار پارس‌پک",
         message: "شارژ پارس‌پک کافی نبود. پس از شارژ مجدد، تأیید Attempt جدید ثبت کنید.",
       });
+      await transitionProductFlow({
+        owner: {
+          recommendationSessionId:
+            order.serviceOrder.recommendationQuote?.sessionId ?? null,
+          serviceOrderId: order.serviceOrderId,
+          infrastructureOrderId: order.id,
+        },
+        from: "PROVISIONING",
+        to: "PROVISIONING_MANUAL_REVIEW",
+        reason: "provider_funding_blocked",
+        idempotencyKey: `provider-funding-blocked:${job.id}`,
+      });
       return;
     }
 
@@ -556,6 +602,18 @@ export async function processProvisioningJob(
         title: "نیاز به تطبیق",
         message: "وضعیت ساخت سرور مبهم است و نیاز به بررسی دستی دارد.",
       });
+      await transitionProductFlow({
+        owner: {
+          recommendationSessionId:
+            order.serviceOrder.recommendationQuote?.sessionId ?? null,
+          serviceOrderId: order.serviceOrderId,
+          infrastructureOrderId: order.id,
+        },
+        from: "PROVISIONING",
+        to: "PROVISIONING_RECONCILING",
+        reason: "provider_result_ambiguous",
+        idempotencyKey: `provider-reconciling:${job.id}`,
+      });
       return;
     }
 
@@ -582,6 +640,18 @@ export async function processProvisioningJob(
       infrastructureOrderId: order.id,
       title: "خطای آماده‌سازی",
       message: "آماده‌سازی سرور با خطا مواجه شد.",
+    });
+    await transitionProductFlow({
+      owner: {
+        recommendationSessionId:
+          order.serviceOrder.recommendationQuote?.sessionId ?? null,
+        serviceOrderId: order.serviceOrderId,
+        infrastructureOrderId: order.id,
+      },
+      from: "PROVISIONING",
+      to: "PROVISIONING_RETRYABLE",
+      reason: "provider_create_failed",
+      idempotencyKey: `provider-retryable:${job.id}`,
     });
 
     await logProviderOperation({

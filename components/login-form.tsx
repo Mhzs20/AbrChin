@@ -90,29 +90,21 @@ export function LoginForm({ nextPath = "/account" }: { nextPath?: string }) {
       }
 
       try {
-        const raw = window.sessionStorage.getItem(
-          "abrchin:conversation:v1",
+        const claimResponse = await fetch(
+          "/api/recommendations/sessions/claim",
+          { method: "POST" },
         );
-        const draft = raw
-          ? (JSON.parse(raw) as {
-              sessionId?: string;
-              guestToken?: string;
-            })
-          : null;
-        if (draft?.sessionId && draft.guestToken) {
-          await fetch(
-            `/api/recommendations/sessions/${draft.sessionId}/claim`,
-            {
-              method: "POST",
-              headers: {
-                "x-recommendation-session-token": draft.guestToken,
-              },
-            },
+        if (!claimResponse.ok) {
+          setError(
+            "ورود انجام شد، اما اتصال گفت‌وگو به حساب کامل نشد. دوباره تلاش کن.",
           );
+          return;
         }
       } catch {
-        // Login must succeed even when a stale guest conversation cannot be
-        // claimed. The server-side conversation remains fail-closed.
+        setError(
+          "ورود انجام شد، اما اتصال گفت‌وگو به حساب کامل نشد. دوباره تلاش کن.",
+        );
+        return;
       }
 
       router.replace(nextPath);
