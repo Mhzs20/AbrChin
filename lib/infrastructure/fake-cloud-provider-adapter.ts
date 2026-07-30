@@ -16,6 +16,7 @@ import type {
   ProviderResourceInput,
   ProviderSecurity,
   ProviderSelection,
+  ProviderSshKey,
   ProviderTask,
   ProviderTaskLookup,
   ProviderTaskStatus,
@@ -33,6 +34,13 @@ export type FakeCloudProviderFixtures = {
   networksByRegion?: Record<string, ProviderNetwork[]>;
   securityByRegion?: Record<string, ProviderSecurity[]>;
   createBehavior?: "success" | "timeout_after_accept" | "failure";
+  sshKeysByRegion?: Record<string, ProviderSshKey[]>;
+  observedResource?: {
+    state?: string;
+    ipv4?: string | null;
+    networkIds?: string[] | null;
+    securityIds?: string[] | null;
+  };
 };
 
 export class FakeCloudProviderAdapter implements CloudProviderAdapter {
@@ -66,6 +74,10 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
 
   async syncSecurity(region: string): Promise<ProviderSecurity[]> {
     return this.fixtures.securityByRegion?.[region] ?? [];
+  }
+
+  async listSshKeys(region: string): Promise<ProviderSshKey[]> {
+    return this.fixtures.sshKeysByRegion?.[region] ?? [];
   }
 
   async resolveSelectionDefaults(region: string) {
@@ -193,6 +205,13 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
       region: input.region,
       state: "build",
       ipv4: null,
+      networkIds: input.externalNetworkId
+        ? [input.externalNetworkId]
+        : null,
+      securityIds: input.externalSecurityId
+        ? [input.externalSecurityId]
+        : null,
+      observedAt: new Date(),
       rawPayload: { id, name: input.name, status: "build" },
     };
     this.resources.set(id, resource);
@@ -231,8 +250,21 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
         "Fake resource not found",
       );
     }
-    resource.state = "active";
-    resource.ipv4 = "192.0.2.10";
+    resource.state =
+      this.fixtures.observedResource?.state ?? "active";
+    resource.ipv4 =
+      this.fixtures.observedResource?.ipv4 === undefined
+        ? "192.0.2.10"
+        : this.fixtures.observedResource.ipv4;
+    resource.networkIds =
+      this.fixtures.observedResource?.networkIds === undefined
+        ? resource.networkIds
+        : this.fixtures.observedResource.networkIds;
+    resource.securityIds =
+      this.fixtures.observedResource?.securityIds === undefined
+        ? resource.securityIds
+        : this.fixtures.observedResource.securityIds;
+    resource.observedAt = new Date();
     return {
       taskId: input.taskId ?? `task-${resource.id}`,
       actionId: null,

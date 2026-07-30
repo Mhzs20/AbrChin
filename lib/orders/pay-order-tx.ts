@@ -70,6 +70,15 @@ export async function executePayOrderWithWalletTx(
     return { order, infrastructureOrder: existingInfra };
   }
   if (order.status !== ServiceOrderStatus.PENDING_PAYMENT) {
+    if (
+      order.productFlowState === "REQUIREMENTS_COMPLETE" ||
+      order.productFlowState === "QUOTE_EXPIRED"
+    ) {
+      throw new WalletError(
+        "quote_refresh_required",
+        "این سفارش قدیمی به انتخاب دوبارهٔ تنظیمات تحویل و Quote جدید نیاز دارد.",
+      );
+    }
     throw new WalletError("invalid_status", "این سفارش قابل پرداخت نیست.");
   }
   if (order.quoteExpiresAt && order.quoteExpiresAt.getTime() <= Date.now()) {

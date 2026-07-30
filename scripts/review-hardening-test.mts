@@ -141,14 +141,16 @@ test("health and secure delivery gate activation and subscription", async () => 
   );
   assert.match(
     provisioning,
-    /final\.status\.toLowerCase\(\) === "active" && Boolean\(final\.ipv4\)/,
+    /providerObservedAt: observed\.observedAt/,
   );
   assert.doesNotMatch(
     provisioning,
-    /final\.status\.toLowerCase\(\) === "active" \|\|/,
+    /networkId: locked\.externalNetworkId/,
   );
   assert.match(health, /MAX_CONNECT_ATTEMPTS = 3/);
   assert.match(health, /expectedNetworkId/);
+  assert.match(health, /observedNetworkId/);
+  assert.match(health, /provider_network_mismatch/);
   assert.match(health, /HEALTH_CHECK_FAILED/);
   assert.match(health, /DELIVERY_RETRYABLE/);
   assert.match(health, /serviceSubscription\.upsert/);

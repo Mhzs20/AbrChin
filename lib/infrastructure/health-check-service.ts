@@ -16,6 +16,37 @@ import { addBillingMonth, addGracePeriod } from "@/lib/subscriptions/period";
 const CONNECT_TIMEOUT_MS = 3_000;
 const MAX_CONNECT_ATTEMPTS = 3;
 
+export function assessProviderObservation(input: {
+  providerState: string | null;
+  ipv4: string | null;
+  providerObservedAt: Date | null;
+  expectedNetworkId: string | null;
+  observedNetworkId: string | null;
+  expectedSecurityId: string | null;
+  observedSecurityId: string | null;
+}) {
+  if (
+    input.providerState?.toLowerCase() !== "active" ||
+    !input.ipv4 ||
+    !input.providerObservedAt
+  ) {
+    return { ready: false as const, code: "provider_state_unknown" };
+  }
+  if (
+    input.expectedNetworkId != null &&
+    input.observedNetworkId !== input.expectedNetworkId
+  ) {
+    return { ready: false as const, code: "provider_network_mismatch" };
+  }
+  if (
+    input.expectedSecurityId != null &&
+    input.observedSecurityId !== input.expectedSecurityId
+  ) {
+    return { ready: false as const, code: "provider_security_mismatch" };
+  }
+  return { ready: true as const, code: "provider_observation_verified" };
+}
+
 export type ConnectivityProbe = (input: {
   host: string;
   port: number;
@@ -73,6 +104,19 @@ function renewalPrice(order: {
     : order.serviceOrder.amount;
 }
 
+function deliveryAccessMethod(value: Prisma.JsonValue | null) {
+  const selection = asSelection(value);
+  const delivery = asSelection(
+    (selection.deliveryConfiguration ?? null) as Prisma.JsonValue | null,
+  );
+  const method = delivery.accessMethod;
+  return method === "SSH_KEY" ||
+    method === "ONE_TIME_PASSWORD" ||
+    method === "WINDOWS_PASSWORD"
+    ? method
+    : null;
+}
+
 async function activateDeliveredServiceTx(
   tx: Prisma.TransactionClient,
   infrastructureOrderId: string,
@@ -85,15 +129,27 @@ async function activateDeliveredServiceTx(
     },
   });
   const instance = order.cloudInstance;
+  const accessMethod = deliveryAccessMethod(
+    order.providerSelectionSnapshot,
+  );
+  const needsPasswordCredential =
+    accessMethod === "ONE_TIME_PASSWORD" ||
+    accessMethod === "WINDOWS_PASSWORD";
   if (
     !instance ||
     !instance.ipv4 ||
     !instance.healthCheckedAt ||
-    !instance.credential ||
-    instance.credential.status !== "READY"
+    !accessMethod ||
+    (needsPasswordCredential &&
+      (!instance.credential ||
+        instance.credential.status !== "READY"))
   ) {
     throw new Error("secure_delivery_not_ready");
   }
+  const deliveryIdentity =
+    accessMethod === "SSH_KEY"
+      ? `ssh:${order.id}`
+      : instance.credential?.id ?? "missing-credential";
   const currentState = order.productFlowState;
   if (currentState === "DELIVERY_RETRYABLE") {
     await transitionProductFlowTx(tx, {
@@ -101,7 +157,7 @@ async function activateDeliveredServiceTx(
       from: "DELIVERY_RETRYABLE",
       to: "DELIVERED",
       reason: "secure_delivery_recovered",
-      idempotencyKey: `secure-delivery-recovered:${order.id}:${instance.credential.id}`,
+      idempotencyKey: `secure-delivery-recovered:${order.id}:${deliveryIdentity}`,
     });
   } else if (currentState !== "DELIVERED") {
     throw new Error("secure_delivery_state_conflict");
@@ -113,11 +169,18 @@ async function activateDeliveredServiceTx(
       infrastructureOrderId: order.id,
       cloudInstanceId: instance.id,
       status: SecureDeliveryStatus.DELIVERED,
-      method: "ONE_TIME_ENCRYPTED_CREDENTIAL",
-      resultCode: "credential_ready",
+      method:
+        accessMethod === "SSH_KEY"
+          ? "SSH_KEY_NON_SECRET"
+          : "ONE_TIME_ENCRYPTED_CREDENTIAL",
+      resultCode:
+        accessMethod === "SSH_KEY"
+          ? "ssh_key_locked"
+          : "credential_ready",
       deliveredAt,
       metadata: {
-        credentialId: instance.credential.id,
+        credentialId: instance.credential?.id ?? null,
+        accessMethod,
         containsSecret: false,
       },
     },
@@ -127,7 +190,7 @@ async function activateDeliveredServiceTx(
     from: "DELIVERED",
     to: "ACTIVE",
     reason: "secure_delivery_completed",
-    idempotencyKey: `service-active:${order.id}:${instance.credential.id}`,
+    idempotencyKey: `service-active:${order.id}:${deliveryIdentity}`,
   });
   await tx.cloudInstance.update({
     where: { id: instance.id },
@@ -193,15 +256,11 @@ export async function runInfrastructureHealthCheck(input: {
       typeof selection.externalNetworkId === "string"
         ? selection.externalNetworkId
         : null;
-    if (
-      !instance ||
-      instance.providerState?.toLowerCase() !== "active" ||
-      !instance.ipv4 ||
-      (expectedNetworkId != null &&
-        instance.networkId !== expectedNetworkId)
-    ) {
-      throw new Error("provider_resource_not_ready");
-    }
+    const expectedSecurityId =
+      typeof selection.externalSecurityId === "string"
+        ? selection.externalSecurityId
+        : null;
+    if (!instance) throw new Error("provider_resource_not_ready");
     const currentState = order.productFlowState;
     if (currentState === "PROVISIONING") {
       await transitionProductFlowTx(tx, {
@@ -235,6 +294,10 @@ export async function runInfrastructureHealthCheck(input: {
         expectedIpv4: instance.ipv4,
         observedIpv4: instance.ipv4,
         expectedNetworkId,
+        observedNetworkId: instance.networkId,
+        expectedSecurityId,
+        observedSecurityId: instance.securityId,
+        providerObservedAt: instance.providerObservedAt,
         connectivityProtocol: instance.image
           .toLowerCase()
           .includes("windows")
@@ -242,15 +305,54 @@ export async function runInfrastructureHealthCheck(input: {
           : "tcp:22",
       },
     });
+    const observation = assessProviderObservation({
+      providerState: instance.providerState,
+      ipv4: instance.ipv4,
+      providerObservedAt: instance.providerObservedAt,
+      expectedNetworkId,
+      observedNetworkId: instance.networkId,
+      expectedSecurityId,
+      observedSecurityId: instance.securityId,
+    });
     return {
       order,
       instance,
       check,
       port: instance.image.toLowerCase().includes("windows") ? 3389 : 22,
+      providerContractReady: observation.ready,
+      providerObservationCode: observation.code,
     };
   });
 
   const startedAt = Date.now();
+  if (!prepared.providerContractReady) {
+    return prisma.$transaction(async (tx) => {
+      const order = await tx.infrastructureOrder.findUniqueOrThrow({
+        where: { id: prepared.order.id },
+        include: {
+          serviceOrder: { include: { recommendationQuote: true } },
+        },
+      });
+      await tx.infrastructureHealthCheck.update({
+        where: { id: prepared.check.id },
+        data: {
+          status: InfrastructureHealthCheckStatus.FAILED,
+          resultCode: prepared.providerObservationCode,
+          durationMs: Date.now() - startedAt,
+          finishedAt: new Date(),
+          metadata: { containsSecret: false },
+        },
+      });
+      await transitionProductFlowTx(tx, {
+        owner: owner(order),
+        from: "HEALTH_CHECKING",
+        to: "HEALTH_CHECK_FAILED",
+        reason: prepared.providerObservationCode,
+        idempotencyKey: `health-observation-failed:${prepared.check.id}`,
+      });
+      return { healthy: false as const, delivered: false as const };
+    });
+  }
   let reachable = false;
   let attemptsUsed = 0;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -307,7 +409,13 @@ export async function runInfrastructureHealthCheck(input: {
       reason: "health_check_succeeded",
       idempotencyKey: `health-succeeded:${prepared.check.id}`,
     });
-    if (instance.credential?.status === "READY") {
+    const accessMethod = deliveryAccessMethod(
+      order.providerSelectionSnapshot,
+    );
+    if (
+      accessMethod === "SSH_KEY" ||
+      instance.credential?.status === "READY"
+    ) {
       await activateDeliveredServiceTx(tx, order.id);
       return { healthy: true as const, delivered: true as const };
     }
@@ -317,7 +425,7 @@ export async function runInfrastructureHealthCheck(input: {
         cloudInstanceId: instance.id,
         status: SecureDeliveryStatus.PENDING,
         method: "ONE_TIME_ENCRYPTED_CREDENTIAL",
-        resultCode: "credential_required",
+        resultCode: "password_credential_required",
         metadata: { containsSecret: false },
       },
     });

@@ -21,6 +21,7 @@ import {
   requestCatalogSync,
 } from "@/lib/infrastructure/multi-provider-catalog-service";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
+import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
 import {
   resolveProviderSelectionDefaults,
   revalidateLockedSelection,
@@ -78,7 +79,6 @@ type LockedDeliveryConfiguration = {
   externalSecurityId: string | null;
   operatingSystem: string;
   accessMethod:
-    | "SSH_KEY_OR_PASSWORD"
     | "ONE_TIME_PASSWORD"
     | "SSH_KEY"
     | "WINDOWS_PASSWORD";
@@ -86,7 +86,15 @@ type LockedDeliveryConfiguration = {
   catalogItemId?: string | null;
   imageAssetId?: string;
   sshKeyName?: string | null;
+  sshKeyId?: string | null;
+  sshKeyFingerprint?: string | null;
   configuredAt: string;
+};
+
+export type CatalogDeliverySelection = {
+  imageAssetId: string;
+  accessMethod: "ONE_TIME_PASSWORD" | "SSH_KEY" | "WINDOWS_PASSWORD";
+  sshKeyName?: string | null;
 };
 
 function parseLockedDeliveryConfiguration(
@@ -160,6 +168,7 @@ async function requireFreshCatalog(provider: InfrastructureProvider) {
 
 async function lockAndRevalidatePlan(
   plan: PricedInfrastructurePlan,
+  delivery: CatalogDeliverySelection,
 ): Promise<{
   configuration: LockedDeliveryConfiguration;
   providerPriceCheckedAt: Date;
@@ -169,26 +178,105 @@ async function lockAndRevalidatePlan(
     provider: plan.provider,
     apiVersion: plan.providerApiVersion,
   });
-  const externalPlanId =
-    plan.catalogItem.externalPlanId ?? plan.sizeCode;
-  const defaults =
-    plan.provider === InfrastructureProvider.ARVAN
-      ? await resolveProviderSelectionDefaults({
-          provider: plan.provider,
-          providerApiVersion: plan.providerApiVersion,
-          productKind: plan.productKind,
-          region: plan.regionCode,
-        })
-      : null;
+  const externalPlanId = plan.catalogItem.externalPlanId ?? plan.sizeCode;
+  const image = await prisma.providerCatalogAsset.findFirst({
+    where: {
+      id: delivery.imageAssetId,
+      provider: plan.provider,
+      apiVersion: plan.providerApiVersion,
+      regionCode: plan.regionCode,
+      kind: "IMAGE",
+      status: "ACTIVE",
+      available: true,
+    },
+  });
+  const compatible = Array.isArray(plan.catalogItem.compatibleImageCodes)
+    ? plan.catalogItem.compatibleImageCodes.filter(
+        (code): code is string => typeof code === "string",
+      )
+    : [];
+  if (!image || !compatible.includes(image.externalId)) {
+    throw new WalletError(
+      "quote_unavailable",
+      "سیستم‌عامل انتخاب‌شده دیگر با این سرور سازگار نیست.",
+    );
+  }
+  const windows = /windows/i.test(
+    `${image.name} ${JSON.stringify(image.rawPayload)}`,
+  );
+  const rawImage =
+    image.rawPayload &&
+    typeof image.rawPayload === "object" &&
+    !Array.isArray(image.rawPayload)
+      ? (image.rawPayload as Record<string, unknown>)
+      : {};
+  if (
+    (delivery.accessMethod === "SSH_KEY" &&
+      rawImage.ssh_key === false) ||
+    (delivery.accessMethod === "ONE_TIME_PASSWORD" &&
+      rawImage.ssh_password === false)
+  ) {
+    throw new WalletError(
+      "quote_unavailable",
+      "روش دسترسی برای این Image پشتیبانی نمی‌شود.",
+    );
+  }
+  if (
+    (windows && delivery.accessMethod !== "WINDOWS_PASSWORD") ||
+    (!windows && delivery.accessMethod === "WINDOWS_PASSWORD")
+  ) {
+    throw new WalletError(
+      "quote_unavailable",
+      "روش دسترسی با سیستم‌عامل انتخاب‌شده سازگار نیست.",
+    );
+  }
+  let lockedSshKey: {
+    id: string | null;
+    name: string;
+    fingerprint: string | null;
+  } | null = null;
+  if (delivery.accessMethod === "SSH_KEY") {
+    const keyName = delivery.sshKeyName?.trim() ?? "";
+    if (!/^[a-zA-Z0-9._-]{1,128}$/.test(keyName)) {
+      throw new WalletError(
+        "quote_unavailable",
+        "کلید SSH معتبر انتخاب نشده است.",
+      );
+    }
+    const adapter = createCloudProviderAdapter(
+      plan.provider,
+      plan.providerApiVersion,
+    );
+    const key = (await adapter.listSshKeys(plan.regionCode)).find(
+      (candidate) => candidate.name === keyName,
+    );
+    if (!key) {
+      throw new WalletError(
+        "quote_unavailable",
+        "کلید SSH انتخاب‌شده در موقعیت سرور موجود نیست.",
+      );
+    }
+    lockedSshKey = {
+      id: key.id,
+      name: key.name,
+      fingerprint: key.fingerprint,
+    };
+  }
+  const defaults = await resolveProviderSelectionDefaults({
+    provider: plan.provider,
+    providerApiVersion: plan.providerApiVersion,
+    productKind: plan.productKind,
+    region: plan.regionCode,
+  });
   const selection = {
     provider: plan.provider,
     providerApiVersion: plan.providerApiVersion,
     productKind: plan.productKind,
     region: plan.regionCode,
     externalPlanId,
-    externalImageId: plan.imageCode,
-    externalNetworkId: defaults?.externalNetworkId ?? null,
-    externalSecurityId: defaults?.externalSecurityId ?? null,
+    externalImageId: image.externalId,
+    externalNetworkId: defaults.externalNetworkId,
+    externalSecurityId: defaults.externalSecurityId,
   };
   const current = await revalidateLockedSelection(selection);
   if (
@@ -210,11 +298,15 @@ async function lockAndRevalidatePlan(
       region: plan.regionCode,
       regionLabel: plan.regionCode,
       externalPlanId,
-      externalImageId: plan.imageCode,
-      externalNetworkId: defaults?.externalNetworkId ?? null,
-      externalSecurityId: defaults?.externalSecurityId ?? null,
-      operatingSystem: plan.imageCode,
-      accessMethod: "SSH_KEY_OR_PASSWORD",
+      externalImageId: image.externalId,
+      externalNetworkId: defaults.externalNetworkId,
+      externalSecurityId: defaults.externalSecurityId,
+      operatingSystem: image.name,
+      accessMethod: delivery.accessMethod,
+      imageAssetId: image.id,
+      sshKeyName: lockedSshKey?.name ?? null,
+      sshKeyId: lockedSshKey?.id ?? null,
+      sshKeyFingerprint: lockedSshKey?.fingerprint ?? null,
       configuredAt: current.checkedAt.toISOString(),
     },
     providerPriceCheckedAt: current.checkedAt,
@@ -374,6 +466,7 @@ async function createCatalogServerQuote(params: {
   userId?: string | null;
   now?: Date;
   expectedProductKind: InfrastructureProductKind;
+  delivery: CatalogDeliverySelection;
 }) {
   const route = await prisma.infrastructurePlan.findUnique({
     where: { id: params.planId },
@@ -407,7 +500,7 @@ async function createCatalogServerQuote(params: {
       "این سرور دیگر قیمت یا ظرفیت معتبر ندارد.",
     );
   }
-  const locked = await lockAndRevalidatePlan(plan);
+  const locked = await lockAndRevalidatePlan(plan, params.delivery);
 
   const now = params.now ?? new Date();
   const expiresAt = new Date(now.getTime() + RECOMMENDATION_QUOTE_VALIDITY_MS);
@@ -542,6 +635,7 @@ async function createCatalogServerQuote(params: {
 
 export async function createReadyServerQuote(params: {
   planId: string;
+  delivery: CatalogDeliverySelection;
   userId?: string | null;
   now?: Date;
 }) {
@@ -554,6 +648,7 @@ export async function createReadyServerQuote(params: {
 
 export async function createCloudServerQuote(params: {
   planId: string;
+  delivery: CatalogDeliverySelection;
   userId?: string | null;
   now?: Date;
 }) {
@@ -561,6 +656,74 @@ export async function createCloudServerQuote(params: {
     ...params,
     expectedProductKind: InfrastructureProductKind.CLOUD_SERVER,
   });
+}
+
+export async function getCatalogServerDeliveryOptions(params: {
+  planId: string;
+  expectedProductKind: InfrastructureProductKind;
+}) {
+  const plan =
+    params.expectedProductKind ===
+    InfrastructureProductKind.READY_INSTANT_SERVER
+      ? await getActiveReadyServerPlanById(params.planId)
+      : await getActivePlanById(params.planId);
+  if (!plan || plan.productKind !== params.expectedProductKind) {
+    throw new WalletError("quote_unavailable", "این انتخاب معتبر نیست.");
+  }
+  assertProviderRoute({
+    productKind: plan.productKind,
+    provider: plan.provider,
+    apiVersion: plan.providerApiVersion,
+  });
+  await requireFreshCatalog(plan.provider);
+  const compatible = Array.isArray(plan.catalogItem.compatibleImageCodes)
+    ? plan.catalogItem.compatibleImageCodes.filter(
+        (code): code is string => typeof code === "string",
+      )
+    : [];
+  const images = await prisma.providerCatalogAsset.findMany({
+    where: {
+      provider: plan.provider,
+      apiVersion: plan.providerApiVersion,
+      regionCode: plan.regionCode,
+      kind: "IMAGE",
+      externalId: { in: compatible },
+      status: "ACTIVE",
+      available: true,
+    },
+    orderBy: { name: "asc" },
+  });
+  return {
+    planId: plan.id,
+    region: plan.regionCode,
+    images: images.map((image) => {
+      const windows = /windows/i.test(
+        `${image.name} ${JSON.stringify(image.rawPayload)}`,
+      );
+      const raw =
+        image.rawPayload &&
+        typeof image.rawPayload === "object" &&
+        !Array.isArray(image.rawPayload)
+          ? (image.rawPayload as Record<string, unknown>)
+          : {};
+      const linuxMethods = [
+        ...(plan.provider === InfrastructureProvider.ARVAN &&
+        raw.ssh_key !== false
+          ? (["SSH_KEY"] as const)
+          : []),
+        ...(raw.ssh_password !== false
+          ? (["ONE_TIME_PASSWORD"] as const)
+          : []),
+      ];
+      return {
+        id: image.id,
+        label: image.name,
+        accessMethods: windows
+          ? (["WINDOWS_PASSWORD"] as const)
+          : linuxMethods,
+      };
+    }).filter((image) => image.accessMethods.length > 0),
+  };
 }
 
 export async function createRecommendationQuotes(params: {
@@ -688,13 +851,22 @@ export async function createRecommendationQuotes(params: {
   };
   const comparisons = params.includeComparisons
     ? candidates
-        .filter(({ plan }) => plan.id !== configuredPlan.id)
+        .filter(
+          ({ plan }) =>
+            plan.id !== configuredPlan.id &&
+            plan.regionCode === configuredPlan.regionCode &&
+            typeof lockedConfiguration.imageAssetId === "string",
+        )
         .slice(0, 2)
     : [];
   const validatedComparisons = await Promise.allSettled(
     comparisons.map(async (selected) => ({
       ...selected,
-      ...(await lockAndRevalidatePlan(selected.plan)),
+      ...(await lockAndRevalidatePlan(selected.plan, {
+        imageAssetId: lockedConfiguration.imageAssetId!,
+        accessMethod: lockedConfiguration.accessMethod,
+        sshKeyName: lockedConfiguration.sshKeyName,
+      })),
     })),
   );
   const selected = [
@@ -944,18 +1116,64 @@ export async function refreshRecommendationQuote(params: {
   }
   let replacement: PublicRecommendationQuote | null = null;
   if (isReadyServerProfile(previous.session.profile)) {
+    const delivery = previous.deliveryConfigurationSnapshot as
+      | Record<string, unknown>
+      | null;
+    if (
+      !delivery ||
+      typeof delivery.imageAssetId !== "string" ||
+      !["ONE_TIME_PASSWORD", "SSH_KEY", "WINDOWS_PASSWORD"].includes(
+        String(delivery.accessMethod),
+      )
+    ) {
+      throw new Error("delivery_configuration_required");
+    }
     replacement = (
       await createReadyServerQuote({
         planId: previous.planId,
         userId: params.userId,
+        delivery: {
+          imageAssetId: delivery.imageAssetId,
+          accessMethod: delivery.accessMethod as
+            | "ONE_TIME_PASSWORD"
+            | "SSH_KEY"
+            | "WINDOWS_PASSWORD",
+          sshKeyName:
+            typeof delivery.sshKeyName === "string"
+              ? delivery.sshKeyName
+              : null,
+        },
       })
     ).quote;
   }
   if (isCloudServerProfile(previous.session.profile)) {
+    const delivery = previous.deliveryConfigurationSnapshot as
+      | Record<string, unknown>
+      | null;
+    if (
+      !delivery ||
+      typeof delivery.imageAssetId !== "string" ||
+      !["ONE_TIME_PASSWORD", "SSH_KEY", "WINDOWS_PASSWORD"].includes(
+        String(delivery.accessMethod),
+      )
+    ) {
+      throw new Error("delivery_configuration_required");
+    }
     replacement = (
       await createCloudServerQuote({
         planId: previous.planId,
         userId: params.userId,
+        delivery: {
+          imageAssetId: delivery.imageAssetId,
+          accessMethod: delivery.accessMethod as
+            | "ONE_TIME_PASSWORD"
+            | "SSH_KEY"
+            | "WINDOWS_PASSWORD",
+          sshKeyName:
+            typeof delivery.sshKeyName === "string"
+              ? delivery.sshKeyName
+              : null,
+        },
       })
     ).quote;
   }

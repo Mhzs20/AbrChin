@@ -13,6 +13,7 @@ import type {
   ProviderResourceInput,
   ProviderSecurity,
   ProviderSelection,
+  ProviderSshKey,
   ProviderTask,
   ProviderTaskLookup,
   ProviderTaskStatus,
@@ -257,12 +258,39 @@ function ipv4FromServer(raw: UnknownRecord): string | null {
 function parseResource(raw: UnknownRecord, region: string): ProviderResource {
   const id = asString(raw.id);
   if (!id) throw new Error("provider_resource_id_missing");
+  const networkIds = Array.isArray(raw.network_ids)
+    ? raw.network_ids.map(asString).filter(Boolean)
+    : asString(raw.network_id)
+      ? [asString(raw.network_id)]
+    : Array.isArray(raw.networks)
+      ? raw.networks
+          .map((network) =>
+            isRecord(network)
+              ? asString(network.id) || asString(network.network_id)
+              : asString(network),
+          )
+          .filter(Boolean)
+      : isRecord(raw.addresses)
+        ? Object.keys(raw.addresses).filter(Boolean)
+        : null;
+  const securityIds = Array.isArray(raw.security_groups)
+    ? raw.security_groups
+        .map((security) =>
+          isRecord(security)
+            ? asString(security.id) || asString(security.name)
+            : asString(security),
+        )
+        .filter(Boolean)
+    : null;
   return {
     id,
     name: asString(raw.name),
     region,
     state: asString(raw.status) || "unknown",
     ipv4: ipv4FromServer(raw),
+    networkIds,
+    securityIds,
+    observedAt: new Date(),
     rawPayload: redactProviderData(raw) as UnknownRecord,
   };
 }
@@ -652,6 +680,22 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
           : {}),
       }))
       .filter((security) => security.externalId.length > 0);
+  }
+
+  async listSshKeys(region: string): Promise<ProviderSshKey[]> {
+    const response = await this.request(
+      "GET",
+      `/regions/${encodeURIComponent(region)}/ssh-keys`,
+    );
+    return unwrapCollection(response.body, ["ssh_keys", "keys"])
+      .filter(isRecord)
+      .map((raw) => ({
+        id: asString(raw.id) || null,
+        name: asString(raw.name),
+        fingerprint: asString(raw.fingerprint) || null,
+        publicKey: asString(raw.public_key) || null,
+      }))
+      .filter((key) => key.name.length > 0);
   }
 
   async resolveSelectionDefaults(region: string) {

@@ -226,8 +226,9 @@ Renewal Auto-charge ندارد. هر تمدید Quote مستقل ده‌دقیق
 Session گفتگو در `RecommendationSession` Persist می‌شود. Token مهمان فقط
 به‌صورت SHA-256 در Database و اصل آن فقط در Cookie `HttpOnly`, `SameSite=Lax`
 نگه‌داری می‌شود؛ `sessionStorage` صرفاً Cache نمایشی و Session ID است. GET
-اختصاصی Session همیشه Database را مرجع می‌گیرد و کاربر واردشده حتی پس از
-پاک‌شدن Storage آخرین گفت‌وگوی ناتمام را Resume می‌کند. Claim موفق Token
+عمومی Resume برای کاربر واردشده با `userId` و برای مهمان با Hash همان Cookie
+جست‌وجو می‌کند؛ بنابراین مهمان هم پس از پاک‌شدن Storage همان گفت‌وگوی
+ناتمام را Resume می‌کند. Token جعلی/منقضی Fail-closed است. Claim موفق Token
 مهمان را باطل می‌کند و Order فقط Session صریحاً Claim‌شده را می‌پذیرد.
 
 Discovery چهار سؤال ثابت پُراثر و حداکثر یک سؤال تطبیقی دارد. پاسخ‌های
@@ -249,15 +250,34 @@ Conflict پاسخ `409` با Snapshot فعلی Sanitized می‌دهد. ویرا
 `DELIVERY_CONFIGURED → QUOTED` Persist و Snapshot می‌شود؛ Quote دیگر این
 Transition را به‌صورت فرضی تولید نمی‌کند.
 
+مسیر حرفه‌ای `/cloud-servers` نیز همین قرارداد را استفاده می‌کند. ارسال
+تنها `planId` قابل Quote نیست: Customer باید Image/OS و یکی از
+`SSH_KEY`, `ONE_TIME_PASSWORD`, `WINDOWS_PASSWORD` را صریحاً انتخاب کند؛
+Windows فقط رمز Windows و Linux فقط SSH Key یا رمز یک‌بارمصرف می‌پذیرد.
+Network و Security پیش‌فرض Region در Server دوباره Resolve و Validate
+می‌شوند. برای SSH، Adapter فقط
+`GET /regions/{region}/ssh-keys` را طبق Provider رسمی Terraform می‌خواند و
+نام/ID/Fingerprint را قفل می‌کند؛ Private Key هرگز دریافت یا ذخیره نمی‌شود.
+سرور آماده نیز Image واقعی Catalog و روش دسترسی بدون ابهام را Snapshot
+می‌کند.
+
 پس از ساخت، صرف وجود IP کافی نیست: State Provider باید `active` و IP و شبکه
-باید با Snapshot قفل‌شده منطبق باشند. سپس اتصال TCP محدود SSH یا RDP Audit
-می‌شود. اشتراک فقط پس از Health Check موفق و تحویل امن Credential
-رمزنگاری‌شده فعال می‌شود؛ شکست به `HEALTH_CHECK_FAILED` یا
+و Security مشاهده‌شده از GET Resource باید با Snapshot قفل‌شده منطبق باشند.
+مقدار مشاهده‌نشده Success محسوب نمی‌شود و Timestamp مشاهده جداگانه Persist
+می‌شود. سپس اتصال TCP محدود SSH یا RDP Audit می‌شود. برای Password، اشتراک
+فقط پس از Credential رمزنگاری‌شدهٔ یک‌بارمصرف فعال می‌شود؛ برای `SSH_KEY`
+تحویل یک Artifact غیرمحرمانه است و نبود Password مانع Activation نیست.
+شکست به `HEALTH_CHECK_FAILED` یا
 `DELIVERY_RETRYABLE` می‌رود و مسیر Retry/Manual Review دارد.
 
 ## Reconciliation و ایمنی
 
 قبل از Create، Order باید Paid، Provider قفل و Idempotency Key ثبت شده باشد.
+Worker فقط `providerSelectionSnapshot` همان Order پرداخت‌شده را می‌خواند و
+هیچ fallbackای به Plan یا Catalog فعلی ندارد. Provider/API/Region/Plan/Image/
+Network/Security/Access ناقص یا ناسازگار پیش از هر Create به Manual Review
+می‌رود. Adapter Worker همان `CloudProviderAdapter` چندارائه‌دهنده است؛ در
+این Branch `ARVAN_MUTATIONS_ENABLED=false` باقی می‌ماند.
 پس از Timeout، Create دوباره ارسال نمی‌شود. ابتدا Task/Resource ID و سپس نام
 `abrchin-{orderPublicId}-{attempt}` Reconcile می‌شود. نبودن در یک List response
 برای Retry کافی نیست؛ `noResourceConfirmedAt` باید به‌طور قطعی ثبت شود.
@@ -289,12 +309,20 @@ POSTGRES_TEST_DATABASE_URL=postgresql://... npm run test:postgres
 ```
 
 این تست در Schema موقت، Migrationها را مرحله‌ای Deploy می‌کند، ثابت می‌کند
-Markup قدیمی `2500 + 0` باقی می‌ماند، Mapping امن State را کنترل می‌کند و
-رقابت دو Update با Revision یکسان را می‌آزماید. نبود این متغیر خطاست و به
+Markup قدیمی `2500 + 0` باقی می‌ماند، Quote/Order معتبر Legacy را هم‌تراز و
+قابل پرداخت نگه می‌دارد، Quote ناقص/منقضی/بدون Order را Recoverable و
+غیرقابل پرداخت می‌کند، Paid Order/Ledger/Snapshot را ثابت نگه می‌دارد،
+اجرای دوباره را Idempotent می‌سنجد و رقابت واقعی دو Transition را از
+State Service اجرا می‌کند. نبود این متغیر خطاست و به
 عنوان Pass یا Skip گزارش نمی‌شود.
 
 Migration `20260730190000_provider_review_hardening` نیز Forward-only است و
 Revisionهای جریان، Lease/Freshness کاتالوگ، Snapshot تنظیم تحویل و جدول‌های
 Health Check/Secure Delivery را اضافه می‌کند. Stateهای Legacy مبهم به آخرین
-مرحلهٔ قابل اثبات عقب برده می‌شوند و هیچ مبلغ، Ledger یا Paid Order بازنویسی
-نمی‌شود.
+مرحلهٔ قابل اثبات عقب برده می‌شوند. Remediation با
+`ProductFlowTransition`های دارای Idempotency Key قابل Audit است. Quote معتبر
+فقط وقتی `AWAITING_PAYMENT` می‌ماند که تمام Lockهای Provider/Delivery و
+Snapshot مالی کامل باشند؛ در غیر این صورت Quote Invalid/Expired، Order
+`DRAFT` و Session `REQUIREMENTS_COMPLETE` می‌شود تا Customer تنظیم تحویل و
+Quote تازه بگیرد. مبلغ، Ledger، Paid status و Snapshot مالی Paid Order
+بازنویسی نمی‌شوند.

@@ -666,6 +666,7 @@ model CloudInstance {
   providerState         String?
   networkId             String?
   securityId            String?
+  providerObservedAt    DateTime?
   status                CloudInstanceStatus         @default(PENDING)
   provisionedAt         DateTime?
   healthCheckedAt       DateTime?
@@ -1053,6 +1054,10 @@ model InfrastructureHealthCheck {
   expectedIpv4          String?
   observedIpv4          String?
   expectedNetworkId     String?
+  observedNetworkId     String?
+  expectedSecurityId    String?
+  observedSecurityId    String?
+  providerObservedAt    DateTime?
   connectivityProtocol  String?
   resultCode            String?
   durationMs            Int?

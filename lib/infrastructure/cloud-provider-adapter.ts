@@ -66,6 +66,13 @@ export type ProviderSecurity = {
   providerRequestId?: string;
 };
 
+export type ProviderSshKey = {
+  id: string | null;
+  name: string;
+  fingerprint: string | null;
+  publicKey: string | null;
+};
+
 export type ProviderSelection = {
   productKind: InfrastructureProductKind;
   region: string;
@@ -122,6 +129,7 @@ export type CreateServerInput = ProviderSelection & {
   sshKeyEnabled?: boolean;
   sshKeyName?: string | null;
   initScript?: string | null;
+  accessMethod: "SSH_KEY" | "ONE_TIME_PASSWORD" | "WINDOWS_PASSWORD";
 };
 
 export type ProviderTask = {
@@ -157,6 +165,9 @@ export type ProviderResource = {
   region: string;
   state: string;
   ipv4: string | null;
+  networkIds: string[] | null;
+  securityIds: string[] | null;
+  observedAt: Date;
   rawPayload: Record<string, unknown>;
 };
 
@@ -179,6 +190,7 @@ export interface CloudProviderAdapter {
   syncImages(region: string): Promise<ProviderImage[]>;
   syncNetworks(region: string): Promise<ProviderNetwork[]>;
   syncSecurity(region: string): Promise<ProviderSecurity[]>;
+  listSshKeys(region: string): Promise<ProviderSshKey[]>;
   resolveSelectionDefaults(
     region: string,
   ): Promise<ProviderSelectionDefaults>;

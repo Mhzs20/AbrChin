@@ -5,6 +5,7 @@ import {
   InfrastructureOrderStatus,
   InfrastructureProvider,
   ProvisioningJobStatus,
+  ServiceOrderStatus,
   type Prisma,
 } from "@prisma/client";
 
@@ -15,13 +16,17 @@ import {
   isAmbiguousProviderError,
   isInsufficientBalanceError,
 } from "@/lib/infrastructure/errors";
-import { createInfrastructureProvider } from "@/lib/infrastructure/provider-factory";
+import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
 import {
   runInfrastructureHealthCheck,
   type ConnectivityProbe,
 } from "@/lib/infrastructure/health-check-service";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
-import type { InfrastructureProviderAdapter } from "@/lib/infrastructure/types";
+import type {
+  CloudProviderAdapter,
+  CreateServerInput,
+} from "@/lib/infrastructure/cloud-provider-adapter";
+import { submitProvisioningOnce } from "@/lib/infrastructure/provisioning-orchestrator";
 import {
   transitionProductFlow,
   transitionProductFlowTx,
@@ -97,7 +102,8 @@ export async function recoverExpiredProvisioningJobs() {
 
   for (const job of expired) {
     const hasProviderId = Boolean(
-      job.providerRequestId || job.infrastructureOrder.cloudInstance?.providerInstanceId,
+      job.providerResourceId ||
+        job.infrastructureOrder.cloudInstance?.providerInstanceId,
     );
     const afterCreate = Boolean(job.createSentAt);
 
@@ -231,27 +237,93 @@ export async function claimNextProvisioningJob(workerId?: string) {
   });
 }
 
-async function resolveExistingProviderInstance(
-  order: {
-    id: string;
-    desiredInstanceName: string | null;
-    provider: InfrastructureProvider;
-    cloudInstance: { providerInstanceId: string } | null;
-    provisioningJobs: Array<{ providerRequestId: string | null }>;
-  },
-  provider: InfrastructureProviderAdapter,
-) {
-  const providerInstanceId =
-    order.cloudInstance?.providerInstanceId ??
-    order.provisioningJobs.find((job) => job.providerRequestId)?.providerRequestId ??
-    null;
-  if (providerInstanceId) {
-    return provider.getInstance(providerInstanceId);
+type LockedProvisioningSelection = {
+  provider: InfrastructureProvider;
+  providerApiVersion: string;
+  productKind: CreateServerInput["productKind"];
+  region: string;
+  externalPlanId: string;
+  externalImageId: string;
+  externalNetworkId: string;
+  externalSecurityId: string;
+  accessMethod: CreateServerInput["accessMethod"];
+  sshKeyName: string | null;
+  initScript: string | null;
+};
+
+function record(value: Prisma.JsonValue | null | undefined) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+export function parseLockedProvisioningSelection(input: {
+  snapshot: Prisma.JsonValue | null;
+  provider: InfrastructureProvider;
+  providerApiVersion: string;
+  productKind: CreateServerInput["productKind"];
+}): LockedProvisioningSelection {
+  const snapshot = record(input.snapshot);
+  const delivery = record(
+    (snapshot.deliveryConfiguration ?? null) as Prisma.JsonValue | null,
+  );
+  const string = (value: unknown) =>
+    typeof value === "string" && value.trim() ? value.trim() : null;
+  const provider = snapshot.provider;
+  const providerApiVersion = string(snapshot.providerApiVersion);
+  const productKind = snapshot.productKind;
+  const region = string(snapshot.region);
+  const externalPlanId = string(snapshot.externalPlanId);
+  const externalImageId = string(snapshot.externalImageId);
+  const externalNetworkId = string(snapshot.externalNetworkId);
+  const externalSecurityId = string(snapshot.externalSecurityId);
+  const accessMethod = string(delivery.accessMethod);
+  if (
+    provider !== input.provider ||
+    providerApiVersion !== input.providerApiVersion ||
+    productKind !== input.productKind ||
+    !region ||
+    !externalPlanId ||
+    !externalImageId ||
+    !externalNetworkId ||
+    !externalSecurityId ||
+    !["SSH_KEY", "ONE_TIME_PASSWORD", "WINDOWS_PASSWORD"].includes(
+      accessMethod ?? "",
+    ) ||
+    delivery.provider !== provider ||
+    delivery.providerApiVersion !== providerApiVersion ||
+    delivery.productKind !== productKind ||
+    delivery.region !== region ||
+    delivery.externalPlanId !== externalPlanId ||
+    delivery.externalImageId !== externalImageId ||
+    delivery.externalNetworkId !== externalNetworkId ||
+    delivery.externalSecurityId !== externalSecurityId
+  ) {
+    throw new InfrastructureError(
+      "provider_lock_incomplete",
+      "Paid provider selection snapshot is incomplete",
+    );
   }
-  if (order.desiredInstanceName) {
-    return provider.findInstanceByName(order.desiredInstanceName);
+  const sshKeyName = string(delivery.sshKeyName);
+  if (accessMethod === "SSH_KEY" && !sshKeyName) {
+    throw new InfrastructureError(
+      "provider_lock_incomplete",
+      "Paid SSH selection is incomplete",
+    );
   }
-  return null;
+  return {
+    provider: input.provider,
+    providerApiVersion,
+    productKind: input.productKind,
+    region,
+    externalPlanId,
+    externalImageId,
+    externalNetworkId,
+    externalSecurityId,
+    accessMethod: accessMethod as CreateServerInput["accessMethod"],
+    sshKeyName,
+    initScript: string(delivery.initScript) ?? null,
+  };
 }
 
 export async function touchWorkerHeartbeat(input?: {
@@ -304,7 +376,7 @@ export async function getWorkerHealthStatus() {
 
 export async function processProvisioningJob(
   jobId: string,
-  providerOverride?: InfrastructureProviderAdapter,
+  providerOverride?: CloudProviderAdapter,
   options?: { healthProbe?: ConnectivityProbe },
 ) {
   const job = await prisma.provisioningJob.findUnique({
@@ -312,7 +384,6 @@ export async function processProvisioningJob(
     include: {
       infrastructureOrder: {
         include: {
-          plan: true,
           serviceOrder: { include: { recommendationQuote: true } },
           cloudInstance: true,
           provisioningJobs: true,
@@ -323,20 +394,6 @@ export async function processProvisioningJob(
   if (!job || job.status !== ProvisioningJobStatus.RUNNING) return;
 
   const order = job.infrastructureOrder;
-  const providerSelection =
-    order.providerSelectionSnapshot &&
-    typeof order.providerSelectionSnapshot === "object" &&
-    !Array.isArray(order.providerSelectionSnapshot)
-      ? (order.providerSelectionSnapshot as Record<string, unknown>)
-      : {};
-  const lockedNetworkId =
-    typeof providerSelection.externalNetworkId === "string"
-      ? providerSelection.externalNetworkId
-      : null;
-  const lockedSecurityId =
-    typeof providerSelection.externalSecurityId === "string"
-      ? providerSelection.externalSecurityId
-      : null;
   if (order.cloudInstance?.status === CloudInstanceStatus.ACTIVE) {
     await prisma.provisioningJob.update({
       where: { id: job.id },
@@ -350,19 +407,23 @@ export async function processProvisioningJob(
     provider: order.provider,
     apiVersion: order.providerApiVersion,
   });
-  if (providerOverride && providerOverride.provider !== order.provider) {
+  if (
+    order.serviceOrder.status !== ServiceOrderStatus.PAID ||
+    (providerOverride &&
+      (providerOverride.provider !== order.provider ||
+        providerOverride.apiVersion !== order.providerApiVersion))
+  ) {
     throw new InfrastructureError(
       "provider_route_mismatch",
-      "Provisioning adapter does not match the locked provider",
+      "Provisioning requires the exact paid provider route",
     );
   }
-  if (!providerOverride && order.provider !== InfrastructureProvider.PARSPACK) {
-    throw new InfrastructureError(
-      "provider_mutation_disabled",
-      "Arvan provisioning requires the locked v1 orchestrator rollout",
+  const provider =
+    providerOverride ??
+    createCloudProviderAdapter(
+      order.provider,
+      order.providerApiVersion,
     );
-  }
-  const provider = providerOverride ?? createInfrastructureProvider();
 
   if (!order.desiredInstanceName) {
     const desiredName = buildDesiredInstanceName(order.id);
@@ -374,139 +435,177 @@ export async function processProvisioningJob(
   }
 
   try {
-    const existingInstance = await resolveExistingProviderInstance(order, provider);
-    if (existingInstance) {
-      if (!order.cloudInstance) {
-        await prisma.cloudInstance.create({
-          data: {
-            infrastructureOrderId: order.id,
-            userId: order.userId,
-            provider: order.provider,
-            providerApiVersion: order.providerApiVersion,
-            providerInstanceId: existingInstance.id,
-            name: existingInstance.name,
-            region: existingInstance.region,
-            size: existingInstance.size,
-            image: existingInstance.image,
-            deliveryMode: order.deliveryMode,
-            ipv4: existingInstance.ipv4,
-            providerState: existingInstance.status,
-            networkId: lockedNetworkId,
-            securityId: lockedSecurityId,
-            status: CloudInstanceStatus.PENDING,
-          },
-        });
-      }
-      await prisma.provisioningJob.update({
-        where: { id: job.id },
-        data: { providerRequestId: existingInstance.id },
-      });
-    }
-
-    let providerInstanceId = job.providerRequestId ?? order.cloudInstance?.providerInstanceId ?? null;
-    let created = existingInstance;
-
-    if (!providerInstanceId) {
-      const locked = (
-        order.serviceOrder.planSnapshot &&
-        typeof order.serviceOrder.planSnapshot === "object" &&
-        !Array.isArray(order.serviceOrder.planSnapshot)
-          ? order.serviceOrder.planSnapshot
-          : {}
-      ) as Record<string, unknown>;
-      const createInput = {
-        name: order.desiredInstanceName,
-        region:
-          typeof locked.regionCode === "string"
-            ? locked.regionCode
-            : order.plan.regionCode,
-        size:
-          typeof locked.sizeCode === "string"
-            ? locked.sizeCode
-            : order.plan.sizeCode,
-        image:
-          typeof locked.imageCode === "string"
-            ? locked.imageCode
-            : order.plan.imageCode,
-        deliveryMode: order.deliveryMode,
-      };
-
+    const locked = parseLockedProvisioningSelection({
+      snapshot: order.providerSelectionSnapshot,
+      provider: order.provider,
+      providerApiVersion: order.providerApiVersion,
+      productKind: order.productKind,
+    });
+    const createInput: CreateServerInput = {
+      productKind: locked.productKind,
+      region: locked.region,
+      externalPlanId: locked.externalPlanId,
+      externalImageId: locked.externalImageId,
+      externalNetworkId: locked.externalNetworkId,
+      externalSecurityId: locked.externalSecurityId,
+      accessMethod: locked.accessMethod,
+      sshKeyEnabled: locked.accessMethod === "SSH_KEY",
+      sshKeyName: locked.sshKeyName,
+      initScript: locked.initScript,
+      name: order.desiredInstanceName,
+      orderPublicId: order.id,
+      idempotencyKey: job.idempotencyKey,
+    };
+    const aboutToCreate =
+      !job.providerResourceId &&
+      !order.cloudInstance?.providerInstanceId &&
+      !job.providerTaskId &&
+      (!job.createSentAt || order.reconcileNoResourceConfirmedAt != null);
+    if (aboutToCreate) {
       await prisma.provisioningJob.update({
         where: { id: job.id },
         data: { createSentAt: new Date() },
       });
-
-      created = await provider.createInstance(createInput);
-      providerInstanceId = created.id;
-
-      await logProviderOperation({
-        provider: order.provider,
-        operation: "create_instance",
-        infrastructureOrderId: order.id,
-        provisioningJobId: job.id,
-        status: "success",
-        requestSummary: createInput,
-        responseSummary: { id: created.id, status: created.status },
+    }
+    const submission = await submitProvisioningOnce({
+      adapter: provider,
+      attempt: {
+        paid: true,
+        providerLocked: true,
+        createSentAt: job.createSentAt,
+        providerTaskId: job.providerTaskId,
+        providerResourceId:
+          job.providerResourceId ??
+          order.cloudInstance?.providerInstanceId ??
+          null,
+        noResourceConfirmedAt: order.reconcileNoResourceConfirmedAt,
+      },
+      create: createInput,
+    });
+    if (submission.state === "RECONCILING") {
+      await prisma.$transaction([
+        prisma.provisioningJob.update({
+          where: { id: job.id },
+          data: {
+            status: ProvisioningJobStatus.NEEDS_RECONCILIATION,
+            lastErrorCode: "provider_ambiguous",
+            lastErrorMessage: customerSafeProviderMessage(),
+            finishedAt: new Date(),
+            workerId: null,
+            lockedAt: null,
+            leaseExpiresAt: null,
+          },
+        }),
+        prisma.infrastructureOrder.update({
+          where: { id: order.id },
+          data: { status: InfrastructureOrderStatus.NEEDS_RECONCILIATION },
+        }),
+      ]);
+      await transitionProductFlow({
+        owner: {
+          recommendationSessionId:
+            order.serviceOrder.recommendationQuote?.sessionId ?? null,
+          serviceOrderId: order.serviceOrderId,
+          infrastructureOrderId: order.id,
+        },
+        from: "PROVISIONING",
+        to: "PROVISIONING_RECONCILING",
+        reason: "provider_create_requires_reconciliation",
+        idempotencyKey: `provider-reconciling:${job.id}`,
       });
-
+      return;
+    }
+    const providerResourceId =
+      submission.resourceId ?? submission.task?.resourceId ?? null;
+    if (submission.task) {
       await prisma.provisioningJob.update({
         where: { id: job.id },
-        data: { providerRequestId: created.id },
-      });
-
-      if (!order.cloudInstance) {
-        await prisma.cloudInstance.create({
-          data: {
-            infrastructureOrderId: order.id,
-            userId: order.userId,
-            provider: order.provider,
-            providerApiVersion: order.providerApiVersion,
-            providerInstanceId: created.id,
-            name: created.name,
-            region: created.region,
-            size: created.size,
-            image: created.image,
-            deliveryMode: order.deliveryMode,
-            ipv4: created.ipv4,
-            providerState: created.status,
-            networkId: lockedNetworkId,
-            securityId: lockedSecurityId,
-            status: CloudInstanceStatus.PENDING,
-          },
-        });
-      }
-    }
-
-    let final = created ?? (await provider.getInstance(providerInstanceId!));
-    for (let poll = 0; poll < POLL_ATTEMPTS; poll += 1) {
-      await sleep(POLL_DELAY_MS);
-      final = await provider.getInstance(providerInstanceId!);
-      if (final.status.toLowerCase() === "active" && final.ipv4) break;
-    }
-
-    await logProviderOperation({
-      provider: order.provider,
-      operation: "get_instance",
-      infrastructureOrderId: order.id,
-      provisioningJobId: job.id,
-      status: "success",
-      responseSummary: { id: final.id, status: final.status, ipv4: final.ipv4 },
-    });
-
-    const isActive =
-      final.status.toLowerCase() === "active" && Boolean(final.ipv4);
-    if (!isActive) {
-      throw new InfrastructureError("provider_ambiguous", "Instance state ambiguous");
-    }
-
-    await prisma.$transaction([
-      prisma.cloudInstance.updateMany({
-        where: { infrastructureOrderId: order.id },
         data: {
-          ipv4: final.ipv4,
-          providerState: final.status,
-          networkId: lockedNetworkId,
-          securityId: lockedSecurityId,
+          providerTaskId: submission.task.taskId,
+          providerActionId: submission.task.actionId,
+          providerRequestId: submission.task.requestId,
+          providerResourceId,
+          lastPolledAt: new Date(),
+        },
+      });
+    }
+    if (!providerResourceId) {
+      throw new InfrastructureError(
+        "provider_ambiguous",
+        "Provider did not return a resource id",
+      );
+    }
+    let taskStatus = await provider.getTaskStatus({
+      region: locked.region,
+      taskId: submission.task?.taskId ?? job.providerTaskId,
+      resourceId: providerResourceId,
+    });
+    for (let poll = 0; poll < POLL_ATTEMPTS; poll += 1) {
+      if (taskStatus.state === "SUCCEEDED" || taskStatus.state === "FAILED") {
+        break;
+      }
+      await sleep(POLL_DELAY_MS);
+      taskStatus = await provider.getTaskStatus({
+        region: locked.region,
+        taskId: taskStatus.taskId,
+        resourceId: providerResourceId,
+      });
+    }
+    if (taskStatus.state !== "SUCCEEDED") {
+      throw new InfrastructureError(
+        taskStatus.state === "FAILED"
+          ? "provider_unavailable"
+          : "provider_ambiguous",
+        "Provider task did not reach success",
+      );
+    }
+    const observed = await provider.findExistingResource({
+      region: locked.region,
+      orderPublicId: order.id,
+      expectedName: order.desiredInstanceName,
+      providerResourceId,
+    });
+    if (!observed) {
+      throw new InfrastructureError(
+        "provider_ambiguous",
+        "Provider resource could not be observed",
+      );
+    }
+    const observedNetworkId =
+      observed.networkIds?.includes(locked.externalNetworkId)
+        ? locked.externalNetworkId
+        : observed.networkIds?.[0] ?? null;
+    const observedSecurityId =
+      observed.securityIds?.includes(locked.externalSecurityId)
+        ? locked.externalSecurityId
+        : observed.securityIds?.[0] ?? null;
+    await prisma.$transaction([
+      prisma.cloudInstance.upsert({
+        where: { infrastructureOrderId: order.id },
+        create: {
+          infrastructureOrderId: order.id,
+          userId: order.userId,
+          provider: order.provider,
+          providerApiVersion: order.providerApiVersion,
+          providerInstanceId: observed.id,
+          name: observed.name,
+          region: observed.region,
+          size: locked.externalPlanId,
+          image: locked.externalImageId,
+          deliveryMode: order.deliveryMode,
+          ipv4: observed.ipv4,
+          providerState: observed.state,
+          networkId: observedNetworkId,
+          securityId: observedSecurityId,
+          providerObservedAt: observed.observedAt,
+          status: CloudInstanceStatus.PENDING,
+        },
+        update: {
+          ipv4: observed.ipv4,
+          providerState: observed.state,
+          networkId: observedNetworkId,
+          securityId: observedSecurityId,
+          providerObservedAt: observed.observedAt,
           status: CloudInstanceStatus.PENDING,
         },
       }),
@@ -518,6 +617,8 @@ export async function processProvisioningJob(
           workerId: null,
           lockedAt: null,
           leaseExpiresAt: null,
+          providerResourceId: observed.id,
+          lastPolledAt: taskStatus.checkedAt,
         },
       }),
     ]);
@@ -534,7 +635,10 @@ export async function processProvisioningJob(
       });
     }
   } catch (error) {
-    const errorCode = error instanceof InfrastructureError ? error.code : "provider_unavailable";
+    const errorCode =
+      error instanceof InfrastructureError
+        ? error.code
+        : "provider_unavailable";
     const errorMessage = customerSafeProviderMessage();
 
     if (isInsufficientBalanceError(error)) {
@@ -577,12 +681,20 @@ export async function processProvisioningJob(
       return;
     }
 
-    if (isAmbiguousProviderError(error) || job.createSentAt) {
+    if (
+      isAmbiguousProviderError(error) ||
+      errorCode === "provider_lock_incomplete" ||
+      job.createSentAt
+    ) {
+      const manualSnapshotReview =
+        errorCode === "provider_lock_incomplete";
       await prisma.$transaction([
         prisma.provisioningJob.update({
           where: { id: job.id },
           data: {
-            status: ProvisioningJobStatus.NEEDS_RECONCILIATION,
+            status: manualSnapshotReview
+              ? ProvisioningJobStatus.FAILED
+              : ProvisioningJobStatus.NEEDS_RECONCILIATION,
             lastErrorCode: errorCode,
             lastErrorMessage: errorMessage,
             finishedAt: new Date(),
@@ -593,14 +705,24 @@ export async function processProvisioningJob(
         }),
         prisma.infrastructureOrder.update({
           where: { id: order.id },
-          data: { status: InfrastructureOrderStatus.NEEDS_RECONCILIATION },
+          data: {
+            status: manualSnapshotReview
+              ? InfrastructureOrderStatus.FAILED
+              : InfrastructureOrderStatus.NEEDS_RECONCILIATION,
+          },
         }),
       ]);
       await createAdminNotification({
         type: AdminNotificationType.NEEDS_RECONCILIATION,
         infrastructureOrderId: order.id,
-        title: "نیاز به تطبیق",
-        message: "وضعیت ساخت سرور مبهم است و نیاز به بررسی دستی دارد.",
+        title:
+          errorCode === "provider_lock_incomplete"
+            ? "Snapshot پرداخت ناقص است"
+            : "نیاز به تطبیق",
+        message:
+          errorCode === "provider_lock_incomplete"
+            ? "هیچ Createای اجرا نشد؛ Snapshot قفل‌شده نیاز به بررسی دستی دارد."
+            : "وضعیت ساخت سرور مبهم است و نیاز به بررسی دستی دارد.",
       });
       await transitionProductFlow({
         owner: {
@@ -610,8 +732,13 @@ export async function processProvisioningJob(
           infrastructureOrderId: order.id,
         },
         from: "PROVISIONING",
-        to: "PROVISIONING_RECONCILING",
-        reason: "provider_result_ambiguous",
+        to: manualSnapshotReview
+          ? "PROVISIONING_MANUAL_REVIEW"
+          : "PROVISIONING_RECONCILING",
+        reason:
+          errorCode === "provider_lock_incomplete"
+            ? "paid_provider_snapshot_incomplete"
+            : "provider_result_ambiguous",
         idempotencyKey: `provider-reconciling:${job.id}`,
       });
       return;
@@ -666,7 +793,7 @@ export async function processProvisioningJob(
 }
 
 export async function runProvisioningWorkerCycle(
-  providerOverride?: InfrastructureProviderAdapter,
+  providerOverride?: CloudProviderAdapter,
   workerId?: string,
 ) {
   const job = await claimNextProvisioningJob(workerId);

@@ -52,6 +52,33 @@ function tokenMatches(token: string, expectedHash: string): boolean {
   );
 }
 
+export function verifyGuestSessionCredential(
+  token: string,
+  expectedHash: string,
+) {
+  return tokenMatches(token, expectedHash);
+}
+
+export function buildConversationResumeLookup(input: {
+  userId?: string | null;
+  guestToken?: string | null;
+  now?: Date;
+}) {
+  const common = {
+    expiresAt: { gt: input.now ?? new Date() },
+    productFlowState: { notIn: ["ACTIVE", "CANCELLED"] },
+  };
+  if (input.userId) return { ...common, userId: input.userId };
+  if (input.guestToken) {
+    return {
+      ...common,
+      userId: null,
+      guestAccessTokenHash: tokenHash(input.guestToken),
+    };
+  }
+  return null;
+}
+
 function asAnswers(value: Prisma.JsonValue): RecommendationAnswers {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as RecommendationAnswers)
@@ -215,6 +242,22 @@ export async function getLatestConversationSession(userId: string) {
     orderBy: { updatedAt: "desc" },
     select: { id: true },
   });
+  return session ? serializeConversationSession(session.id) : null;
+}
+
+export async function getLatestConversationSessionForAccess(input: {
+  userId?: string | null;
+  guestToken?: string | null;
+}) {
+  const now = new Date();
+  const where = buildConversationResumeLookup({ ...input, now });
+  const session = where
+    ? await prisma.recommendationSession.findFirst({
+        where,
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      })
+    : null;
   return session ? serializeConversationSession(session.id) : null;
 }
 

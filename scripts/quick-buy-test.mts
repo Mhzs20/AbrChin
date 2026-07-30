@@ -67,7 +67,9 @@ test("ready-server flow supports guests and never creates infrastructure during 
   assert.match(quoteService, /RECOMMENDATION_QUOTE_VALIDITY_MS/);
   assert.doesNotMatch(route, /createInstance/);
   assert.doesNotMatch(quoteService, /createInstance/);
-  assert.match(worker, /serviceOrder\.planSnapshot/);
+  assert.match(worker, /parseLockedProvisioningSelection/);
+  assert.match(worker, /order\.providerSelectionSnapshot/);
+  assert.doesNotMatch(worker, /order\.plan\.(?:regionCode|sizeCode|imageCode)/);
 });
 
 test("guided recommendation requests server-generated quotes instead of static cards", async () => {

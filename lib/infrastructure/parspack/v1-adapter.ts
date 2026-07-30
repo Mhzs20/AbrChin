@@ -16,6 +16,7 @@ import type {
   ProviderResourceInput,
   ProviderSecurity,
   ProviderSelection,
+  ProviderSshKey,
   ProviderTask,
   ProviderTaskLookup,
   ProviderTaskStatus,
@@ -144,6 +145,11 @@ export class ParsPackV1Adapter implements CloudProviderAdapter {
   }
 
   syncSecurity(region: string): Promise<ProviderSecurity[]> {
+    void region;
+    return Promise.resolve([]);
+  }
+
+  listSshKeys(region: string): Promise<ProviderSshKey[]> {
     void region;
     return Promise.resolve([]);
   }
@@ -299,6 +305,9 @@ export class ParsPackV1Adapter implements CloudProviderAdapter {
       region: instance.region,
       state: instance.status,
       ipv4: instance.ipv4,
+      networkIds: null,
+      securityIds: null,
+      observedAt: new Date(),
       rawPayload: {
         id: instance.id,
         name: instance.name,

@@ -20,10 +20,6 @@ import {
 } from "@/lib/infrastructure/selection-revalidation";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
 import {
-  createCloudServerQuote,
-  createReadyServerQuote,
-} from "@/lib/recommendation/quote-service";
-import {
   CloudInstanceStatus,
   InfrastructureOrderStatus,
   LedgerDirection,
@@ -97,17 +93,16 @@ export async function createServiceOrder(userId: string, planCode: string) {
   return createServiceOrderByPlanId(userId, route.id);
 }
 
-export async function createServiceOrderByPlanId(userId: string, planId: string) {
-  const route = await prisma.infrastructurePlan.findUnique({
-    where: { id: planId },
-    select: { productKind: true },
-  });
-  if (!route) throw new WalletError("invalid_plan", "بسته انتخاب‌شده معتبر نیست.");
-  const result =
-    route.productKind === "CLOUD_SERVER"
-      ? await createCloudServerQuote({ planId, userId })
-      : await createReadyServerQuote({ planId, userId });
-  return createServiceOrderFromQuote(userId, result.quote.id);
+export async function createServiceOrderByPlanId(
+  userId: string,
+  planId: string,
+): Promise<never> {
+  void userId;
+  void planId;
+  throw new WalletError(
+    "delivery_configuration_required",
+    "ابتدا سیستم‌عامل، روش دسترسی و تنظیمات تحویل را تأیید کنید.",
+  );
 }
 
 export async function createServiceOrderFromQuote(userId: string, quoteId: string) {

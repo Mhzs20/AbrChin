@@ -115,7 +115,11 @@ export async function PATCH(
       error.message === "conversation_session_forbidden";
     const invalidAccess =
       error instanceof Error &&
-      ["ssh_key_name_required", "invalid_access_method_for_image"].includes(
+      [
+        "ssh_key_name_required",
+        "ssh_key_not_found",
+        "invalid_access_method_for_image",
+      ].includes(
         error.message,
       );
     return jsonError(

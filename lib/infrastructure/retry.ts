@@ -6,8 +6,12 @@ import {
 
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { prisma } from "@/lib/db";
-import { createInfrastructureProvider } from "@/lib/infrastructure/provider-factory";
-import { buildDesiredInstanceName } from "@/lib/infrastructure/provisioning-service";
+import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
+import {
+  buildDesiredInstanceName,
+  parseLockedProvisioningSelection,
+} from "@/lib/infrastructure/provisioning-service";
+import { transitionProductFlowTx } from "@/lib/product-flow/service";
 import { WalletError } from "@/lib/wallet/errors";
 
 const ACTIVE_JOB_STATUSES: ProvisioningJobStatus[] = [
@@ -26,7 +30,11 @@ export async function reconcileInfrastructureOrder(params: {
     await tx.$queryRaw`SELECT id FROM "InfrastructureOrder" WHERE id = ${params.infrastructureOrderId} FOR UPDATE`;
     const order = await tx.infrastructureOrder.findUnique({
       where: { id: params.infrastructureOrderId },
-      include: { cloudInstance: true, plan: true, provisioningJobs: { orderBy: { createdAt: "desc" } } },
+      include: {
+        cloudInstance: true,
+        serviceOrder: { include: { recommendationQuote: true } },
+        provisioningJobs: { orderBy: { createdAt: "desc" } },
+      },
     });
     if (!order) throw new WalletError("not_found", "سفارش زیرساخت پیدا نشد.");
     if (order.status !== InfrastructureOrderStatus.NEEDS_RECONCILIATION) {
@@ -34,16 +42,28 @@ export async function reconcileInfrastructureOrder(params: {
     }
 
     const desiredName = order.desiredInstanceName ?? buildDesiredInstanceName(order.id);
-    const provider = createInfrastructureProvider();
+    const locked = parseLockedProvisioningSelection({
+      snapshot: order.providerSelectionSnapshot,
+      provider: order.provider,
+      providerApiVersion: order.providerApiVersion,
+      productKind: order.productKind,
+    });
+    const provider = createCloudProviderAdapter(
+      order.provider,
+      order.providerApiVersion,
+    );
     const providerInstanceId =
       order.cloudInstance?.providerInstanceId ??
-      order.provisioningJobs.find((job) => job.providerRequestId)?.providerRequestId ??
+      order.provisioningJobs.find((job) => job.providerResourceId)
+        ?.providerResourceId ??
       null;
 
-    let instance = providerInstanceId ? await provider.getInstance(providerInstanceId) : null;
-    if (!instance) {
-      instance = await provider.findInstanceByName(desiredName);
-    }
+    const instance = await provider.findExistingResource({
+      region: locked.region,
+      orderPublicId: order.id,
+      expectedName: desiredName,
+      providerResourceId: providerInstanceId,
+    });
 
     if (!instance) {
       throw new WalletError("not_found", "منبعی در Provider پیدا نشد. ابتدا «منبع ساخته نشده» را تأیید کنید.");
@@ -55,20 +75,31 @@ export async function reconcileInfrastructureOrder(params: {
           infrastructureOrderId: order.id,
           userId: order.userId,
           provider: order.provider,
+          providerApiVersion: order.providerApiVersion,
           providerInstanceId: instance.id,
           name: instance.name,
           region: instance.region,
-          size: instance.size,
-          image: instance.image,
+          size: locked.externalPlanId,
+          image: locked.externalImageId,
           deliveryMode: order.deliveryMode,
           ipv4: instance.ipv4,
+          providerState: instance.state,
+          networkId:
+            instance.networkIds?.includes(locked.externalNetworkId)
+              ? locked.externalNetworkId
+              : instance.networkIds?.[0] ?? null,
+          securityId:
+            instance.securityIds?.includes(locked.externalSecurityId)
+              ? locked.externalSecurityId
+              : instance.securityIds?.[0] ?? null,
+          providerObservedAt: instance.observedAt,
           status: CloudInstanceStatus.PENDING,
         },
       });
     }
 
     const attempt = order.provisioningJobs[0]?.attempt ?? 1;
-    const idempotencyKey = `parspack_poll_${order.id}_a${attempt}`;
+    const idempotencyKey = `provider_poll_${order.id}_a${attempt}`;
     let job = await tx.provisioningJob.findUnique({ where: { idempotencyKey } });
     if (!job) {
       job = await tx.provisioningJob.create({
@@ -78,7 +109,7 @@ export async function reconcileInfrastructureOrder(params: {
           status: ProvisioningJobStatus.QUEUED,
           idempotencyKey,
           attempt,
-          providerRequestId: instance.id,
+          providerResourceId: instance.id,
         },
       });
     }
@@ -86,6 +117,19 @@ export async function reconcileInfrastructureOrder(params: {
     await tx.infrastructureOrder.update({
       where: { id: order.id },
       data: { status: InfrastructureOrderStatus.PROVISIONING, desiredInstanceName: desiredName },
+    });
+    await transitionProductFlowTx(tx, {
+      owner: {
+        recommendationSessionId:
+          order.serviceOrder.recommendationQuote?.sessionId ?? null,
+        serviceOrderId: order.serviceOrderId,
+        infrastructureOrderId: order.id,
+      },
+      from: "PROVISIONING_RECONCILING",
+      to: "PROVISIONING",
+      reason: "provider_resource_reconciled",
+      idempotencyKey: `provider-resource-reconciled:${order.id}:${instance.id}`,
+      actorUserId: params.adminUserId,
     });
 
     await writeAuditLog(
@@ -116,7 +160,10 @@ export async function confirmNoProviderResource(params: {
     await tx.$queryRaw`SELECT id FROM "InfrastructureOrder" WHERE id = ${params.infrastructureOrderId} FOR UPDATE`;
     const order = await tx.infrastructureOrder.findUnique({
       where: { id: params.infrastructureOrderId },
-      include: { cloudInstance: true },
+      include: {
+        cloudInstance: true,
+        serviceOrder: { include: { recommendationQuote: true } },
+      },
     });
     if (!order) throw new WalletError("not_found", "سفارش زیرساخت پیدا نشد.");
     if (order.status !== InfrastructureOrderStatus.NEEDS_RECONCILIATION) {
@@ -127,8 +174,21 @@ export async function confirmNoProviderResource(params: {
     }
 
     const desiredName = order.desiredInstanceName ?? buildDesiredInstanceName(order.id);
-    const provider = createInfrastructureProvider();
-    const found = await provider.findInstanceByName(desiredName);
+    const locked = parseLockedProvisioningSelection({
+      snapshot: order.providerSelectionSnapshot,
+      provider: order.provider,
+      providerApiVersion: order.providerApiVersion,
+      productKind: order.productKind,
+    });
+    const provider = createCloudProviderAdapter(
+      order.provider,
+      order.providerApiVersion,
+    );
+    const found = await provider.findExistingResource({
+      region: locked.region,
+      orderPublicId: order.id,
+      expectedName: desiredName,
+    });
     if (found) {
       throw new WalletError("invalid_status", "منبع در Provider پیدا شد؛ از تطبیق استفاده کنید.");
     }
@@ -139,6 +199,19 @@ export async function confirmNoProviderResource(params: {
         reconcileNoResourceConfirmedAt: new Date(),
         status: InfrastructureOrderStatus.FAILED,
       },
+    });
+    await transitionProductFlowTx(tx, {
+      owner: {
+        recommendationSessionId:
+          order.serviceOrder.recommendationQuote?.sessionId ?? null,
+        serviceOrderId: order.serviceOrderId,
+        infrastructureOrderId: order.id,
+      },
+      from: "PROVISIONING_RECONCILING",
+      to: "PROVISIONING_RETRYABLE",
+      reason: "provider_absence_manually_confirmed",
+      idempotencyKey: `provider-absence-confirmed:${order.id}`,
+      actorUserId: params.adminUserId,
     });
 
     await writeAuditLog(
@@ -173,7 +246,11 @@ export async function retryFailedProvisioning(params: {
     await tx.$queryRaw`SELECT id FROM "InfrastructureOrder" WHERE id = ${params.infrastructureOrderId} FOR UPDATE`;
     const order = await tx.infrastructureOrder.findUnique({
       where: { id: params.infrastructureOrderId },
-      include: { cloudInstance: true, provisioningJobs: { orderBy: { createdAt: "desc" } } },
+      include: {
+        cloudInstance: true,
+        serviceOrder: { include: { recommendationQuote: true } },
+        provisioningJobs: { orderBy: { createdAt: "desc" } },
+      },
     });
     if (!order) throw new WalletError("not_found", "سفارش زیرساخت پیدا نشد.");
 
@@ -181,7 +258,12 @@ export async function retryFailedProvisioning(params: {
       throw new WalletError("invalid_status", "ابتدا تطبیق دستی انجام دهید.");
     }
 
-    if (order.cloudInstance || order.provisioningJobs.some((job) => job.providerRequestId)) {
+    if (
+      order.cloudInstance ||
+      order.provisioningJobs.some(
+        (job) => job.providerResourceId || job.providerTaskId,
+      )
+    ) {
       throw new WalletError("invalid_status", "منبع Provider از قبل وجود دارد؛ Retry مجاز نیست.");
     }
 
@@ -202,7 +284,7 @@ export async function retryFailedProvisioning(params: {
 
     const lastAttempt = order.provisioningJobs.reduce((max, job) => Math.max(max, job.attempt), 0);
     const nextAttempt = Math.max(lastAttempt, 0) + 1;
-    const idempotencyKey = `parspack_create_${order.id}_a${nextAttempt}`;
+    const idempotencyKey = `provider_create_${order.id}_a${nextAttempt}`;
 
     const existing = await tx.provisioningJob.findUnique({ where: { idempotencyKey } });
     if (existing) {
@@ -222,6 +304,19 @@ export async function retryFailedProvisioning(params: {
     await tx.infrastructureOrder.update({
       where: { id: order.id },
       data: { status: InfrastructureOrderStatus.QUEUED },
+    });
+    await transitionProductFlowTx(tx, {
+      owner: {
+        recommendationSessionId:
+          order.serviceOrder.recommendationQuote?.sessionId ?? null,
+        serviceOrderId: order.serviceOrderId,
+        infrastructureOrderId: order.id,
+      },
+      from: "PROVISIONING_RETRYABLE",
+      to: "PROVISIONING_SUBMITTED",
+      reason: "admin_approved_provisioning_retry",
+      idempotencyKey: `provider-retry-submitted:${order.id}:${nextAttempt}`,
+      actorUserId: params.adminUserId,
     });
 
     await writeAuditLog(

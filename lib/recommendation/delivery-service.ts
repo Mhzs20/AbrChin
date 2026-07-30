@@ -14,6 +14,7 @@ import {
   resolveProviderSelectionDefaults,
   revalidateLockedSelection,
 } from "@/lib/infrastructure/selection-revalidation";
+import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
 import { listActivePlans } from "@/lib/orders/plans";
 import {
   assertParchinLevelAllowed,
@@ -234,9 +235,19 @@ export async function configureConversationDelivery(input: {
     );
   }
   const isWindows = /windows/i.test(image.name);
+  const rawImage =
+    image.rawPayload &&
+    typeof image.rawPayload === "object" &&
+    !Array.isArray(image.rawPayload)
+      ? (image.rawPayload as Record<string, unknown>)
+      : {};
   if (
     (isWindows && input.accessMethod !== "WINDOWS_PASSWORD") ||
-    (!isWindows && input.accessMethod === "WINDOWS_PASSWORD")
+    (!isWindows && input.accessMethod === "WINDOWS_PASSWORD") ||
+    (input.accessMethod === "SSH_KEY" &&
+      rawImage.ssh_key === false) ||
+    (input.accessMethod === "ONE_TIME_PASSWORD" &&
+      rawImage.ssh_password === false)
   ) {
     throw new Error("invalid_access_method_for_image");
   }
@@ -246,6 +257,18 @@ export async function configureConversationDelivery(input: {
     productKind: plan.productKind,
     region: plan.regionCode,
   });
+  const lockedSshKey =
+    input.accessMethod === "SSH_KEY"
+      ? (
+          await createCloudProviderAdapter(
+            plan.provider,
+            plan.providerApiVersion,
+          ).listSshKeys(plan.regionCode)
+        ).find((key) => key.name === input.sshKeyName)
+      : null;
+  if (input.accessMethod === "SSH_KEY" && !lockedSshKey) {
+    throw new Error("ssh_key_not_found");
+  }
   const externalPlanId =
     plan.catalogItem.externalPlanId ?? plan.sizeCode;
   const currentPrice = await revalidateLockedSelection({
@@ -282,7 +305,13 @@ export async function configureConversationDelivery(input: {
     operatingSystem: image.name,
     accessMethod: input.accessMethod,
     sshKeyName:
-      input.accessMethod === "SSH_KEY" ? input.sshKeyName : null,
+      input.accessMethod === "SSH_KEY" ? lockedSshKey?.name : null,
+    sshKeyId:
+      input.accessMethod === "SSH_KEY" ? lockedSshKey?.id : null,
+    sshKeyFingerprint:
+      input.accessMethod === "SSH_KEY"
+        ? lockedSshKey?.fingerprint
+        : null,
     startupScriptCode: null,
     backupAddon: null,
     externalNetworkId: defaults.externalNetworkId,

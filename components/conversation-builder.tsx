@@ -190,17 +190,22 @@ export function ConversationBuilder({
 
         let databaseSession: ResumedConversation | null = null;
         try {
-          const endpoint = cachedSessionId
-            ? `/api/recommendations/sessions/${cachedSessionId}`
-            : signedIn
-              ? "/api/recommendations/sessions"
-              : null;
-          if (endpoint) {
-            const response = await fetch(endpoint, {
-              signal: controller.signal,
-            });
-            if (response.ok) {
-              const body = (await response.json()) as {
+          const response = await fetch("/api/recommendations/sessions", {
+            signal: controller.signal,
+          });
+          if (response.ok) {
+            const body = (await response.json()) as {
+              session?: ResumedConversation | null;
+            };
+            databaseSession = body.session ?? null;
+          }
+          if (!databaseSession && cachedSessionId) {
+            const cachedResponse = await fetch(
+              `/api/recommendations/sessions/${cachedSessionId}`,
+              { signal: controller.signal },
+            );
+            if (cachedResponse.ok) {
+              const body = (await cachedResponse.json()) as {
                 session?: ResumedConversation | null;
               };
               databaseSession = body.session ?? null;

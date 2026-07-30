@@ -1,17 +1,22 @@
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
-import { setRecommendationGuestCookie } from "@/lib/recommendation/guest-session-cookie";
+import {
+  getRecommendationGuestToken,
+  setRecommendationGuestCookie,
+} from "@/lib/recommendation/guest-session-cookie";
 import {
   createConversationSession,
-  getLatestConversationSession,
+  getLatestConversationSessionForAccess,
 } from "@/lib/recommendation/session-service";
 import { getCurrentUser } from "@/lib/session";
 
 export async function GET() {
   const user = await getCurrentUser();
-  if (!user) return jsonError("ابتدا وارد حساب شو.", 401);
   try {
     return jsonOk({
-      session: await getLatestConversationSession(user.id),
+      session: await getLatestConversationSessionForAccess({
+        userId: user?.id ?? null,
+        guestToken: user ? null : await getRecommendationGuestToken(),
+      }),
     });
   } catch {
     return jsonError("بازیابی گفتگو ممکن نیست.", 500);
