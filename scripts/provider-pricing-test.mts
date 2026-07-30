@@ -11,6 +11,7 @@ import {
 import type { ProviderCatalog } from "../lib/infrastructure/types.ts";
 import {
   resolveCatalogItemPricing,
+  samePlanConfigurationSnapshot,
   samePriceSnapshot,
 } from "../lib/pricing/plan-pricing.ts";
 import { toPlanSnapshot } from "../lib/orders/plans.ts";
@@ -158,6 +159,7 @@ function fakeTransaction() {
     },
   ];
   const planUpdates = new Map<string, Record<string, unknown>>();
+  const readyPlans = new Map<string, Record<string, unknown>>();
   let nextId = 1;
   const key = (value: { provider: string; regionCode: string; sizeCode: string }) =>
     `${value.provider}:${value.regionCode}:${value.sizeCode}`;
@@ -230,9 +232,27 @@ function fakeTransaction() {
         planUpdates.set(args.where.id, args.data);
         return { id: args.where.id, ...args.data };
       },
+      async updateMany(args: { where?: { OR?: unknown[] } }) {
+        if (args.where?.OR) return { count: 0 };
+        for (const [code, plan] of readyPlans) {
+          readyPlans.set(code, { ...plan, active: false });
+        }
+        return { count: readyPlans.size };
+      },
+      async upsert(args: {
+        where: { code: string };
+        update: Record<string, unknown>;
+        create: Record<string, unknown>;
+      }) {
+        const value = readyPlans.has(args.where.code)
+          ? { ...readyPlans.get(args.where.code), ...args.update }
+          : args.create;
+        readyPlans.set(args.where.code, value);
+        return value;
+      },
     },
   };
-  return { tx, items, planUpdates };
+  return { tx, items, planUpdates, readyPlans };
 }
 
 test("catalog persistence upserts idempotently, preserves missing rows, and never guesses mapping", async () => {
@@ -243,11 +263,16 @@ test("catalog persistence upserts idempotently, preserves missing rows, and neve
   assert.equal(first.pricedItemCount, 1);
   assert.equal(first.mappedPlanCount, 1);
   assert.equal(first.unmappedPlanCount, 1);
+  assert.equal(first.readyPlanCount, 1);
+  assert.equal(fake.readyPlans.size, 1);
+  assert.equal([...fake.readyPlans.values()][0]?.deliveryMode, "MANAGED");
+  assert.equal([...fake.readyPlans.values()][0]?.parchinIncluded, true);
   assert.equal(fake.planUpdates.get("plan-exact")?.catalogMappingStatus, "MAPPED");
   assert.equal(fake.planUpdates.get("plan-do-not-guess")?.active, false);
 
   await persistProviderCatalog(fake.tx as never, catalog(), syncedAt);
   assert.equal(fake.items.size, 1);
+  assert.equal(fake.readyPlans.size, 1);
   assert.equal([...fake.items.values()][0]?.id, firstId);
 
   const missing = await persistProviderCatalog(
@@ -258,6 +283,7 @@ test("catalog persistence upserts idempotently, preserves missing rows, and neve
   assert.equal(fake.items.size, 1);
   assert.equal([...fake.items.values()][0]?.available, false);
   assert.equal(missing.unavailableItemCount, 1);
+  assert.equal([...fake.readyPlans.values()][0]?.active, false);
 });
 
 test("price and availability revalidation compare immutable snapshots", () => {
@@ -299,6 +325,38 @@ test("price and availability revalidation compare immutable snapshots", () => {
       markupBasisPoints: 2500,
     }),
     null,
+  );
+  const plan = {
+    provider: "PARSPACK",
+    regionCode: "tehran11",
+    sizeCode: "irLinuxVPS4",
+    imageCode: "ubuntu24-cloudinit-qcow2",
+    deliveryMode: "MANAGED",
+    parchinIncluded: true,
+  } as const;
+  const configurationSnapshot = {
+    provider: "PARSPACK",
+    catalogItemId: current.catalogItemId,
+    regionCode: "tehran11",
+    sizeCode: "irLinuxVPS4",
+    imageCode: "ubuntu24-cloudinit-qcow2",
+    deliveryMode: "MANAGED",
+    vcpu: current.vcpu,
+    ramGb: current.ramGb,
+    storageGb: current.storageGb,
+    parchinIncluded: true,
+  };
+  assert.equal(
+    samePlanConfigurationSnapshot(plan as never, current, configurationSnapshot),
+    true,
+  );
+  assert.equal(
+    samePlanConfigurationSnapshot(
+      { ...plan, imageCode: "debian13-cloudinit-qcow2" } as never,
+      current,
+      configurationSnapshot,
+    ),
+    false,
   );
 });
 

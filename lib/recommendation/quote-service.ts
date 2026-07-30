@@ -7,6 +7,7 @@ import {
 
 import { prisma } from "@/lib/db";
 import {
+  getActiveReadyServerPlanById,
   listActivePlans,
   toPlanSnapshot,
   type PricedInfrastructurePlan,
@@ -25,8 +26,10 @@ import type {
   RecommendationResult,
   ResourceProfile,
 } from "@/lib/recommendation/types";
+import { WalletError } from "@/lib/wallet/errors";
 
 export const RECOMMENDATION_QUOTE_VALIDITY_MS = 10 * 60 * 1000;
+const READY_SERVER_PROFILE_SOURCE = "READY_SERVER";
 
 type SelectedQuote = {
   role: RecommendationOfferRole;
@@ -177,6 +180,98 @@ export function toPublicRecommendationQuote(quote: {
   };
 }
 
+function isReadyServerProfile(value: Prisma.JsonValue | null): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    value.source === READY_SERVER_PROFILE_SOURCE
+  );
+}
+
+export async function createReadyServerQuote(params: {
+  planId: string;
+  userId?: string | null;
+  now?: Date;
+}) {
+  await refreshProviderCatalogForPricing();
+  const plan = await getActiveReadyServerPlanById(params.planId);
+  if (!plan) {
+    throw new WalletError(
+      "quote_unavailable",
+      "این سرور دیگر قیمت یا ظرفیت معتبر ندارد.",
+    );
+  }
+
+  const now = params.now ?? new Date();
+  const expiresAt = new Date(now.getTime() + RECOMMENDATION_QUOTE_VALIDITY_MS);
+  const profileSnapshot = {
+    source: READY_SERVER_PROFILE_SOURCE,
+    planId: plan.id,
+    regionCode: plan.regionCode,
+    sizeCode: plan.sizeCode,
+    imageCode: plan.imageCode,
+    vcpu: plan.pricing.vcpu,
+    ramGb: plan.pricing.ramGb,
+    storageGb: plan.pricing.storageGb,
+  } satisfies Prisma.InputJsonObject;
+  const session = await prisma.recommendationSession.create({
+    data: {
+      userId: params.userId ?? null,
+      status: RecommendationFlowStatus.QUOTED,
+      answers: {
+        source: READY_SERVER_PROFILE_SOURCE,
+        planId: plan.id,
+      },
+      answerSources: {},
+      profile: profileSnapshot,
+      confidence: "high",
+      architectureEscalation: false,
+      expiresAt,
+      quotes: {
+        create: {
+          role: RecommendationQuoteRole.RECOMMENDED,
+          status: RecommendationQuoteStatus.ACTIVE,
+          planId: plan.id,
+          score: 100,
+          scoreBreakdown: {
+            source: READY_SERVER_PROFILE_SOURCE,
+            liveCatalog: true,
+          },
+          reasons: [
+            "قیمت و ظرفیت همین سرور پیش از ساخت Quote دوباره بررسی شده است.",
+            "منابع، موقعیت و سیستم‌عامل در Quote ده‌دقیقه‌ای قفل شده‌اند.",
+            "پرچین پایه بخشی اجباری از تحویل امن این سرور است.",
+          ],
+          profileSnapshot,
+          planSnapshot: toPlanSnapshot(plan, {
+            createdAt: now,
+            expiresAt,
+          }) as Prisma.InputJsonValue,
+          amountRial: plan.pricing.finalPriceRial,
+          renewalAmountRial: plan.pricing.finalPriceRial,
+          catalogItemId: plan.pricing.catalogItemId,
+          providerBasePriceRialSnapshot: plan.pricing.providerBasePriceRial,
+          markupBasisPointsSnapshot: plan.pricing.markupBasisPoints,
+          finalPriceRialSnapshot: plan.pricing.finalPriceRial,
+          currencySnapshot: plan.pricing.currency,
+          providerPriceCheckedAt: plan.pricing.providerPriceCheckedAt,
+          expiresAt,
+        },
+      },
+    },
+    include: { quotes: true },
+  });
+  const quote = session.quotes[0];
+  if (!quote) throw new Error("ready_server_quote_not_created");
+
+  return {
+    sessionId: session.id,
+    quote: toPublicRecommendationQuote(quote),
+    expiresAt,
+  };
+}
+
 export async function createRecommendationQuotes(params: {
   answers: RecommendationAnswers;
   sources: AnswerSources;
@@ -281,16 +376,23 @@ export async function getActiveRecommendationQuote(
       status: { in: [RecommendationQuoteStatus.ACTIVE, RecommendationQuoteStatus.SELECTED] },
       expiresAt: { gt: now },
       plan: { active: true },
-      ...(userId
+      session: userId
         ? {
-            session: {
-              OR: [{ userId }, { userId: null }],
-            },
+            OR: [{ userId }, { userId: null }],
           }
-        : {}),
+        : { userId: null },
     },
     include: { plan: true, session: true, serviceOrder: true },
   });
+}
+
+export async function getActiveReadyServerQuote(
+  id: string,
+  userId?: string | null,
+  now = new Date(),
+) {
+  const quote = await getActiveRecommendationQuote(id, userId, now);
+  return quote && isReadyServerProfile(quote.session.profile) ? quote : null;
 }
 
 export async function refreshRecommendationQuote(params: {
@@ -307,16 +409,27 @@ export async function refreshRecommendationQuote(params: {
   ) {
     throw new Error("quote_not_found");
   }
-  const refreshed = await createRecommendationQuotes({
-    answers: previous.session.answers as unknown as RecommendationAnswers,
-    sources: previous.session.answerSources as unknown as AnswerSources,
-    userId: params.userId,
-  });
-  const replacement =
-    refreshed.quotes.find((quote) => quote.role === previous.role) ??
-    refreshed.quotes.find((quote) => quote.role === "RECOMMENDED") ??
-    refreshed.quotes[0] ??
-    null;
+  let replacement: PublicRecommendationQuote | null = null;
+  if (isReadyServerProfile(previous.session.profile)) {
+    replacement = (
+      await createReadyServerQuote({
+        planId: previous.planId,
+        userId: params.userId,
+      })
+    ).quote;
+  }
+  if (!replacement) {
+    const refreshed = await createRecommendationQuotes({
+      answers: previous.session.answers as unknown as RecommendationAnswers,
+      sources: previous.session.answerSources as unknown as AnswerSources,
+      userId: params.userId,
+    });
+    replacement =
+      refreshed.quotes.find((quote) => quote.role === previous.role) ??
+      refreshed.quotes.find((quote) => quote.role === "RECOMMENDED") ??
+      refreshed.quotes[0] ??
+      null;
+  }
   await prisma.recommendationQuote.updateMany({
     where: {
       id: previous.id,

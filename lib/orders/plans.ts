@@ -5,13 +5,24 @@ import type {
   ProviderCatalogItem,
 } from "@prisma/client";
 
+import {
+  READY_SERVER_PLAN_PREFIX,
+  isReadyServerPlanCode,
+  readyServerImageLabel,
+  readyServerLocation,
+} from "@/lib/cloud-servers/catalog";
 import { prisma } from "@/lib/db";
 import { getEnv } from "@/lib/env";
+import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
 import {
   type EffectivePlanPricing,
+  catalogItemBaseHourlyPriceRial,
   resolvePlanPricing,
 } from "@/lib/pricing/plan-pricing";
-import { decimalToScaledInteger } from "@/lib/pricing/provider-pricing";
+import {
+  calculateFinalPriceRial,
+  decimalToScaledInteger,
+} from "@/lib/pricing/provider-pricing";
 
 export type PricedInfrastructurePlan = InfrastructurePlan & {
   catalogItem: ProviderCatalogItem;
@@ -53,17 +64,22 @@ export type PlanSnapshot = {
 
 export type PublicPlanOffer = {
   id: string;
-  code: string;
   title: string;
   description: string | null;
   deliveryMode: DeliveryMode;
+  regionCode: string;
+  locationLabel: string;
+  imageLabel: string;
   vcpu: number | null;
   ramGb: number | null;
   storageGb: number | null;
+  transferTb: string | null;
+  hourlyPriceRial: string | null;
   salePriceRial: string;
   renewalPriceRial: string;
   deliveryEstimateMinutes: number;
   parchinIncluded: boolean;
+  checkedAt: string;
   available: true;
 };
 
@@ -122,19 +138,32 @@ export function toPlanSnapshot(
 }
 
 export function toPublicPlanOffer(plan: PricedInfrastructurePlan): PublicPlanOffer {
+  const hourlyBasePriceRial = catalogItemBaseHourlyPriceRial(plan.catalogItem);
+  const hourlyPriceRial =
+    hourlyBasePriceRial == null
+      ? null
+      : calculateFinalPriceRial(
+          hourlyBasePriceRial,
+          plan.pricing.markupBasisPoints,
+        );
   return {
     id: plan.id,
-    code: plan.code,
     title: plan.title,
     description: plan.description,
     deliveryMode: plan.deliveryMode,
+    regionCode: plan.regionCode,
+    locationLabel: readyServerLocation(plan.regionCode).label,
+    imageLabel: readyServerImageLabel(plan.imageCode),
     vcpu: plan.pricing.vcpu,
     ramGb: plan.pricing.ramGb,
     storageGb: plan.pricing.storageGb,
+    transferTb: plan.catalogItem.transfer,
+    hourlyPriceRial: hourlyPriceRial?.toString() ?? null,
     salePriceRial: plan.pricing.finalPriceRial.toString(),
     renewalPriceRial: plan.pricing.finalPriceRial.toString(),
     deliveryEstimateMinutes: plan.deliveryEstimateMinutes,
     parchinIncluded: plan.parchinIncluded,
+    checkedAt: plan.pricing.providerPriceCheckedAt.toISOString(),
     available: true,
   };
 }
@@ -148,7 +177,12 @@ async function pricingConfig() {
 export async function getActivePlanByCode(code: string) {
   const [plan, config] = await Promise.all([
     prisma.infrastructurePlan.findFirst({
-      where: { code, active: true },
+      where: {
+        code,
+        active: true,
+        deliveryMode: "MANAGED",
+        parchinIncluded: true,
+      },
       include: { catalogItem: true },
     }),
     pricingConfig(),
@@ -161,7 +195,12 @@ export async function getActivePlanByCode(code: string) {
 export async function getActivePlanById(id: string) {
   const [plan, config] = await Promise.all([
     prisma.infrastructurePlan.findFirst({
-      where: { id, active: true },
+      where: {
+        id,
+        active: true,
+        deliveryMode: "MANAGED",
+        parchinIncluded: true,
+      },
       include: { catalogItem: true },
     }),
     pricingConfig(),
@@ -174,7 +213,38 @@ export async function getActivePlanById(id: string) {
 export async function listActivePlans(): Promise<PricedInfrastructurePlan[]> {
   const [plans, config] = await Promise.all([
     prisma.infrastructurePlan.findMany({
-      where: { active: true, catalogMappingStatus: "MAPPED" },
+      where: {
+        active: true,
+        catalogMappingStatus: "MAPPED",
+        deliveryMode: "MANAGED",
+        parchinIncluded: true,
+      },
+      include: { catalogItem: true },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    }),
+    pricingConfig(),
+  ]);
+  return plans.flatMap((plan) => {
+    const pricing = resolvePlanPricing(plan, config);
+    return pricing ? [withEffectivePricing(plan, pricing)] : [];
+  });
+}
+
+export async function getActiveReadyServerPlanById(id: string) {
+  const plan = await getActivePlanById(id);
+  return plan && isReadyServerPlanCode(plan.code) ? plan : null;
+}
+
+export async function listReadyServerPlans(): Promise<PricedInfrastructurePlan[]> {
+  const [plans, config] = await Promise.all([
+    prisma.infrastructurePlan.findMany({
+      where: {
+        code: { startsWith: READY_SERVER_PLAN_PREFIX },
+        active: true,
+        catalogMappingStatus: "MAPPED",
+        deliveryMode: "MANAGED",
+        parchinIncluded: true,
+      },
       include: { catalogItem: true },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     }),
@@ -188,12 +258,30 @@ export async function listActivePlans(): Promise<PricedInfrastructurePlan[]> {
 
 export async function listPublicPlanOffers() {
   try {
-    const plans = await listActivePlans();
+    const plans = await listReadyServerPlans();
     return plans.map(toPublicPlanOffer);
   } catch {
     // Public catalog pages fail closed and render an unavailable state. The
     // readiness endpoint remains the authoritative database outage signal.
     return [];
+  }
+}
+
+export async function listLiveReadyServerOffers() {
+  try {
+    await refreshProviderCatalogForPricing();
+    const offers = (await listReadyServerPlans()).map(toPublicPlanOffer);
+    return {
+      live: true as const,
+      offers,
+      checkedAt: offers[0]?.checkedAt ?? new Date().toISOString(),
+    };
+  } catch {
+    return {
+      live: false as const,
+      offers: [] as PublicPlanOffer[],
+      checkedAt: null,
+    };
   }
 }
 
@@ -262,7 +350,7 @@ export async function seedDevelopmentPlans() {
       code: "DEV_STARTER",
       title: "شروع توسعه",
       description: "پلن آزمایشی فقط برای Development",
-      deliveryMode: "RAW" as const,
+      deliveryMode: "MANAGED" as const,
       sortOrder: 1,
     },
     {
@@ -293,6 +381,7 @@ export async function seedDevelopmentPlans() {
         catalogItemId: catalogItem.id,
         catalogMappingStatus: "MAPPED",
         catalogMappedAt: syncedAt,
+        parchinIncluded: true,
         active: true,
       },
     });

@@ -25,6 +25,22 @@
 20. Open `/status` and verify web, database, and worker state
 21. Logout
 
+## Ready cloud servers
+1. Open `/cloud-servers` as a guest and confirm all live, priced Region×Size
+   combinations are shown, not three hand-curated cards.
+2. Filter by location and confirm Resources, current monthly/renewal price,
+   delivery estimate, Availability and Parchin are visible.
+3. Confirm Provider name and Provider Base Price are absent from HTML and JSON.
+4. Create a Quote as guest, then sign in with the `next` URL and confirm the same
+   ten-minute Quote remains selected.
+5. Change Provider price or mark the Size unavailable before payment; payment
+   must stop and return a fresh Quote or unavailable message.
+6. After payment, change the mutable Plan and confirm provisioning still reads
+   Region/Size/Image from the paid order snapshot.
+7. Confirm every sellable server is `MANAGED` with Parchin; RAW/no-Parchin
+   creation must return 400.
+8. Confirm no VM is created by page load, Sync, pricing or Quote tests.
+
 ## Checks
 - Guest `/account` redirects to `/login`
 - `/api/wallet` without session returns 401

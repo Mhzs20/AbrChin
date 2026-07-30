@@ -3919,3 +3919,249 @@ a:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+/* Live ready cloud catalog */
+.ready-cloud-catalog {
+  display: grid;
+  gap: 14px;
+}
+
+.ready-cloud-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ready-cloud-filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 1px solid rgba(19, 73, 151, 0.13);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #496687;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.ready-cloud-filters button.is-active {
+  border-color: #2673db;
+  background: #edf5ff;
+  color: #155fbf;
+  font-weight: 800;
+}
+
+.ready-cloud-filters small {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.ready-cloud-result-count {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.ready-cloud-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(285px, 1fr));
+  gap: 14px;
+}
+
+.ready-cloud-card {
+  max-width: 520px;
+}
+
+.ready-server-quote-action {
+  display: grid;
+  gap: 7px;
+  margin-top: auto;
+}
+
+.ready-server-quote-action .button {
+  width: 100%;
+}
+
+.ready-server-quote-action > small {
+  color: #a64036;
+  font-size: 0.7rem;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.ready-server-spinner {
+  animation: auth-spin 0.8s linear infinite;
+}
+
+.ready-quote-page {
+  display: grid;
+  align-content: start;
+  gap: 22px;
+  overflow-y: auto;
+  padding-bottom: 28px;
+}
+
+.ready-quote-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.ready-quote-heading h1 {
+  margin: 10px 0 8px;
+  color: var(--ink);
+  font-size: clamp(1.9rem, 4vw, 3rem);
+}
+
+.ready-quote-heading p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--muted);
+}
+
+.ready-quote-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.7fr);
+  gap: 16px;
+}
+
+.ready-quote-summary,
+.ready-quote-checkout {
+  padding: 22px;
+  border: 1px solid rgba(19, 73, 151, 0.13);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 44px rgba(26, 64, 124, 0.08);
+}
+
+.ready-quote-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ready-quote-badges span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: #edf5ff;
+  color: #315d91;
+  font-size: 0.72rem;
+}
+
+.ready-quote-resources {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 18px 0;
+}
+
+.ready-quote-resources span {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #f7faff;
+}
+
+.ready-quote-resources small {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.ready-quote-resources strong {
+  color: #153c6e;
+  font-size: 0.85rem;
+}
+
+.ready-quote-summary ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0 18px 0 0;
+  color: #4b6486;
+  font-size: 0.78rem;
+  line-height: 1.75;
+}
+
+.ready-quote-checkout {
+  display: flex;
+  flex-direction: column;
+}
+
+.ready-quote-checkout > span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.ready-quote-checkout > strong {
+  margin-top: 5px;
+  color: #0c356d;
+  font-size: 1.8rem;
+}
+
+.ready-quote-checkout > strong small {
+  font-size: 0.8rem;
+}
+
+.ready-quote-checkout > p,
+.ready-quote-login p {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.7;
+}
+
+.ready-quote-login {
+  display: grid;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.ready-quote-login .button {
+  justify-content: center;
+}
+
+.support-choice--single {
+  min-height: 230px;
+  padding: 24px;
+}
+
+.support-choice--single > div {
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px 12px;
+}
+
+.support-choice--single .level-icon {
+  grid-row: 1 / 4;
+  margin: 0;
+}
+
+.support-choice--single .level-items,
+.support-choice--single > div > small {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  .ready-cloud-grid,
+  .ready-quote-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .ready-cloud-card {
+    max-width: none;
+  }
+
+  .ready-quote-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ready-quote-resources {
+    grid-template-columns: 1fr;
+  }
+}

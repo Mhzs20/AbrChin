@@ -57,7 +57,7 @@ export function OrderCheckoutPanel({
       }
 
       showToast(`سفارش ${planTitle} با موفقیت پرداخت شد.`);
-      router.push("/account/orders");
+      router.push(`/account/orders/${createBody.order.id}`);
       router.refresh();
     } catch (error) {
       showToast(error instanceof Error ? error.message : "عملیات ناموفق بود");

@@ -4,8 +4,8 @@ import type { Metadata } from "next";
 import { SupportSelector } from "@/components/support-selector";
 
 export const metadata: Metadata = {
-  title: "سطح همراهی | ابرچین",
-  description: "سرور خام یا همراه ابرچین؛ دامنه مسئولیت هر مسیر را پیش از خرید مقایسه کن.",
+  title: "پرچین و سطح همراهی | ابرچین",
+  description: "دامنه پرچین پایه و مسئولیت‌های تحویل سرور ابری ابرچین.",
   alternates: { canonical: "/support" },
 };
 
@@ -14,8 +14,8 @@ export default function SupportPage() {
     <section className="support-page page-view" aria-labelledby="support-title">
       <header className="page-heading centered-heading">
         <div className="eyebrow"><HeartHandshake size={15} aria-hidden="true" /> سطح همراهی</div>
-        <h1 id="support-title">کنترل دست تو؛ همراهی با ما.</h1>
-        <p>بین سرور خام و تحویل با پرچین پایه انتخاب کن؛ هیچ قابلیت پنهانی فرض نمی‌شه.</p>
+        <h1 id="support-title">هر سرور، همراه با پرچین پایه.</h1>
+        <p>دامنه تحویل امن و مسئولیت‌ها پیش از خرید روشن است؛ قابلیت پنهانی وعده داده نمی‌شود.</p>
       </header>
       <SupportSelector />
     </section>

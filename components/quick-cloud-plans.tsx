@@ -91,7 +91,7 @@ export function QuickCloudPlans({
                 {plan.role ? roleLabels[plan.role] : positionLabels[index] ?? "چینش ابری"}
               </span>
               <span className="quick-plan-mode">
-                {plan.deliveryMode === "MANAGED" ? "همراه ابرچین" : "خودمدیریتی"}
+                همراه ابرچین
               </span>
             </header>
 

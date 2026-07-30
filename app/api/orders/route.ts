@@ -89,13 +89,15 @@ export async function POST(request: Request) {
     if (error instanceof WalletError) {
       const status =
         error.code === "quote_price_changed" ||
+        error.code === "quote_configuration_changed" ||
         error.code === "quote_expired" ||
         error.code === "quote_unavailable" ||
         error.code === "quote_revalidation_failed"
           ? 409
           : 400;
       if (
-        error.code === "quote_price_changed" &&
+        (error.code === "quote_price_changed" ||
+          error.code === "quote_configuration_changed") &&
         requestedQuoteId &&
         authenticatedUserId
       ) {

@@ -92,6 +92,19 @@ npm run integration:parspack
 Planهای قدیمی فقط با تطبیق دقیق Provider/Region/Size و Image سازگار Mapping
 می‌شوند. Plan بدون تطبیق غیرفعال و در Admin با وضعیت `UNMAPPED` دیده می‌شود.
 
+در هر Sync، برای هر ترکیب قابل فروش Region×Size یک Plan داخلی با پیشوند
+`READY_PARSPACK_` به‌صورت idempotent ساخته یا به‌روز می‌شود. Size مشترک میان
+چند Region برای هر Region یک انتخاب مستقل دارد. Image از فهرست Linux
+Cloud-init کنترل‌شده انتخاب می‌شود؛ Windows، MikroTik و Control Panelها در این
+مسیر فروخته نمی‌شوند. Plan تولیدشده همیشه `MANAGED` و دارای پرچین پایه است.
+رکورد فاقد Price Contract معتبر یا Availability در همان Sync غیرفعال و حفظ
+می‌شود.
+
+صفحه `/cloud-servers` با `no-store` در هر بار Render کاتالوگ Provider را
+دوباره می‌خواند، Persist می‌کند و تمام انتخاب‌های معتبر را نمایش می‌دهد. اگر
+Provider یا قرارداد قیمت قابل تأیید نباشد، صفحه Fail-closed است و قیمت
+Cacheشده را به‌عنوان قیمت زنده نمایش نمی‌دهد.
+
 `parchinIncluded` در پلن فعلی فقط «پرچین پایه» یعنی کنترل تحویل و دسترسی
 یک‌بارمصرف را نشان می‌دهد. این مقدار نباید به‌عنوان قابلیت Backup یا Monitoring
 به موتور پیشنهاد داده شود. بکاپ روزانه برای نیازهای پرریسک یک شرط سخت است و تا
@@ -123,6 +136,13 @@ Base Price، Markup، Final Price، Currency و زمان بررسی قیمت ر�
 می‌شوند. تغییر قیمت Quote قبلی را رد می‌کند و یک Quote جدید Customer-safe
 می‌سازد؛ نام Provider و Base Price در پاسخ مشتری وجود ندارند.
 
+مهمان می‌تواند از `/cloud-servers` Quote بسازد و همان URL را پس از ورود یا
+ثبت‌نام ادامه دهد. Region، Size، Image، Provider و حالت تحویل از Snapshot همان
+Quote خوانده می‌شوند. پیش از پرداخت علاوه بر Price و Availability، تطبیق کامل
+این تنظیمات Revalidate می‌شود. Worker هنگام ساخت، Region/Size/Image را از
+`ServiceOrder.planSnapshot` پرداخت‌شده می‌خواند؛ بنابراین تغییر بعدی Plan یا
+Sync باعث Provider/Configuration Swap نمی‌شود.
+
 Order پرداخت‌شده قبل از Revalidation بازگردانده می‌شود و مبلغ یا Snapshot آن
 با Sync یا تغییر Markup تغییر نمی‌کند. `requiredFundingRial` از Snapshot
 تأییدشده همان پرداخت می‌آید.
@@ -141,3 +161,8 @@ Transaction یا Snapshot قبلی حذف/بازنویسی نمی‌شود. ست
 update، خاموش‌کردن `autoRenew=true` قدیمی است تا پس از ارتقا برداشت خودکار رخ
 ندهد. Rollback اپلیکیشن می‌تواند ستون‌های قدیمی را بخواند؛ rollback دیتابیس
 نیازی به پاک‌کردن داده جدید ندارد.
+
+ساخت Planهای `READY_PARSPACK_` به Migration جدید نیاز ندارد و روی Schema
+additive موجود انجام می‌شود. Rollback کد می‌تواند این Planهای تولیدشده را
+نادیده بگیرد یا غیرفعال کند، بدون اینکه Quote، Order، Ledger یا Snapshot
+پرداخت‌شده تغییر کند.

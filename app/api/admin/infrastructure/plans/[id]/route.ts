@@ -30,6 +30,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const body = (await request.json()) as Record<string, unknown>;
     const data: Record<string, unknown> = { updatedById: admin.id };
     if (
+      body.deliveryMode === "RAW" ||
+      ("parchinIncluded" in body && body.parchinIncluded !== true)
+    ) {
+      return jsonError("تمام سرورهای ابرچین فقط همراه با پرچین فروخته می‌شوند.", 400);
+    }
+    if (
       "salePriceToman" in body ||
       "renewalPriceToman" in body ||
       "estimatedProviderCostToman" in body ||
@@ -44,9 +50,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     if (typeof body.title === "string") data.title = body.title.trim();
     if (typeof body.description === "string") data.description = body.description.trim();
-    if (body.deliveryMode === "MANAGED" || body.deliveryMode === "RAW") {
-      data.deliveryMode = body.deliveryMode as DeliveryMode;
-    }
+    data.deliveryMode = DeliveryMode.MANAGED;
+    data.parchinIncluded = true;
     const catalogItemId =
       typeof body.catalogItemId === "string"
         ? body.catalogItemId.trim()
@@ -97,8 +102,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (body.deliveryEstimateMinutes != null) {
       data.deliveryEstimateMinutes = assertPositiveIntegerToman(body.deliveryEstimateMinutes);
     }
-    if (typeof body.parchinIncluded === "boolean") data.parchinIncluded = body.parchinIncluded;
-
     const plan = await prisma.infrastructurePlan.update({ where: { id }, data });
 
     await writeAuditLog({

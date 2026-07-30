@@ -335,11 +335,27 @@ export async function processProvisioningJob(
     let created = existingInstance;
 
     if (!providerInstanceId) {
+      const locked = (
+        order.serviceOrder.planSnapshot &&
+        typeof order.serviceOrder.planSnapshot === "object" &&
+        !Array.isArray(order.serviceOrder.planSnapshot)
+          ? order.serviceOrder.planSnapshot
+          : {}
+      ) as Record<string, unknown>;
       const createInput = {
         name: order.desiredInstanceName,
-        region: order.plan.regionCode,
-        size: order.plan.sizeCode,
-        image: order.plan.imageCode,
+        region:
+          typeof locked.regionCode === "string"
+            ? locked.regionCode
+            : order.plan.regionCode,
+        size:
+          typeof locked.sizeCode === "string"
+            ? locked.sizeCode
+            : order.plan.sizeCode,
+        image:
+          typeof locked.imageCode === "string"
+            ? locked.imageCode
+            : order.plan.imageCode,
         deliveryMode: order.deliveryMode,
       };
 

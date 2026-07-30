@@ -30,7 +30,6 @@ import {
 } from "@/lib/recommendation/questions";
 import type {
   AnswerSources,
-  ManagementKind,
   ProjectKind,
   PublicRecommendationQuote,
   QuestionId,
@@ -77,7 +76,7 @@ export function ConversationBuilder({
   signedIn,
 }: {
   initialProject?: ProjectKind;
-  initialManagement?: Exclude<ManagementKind, "unknown">;
+  initialManagement?: "managed";
   resume?: boolean;
   signedIn: boolean;
 }) {
@@ -114,7 +113,13 @@ export function ConversationBuilder({
         const raw = window.sessionStorage.getItem(storageKey);
         const parsed: unknown = raw ? JSON.parse(raw) : null;
         if (isStoredDraft(parsed)) {
-          setAnswers(parsed.answers);
+          setAnswers({
+            ...parsed.answers,
+            management:
+              parsed.answers.management === "raw"
+                ? "managed"
+                : parsed.answers.management,
+          });
           setSources(parsed.sources);
           const restoredOrder = getRecommendationQuestionOrder(parsed.answers);
           setStepIndex(
@@ -470,7 +475,7 @@ export function ConversationBuilder({
                   <span>
                     <small>تحویل</small>
                     <strong>
-                      {activeProfile.deliveryMode === "MANAGED" ? "همراه ابرچین" : "سرور خام"}
+                      همراه ابرچین
                     </strong>
                   </span>
                   <span>

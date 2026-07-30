@@ -77,3 +77,4 @@ export const otpIpLimiter = new MemoryRateLimiter(20, 15 * 60 * 1000);
 export const verifyMobileLimiter = new MemoryRateLimiter(15, 15 * 60 * 1000);
 export const verifyIpLimiter = new MemoryRateLimiter(40, 15 * 60 * 1000);
 export const recommendationQuoteIpLimiter = new MemoryRateLimiter(30, 15 * 60 * 1000);
+export const readyServerQuoteIpLimiter = new MemoryRateLimiter(30, 15 * 60 * 1000);

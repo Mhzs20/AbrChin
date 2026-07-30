@@ -11,6 +11,7 @@ import {
   resolveCatalogItemPricing,
 } from "@/lib/pricing/plan-pricing";
 import { readRequestMeta } from "@/lib/session";
+import { READY_SERVER_PLAN_PREFIX } from "@/lib/cloud-servers/catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,15 @@ export async function POST(request: Request) {
     const code = typeof body.code === "string" ? body.code.trim() : "";
     const title = typeof body.title === "string" ? body.title.trim() : "";
     if (!code || !title) return jsonError("کد و عنوان الزامی است.", 400);
+    if (code.startsWith(READY_SERVER_PLAN_PREFIX)) {
+      return jsonError("این پیشوند برای پلن‌های خودکار سرور آماده رزرو شده است.", 400);
+    }
+    if (
+      body.deliveryMode === "RAW" ||
+      ("parchinIncluded" in body && body.parchinIncluded !== true)
+    ) {
+      return jsonError("تمام سرورهای ابرچین فقط همراه با پرچین فروخته می‌شوند.", 400);
+    }
     if (
       "salePriceToman" in body ||
       "renewalPriceToman" in body ||
@@ -107,7 +117,7 @@ export async function POST(request: Request) {
         regionCode: catalogItem.regionCode,
         sizeCode: catalogItem.sizeCode,
         imageCode,
-        deliveryMode: body.deliveryMode === "MANAGED" ? DeliveryMode.MANAGED : DeliveryMode.RAW,
+        deliveryMode: DeliveryMode.MANAGED,
         vcpu: catalogItem.vcpu,
         ramGb:
           catalogItem.ramMb == null ? null : Math.ceil(catalogItem.ramMb / 1024),
@@ -116,7 +126,7 @@ export async function POST(request: Request) {
         renewalPriceRial: pricing?.finalPriceRial ?? 1n,
         estimatedProviderCostRial: pricing?.providerBasePriceRial ?? 1n,
         deliveryEstimateMinutes: assertPositiveIntegerToman(body.deliveryEstimateMinutes),
-        parchinIncluded: body.parchinIncluded === true,
+        parchinIncluded: true,
         active: body.active !== false && pricing != null,
         sortOrder: Number(body.sortOrder ?? 0),
         catalogItemId: catalogItem.id,

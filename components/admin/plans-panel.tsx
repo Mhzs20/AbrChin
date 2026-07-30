@@ -9,12 +9,10 @@ type PlanRow = {
   code: string;
   title: string;
   description: string | null;
-  deliveryMode: string;
   catalogItemId: string | null;
   catalogMappingStatus: string;
   imageCode: string;
   deliveryEstimateMinutes: number;
-  parchinIncluded: boolean;
   active: boolean;
   sortOrder: number;
 };
@@ -36,11 +34,9 @@ const emptyForm = {
   code: "",
   title: "",
   description: "",
-  deliveryMode: "RAW",
   catalogItemId: "",
   imageCode: "",
   deliveryEstimateMinutes: "15",
-  parchinIncluded: false,
   active: true,
   sortOrder: "0",
 };
@@ -84,11 +80,9 @@ export function AdminPlansPanel({
       code: plan.code,
       title: plan.title,
       description: plan.description ?? "",
-      deliveryMode: plan.deliveryMode,
       catalogItemId: plan.catalogItemId ?? "",
       imageCode: plan.imageCode,
       deliveryEstimateMinutes: String(plan.deliveryEstimateMinutes),
-      parchinIncluded: plan.parchinIncluded,
       active: plan.active,
       sortOrder: String(plan.sortOrder),
     });
@@ -174,12 +168,9 @@ export function AdminPlansPanel({
         <FormField id="plan-desc" label="توضیحات">
           <textarea id="plan-desc" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} rows={2} />
         </FormField>
-        <FormField id="plan-mode" label="سطح همراهی">
-          <select id="plan-mode" value={form.deliveryMode} onChange={(event) => setForm((current) => ({ ...current, deliveryMode: event.target.value }))}>
-            <option value="RAW">خودمدیریتی</option>
-            <option value="MANAGED">مدیریت‌شده</option>
-          </select>
-        </FormField>
+        <p className="product-tech">
+          سطح تحویل برای همه سرورها «همراه ابرچین» و پرچین پایه اجباری است.
+        </p>
         <FormField id="plan-catalog" label="Catalog Size / Region">
           <select id="plan-catalog" value={form.catalogItemId} onChange={(event) => selectCatalog(event.target.value)} required>
             <option value="">انتخاب کنید</option>
@@ -214,10 +205,6 @@ export function AdminPlansPanel({
         <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} />
           فعال
-        </label>
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input type="checkbox" checked={form.parchinIncluded} onChange={(event) => setForm((current) => ({ ...current, parchinIncluded: event.target.checked }))} />
-          پرچین پایه
         </label>
         {error ? <p className="product-error">{error}</p> : null}
       </ConfirmDialog>

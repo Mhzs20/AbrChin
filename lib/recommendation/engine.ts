@@ -95,14 +95,15 @@ function resolveManagement(
   answers: RecommendationAnswers,
   assumptions: RecommendationAssumption[],
 ): Exclude<ManagementKind, "unknown"> {
-  if (answers.management && answers.management !== "unknown") return answers.management;
-  assumptions.push({
-    field: "management",
-    label: "سطح همراهی",
-    value: "همراه ابرچین",
-    reason: "مسئولیت فنی مشخص نبود؛ گزینه‌ی امن‌تر را پیشنهاد دادیم و قبل از خرید قابل تغییر است.",
-    source: "default",
-  });
+  if (answers.management !== "managed") {
+    assumptions.push({
+      field: "management",
+      label: "سطح همراهی",
+      value: "همراه ابرچین",
+      reason: "تمام سرورهای ابرچین با پرچین پایه و تحویل کنترل‌شده ارائه می‌شوند.",
+      source: "default",
+    });
+  }
   return "managed";
 }
 
@@ -196,7 +197,7 @@ export function buildRecommendation(
 
   const usage = resolveUsage(answers, assumptions);
   const criticality = resolveCriticality(answers, assumptions);
-  const management = resolveManagement(answers, assumptions);
+  resolveManagement(answers, assumptions);
   const architecture = resolveArchitecture(answers, assumptions);
   const migration = project === "migration" || stage === "migration";
   const dataSensitive =
@@ -298,7 +299,7 @@ export function buildRecommendation(
     ramGb,
     storageGb,
     regionPreference: "IRAN",
-    deliveryMode: management === "managed" ? "MANAGED" : "RAW",
+    deliveryMode: "MANAGED",
     backupPolicy,
     needsResize:
       stage === "growing" ||
@@ -357,11 +358,7 @@ export function buildRecommendation(
     );
   }
 
-  if (management === "managed") {
-    reasons.push("حالت «همراه ابرچین» با پرچین پایه و دامنه‌ی مسئولیت شفاف در نظر گرفته شده.");
-  } else {
-    reasons.push("سرور خام انتخاب شده و مدیریت سیستم‌عامل و دسترسی‌ها با خودت می‌ماند.");
-  }
+  reasons.push("حالت «همراه ابرچین» با پرچین پایه و دامنه‌ی مسئولیت شفاف در نظر گرفته شده.");
 
   const nonUserSources = Object.values(sources).filter((source) => source && source !== "user").length;
   const uncertainty = assumptions.length + nonUserSources;

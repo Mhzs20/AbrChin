@@ -4,30 +4,27 @@ import test from "node:test";
 
 test("quick cloud purchase route exists and exposes price before login", async () => {
   const page = await readFile("app/cloud-servers/page.tsx", "utf8");
-  const cards = await readFile("components/quick-cloud-plans.tsx", "utf8");
+  const cards = await readFile("components/ready-cloud-catalog.tsx", "utf8");
+  const quoteButton = await readFile("components/ready-server-quote-button.tsx", "utf8");
 
-  assert.match(page, /خرید سریع سرور ابری/);
-  assert.match(cards, /ماه اول/);
-  assert.match(cards, /تمدید/);
-  assert.match(cards, /انتخاب این چینش/);
-  assert.match(cards, /اقتصادی/);
-  assert.match(cards, /پیشنهاد ابرچین/);
-  assert.match(cards, /آماده رشد/);
+  assert.match(page, /سرورهای ابری آماده/);
+  assert.match(page, /listLiveReadyServerOffers/);
+  assert.match(cards, /ماهانه و تمدید فعلی/);
+  assert.match(quoteButton, /دریافت Quote/);
+  assert.match(cards, /همه موقعیت‌ها/);
   assert.match(cards, /۱۰ دقیقه/);
-  assert.match(cards, /قیمت:/);
-  assert.match(cards, /عملکرد:/);
-  assert.match(cards, /رشد:/);
-  assert.match(cards, /ریسک:/);
+  assert.match(cards, /پرچین پایه/);
 });
 
 test("customer recommendation UI does not reveal infrastructure providers", async () => {
   const conversation = await readFile("components/conversation-builder.tsx", "utf8");
-  const quickBuy = await readFile("components/quick-cloud-plans.tsx", "utf8");
+  const quickBuy = await readFile("components/ready-cloud-catalog.tsx", "utf8");
   const customerSurface = `${conversation}\n${quickBuy}`;
 
   assert.doesNotMatch(customerSurface, /پارس.?پک/);
   assert.doesNotMatch(customerSurface, /ابر آروان/);
   assert.doesNotMatch(customerSurface, /providerLabel/);
+  assert.doesNotMatch(quickBuy, /providerBasePrice|basePrice/);
 });
 
 test("checkout locks the quoted amount and rejects expired quotes", async () => {
@@ -42,10 +39,26 @@ test("checkout locks the quoted amount and rejects expired quotes", async () => 
   assert.match(service, /quote\.session\.userId !== userId/);
   assert.match(payment, /quote_expired/);
   assert.match(payment, /quote_mismatch/);
+  assert.match(payment, /samePlanConfigurationSnapshot/);
   assert.match(payment, /RecommendationQuoteStatus\.CONVERTED/);
   assert.match(payment, /const amountRial = order\.amount/);
   assert.doesNotMatch(payment, /const amountRial = plan\.salePriceRial/);
   assert.match(ordersRoute, /quoteId/);
+});
+
+test("ready-server flow supports guests and never creates infrastructure during pricing", async () => {
+  const [route, quoteService, worker] = await Promise.all([
+    readFile("app/api/cloud-servers/quotes/route.ts", "utf8"),
+    readFile("lib/recommendation/quote-service.ts", "utf8"),
+    readFile("lib/infrastructure/provisioning-service.ts", "utf8"),
+  ]);
+  assert.match(route, /getCurrentUser/);
+  assert.doesNotMatch(route, /requireCurrentUser/);
+  assert.match(quoteService, /createReadyServerQuote/);
+  assert.match(quoteService, /RECOMMENDATION_QUOTE_VALIDITY_MS/);
+  assert.doesNotMatch(route, /createInstance/);
+  assert.doesNotMatch(quoteService, /createInstance/);
+  assert.match(worker, /serviceOrder\.planSnapshot/);
 });
 
 test("guided recommendation requests server-generated quotes instead of static cards", async () => {

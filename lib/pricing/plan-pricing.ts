@@ -65,19 +65,32 @@ export function resolveCatalogItemPricing(
 export function catalogItemBasePriceRial(
   item: ProviderCatalogItem,
 ): bigint | null {
+  return catalogItemPriceRial(item, item.priceMonthlyAmount);
+}
+
+export function catalogItemBaseHourlyPriceRial(
+  item: ProviderCatalogItem,
+): bigint | null {
+  return catalogItemPriceRial(item, item.priceHourlyAmount);
+}
+
+function catalogItemPriceRial(
+  item: ProviderCatalogItem,
+  amount: bigint | null,
+): bigint | null {
   const contract = normalizeProviderPriceContract({
     currencyCode: item.currencyCode,
     amountUnit: item.amountUnit,
   });
   if (
-    item.priceMonthlyAmount == null ||
-    item.priceMonthlyAmount <= 0n ||
+    amount == null ||
+    amount <= 0n ||
     !contract
   ) {
     return null;
   }
   return providerAmountToRial({
-    scaledAmount: item.priceMonthlyAmount,
+    scaledAmount: amount,
     scale: item.priceScale,
     contract,
   });
@@ -118,5 +131,40 @@ export function samePriceSnapshot(
     snapshot.markupBasisPointsSnapshot === current.markupBasisPoints &&
     snapshot.finalPriceRialSnapshot === current.finalPriceRial &&
     snapshot.currencySnapshot === current.currency
+  );
+}
+
+export function samePlanConfigurationSnapshot(
+  plan: Pick<
+    InfrastructurePlan,
+    | "provider"
+    | "regionCode"
+    | "sizeCode"
+    | "imageCode"
+    | "deliveryMode"
+    | "parchinIncluded"
+  >,
+  current: EffectivePlanPricing,
+  snapshot: unknown,
+): boolean {
+  if (
+    typeof snapshot !== "object" ||
+    snapshot === null ||
+    Array.isArray(snapshot)
+  ) {
+    return false;
+  }
+  const value = snapshot as Record<string, unknown>;
+  return (
+    value.provider === plan.provider &&
+    value.catalogItemId === current.catalogItemId &&
+    value.regionCode === plan.regionCode &&
+    value.sizeCode === plan.sizeCode &&
+    value.imageCode === plan.imageCode &&
+    value.deliveryMode === plan.deliveryMode &&
+    value.vcpu === current.vcpu &&
+    value.ramGb === current.ramGb &&
+    value.storageGb === current.storageGb &&
+    value.parchinIncluded === plan.parchinIncluded
   );
 }

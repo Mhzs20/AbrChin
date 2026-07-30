@@ -16,6 +16,7 @@ import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 import { WalletError } from "@/lib/wallet/errors";
 import {
   resolvePlanPricing,
+  samePlanConfigurationSnapshot,
   samePriceSnapshot,
 } from "@/lib/pricing/plan-pricing";
 
@@ -136,6 +137,12 @@ export async function executePayOrderWithWalletTx(
     throw new WalletError(
       "quote_price_changed",
       "قیمت تغییر کرده است؛ پیش از پرداخت قیمت تازه را تأیید کنید.",
+    );
+  }
+  if (!samePlanConfigurationSnapshot(plan, currentPricing, order.planSnapshot)) {
+    throw new WalletError(
+      "quote_configuration_changed",
+      "تنظیمات سرور تغییر کرده است؛ پیش از پرداخت پیشنهاد تازه را تأیید کنید.",
     );
   }
 

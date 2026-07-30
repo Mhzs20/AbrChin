@@ -47,13 +47,15 @@ export async function POST(request: Request, { params }: Params) {
         error.code === "insufficient_funds"
           ? 402
           : error.code === "quote_price_changed" ||
+              error.code === "quote_configuration_changed" ||
               error.code === "quote_expired" ||
               error.code === "quote_unavailable" ||
               error.code === "quote_revalidation_failed"
             ? 409
             : 400;
       if (
-        error.code === "quote_price_changed" &&
+        (error.code === "quote_price_changed" ||
+          error.code === "quote_configuration_changed") &&
         authenticatedUserId &&
         orderId
       ) {

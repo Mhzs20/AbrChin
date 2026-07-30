@@ -11,6 +11,7 @@ import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 import { WalletError } from "@/lib/wallet/errors";
 import {
   resolvePlanPricing,
+  samePlanConfigurationSnapshot,
   samePriceSnapshot,
 } from "@/lib/pricing/plan-pricing";
 import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
@@ -132,6 +133,12 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
       throw new WalletError(
         "quote_price_changed",
         "قیمت این پیشنهاد تغییر کرده؛ پیشنهاد تازه را دریافت کنید.",
+      );
+    }
+    if (!samePlanConfigurationSnapshot(quote.plan, currentPricing, quote.planSnapshot)) {
+      throw new WalletError(
+        "quote_configuration_changed",
+        "تنظیمات این پیشنهاد تغییر کرده؛ پیشنهاد تازه را دریافت کنید.",
       );
     }
 
