@@ -1,4 +1,7 @@
 import {
+  InfrastructureProductKind,
+  InfrastructureProvider,
+  ParchinLevel,
   RecommendationFlowStatus,
   RecommendationQuoteRole,
   RecommendationQuoteStatus,
@@ -7,12 +10,15 @@ import {
 
 import { prisma } from "@/lib/db";
 import {
+  getActivePlanById,
   getActiveReadyServerPlanById,
   listActivePlans,
   toPlanSnapshot,
   type PricedInfrastructurePlan,
 } from "@/lib/orders/plans";
 import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
+import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
+import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import { adjustRecommendationProfile, buildRecommendation } from "@/lib/recommendation/engine";
 import { rankProviderOffers } from "@/lib/recommendation/provider-ranking";
 import type {
@@ -27,9 +33,18 @@ import type {
   ResourceProfile,
 } from "@/lib/recommendation/types";
 import { WalletError } from "@/lib/wallet/errors";
+import { serializeQuoteLineItems } from "@/lib/pricing/quote-line-items";
+import { requireConversationAccess } from "@/lib/recommendation/session-service";
+import {
+  assertParchinLevelAllowed,
+  recommendedParchinLevel,
+} from "@/lib/parchin/recommendation";
 
 export const RECOMMENDATION_QUOTE_VALIDITY_MS = 10 * 60 * 1000;
 const READY_SERVER_PROFILE_SOURCE = "READY_SERVER";
+const CLOUD_SERVER_PROFILE_SOURCE = "CLOUD_SERVER";
+
+export { recommendedParchinLevel } from "@/lib/parchin/recommendation";
 
 type SelectedQuote = {
   role: RecommendationOfferRole;
@@ -164,7 +179,7 @@ export function toPublicRecommendationQuote(quote: {
     role: quote.role,
     title: typeof snapshot.title === "string" ? snapshot.title : "چینش ابری",
     description: typeof snapshot.description === "string" ? snapshot.description : null,
-    deliveryMode: snapshot.deliveryMode === "MANAGED" ? "MANAGED" : "RAW",
+    deliveryMode: "MANAGED",
     vcpu: typeof snapshot.vcpu === "number" ? snapshot.vcpu : null,
     ramGb: typeof snapshot.ramGb === "number" ? snapshot.ramGb : null,
     storageGb: typeof snapshot.storageGb === "number" ? snapshot.storageGb : null,
@@ -175,6 +190,11 @@ export function toPublicRecommendationQuote(quote: {
         ? snapshot.deliveryEstimateMinutes
         : 15,
     parchinIncluded: snapshot.parchinIncluded === true,
+    parchinLevel:
+      snapshot.parchinLevel === "PARCHIN_ACTIVE" ||
+      snapshot.parchinLevel === "PARCHIN_STABLE"
+        ? snapshot.parchinLevel
+        : "PARCHIN_START",
     reasons,
     expiresAt: quote.expiresAt.toISOString(),
   };
@@ -189,13 +209,51 @@ function isReadyServerProfile(value: Prisma.JsonValue | null): boolean {
   );
 }
 
-export async function createReadyServerQuote(params: {
+function isCloudServerProfile(value: Prisma.JsonValue | null): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    value.source === CLOUD_SERVER_PROFILE_SOURCE
+  );
+}
+
+async function createCatalogServerQuote(params: {
   planId: string;
   userId?: string | null;
   now?: Date;
+  expectedProductKind: InfrastructureProductKind;
 }) {
-  await refreshProviderCatalogForPricing();
-  const plan = await getActiveReadyServerPlanById(params.planId);
+  const route = await prisma.infrastructurePlan.findUnique({
+    where: { id: params.planId },
+    select: { provider: true, providerApiVersion: true, productKind: true },
+  });
+  if (
+    !route ||
+    route.productKind !== params.expectedProductKind ||
+    route.providerApiVersion !== "v1"
+  ) {
+    throw new WalletError("quote_unavailable", "این انتخاب معتبر نیست.");
+  }
+  try {
+    assertProviderRoute({
+      productKind: route.productKind,
+      provider: route.provider,
+      apiVersion: route.providerApiVersion,
+    });
+  } catch {
+    throw new WalletError("quote_unavailable", "این انتخاب معتبر نیست.");
+  }
+  if (route.provider === InfrastructureProvider.ARVAN) {
+    await refreshMultiProviderCatalog(InfrastructureProvider.ARVAN);
+  } else {
+    await refreshProviderCatalogForPricing();
+  }
+  const plan =
+    params.expectedProductKind ===
+    InfrastructureProductKind.READY_INSTANT_SERVER
+      ? await getActiveReadyServerPlanById(params.planId)
+      : await getActivePlanById(params.planId);
   if (!plan) {
     throw new WalletError(
       "quote_unavailable",
@@ -205,8 +263,13 @@ export async function createReadyServerQuote(params: {
 
   const now = params.now ?? new Date();
   const expiresAt = new Date(now.getTime() + RECOMMENDATION_QUOTE_VALIDITY_MS);
+  const profileSource =
+    params.expectedProductKind ===
+    InfrastructureProductKind.READY_INSTANT_SERVER
+      ? READY_SERVER_PROFILE_SOURCE
+      : CLOUD_SERVER_PROFILE_SOURCE;
   const profileSnapshot = {
-    source: READY_SERVER_PROFILE_SOURCE,
+    source: profileSource,
     planId: plan.id,
     regionCode: plan.regionCode,
     sizeCode: plan.sizeCode,
@@ -219,8 +282,9 @@ export async function createReadyServerQuote(params: {
     data: {
       userId: params.userId ?? null,
       status: RecommendationFlowStatus.QUOTED,
+      productFlowState: "QUOTED",
       answers: {
-        source: READY_SERVER_PROFILE_SOURCE,
+        source: profileSource,
         planId: plan.id,
       },
       answerSources: {},
@@ -235,7 +299,7 @@ export async function createReadyServerQuote(params: {
           planId: plan.id,
           score: 100,
           scoreBreakdown: {
-            source: READY_SERVER_PROFILE_SOURCE,
+            source: profileSource,
             liveCatalog: true,
           },
           reasons: [
@@ -256,6 +320,33 @@ export async function createReadyServerQuote(params: {
           finalPriceRialSnapshot: plan.pricing.finalPriceRial,
           currencySnapshot: plan.pricing.currency,
           providerPriceCheckedAt: plan.pricing.providerPriceCheckedAt,
+          provider: plan.provider,
+          providerApiVersion: plan.providerApiVersion,
+          productKind: plan.productKind,
+          providerRegion: plan.regionCode,
+          externalPlanId:
+            plan.catalogItem.externalPlanId ?? plan.sizeCode,
+          externalImageId: plan.imageCode,
+          vcpuSnapshot: plan.pricing.vcpu,
+          ramMbSnapshot:
+            plan.pricing.ramGb == null ? null : plan.pricing.ramGb * 1024,
+          diskGbSnapshot: plan.pricing.storageGb,
+          operatingSystemSnapshot: plan.imageCode,
+          providerHourlyPriceIrr:
+            plan.catalogItem.providerHourlyPriceIrr,
+          providerMonthlyPriceIrr: plan.pricing.providerBasePriceRial,
+          markupAmountIrr: plan.pricing.markupAmountRial,
+          parchinLevel: plan.pricing.parchinLevel,
+          parchinPriceIrr: plan.pricing.parchinPriceRial,
+          providerAddonsSnapshot: [],
+          taxBasisPointsSnapshot: plan.pricing.taxBasisPoints,
+          taxAmountIrr: plan.pricing.taxAmountRial,
+          lineItemsSnapshot: serializeQuoteLineItems(
+            plan.pricing.lineItems,
+          ),
+          quotedAt: now,
+          catalogVersion: plan.catalogItem.catalogVersion,
+          providerPayloadHash: plan.catalogItem.payloadHash,
           expiresAt,
         },
       },
@@ -272,30 +363,82 @@ export async function createReadyServerQuote(params: {
   };
 }
 
+export async function createReadyServerQuote(params: {
+  planId: string;
+  userId?: string | null;
+  now?: Date;
+}) {
+  return createCatalogServerQuote({
+    ...params,
+    expectedProductKind:
+      InfrastructureProductKind.READY_INSTANT_SERVER,
+  });
+}
+
+export async function createCloudServerQuote(params: {
+  planId: string;
+  userId?: string | null;
+  now?: Date;
+}) {
+  return createCatalogServerQuote({
+    ...params,
+    expectedProductKind: InfrastructureProductKind.CLOUD_SERVER,
+  });
+}
+
 export async function createRecommendationQuotes(params: {
   answers: RecommendationAnswers;
   sources: AnswerSources;
   userId?: string | null;
   now?: Date;
+  includeComparisons?: boolean;
+  sessionId?: string;
+  guestToken?: string | null;
+  requestedParchinLevel?: ParchinLevel;
 }) {
-  await refreshProviderCatalogForPricing();
+  if (!params.sessionId) {
+    throw new Error("conversation_session_required");
+  }
+  await refreshMultiProviderCatalog(InfrastructureProvider.ARVAN);
   const now = params.now ?? new Date();
   const expiresAt = new Date(now.getTime() + RECOMMENDATION_QUOTE_VALIDITY_MS);
   const recommendation = buildRecommendation(params.answers, params.sources);
-  const plans = await listActivePlans();
+  const minimumParchinLevel = recommendedParchinLevel(params.answers);
+  const selectedParchinLevel =
+    params.requestedParchinLevel ?? minimumParchinLevel;
+  assertParchinLevelAllowed(selectedParchinLevel, minimumParchinLevel);
+  const plans = await listActivePlans(selectedParchinLevel);
+  const existingSession = await requireConversationAccess({
+    sessionId: params.sessionId,
+    userId: params.userId,
+    guestToken: params.guestToken,
+  });
+  if (
+    !["REQUIREMENTS_COMPLETE", "QUOTED", "QUOTE_EXPIRED"].includes(
+      existingSession.productFlowState ?? "",
+    )
+  ) {
+    throw new Error("conversation_requirements_not_confirmed");
+  }
 
   if (recommendation.architectureEscalation) {
-    const session = await prisma.recommendationSession.create({
-      data: {
+    const sessionData = {
         userId: params.userId ?? null,
         status: RecommendationFlowStatus.ESCALATED,
+        productFlowState: "REQUIREMENTS_COMPLETE",
         answers: params.answers as Prisma.InputJsonValue,
         answerSources: params.sources as Prisma.InputJsonValue,
-        profile: recommendation.profile as Prisma.InputJsonValue,
+        profile: {
+          ...recommendation.profile,
+          workloadClassification: recommendation.workloadClassification,
+        } as Prisma.InputJsonValue,
         confidence: recommendation.confidence,
         architectureEscalation: true,
         expiresAt,
-      },
+      };
+    const session = await prisma.recommendationSession.update({
+      where: { id: existingSession.id },
+      data: sessionData,
     });
     return {
       sessionId: session.id,
@@ -313,13 +456,29 @@ export async function createRecommendationQuotes(params: {
       ? RecommendationFlowStatus.QUOTED
       : RecommendationFlowStatus.READY_TO_COMPARE;
 
-  const session = await prisma.recommendationSession.create({
-    data: {
+  await prisma.recommendationQuote.updateMany({
+    where: {
+      sessionId: existingSession.id,
+      status: {
+        in: [
+          RecommendationQuoteStatus.ACTIVE,
+          RecommendationQuoteStatus.SELECTED,
+        ],
+      },
+    },
+    data: { status: RecommendationQuoteStatus.INVALIDATED },
+  });
+  const sessionData = {
       userId: params.userId ?? null,
       status,
+      productFlowState:
+        selected.length > 0 ? "QUOTED" : "REQUIREMENTS_COMPLETE",
       answers: params.answers as Prisma.InputJsonValue,
       answerSources: params.sources as Prisma.InputJsonValue,
-      profile: recommendation.profile as Prisma.InputJsonValue,
+      profile: {
+        ...recommendation.profile,
+        workloadClassification: recommendation.workloadClassification,
+      } as Prisma.InputJsonValue,
       confidence: recommendation.confidence,
       architectureEscalation: false,
       expiresAt,
@@ -331,7 +490,10 @@ export async function createRecommendationQuotes(params: {
           score: rankedOffer.score,
           scoreBreakdown: rankedOffer.scoreBreakdown as Prisma.InputJsonValue,
           reasons: quoteReasons(role, recommendation, rankedOffer),
-          profileSnapshot: profile as Prisma.InputJsonValue,
+          profileSnapshot: {
+            ...profile,
+            workloadClassification: recommendation.workloadClassification,
+          } as Prisma.InputJsonValue,
           planSnapshot: toPlanSnapshot(plan, { createdAt: now, expiresAt }) as Prisma.InputJsonValue,
           amountRial: plan.pricing.finalPriceRial,
           renewalAmountRial: plan.pricing.finalPriceRial,
@@ -341,12 +503,69 @@ export async function createRecommendationQuotes(params: {
           finalPriceRialSnapshot: plan.pricing.finalPriceRial,
           currencySnapshot: plan.pricing.currency,
           providerPriceCheckedAt: plan.pricing.providerPriceCheckedAt,
+          provider: plan.provider,
+          providerApiVersion: plan.providerApiVersion,
+          productKind: plan.productKind,
+          providerRegion: plan.regionCode,
+          externalPlanId:
+            plan.catalogItem.externalPlanId ?? plan.sizeCode,
+          externalImageId: plan.imageCode,
+          vcpuSnapshot: plan.pricing.vcpu,
+          ramMbSnapshot:
+            plan.pricing.ramGb == null ? null : plan.pricing.ramGb * 1024,
+          diskGbSnapshot: plan.pricing.storageGb,
+          operatingSystemSnapshot: plan.imageCode,
+          providerHourlyPriceIrr:
+            plan.catalogItem.providerHourlyPriceIrr,
+          providerMonthlyPriceIrr: plan.pricing.providerBasePriceRial,
+          markupAmountIrr: plan.pricing.markupAmountRial,
+          parchinLevel: plan.pricing.parchinLevel,
+          parchinPriceIrr: plan.pricing.parchinPriceRial,
+          providerAddonsSnapshot: [],
+          taxBasisPointsSnapshot: plan.pricing.taxBasisPoints,
+          taxAmountIrr: plan.pricing.taxAmountRial,
+          lineItemsSnapshot: serializeQuoteLineItems(
+            plan.pricing.lineItems,
+          ),
+          quotedAt: now,
+          catalogVersion: plan.catalogItem.catalogVersion,
+          providerPayloadHash: plan.catalogItem.payloadHash,
           expiresAt,
         })),
       },
+    };
+  const session = await prisma.recommendationSession.update({
+    where: { id: existingSession.id },
+    data: sessionData,
+    include: {
+      quotes: {
+        where: {
+          status: RecommendationQuoteStatus.ACTIVE,
+          createdAt: { gte: now },
+        },
+      },
     },
-    include: { quotes: true },
   });
+  if (
+    selected.length > 0 &&
+    existingSession.productFlowState === "REQUIREMENTS_COMPLETE"
+  ) {
+    const flow = [
+      ["REQUIREMENTS_COMPLETE", "RECOMMENDED"],
+      ["RECOMMENDED", "PARCHIN_SELECTED"],
+      ["PARCHIN_SELECTED", "DELIVERY_CONFIGURED"],
+      ["DELIVERY_CONFIGURED", "QUOTED"],
+    ] as const;
+    await prisma.productFlowTransition.createMany({
+      data: flow.map(([fromState, toState], index) => ({
+        recommendationSessionId: existingSession.id,
+        fromState,
+        toState,
+        reason: "recommendation_quote_created",
+        idempotencyKey: `quote-flow:${existingSession.id}:${now.getTime()}:${index}`,
+      })),
+    });
+  }
   const quoteNotice =
     selected.length === 0
       ? recommendation.profile.backupPolicy === "DAILY"
@@ -359,7 +578,13 @@ export async function createRecommendationQuotes(params: {
   return {
     sessionId: session.id,
     recommendation,
-    quotes: session.quotes.map(toPublicRecommendationQuote),
+    quotes: session.quotes
+      .filter(
+        (quote) =>
+          params.includeComparisons ||
+          quote.role === RecommendationQuoteRole.RECOMMENDED,
+      )
+      .map(toPublicRecommendationQuote),
     quoteNotice,
     expiresAt,
   };
@@ -375,7 +600,11 @@ export async function getActiveRecommendationQuote(
       id,
       status: { in: [RecommendationQuoteStatus.ACTIVE, RecommendationQuoteStatus.SELECTED] },
       expiresAt: { gt: now },
-      plan: { active: true },
+      plan: {
+        active: true,
+        deliveryMode: "MANAGED",
+        parchinIncluded: true,
+      },
       session: userId
         ? {
             OR: [{ userId }, { userId: null }],
@@ -393,6 +622,15 @@ export async function getActiveReadyServerQuote(
 ) {
   const quote = await getActiveRecommendationQuote(id, userId, now);
   return quote && isReadyServerProfile(quote.session.profile) ? quote : null;
+}
+
+export async function getActiveCloudServerQuote(
+  id: string,
+  userId?: string | null,
+  now = new Date(),
+) {
+  const quote = await getActiveRecommendationQuote(id, userId, now);
+  return quote && isCloudServerProfile(quote.session.profile) ? quote : null;
 }
 
 export async function refreshRecommendationQuote(params: {
@@ -418,11 +656,20 @@ export async function refreshRecommendationQuote(params: {
       })
     ).quote;
   }
+  if (isCloudServerProfile(previous.session.profile)) {
+    replacement = (
+      await createCloudServerQuote({
+        planId: previous.planId,
+        userId: params.userId,
+      })
+    ).quote;
+  }
   if (!replacement) {
     const refreshed = await createRecommendationQuotes({
       answers: previous.session.answers as unknown as RecommendationAnswers,
       sources: previous.session.answerSources as unknown as AnswerSources,
       userId: params.userId,
+      sessionId: previous.session.id,
     });
     replacement =
       refreshed.quotes.find((quote) => quote.role === previous.role) ??

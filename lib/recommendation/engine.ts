@@ -13,6 +13,7 @@ import type {
   StorageKind,
   UsageKind,
 } from "@/lib/recommendation/types";
+import { classifyWorkload } from "@/lib/recommendation/workload-classification";
 
 const cpuTiers = [1, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64];
 const ramTiers = [2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128];
@@ -370,6 +371,7 @@ export function buildRecommendation(
       ? "نیازت از یک سرور تنها حساس‌تر است؛ مشخصاتت حفظ می‌شود تا مسیر درست را با همراهی جلو ببریم."
       : `${workloadLabels[project]} با منابع متعادل برای امروز و یک مسیر روشن برای رشد.`,
     workloadLabel: workloadLabels[project],
+    workloadClassification: classifyWorkload(answers),
     profile,
     minimumProfile,
     confidence,

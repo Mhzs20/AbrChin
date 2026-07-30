@@ -15,9 +15,12 @@ import {
   samePriceSnapshot,
 } from "@/lib/pricing/plan-pricing";
 import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
+import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
+import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import {
   CloudInstanceStatus,
   InfrastructureOrderStatus,
+  InfrastructureProvider,
   LedgerDirection,
   LedgerStatus,
   LedgerType,
@@ -32,12 +35,32 @@ const PURCHASABLE_QUOTE_STATUSES: RecommendationQuoteStatus[] = [
   RecommendationQuoteStatus.SELECTED,
 ];
 
-export async function createServiceOrder(userId: string, planCode: string) {
+async function refreshCatalogForProvider(provider: InfrastructureProvider) {
+  if (provider === InfrastructureProvider.ARVAN) {
+    await refreshMultiProviderCatalog(InfrastructureProvider.ARVAN);
+    return;
+  }
   await refreshProviderCatalogForPricing();
+}
+
+export async function createServiceOrder(userId: string, planCode: string) {
+  const route = await prisma.infrastructurePlan.findUnique({
+    where: { code: planCode },
+    select: { provider: true },
+  });
+  if (!route) {
+    throw new WalletError("invalid_plan", "بسته انتخاب‌شده معتبر نیست.");
+  }
+  await refreshCatalogForProvider(route.provider);
   const plan = await getActivePlanByCode(planCode);
   if (!plan) {
     throw new WalletError("invalid_plan", "بسته انتخاب‌شده معتبر نیست.");
   }
+  assertProviderRoute({
+    productKind: plan.productKind,
+    provider: plan.provider,
+    apiVersion: plan.providerApiVersion,
+  });
 
   await ensureWalletForUser(userId);
   const createdAt = new Date();
@@ -49,21 +72,36 @@ export async function createServiceOrder(userId: string, planCode: string) {
       userId,
       title: plan.title,
       description: plan.description,
-      amount: plan.salePriceRial,
+      amount: plan.pricing.finalPriceRial,
       currency: "IRR",
       status: ServiceOrderStatus.PENDING_PAYMENT,
       planCode: plan.code,
       planId: plan.id,
       planSnapshot: snapshot,
       quoteExpiresAt: expiresAt,
+      provider: plan.provider,
+      providerApiVersion: plan.providerApiVersion,
+      productKind: plan.productKind,
+      parchinLevel: plan.pricing.parchinLevel,
+      productFlowState: "AWAITING_PAYMENT",
     },
   });
 }
 
 export async function createServiceOrderByPlanId(userId: string, planId: string) {
-  await refreshProviderCatalogForPricing();
+  const route = await prisma.infrastructurePlan.findUnique({
+    where: { id: planId },
+    select: { provider: true },
+  });
+  if (!route) throw new WalletError("invalid_plan", "بسته انتخاب‌شده معتبر نیست.");
+  await refreshCatalogForProvider(route.provider);
   const plan = await getActivePlanById(planId);
   if (!plan) throw new WalletError("invalid_plan", "بسته انتخاب‌شده معتبر نیست.");
+  assertProviderRoute({
+    productKind: plan.productKind,
+    provider: plan.provider,
+    apiVersion: plan.providerApiVersion,
+  });
   await ensureWalletForUser(userId);
   const createdAt = new Date();
   const expiresAt = new Date(createdAt.getTime() + QUOTE_VALIDITY_MS);
@@ -79,12 +117,27 @@ export async function createServiceOrderByPlanId(userId: string, planId: string)
       planId: plan.id,
       planSnapshot: toPlanSnapshot(plan, { createdAt, expiresAt }),
       quoteExpiresAt: expiresAt,
+      provider: plan.provider,
+      providerApiVersion: plan.providerApiVersion,
+      productKind: plan.productKind,
+      parchinLevel: plan.pricing.parchinLevel,
+      productFlowState: "AWAITING_PAYMENT",
     },
   });
 }
 
 export async function createServiceOrderFromQuote(userId: string, quoteId: string) {
-  await refreshProviderCatalogForPricing();
+  const route = await prisma.recommendationQuote.findUnique({
+    where: { id: quoteId },
+    select: {
+      provider: true,
+      plan: { select: { provider: true } },
+    },
+  });
+  if (!route) {
+    throw new WalletError("invalid_quote", "پیشنهاد انتخاب‌شده پیدا نشد.");
+  }
+  await refreshCatalogForProvider(route.provider ?? route.plan.provider);
   return prisma.$transaction(async (tx) => {
     const quote = await tx.recommendationQuote.findUnique({
       where: { id: quoteId },
@@ -119,10 +172,56 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
     if (!quote.plan.active) {
       throw new WalletError("invalid_plan", "ظرفیت این چینش دیگر فعال نیست.");
     }
+    assertProviderRoute({
+      productKind: quote.plan.productKind,
+      provider: quote.plan.provider,
+      apiVersion: quote.plan.providerApiVersion,
+    });
+    if (
+      quote.provider != null &&
+      (quote.provider !== quote.plan.provider ||
+        quote.providerApiVersion !== quote.plan.providerApiVersion ||
+        quote.productKind !== quote.plan.productKind)
+    ) {
+      throw new WalletError(
+        "quote_provider_mismatch",
+        "ارائه‌دهندهٔ قفل‌شده با سفارش همخوان نیست.",
+      );
+    }
     const pricingConfig = await tx.providerPricingConfig.findUnique({
       where: { provider: quote.plan.provider },
     });
-    const currentPricing = resolvePlanPricing(quote.plan, pricingConfig);
+    const [productPricing, commerce, parchin] = await Promise.all([
+      tx.productPricingConfig.findUnique({
+        where: {
+          provider_apiVersion_productKind: {
+            provider: quote.plan.provider,
+            apiVersion: quote.plan.providerApiVersion,
+            productKind: quote.plan.productKind,
+          },
+        },
+      }),
+      tx.commercePricingConfig.findUnique({ where: { id: "default" } }),
+      tx.parchinPricingConfig.findUnique({
+        where: {
+          level:
+            quote.parchinLevel ??
+            quote.plan.minimumParchinLevel ??
+            "PARCHIN_START",
+        },
+      }),
+    ]);
+    const currentPricing =
+      pricingConfig?.enabled &&
+      productPricing?.enabled &&
+      parchin?.active
+        ? resolvePlanPricing(quote.plan, pricingConfig, {
+            productMarkupBasisPoints: productPricing.markupBasisPoints,
+            taxBasisPoints: commerce?.taxBps ?? 1000,
+            parchinLevel: parchin.level,
+            parchinPriceRial: parchin.priceRial,
+          })
+        : null;
     if (!currentPricing) {
       throw new WalletError(
         "quote_unavailable",
@@ -157,6 +256,11 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
         planSnapshot: snapshot,
         recommendationQuoteId: quote.id,
         quoteExpiresAt: quote.expiresAt,
+        provider: quote.plan.provider,
+        providerApiVersion: quote.plan.providerApiVersion,
+        productKind: quote.plan.productKind,
+        parchinLevel: currentPricing.parchinLevel,
+        productFlowState: "AWAITING_PAYMENT",
       },
     });
 
@@ -172,6 +276,18 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
       data: {
         userId,
         status: RecommendationFlowStatus.CHECKOUT,
+        productFlowState: "AWAITING_PAYMENT",
+      },
+    });
+    await tx.productFlowTransition.create({
+      data: {
+        recommendationSessionId: quote.sessionId,
+        serviceOrderId: order.id,
+        fromState: "QUOTED",
+        toState: "AWAITING_PAYMENT",
+        reason: "quote_selected_for_checkout",
+        idempotencyKey: `quote-checkout:${quote.id}`,
+        actorUserId: userId,
       },
     });
 
@@ -186,10 +302,14 @@ export async function payOrderWithWallet(
 ) {
   const existing = await prisma.serviceOrder.findFirst({
     where: { id: orderId, userId },
-    select: { status: true },
+    select: { status: true, provider: true },
   });
   if (existing?.status !== ServiceOrderStatus.PAID) {
-    await refreshProviderCatalogForPricing();
+    if (existing?.provider === "ARVAN") {
+      await refreshMultiProviderCatalog("ARVAN");
+    } else {
+      await refreshProviderCatalogForPricing();
+    }
   }
   return prisma.$transaction(async (tx) => executePayOrderWithWalletTx(tx, userId, orderId, options));
 }

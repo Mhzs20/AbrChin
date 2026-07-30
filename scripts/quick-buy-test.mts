@@ -2,18 +2,23 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("quick cloud purchase route exists and exposes price before login", async () => {
-  const page = await readFile("app/cloud-servers/page.tsx", "utf8");
+test("cloud and ready purchase routes stay provider-separated before login", async () => {
+  const cloudPage = await readFile("app/cloud-servers/page.tsx", "utf8");
+  const readyPage = await readFile("app/ready-servers/page.tsx", "utf8");
   const cards = await readFile("components/ready-cloud-catalog.tsx", "utf8");
   const quoteButton = await readFile("components/ready-server-quote-button.tsx", "utf8");
 
-  assert.match(page, /سرورهای ابری آماده/);
-  assert.match(page, /listLiveReadyServerOffers/);
+  assert.match(cloudPage, /سرورهای ابری قابل انتخاب/);
+  assert.match(cloudPage, /listLiveCloudServerOffers/);
+  assert.doesNotMatch(cloudPage, /listLiveReadyServerOffers/);
+  assert.match(readyPage, /سرورهای آماده/);
+  assert.match(readyPage, /listLiveReadyServerOffers/);
+  assert.doesNotMatch(readyPage, /listLiveCloudServerOffers/);
   assert.match(cards, /ماهانه و تمدید فعلی/);
   assert.match(quoteButton, /دریافت Quote/);
   assert.match(cards, /همه موقعیت‌ها/);
   assert.match(cards, /۱۰ دقیقه/);
-  assert.match(cards, /پرچین پایه/);
+  assert.match(cards, /سطح پرچین/);
 });
 
 test("customer recommendation UI does not reveal infrastructure providers", async () => {

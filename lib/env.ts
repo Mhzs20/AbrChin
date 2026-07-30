@@ -13,6 +13,24 @@ function readBool(name: string, fallback: boolean): boolean {
 
 export function getEnv() {
   const isProduction = process.env.NODE_ENV === "production";
+  const parspackConfiguredBase = (
+    process.env.PARSPACK_API_BASE_URL ?? ""
+  ).trim();
+  const parspackLegacyPublicBase = (
+    process.env.PARSPACK_PUBLIC_API_BASE_URL ?? ""
+  ).trim();
+  const parspackManagementBase = (
+    process.env.PARSPACK_MANAGEMENT_API_BASE_URL ??
+    (parspackConfiguredBase &&
+    !parspackConfiguredBase.includes("/public/")
+      ? parspackConfiguredBase
+      : "https://my.parspack.com/cserver/api/v1")
+  ).trim();
+  const parspackCatalogBase =
+    parspackConfiguredBase.includes("/public/")
+      ? parspackConfiguredBase
+      : parspackLegacyPublicBase ||
+        "https://my.parspack.com/cserver/api/public/v1";
   return {
     databaseUrl: process.env.DATABASE_URL ?? "",
     sessionSecret: process.env.SESSION_SECRET ?? "",
@@ -37,16 +55,30 @@ export function getEnv() {
       .map((item) => item.trim())
       .filter(Boolean),
     parspackEnabled: readBool("PARSPACK_ENABLED", false),
-    parspackApiBaseUrl: process.env.PARSPACK_API_BASE_URL ?? "https://my.parspack.com/cserver/api/v1",
-    parspackPublicApiBaseUrl:
-      process.env.PARSPACK_PUBLIC_API_BASE_URL ??
-      "https://my.parspack.com/cserver/api/public/v1",
+    parspackApiBaseUrl: parspackManagementBase,
+    parspackPublicApiBaseUrl: parspackCatalogBase,
     parspackApiToken: process.env.PARSPACK_API_TOKEN ?? "",
     parspackTimeoutMs: readInt("PARSPACK_TIMEOUT_MS", 15_000),
     parspackPriceCurrency: (process.env.PARSPACK_PRICE_CURRENCY ?? "").trim().toUpperCase(),
     parspackPriceAmountUnit: (process.env.PARSPACK_PRICE_AMOUNT_UNIT ?? "")
       .trim()
       .toUpperCase(),
+    parspackApiVersion: (process.env.PARSPACK_API_VERSION ?? "v1")
+      .trim()
+      .toLowerCase(),
+    arvanEnabled: readBool("ARVAN_ENABLED", false),
+    arvanApiKey: process.env.ARVAN_API_KEY ?? "",
+    arvanApiBaseUrl:
+      process.env.ARVAN_API_BASE_URL ??
+      "https://napi.arvancloud.ir/ecc/v1",
+    arvanApiVersion: (process.env.ARVAN_API_VERSION ?? "v1")
+      .trim()
+      .toLowerCase(),
+    arvanTimeoutMs: readInt("ARVAN_TIMEOUT_MS", 15_000),
+    arvanGetAttempts: readInt("ARVAN_GET_ATTEMPTS", 3),
+    // Lifecycle writes stay disabled until a separately approved staging
+    // exercise. Merely configuring an API key must never enable mutations.
+    arvanMutationsEnabled: readBool("ARVAN_MUTATIONS_ENABLED", false),
     infrastructureProviderMode: (process.env.INFRASTRUCTURE_PROVIDER_MODE ?? "mock").toLowerCase(),
     nodeEnv: process.env.NODE_ENV ?? "development",
     isProduction,
@@ -68,6 +100,41 @@ export function assertServerSecrets() {
   }
   if (!env.sessionSecret || env.sessionSecret.length < 16) {
     throw new Error("SESSION_SECRET must be set (min 16 characters)");
+  }
+  return env;
+}
+
+export function validateProviderEnvironment() {
+  const env = getEnv();
+  if (env.arvanApiVersion !== "v1") {
+    throw new Error("ARVAN_API_VERSION must be v1");
+  }
+  if (/\/v3(?:\/|$)/i.test(env.arvanApiBaseUrl)) {
+    throw new Error("Arvan API v3 is disabled");
+  }
+  if (
+    env.arvanEnabled &&
+    (!env.arvanApiKey ||
+      !/\/ecc\/v1(?:\/regions)?\/?$/i.test(env.arvanApiBaseUrl))
+  ) {
+    throw new Error("Arvan v1 provider configuration is invalid");
+  }
+  if (env.parspackApiVersion !== "v1") {
+    throw new Error("PARSPACK_API_VERSION must be v1");
+  }
+  if (
+    env.parspackEnabled &&
+    (!env.parspackApiToken ||
+      !/\/api\/public\/v1\/?$/i.test(env.parspackPublicApiBaseUrl) ||
+      env.parspackPriceCurrency !== "IRR" ||
+      !["RIAL", "TOMAN"].includes(env.parspackPriceAmountUnit))
+  ) {
+    throw new Error("ParsPack v1 price contract is not fully configured");
+  }
+  if (env.isProduction && env.arvanMutationsEnabled) {
+    throw new Error(
+      "ARVAN_MUTATIONS_ENABLED requires a separately approved staging rollout",
+    );
   }
   return env;
 }

@@ -13,13 +13,19 @@ import { useMemo, useState } from "react";
 
 import { ReadyServerQuoteButton } from "@/components/ready-server-quote-button";
 import type { PublicPlanOffer } from "@/lib/orders/plans";
-import { parchinBase } from "@/lib/parchin/catalog";
+import { parchinLevelLabel } from "@/lib/parchin/catalog";
 
 function formatRialAsToman(value: string) {
   return (BigInt(value) / 10n).toLocaleString("fa-IR");
 }
 
-export function ReadyCloudCatalog({ offers }: { offers: PublicPlanOffer[] }) {
+export function ReadyCloudCatalog({
+  offers,
+  productPath = "ready-servers",
+}: {
+  offers: PublicPlanOffer[];
+  productPath?: "cloud-servers" | "ready-servers";
+}) {
   const [regionCode, setRegionCode] = useState("ALL");
   const regions = useMemo(() => {
     const map = new Map<string, { code: string; label: string; count: number }>();
@@ -46,7 +52,7 @@ export function ReadyCloudCatalog({ offers }: { offers: PublicPlanOffer[] }) {
       <section className="quick-plans-empty" aria-live="polite">
         <Database size={24} aria-hidden="true" />
         <div>
-          <strong>فروش سرورهای آماده موقتاً متوقف است.</strong>
+          <strong>فروش این سرورها موقتاً متوقف است.</strong>
           <p>
             قیمت یا ظرفیت زنده تأیید نشد؛ هیچ قیمت ذخیره‌شده‌ای به‌جای پاسخ
             فعلی نمایش داده نمی‌شود.
@@ -94,7 +100,7 @@ export function ReadyCloudCatalog({ offers }: { offers: PublicPlanOffer[] }) {
               </span>
               <span className="quick-plan-mode">
                 <ShieldCheck size={13} aria-hidden="true" />
-                {parchinBase.title}
+                {parchinLevelLabel(offer.parchinLevel)}
               </span>
             </header>
 
@@ -137,7 +143,7 @@ export function ReadyCloudCatalog({ offers }: { offers: PublicPlanOffer[] }) {
               </li>
               <li>
                 <ShieldCheck size={14} aria-hidden="true" />
-                تحویل امن و دسترسی یک‌بارمصرف با پرچین پایه
+                تحویل امن و دسترسی یک‌بارمصرف با سطح پرچین نمایش‌داده‌شده
               </li>
               <li>
                 <Clock3 size={14} aria-hidden="true" />
@@ -145,7 +151,10 @@ export function ReadyCloudCatalog({ offers }: { offers: PublicPlanOffer[] }) {
               </li>
             </ul>
 
-            <ReadyServerQuoteButton planId={offer.id} />
+            <ReadyServerQuoteButton
+              planId={offer.id}
+              productPath={productPath}
+            />
             <small className="quick-plan-validity">
               بعد از انتخاب، قیمت و ظرفیت دوباره بررسی و برای ۱۰ دقیقه قفل می‌شود.
             </small>

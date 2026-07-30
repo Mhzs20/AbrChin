@@ -16,11 +16,24 @@ const allowedAnswers: Record<QuestionId, readonly string[]> = {
   growth: ["stable", "campaign", "rapid", "unknown"],
   downtime: ["flexible", "short", "near_zero", "unknown"],
   criticality: ["low", "medium", "high", "severe", "unknown"],
-  management: ["raw", "managed", "unknown"],
+  management: ["managed", "unknown"],
 };
 
 const questionIds = Object.keys(allowedAnswers) as QuestionId[];
 const allowedSources: AnswerSource[] = ["user", "estimate", "default"];
+
+export function validateRecommendationAnswer(
+  questionId: QuestionId,
+  value: unknown,
+): string {
+  if (
+    typeof value !== "string" ||
+    !allowedAnswers[questionId].includes(value)
+  ) {
+    throw new Error(`invalid_recommendation_answer:${questionId}`);
+  }
+  return value;
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};

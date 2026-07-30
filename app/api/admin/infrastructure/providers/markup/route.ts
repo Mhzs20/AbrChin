@@ -19,7 +19,20 @@ export async function PATCH(request: Request) {
   try {
     const admin = await requireAdminUser();
     const meta = await readRequestMeta(request);
-    const body = (await request.json()) as { markupPercent?: unknown };
+    const body = (await request.json()) as {
+      provider?: unknown;
+      markupPercent?: unknown;
+      enabled?: unknown;
+    };
+    const provider =
+      body.provider === InfrastructureProvider.ARVAN ||
+      body.provider === InfrastructureProvider.PARSPACK
+        ? body.provider
+        : null;
+    if (!provider) return jsonError("Provider معتبر نیست.", 400);
+    if (typeof body.enabled !== "boolean") {
+      return jsonError("وضعیت Provider معتبر نیست.", 400);
+    }
     let markupBasisPoints: number;
     try {
       markupBasisPoints = parseMarkupPercentToBasisPoints(body.markupPercent);
@@ -28,16 +41,34 @@ export async function PATCH(request: Request) {
     }
 
     const before = await prisma.providerPricingConfig.findUnique({
-      where: { provider: InfrastructureProvider.PARSPACK },
+      where: { provider },
     });
     const pricing = await prisma.providerPricingConfig.upsert({
-      where: { provider: InfrastructureProvider.PARSPACK },
-      update: { markupBasisPoints, updatedById: admin.id },
-      create: {
-        id: "parspack",
-        provider: InfrastructureProvider.PARSPACK,
+      where: { provider },
+      update: {
         markupBasisPoints,
+        enabled: body.enabled,
         updatedById: admin.id,
+      },
+      create: {
+        id: `${provider.toLowerCase()}-v1`,
+        provider,
+        apiVersion: "v1",
+        sourceMoneyUnit:
+          provider === InfrastructureProvider.ARVAN ? "IRR" : null,
+        markupBasisPoints,
+        enabled: body.enabled,
+        updatedById: admin.id,
+      },
+    });
+    await prisma.providerCatalogState.upsert({
+      where: { provider },
+      update: { enabled: body.enabled },
+      create: {
+        id: `${provider.toLowerCase()}-v1`,
+        provider,
+        apiVersion: "v1",
+        enabled: body.enabled,
       },
     });
     await writeAuditLog({
@@ -46,7 +77,7 @@ export async function PATCH(request: Request) {
       entityType: "provider_pricing_config",
       entityId: pricing.id,
       beforeData: { markupBasisPoints: before?.markupBasisPoints ?? 0 },
-      afterData: { markupBasisPoints },
+      afterData: { markupBasisPoints, enabled: body.enabled },
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
@@ -54,6 +85,7 @@ export async function PATCH(request: Request) {
     return jsonOk({
       pricing: {
         markupBasisPoints,
+        enabled: body.enabled,
         markupPercent: formatBasisPointsPercent(markupBasisPoints),
         updatedAt: pricing.updatedAt.toISOString(),
       },

@@ -98,6 +98,47 @@ enum RenewalQuoteStatus {
 
 enum InfrastructureProvider {
   PARSPACK
+  ARVAN
+}
+
+enum InfrastructureProductKind {
+  READY_INSTANT_SERVER
+  CLOUD_SERVER
+}
+
+enum ProviderCatalogStatus {
+  ACTIVE
+  STALE
+  UNAVAILABLE
+  INVALID_PRICE
+  DISABLED
+}
+
+enum ProviderCatalogAssetKind {
+  IMAGE
+  NETWORK
+  SECURITY
+}
+
+enum ProviderSyncStatus {
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+}
+
+enum ParchinLevel {
+  PARCHIN_START
+  PARCHIN_ACTIVE
+  PARCHIN_STABLE
+}
+
+enum QuoteLineItemType {
+  PROVIDER_INFRASTRUCTURE
+  INFRASTRUCTURE_MARKUP
+  PARCHIN
+  PROVIDER_ADDON
+  TAX
 }
 
 enum DeliveryMode {
@@ -342,24 +383,29 @@ model PaymentGatewayAuditLog {
 }
 
 model ServiceOrder {
-  id                    String               @id @default(cuid())
+  id                    String                     @id @default(cuid())
   userId                String
   title                 String
   description           String?
   amount                BigInt
-  currency              String               @default("IRR")
-  status                ServiceOrderStatus   @default(DRAFT)
+  currency              String                     @default("IRR")
+  status                ServiceOrderStatus         @default(DRAFT)
   planCode              String?
   planId                String?
   planSnapshot          Json?
-  recommendationQuoteId String?              @unique
+  recommendationQuoteId String?                    @unique
   quoteExpiresAt        DateTime?
+  provider              InfrastructureProvider?
+  providerApiVersion    String?
+  productKind           InfrastructureProductKind?
+  parchinLevel          ParchinLevel?
+  productFlowState      String?
   paidAt                DateTime?
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
-  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan                  InfrastructurePlan?  @relation(fields: [planId], references: [id], onDelete: SetNull)
-  recommendationQuote   RecommendationQuote? @relation(fields: [recommendationQuoteId], references: [id], onDelete: SetNull)
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  user                  User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                  InfrastructurePlan?        @relation(fields: [planId], references: [id], onDelete: SetNull)
+  recommendationQuote   RecommendationQuote?       @relation(fields: [recommendationQuoteId], references: [id], onDelete: SetNull)
   infrastructureOrder   InfrastructureOrder?
   subscription          ServiceSubscription?
 
@@ -371,12 +417,18 @@ model ServiceOrder {
 model RecommendationSession {
   id                     String                   @id @default(cuid())
   userId                 String?
+  guestAccessTokenHash   String?
+  claimedAt              DateTime?
   status                 RecommendationFlowStatus @default(DISCOVERY)
   answers                Json
   answerSources          Json
+  understandingSnapshot  Json?
+  requirementsSummary    Json?
+  revision               Int                      @default(0)
   profile                Json?
   confidence             String?
   architectureEscalation Boolean                  @default(false)
+  productFlowState       String?
   expiresAt              DateTime
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime                 @updatedAt
@@ -385,14 +437,15 @@ model RecommendationSession {
 
   @@index([userId, createdAt])
   @@index([status, expiresAt])
+  @@index([guestAccessTokenHash])
 }
 
 model RecommendationQuote {
-  id                            String                    @id @default(cuid())
+  id                            String                     @id @default(cuid())
   sessionId                     String
   planId                        String
   role                          RecommendationQuoteRole
-  status                        RecommendationQuoteStatus @default(ACTIVE)
+  status                        RecommendationQuoteStatus  @default(ACTIVE)
   score                         Float
   scoreBreakdown                Json
   reasons                       Json
@@ -406,17 +459,41 @@ model RecommendationQuote {
   finalPriceRialSnapshot        BigInt?
   currencySnapshot              String?
   providerPriceCheckedAt        DateTime?
+  provider                      InfrastructureProvider?
+  providerApiVersion            String?
+  productKind                   InfrastructureProductKind?
+  providerRegion                String?
+  externalPlanId                String?
+  externalImageId               String?
+  externalNetworkId             String?
+  externalSecurityId            String?
+  vcpuSnapshot                  Int?
+  ramMbSnapshot                 Int?
+  diskGbSnapshot                Int?
+  operatingSystemSnapshot       String?
+  providerHourlyPriceIrr        BigInt?
+  providerMonthlyPriceIrr       BigInt?
+  markupAmountIrr               BigInt?
+  parchinLevel                  ParchinLevel?
+  parchinPriceIrr               BigInt?
+  providerAddonsSnapshot        Json?
+  taxBasisPointsSnapshot        Int?
+  taxAmountIrr                  BigInt?
+  lineItemsSnapshot             Json?
+  quotedAt                      DateTime?
+  catalogVersion                String?
+  providerPayloadHash           String?
   expiresAt                     DateTime
   selectedAt                    DateTime?
   convertedAt                   DateTime?
-  createdAt                     DateTime                  @default(now())
-  updatedAt                     DateTime                  @updatedAt
-  session                       RecommendationSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  plan                          InfrastructurePlan        @relation(fields: [planId], references: [id], onDelete: Restrict)
-  catalogItem                   ProviderCatalogItem?      @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  createdAt                     DateTime                   @default(now())
+  updatedAt                     DateTime                   @updatedAt
+  session                       RecommendationSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  plan                          InfrastructurePlan         @relation(fields: [planId], references: [id], onDelete: Restrict)
+  catalogItem                   ProviderCatalogItem?       @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
   serviceOrder                  ServiceOrder?
 
-  @@unique([sessionId, role])
+  @@index([sessionId, role])
   @@index([sessionId, status])
   @@index([planId, expiresAt])
   @@index([catalogItemId, expiresAt])
@@ -424,11 +501,13 @@ model RecommendationQuote {
 }
 
 model InfrastructurePlan {
-  id                        String                 @id @default(cuid())
-  code                      String                 @unique
+  id                        String                    @id @default(cuid())
+  code                      String                    @unique
   title                     String
   description               String?
   provider                  InfrastructureProvider
+  providerApiVersion        String                    @default("v1")
+  productKind               InfrastructureProductKind @default(READY_INSTANT_SERVER)
   regionCode                String
   sizeCode                  String
   imageCode                 String
@@ -439,18 +518,19 @@ model InfrastructurePlan {
   salePriceRial             BigInt
   renewalPriceRial          BigInt?
   estimatedProviderCostRial BigInt
-  deliveryEstimateMinutes   Int                    @default(15)
-  parchinIncluded           Boolean                @default(false)
-  active                    Boolean                @default(true)
-  sortOrder                 Int                    @default(0)
+  deliveryEstimateMinutes   Int                       @default(15)
+  parchinIncluded           Boolean                   @default(false)
+  minimumParchinLevel       ParchinLevel?
+  active                    Boolean                   @default(true)
+  sortOrder                 Int                       @default(0)
   catalogItemId             String?
-  catalogMappingStatus      CatalogMappingStatus   @default(UNMAPPED)
+  catalogMappingStatus      CatalogMappingStatus      @default(UNMAPPED)
   catalogMappedAt           DateTime?
-  createdAt                 DateTime               @default(now())
-  updatedAt                 DateTime               @updatedAt
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
   updatedById               String?
-  updatedBy                 User?                  @relation("PlanUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  catalogItem               ProviderCatalogItem?   @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  updatedBy                 User?                     @relation("PlanUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  catalogItem               ProviderCatalogItem?      @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
   orders                    ServiceOrder[]
   recommendationQuotes      RecommendationQuote[]
   infrastructureOrders      InfrastructureOrder[]
@@ -468,6 +548,11 @@ model InfrastructureOrder {
   userId                         String
   planId                         String
   provider                       InfrastructureProvider
+  providerApiVersion             String                        @default("v1")
+  productKind                    InfrastructureProductKind     @default(READY_INSTANT_SERVER)
+  parchinLevel                   ParchinLevel?
+  providerSelectionSnapshot      Json?
+  productFlowState               String?
   deliveryMode                   DeliveryMode
   status                         InfrastructureOrderStatus     @default(WAITING_ADMIN_FUNDING)
   requiredFundingRial            BigInt
@@ -525,6 +610,11 @@ model ProvisioningJob {
   leaseExpiresAt        DateTime?
   createSentAt          DateTime?
   providerRequestId     String?
+  providerTaskId        String?
+  providerActionId      String?
+  reconciliationKey     String?
+  providerResourceId    String?
+  lastPolledAt          DateTime?
   lastErrorCode         String?
   lastErrorMessage      String?
   startedAt             DateTime?
@@ -544,6 +634,7 @@ model CloudInstance {
   infrastructureOrderId String                 @unique
   userId                String
   provider              InfrastructureProvider
+  providerApiVersion    String                 @default("v1")
   providerInstanceId    String                 @unique
   name                  String
   region                String
@@ -572,6 +663,7 @@ model ServiceSubscription {
   userId             String
   planId             String
   status             SubscriptionStatus    @default(ACTIVE)
+  parchinLevel       ParchinLevel?
   renewalPriceRial   BigInt
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
@@ -592,25 +684,33 @@ model ServiceSubscription {
 }
 
 model ServiceRenewalQuote {
-  id                            String              @id @default(cuid())
+  id                            String                     @id @default(cuid())
   subscriptionId                String
   userId                        String
   catalogItemId                 String
-  status                        RenewalQuoteStatus  @default(ACTIVE)
+  status                        RenewalQuoteStatus         @default(ACTIVE)
   providerBasePriceRialSnapshot BigInt
   markupBasisPointsSnapshot     Int
   finalPriceRialSnapshot        BigInt
-  currency                      String              @default("IRR")
+  currency                      String                     @default("IRR")
   providerPriceCheckedAt        DateTime
+  provider                      InfrastructureProvider?
+  providerApiVersion            String?
+  productKind                   InfrastructureProductKind?
+  parchinLevel                  ParchinLevel?
+  parchinPriceIrrSnapshot       BigInt?
+  taxBasisPointsSnapshot        Int?
+  taxAmountIrrSnapshot          BigInt?
+  lineItemsSnapshot             Json?
   periodStartSnapshot           DateTime
   periodEndSnapshot             DateTime
   expiresAt                     DateTime
   paidAt                        DateTime?
-  createdAt                     DateTime            @default(now())
-  updatedAt                     DateTime            @updatedAt
-  subscription                  ServiceSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
-  user                          User                @relation(fields: [userId], references: [id], onDelete: Restrict)
-  catalogItem                   ProviderCatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  createdAt                     DateTime                   @default(now())
+  updatedAt                     DateTime                   @updatedAt
+  subscription                  ServiceSubscription        @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  user                          User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  catalogItem                   ProviderCatalogItem        @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
 
   @@index([subscriptionId, status, expiresAt])
   @@index([userId, createdAt])
@@ -656,6 +756,12 @@ model AdminNotification {
 model ProviderOperationLog {
   id                    String                 @id @default(cuid())
   provider              InfrastructureProvider
+  providerApiVersion    String                 @default("v1")
+  providerRegion        String?
+  endpoint              String?
+  httpStatus            Int?
+  providerRequestId     String?
+  durationMs            Int?
   operation             String
   infrastructureOrderId String?
   provisioningJobId     String?
@@ -701,57 +807,201 @@ model AuditLog {
 }
 
 model ProviderCatalogState {
-  id                   String                 @id @default("parspack")
-  provider             InfrastructureProvider @unique
-  lastHealthCheck      DateTime?
-  lastCatalogSync      DateTime?
-  regionCount          Int                    @default(0)
-  sizeCount            Int                    @default(0)
-  imageCount           Int                    @default(0)
-  catalogItemCount     Int                    @default(0)
-  pricedItemCount      Int                    @default(0)
-  unavailableItemCount Int                    @default(0)
-  lastError            String?
-  updatedAt            DateTime               @updatedAt
+  id                    String                 @id @default("parspack")
+  provider              InfrastructureProvider @unique
+  apiVersion            String                 @default("v1")
+  enabled               Boolean                @default(true)
+  lastHealthCheck       DateTime?
+  lastCatalogSync       DateTime?
+  regionCount           Int                    @default(0)
+  sizeCount             Int                    @default(0)
+  imageCount            Int                    @default(0)
+  catalogItemCount      Int                    @default(0)
+  pricedItemCount       Int                    @default(0)
+  unavailableItemCount  Int                    @default(0)
+  staleItemCount        Int                    @default(0)
+  invalidPriceCount     Int                    @default(0)
+  networkCount          Int                    @default(0)
+  securityCount         Int                    @default(0)
+  lastSyncDurationMs    Int?
+  lastSyncStatus        ProviderSyncStatus?
+  catalogVersion        String?
+  regionErrors          Json?
+  lastProviderRequestId String?
+  lastError             String?
+  updatedAt             DateTime               @updatedAt
 }
 
 model ProviderCatalogItem {
-  id                   String                 @id @default(cuid())
-  provider             InfrastructureProvider
-  regionCode           String
-  sizeCode             String
-  sizeName             String
-  compatibleImageCodes Json
-  vcpu                 Int?
-  ramMb                Int?
-  diskGb               Int?
-  transfer             String?
-  available            Boolean                @default(false)
-  active               Boolean                @default(true)
-  priceHourlyAmount    BigInt?
-  priceMonthlyAmount   BigInt?
-  priceScale           Int                    @default(6)
-  currencyCode         String?
-  amountUnit           String?
-  lastSyncedAt         DateTime
-  rawUpdatedAt         DateTime?
-  unavailableAt        DateTime?
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-  plans                InfrastructurePlan[]
-  recommendationQuotes RecommendationQuote[]
-  renewalQuotes        ServiceRenewalQuote[]
+  id                      String                    @id @default(cuid())
+  provider                InfrastructureProvider
+  apiVersion              String                    @default("v1")
+  productKind             InfrastructureProductKind @default(READY_INSTANT_SERVER)
+  regionCode              String
+  sizeCode                String
+  externalPlanId          String?
+  externalKey             String?                   @unique
+  sizeName                String
+  compatibleImageCodes    Json
+  vcpu                    Int?
+  ramMb                   Int?
+  diskGb                  Int?
+  transfer                String?
+  available               Boolean                   @default(false)
+  active                  Boolean                   @default(true)
+  status                  ProviderCatalogStatus     @default(ACTIVE)
+  priceHourlyAmount       BigInt?
+  priceMonthlyAmount      BigInt?
+  priceScale              Int                       @default(6)
+  currencyCode            String?
+  amountUnit              String?
+  providerHourlyPriceIrr  BigInt?
+  providerMonthlyPriceIrr BigInt?
+  lastSyncedAt            DateTime
+  lastSeenAt              DateTime?
+  rawUpdatedAt            DateTime?
+  rawPayload              Json?
+  payloadHash             String?
+  catalogVersion          String?
+  unavailableAt           DateTime?
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  plans                   InfrastructurePlan[]
+  recommendationQuotes    RecommendationQuote[]
+  renewalQuotes           ServiceRenewalQuote[]
 
-  @@unique([provider, regionCode, sizeCode])
+  @@unique([provider, apiVersion, regionCode, externalPlanId])
   @@index([provider, available, active])
+  @@index([provider, apiVersion, productKind, status])
   @@index([provider, lastSyncedAt])
 }
 
 model ProviderPricingConfig {
   id                String                 @id @default("parspack")
   provider          InfrastructureProvider @unique
+  apiVersion        String                 @default("v1")
+  enabled           Boolean                @default(true)
+  sourceMoneyUnit   String?
   markupBasisPoints Int                    @default(0)
   updatedAt         DateTime               @updatedAt
   updatedById       String?
   updatedBy         User?                  @relation("ProviderPricingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+model ProductPricingConfig {
+  id                String                    @id @default(cuid())
+  provider          InfrastructureProvider
+  apiVersion        String                    @default("v1")
+  productKind       InfrastructureProductKind
+  markupBasisPoints Int                       @default(0)
+  enabled           Boolean                   @default(true)
+  updatedById       String?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  @@unique([provider, apiVersion, productKind])
+  @@index([productKind, enabled])
+}
+
+model CommercePricingConfig {
+  id          String   @id @default("default")
+  taxBps      Int      @default(1000)
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+}
+
+model ParchinPricingConfig {
+  id          String       @id @default(cuid())
+  level       ParchinLevel @unique
+  title       String
+  description String?
+  priceRial   BigInt
+  active      Boolean      @default(true)
+  sortOrder   Int          @default(0)
+  updatedById String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model ProviderCatalogAsset {
+  id           String                   @id @default(cuid())
+  provider     InfrastructureProvider
+  apiVersion   String                   @default("v1")
+  regionCode   String
+  kind         ProviderCatalogAssetKind
+  externalId   String
+  name         String
+  status       ProviderCatalogStatus    @default(ACTIVE)
+  available    Boolean                  @default(true)
+  lastSeenAt   DateTime
+  lastSyncedAt DateTime
+  rawUpdatedAt DateTime?
+  rawPayload   Json
+  payloadHash  String
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+
+  @@unique([provider, apiVersion, regionCode, kind, externalId])
+  @@index([provider, apiVersion, regionCode, kind, status])
+}
+
+model ProviderCatalogRegionState {
+  id                   String                 @id @default(cuid())
+  provider             InfrastructureProvider
+  apiVersion           String                 @default("v1")
+  regionCode           String
+  available            Boolean                @default(true)
+  status               ProviderCatalogStatus  @default(ACTIVE)
+  lastSeenAt           DateTime?
+  lastSyncedAt         DateTime?
+  lastSuccessfulSyncAt DateTime?
+  lastError            String?
+  providerRequestId    String?
+  syncDurationMs       Int?
+  rawPayload           Json?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  @@unique([provider, apiVersion, regionCode])
+  @@index([provider, apiVersion, status])
+}
+
+model ProviderCatalogSyncRun {
+  id                String                 @id @default(cuid())
+  provider          InfrastructureProvider
+  apiVersion        String
+  status            ProviderSyncStatus     @default(RUNNING)
+  catalogVersion    String
+  regionCount       Int                    @default(0)
+  successfulRegions Int                    @default(0)
+  failedRegions     Int                    @default(0)
+  planCount         Int                    @default(0)
+  imageCount        Int                    @default(0)
+  networkCount      Int                    @default(0)
+  securityCount     Int                    @default(0)
+  report            Json?
+  startedAt         DateTime               @default(now())
+  finishedAt        DateTime?
+  durationMs        Int?
+
+  @@index([provider, apiVersion, startedAt])
+  @@index([status, startedAt])
+}
+
+model ProductFlowTransition {
+  id                      String   @id @default(cuid())
+  recommendationSessionId String?
+  serviceOrderId          String?
+  infrastructureOrderId   String?
+  fromState               String
+  toState                 String
+  reason                  String?
+  metadata                Json?
+  idempotencyKey          String   @unique
+  actorUserId             String?
+  createdAt               DateTime @default(now())
+
+  @@index([recommendationSessionId, createdAt])
+  @@index([serviceOrderId, createdAt])
+  @@index([infrastructureOrderId, createdAt])
 }

@@ -62,6 +62,20 @@ test("recommendation input requires every decision answer and normalizes sources
       }),
     /invalid_recommendation_answer:stage/,
   );
+  assert.throws(
+    () =>
+      parseRecommendationInput({
+        answers: {
+          project: "site",
+          stage: "idea",
+          usage: "light",
+          criticality: "low",
+          architecture: "single",
+          management: "raw",
+        },
+      }),
+    /invalid_recommendation_answer:management/,
+  );
 });
 
 test("conversation questions branch only when the workload needs them", () => {
@@ -70,9 +84,11 @@ test("conversation questions branch only when the workload needs them", () => {
     stage: "idea",
     usage: "light",
   });
+  assert.equal(simple.length, 5);
   assert.equal(simple.includes("storage"), false);
   assert.equal(simple.includes("growth"), false);
   assert.equal(simple.includes("downtime"), false);
+  assert.equal(simple.includes("architecture"), true);
 
   const migration = getRecommendationQuestionOrder({
     project: "migration",
@@ -80,8 +96,9 @@ test("conversation questions branch only when the workload needs them", () => {
     usage: "daily",
     architecture: "app_db",
   });
-  assert.equal(migration.includes("storage"), true);
-  assert.equal(migration.includes("growth"), true);
+  assert.equal(migration.length, 5);
+  assert.equal(migration.includes("storage"), false);
+  assert.equal(migration.includes("growth"), false);
   assert.equal(migration.includes("downtime"), true);
 });
 

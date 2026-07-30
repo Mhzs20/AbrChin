@@ -17,6 +17,7 @@ import {
   isInsufficientBalanceError,
 } from "@/lib/infrastructure/errors";
 import { createInfrastructureProvider } from "@/lib/infrastructure/provider-factory";
+import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import type { InfrastructureProviderAdapter } from "@/lib/infrastructure/types";
 import {
   addBillingMonth,
@@ -32,7 +33,7 @@ function sleep(ms: number) {
 }
 
 export function buildDesiredInstanceName(infrastructureOrderId: string) {
-  return `abrchin-${infrastructureOrderId.slice(-12)}`;
+  return `abrchin-${infrastructureOrderId.slice(-12)}-1`;
 }
 
 async function logProviderOperation(input: {
@@ -294,6 +295,23 @@ export async function processProvisioningJob(
     return;
   }
 
+  assertProviderRoute({
+    productKind: order.productKind,
+    provider: order.provider,
+    apiVersion: order.providerApiVersion,
+  });
+  if (providerOverride && providerOverride.provider !== order.provider) {
+    throw new InfrastructureError(
+      "provider_route_mismatch",
+      "Provisioning adapter does not match the locked provider",
+    );
+  }
+  if (!providerOverride && order.provider !== InfrastructureProvider.PARSPACK) {
+    throw new InfrastructureError(
+      "provider_mutation_disabled",
+      "Arvan provisioning requires the locked v1 orchestrator rollout",
+    );
+  }
   const provider = providerOverride ?? createInfrastructureProvider();
 
   if (!order.desiredInstanceName) {
@@ -465,6 +483,7 @@ export async function processProvisioningJob(
           userId: order.userId,
           planId: order.planId,
           status: SubscriptionStatus.ACTIVE,
+          parchinLevel: order.parchinLevel,
           renewalPriceRial,
           currentPeriodStart: activatedAt,
           currentPeriodEnd: periodEnd,

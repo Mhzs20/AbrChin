@@ -1,6 +1,6 @@
 import { getClientIp, jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 import { readyServerQuoteIpLimiter } from "@/lib/rate-limit";
-import { createReadyServerQuote } from "@/lib/recommendation/quote-service";
+import { createCloudServerQuote } from "@/lib/recommendation/quote-service";
 import { getCurrentUser } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/errors";
 
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     if (!planId) return jsonError("انتخاب سرور معتبر نیست.", 400);
 
     const user = await getCurrentUser();
-    const result = await createReadyServerQuote({
+    const result = await createCloudServerQuote({
       planId,
       userId: user?.id ?? null,
     });

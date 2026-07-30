@@ -6,11 +6,15 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
-import { isProviderConfigured } from "@/lib/infrastructure/provider-factory";
+import {
+  createCloudProviderAdapter,
+  isCloudProviderConfigured,
+  isProviderConfigured,
+} from "@/lib/infrastructure/provider-factory";
 import { getWorkerHealthStatus } from "@/lib/infrastructure/provisioning-service";
 import { ensureGatewayConfigsSeeded } from "@/lib/payments/gateway-config";
 import { catalogItemBasePriceRial } from "@/lib/pricing/plan-pricing";
-import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
+import { calculateQuotePricing } from "@/lib/pricing/quote-line-items";
 
 export async function getAdminDashboardStats() {
   const todayStart = new Date();
@@ -74,10 +78,12 @@ export async function getAdminDashboardStats() {
 export async function getSystemStatuses() {
   await ensureGatewayConfigsSeeded();
   const gateways = await prisma.paymentGatewayConfig.findMany();
-  const catalog = await prisma.providerCatalogState.findUnique({ where: { provider: "PARSPACK" } });
-  const pricing = await prisma.providerPricingConfig.findUnique({
-    where: { provider: "PARSPACK" },
-  });
+  const [catalogStates, pricingConfigs] = await Promise.all([
+    prisma.providerCatalogState.findMany(),
+    prisma.providerPricingConfig.findMany(),
+  ]);
+  const catalog = catalogStates.find((item) => item.provider === "PARSPACK");
+  const pricing = pricingConfigs.find((item) => item.provider === "PARSPACK");
 
   let parspackStatus: "healthy" | "unconfigured" | "disabled" | "error" = "unconfigured";
   let parspackMessage = "تنظیم نشده";
@@ -94,6 +100,54 @@ export async function getSystemStatuses() {
     }
   }
 
+  const arvanCatalog = catalogStates.find((item) => item.provider === "ARVAN");
+  const arvanPricing = pricingConfigs.find((item) => item.provider === "ARVAN");
+  let arvanStatus: "healthy" | "unconfigured" | "disabled" | "error" =
+    "unconfigured";
+  let arvanMessage = "تنظیم نشده";
+  if (isCloudProviderConfigured("ARVAN")) {
+    try {
+      const regions = await createCloudProviderAdapter("ARVAN").syncRegions();
+      arvanStatus = regions.length > 0 ? "healthy" : "error";
+      arvanMessage =
+        regions.length > 0 ? "اتصال برقرار است" : "Region فعالی دریافت نشد";
+    } catch {
+      arvanStatus = "error";
+      arvanMessage = "خطای اتصال";
+    }
+  }
+
+  const providerState = (
+    state: (typeof catalogStates)[number] | undefined,
+    providerPricing: (typeof pricingConfigs)[number] | undefined,
+    status: "healthy" | "unconfigured" | "disabled" | "error",
+    message: string,
+  ) => ({
+    status,
+    message,
+    apiVersion: state?.apiVersion ?? "v1",
+    enabled: state?.enabled ?? true,
+    lastHealthCheck: state?.lastHealthCheck?.toISOString() ?? null,
+    lastCatalogSync: state?.lastCatalogSync?.toISOString() ?? null,
+    regionCount: state?.regionCount ?? 0,
+    sizeCount: state?.sizeCount ?? 0,
+    imageCount: state?.imageCount ?? 0,
+    catalogItemCount: state?.catalogItemCount ?? 0,
+    pricedItemCount: state?.pricedItemCount ?? 0,
+    unavailableItemCount: state?.unavailableItemCount ?? 0,
+    staleItemCount: state?.staleItemCount ?? 0,
+    invalidPriceCount: state?.invalidPriceCount ?? 0,
+    networkCount: state?.networkCount ?? 0,
+    securityCount: state?.securityCount ?? 0,
+    syncDurationMs: state?.lastSyncDurationMs ?? null,
+    lastSyncStatus: state?.lastSyncStatus ?? null,
+    regionErrors: state?.regionErrors ?? null,
+    lastProviderRequestId: state?.lastProviderRequestId ?? null,
+    markupBasisPoints: providerPricing?.markupBasisPoints ?? 0,
+    sourceMoneyUnit: providerPricing?.sourceMoneyUnit ?? null,
+    lastError: state?.lastError ?? null,
+  });
+
   const worker = await getWorkerHealthStatus();
   const workerLabel =
     worker.status === "healthy" ? "سالم" : worker.status === "stale" ? "کهنه" : "قطع";
@@ -107,19 +161,19 @@ export async function getSystemStatuses() {
     kavenegar: { configured: Boolean(process.env.KAVENEGAR_API_KEY) },
     postgres: { configured: Boolean(process.env.DATABASE_URL) },
     parspack: {
-      status: parspackStatus,
-      message: parspackMessage,
-      lastHealthCheck: catalog?.lastHealthCheck?.toISOString() ?? null,
-      lastCatalogSync: catalog?.lastCatalogSync?.toISOString() ?? null,
-      regionCount: catalog?.regionCount ?? 0,
-      sizeCount: catalog?.sizeCount ?? 0,
-      imageCount: catalog?.imageCount ?? 0,
-      catalogItemCount: catalog?.catalogItemCount ?? 0,
-      pricedItemCount: catalog?.pricedItemCount ?? 0,
-      unavailableItemCount: catalog?.unavailableItemCount ?? 0,
-      markupBasisPoints: pricing?.markupBasisPoints ?? 0,
-      lastError: catalog?.lastError ?? null,
+      ...providerState(
+        catalog,
+        pricing,
+        parspackStatus,
+        parspackMessage,
+      ),
     },
+    arvan: providerState(
+      arvanCatalog,
+      arvanPricing,
+      arvanStatus,
+      arvanMessage,
+    ),
     worker: {
       status: worker.status,
       label: workerLabel,
@@ -132,25 +186,52 @@ export async function getSystemStatuses() {
 }
 
 export async function getProviderCatalogAdminView() {
-  const [items, pricing] = await Promise.all([
+  const [items, pricing, productPricing, commerce, parchinStart] =
+    await Promise.all([
     prisma.providerCatalogItem.findMany({
-      where: { provider: "PARSPACK", active: true },
-      orderBy: [{ regionCode: "asc" }, { sizeCode: "asc" }],
-      take: 200,
+      where: { active: true },
+      orderBy: [
+        { provider: "asc" },
+        { regionCode: "asc" },
+        { sizeCode: "asc" },
+      ],
+      take: 500,
     }),
-    prisma.providerPricingConfig.findUnique({
-      where: { provider: "PARSPACK" },
+    prisma.providerPricingConfig.findMany(),
+    prisma.productPricingConfig.findMany(),
+    prisma.commercePricingConfig.findUnique({ where: { id: "default" } }),
+    prisma.parchinPricingConfig.findUnique({
+      where: { level: "PARCHIN_START" },
     }),
   ]);
-  const config = pricing ?? { markupBasisPoints: 0 };
   return items.map((item) => {
+    const config = pricing.find((entry) => entry.provider === item.provider);
+    const product = productPricing.find(
+      (entry) =>
+        entry.provider === item.provider &&
+        entry.apiVersion === item.apiVersion &&
+        entry.productKind === item.productKind,
+    );
     const basePriceRial = catalogItemBasePriceRial(item);
     const finalPriceRial =
-      basePriceRial == null
+      basePriceRial == null ||
+      !config?.enabled ||
+      !product?.enabled ||
+      !parchinStart?.active
         ? null
-        : calculateFinalPriceRial(basePriceRial, config.markupBasisPoints);
+        : calculateQuotePricing({
+            providerMonthlyPriceIrr: basePriceRial,
+            providerMarkupBps: config.markupBasisPoints,
+            productMarkupBps: product.markupBasisPoints,
+            parchinLevel: "PARCHIN_START",
+            parchinPriceIrr: parchinStart.priceRial,
+            taxBps: commerce?.taxBps ?? 1000,
+          }).finalPriceIrr;
     return {
       id: item.id,
+      provider: item.provider,
+      apiVersion: item.apiVersion,
+      status: item.status,
       regionCode: item.regionCode,
       sizeCode: item.sizeCode,
       vcpu: item.vcpu,
@@ -163,6 +244,56 @@ export async function getProviderCatalogAdminView() {
       lastSyncedAt: item.lastSyncedAt.toISOString(),
     };
   });
+}
+
+export async function getProviderSyncRunsAdminView() {
+  const runs = await prisma.providerCatalogSyncRun.findMany({
+    orderBy: { startedAt: "desc" },
+    take: 12,
+  });
+  return runs.map((run) => ({
+    id: run.id,
+    provider: run.provider,
+    apiVersion: run.apiVersion,
+    status: run.status,
+    catalogVersion: run.catalogVersion,
+    regionCount: run.regionCount,
+    successfulRegions: run.successfulRegions,
+    failedRegions: run.failedRegions,
+    planCount: run.planCount,
+    imageCount: run.imageCount,
+    durationMs: run.durationMs,
+    report: run.report,
+    startedAt: run.startedAt.toISOString(),
+    finishedAt: run.finishedAt?.toISOString() ?? null,
+  }));
+}
+
+export async function getCommercePricingAdminView() {
+  const [commerce, productMarkups, parchin] = await Promise.all([
+    prisma.commercePricingConfig.findUnique({ where: { id: "default" } }),
+    prisma.productPricingConfig.findMany({
+      orderBy: [{ provider: "asc" }, { productKind: "asc" }],
+    }),
+    prisma.parchinPricingConfig.findMany({ orderBy: { sortOrder: "asc" } }),
+  ]);
+  return {
+    taxBps: commerce?.taxBps ?? 1000,
+    productMarkups: productMarkups.map((config) => ({
+      provider: config.provider,
+      apiVersion: config.apiVersion,
+      productKind: config.productKind,
+      markupBasisPoints: config.markupBasisPoints,
+      enabled: config.enabled,
+    })),
+    parchin: parchin.map((config) => ({
+      level: config.level,
+      title: config.title,
+      description: config.description,
+      priceRial: config.priceRial.toString(),
+      active: config.active,
+    })),
+  };
 }
 
 export async function getRecentAdminOperations() {

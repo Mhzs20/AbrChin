@@ -4,7 +4,13 @@ import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function ReadyServerQuoteButton({ planId }: { planId: string }) {
+export function ReadyServerQuoteButton({
+  planId,
+  productPath = "cloud-servers",
+}: {
+  planId: string;
+  productPath?: "cloud-servers" | "ready-servers";
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -13,7 +19,7 @@ export function ReadyServerQuoteButton({ planId }: { planId: string }) {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/cloud-servers/quotes", {
+      const response = await fetch(`/api/${productPath}/quotes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ planId }),
@@ -25,7 +31,7 @@ export function ReadyServerQuoteButton({ planId }: { planId: string }) {
       if (!response.ok || !body.quote?.id) {
         throw new Error(body.error ?? "دریافت قیمت زنده ممکن نشد.");
       }
-      router.push(`/cloud-servers/quote/${body.quote.id}`);
+      router.push(`/${productPath}/quote/${body.quote.id}`);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "دریافت قیمت زنده ممکن نشد.",

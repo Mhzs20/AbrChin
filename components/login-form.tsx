@@ -89,6 +89,32 @@ export function LoginForm({ nextPath = "/account" }: { nextPath?: string }) {
         return;
       }
 
+      try {
+        const raw = window.sessionStorage.getItem(
+          "abrchin:conversation:v1",
+        );
+        const draft = raw
+          ? (JSON.parse(raw) as {
+              sessionId?: string;
+              guestToken?: string;
+            })
+          : null;
+        if (draft?.sessionId && draft.guestToken) {
+          await fetch(
+            `/api/recommendations/sessions/${draft.sessionId}/claim`,
+            {
+              method: "POST",
+              headers: {
+                "x-recommendation-session-token": draft.guestToken,
+              },
+            },
+          );
+        }
+      } catch {
+        // Login must succeed even when a stale guest conversation cannot be
+        // claimed. The server-side conversation remains fail-closed.
+      }
+
       router.replace(nextPath);
       router.refresh();
     } catch {

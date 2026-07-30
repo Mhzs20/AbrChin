@@ -1,10 +1,14 @@
 import {
   CatalogMappingStatus,
   DeliveryMode,
+  InfrastructureProductKind,
   InfrastructureProvider,
+  ParchinLevel,
+  ProviderCatalogStatus,
   type ProviderCatalogItem,
   type Prisma,
 } from "@prisma/client";
+import { createHash } from "node:crypto";
 
 import {
   READY_SERVER_PLAN_PREFIX,
@@ -28,13 +32,18 @@ import {
   isProviderConfigured,
 } from "@/lib/infrastructure/provider-factory";
 import { WalletError } from "@/lib/wallet/errors";
+import { catalogExternalKey } from "@/lib/infrastructure/provider-routing";
 
 export const UNSCOPED_REGION_CODE = "__unscoped__";
 
 type CatalogItemInput = {
   provider: InfrastructureProvider;
+  apiVersion: string;
+  productKind: InfrastructureProductKind;
   regionCode: string;
   sizeCode: string;
+  externalPlanId: string;
+  externalKey: string;
   sizeName: string;
   compatibleImageCodes: string[];
   vcpu: number | null;
@@ -42,14 +51,21 @@ type CatalogItemInput = {
   diskGb: number | null;
   transfer: string | null;
   available: boolean;
+  status: ProviderCatalogStatus;
   priceHourlyAmount: bigint | null;
   priceMonthlyAmount: bigint | null;
   priceScale: number;
   currencyCode: string | null;
   amountUnit: string | null;
+  providerHourlyPriceIrr: bigint | null;
+  providerMonthlyPriceIrr: bigint | null;
   lastSyncedAt: Date;
+  lastSeenAt: Date;
   rawUpdatedAt: Date | null;
   unavailableAt: Date | null;
+  rawPayload: Prisma.InputJsonValue;
+  payloadHash: string;
+  catalogVersion: string;
 };
 
 async function materializeReadyServerPlans(
@@ -123,6 +139,7 @@ async function materializeReadyServerPlans(
       estimatedProviderCostRial: providerBasePriceRial ?? 1n,
       deliveryEstimateMinutes: 15,
       parchinIncluded: true,
+      minimumParchinLevel: ParchinLevel.PARCHIN_START,
       active: sellable,
       sortOrder: readyServerSortOrder(item),
       catalogItemId: item.id,
@@ -194,26 +211,67 @@ export function buildCatalogItems(
         regionCode !== UNSCOPED_REGION_CODE &&
         size.available !== false &&
         region?.available !== false;
+      const priceHourlyAmount = parseOptionalPrice(size.priceHourly);
+      const priceMonthlyAmount = parseOptionalPrice(size.priceMonthly);
+      const toRial = (amount: bigint | null) =>
+        amount != null && contract
+          ? providerAmountToRial({
+              scaledAmount: amount,
+              scale: PROVIDER_PRICE_SCALE,
+              contract,
+            })
+          : null;
+      const providerHourlyPriceIrr = toRial(priceHourlyAmount);
+      const providerMonthlyPriceIrr = toRial(priceMonthlyAmount);
+      const status =
+        !available
+          ? ProviderCatalogStatus.UNAVAILABLE
+          : providerMonthlyPriceIrr == null ||
+              providerMonthlyPriceIrr <= 0n
+            ? ProviderCatalogStatus.INVALID_PRICE
+            : ProviderCatalogStatus.ACTIVE;
+      const rawPayload = { regionCode, ...size };
+      const payloadHash = createHash("sha256")
+        .update(JSON.stringify(rawPayload))
+        .digest("hex");
+      const externalKey = catalogExternalKey({
+        provider: InfrastructureProvider.PARSPACK,
+        apiVersion: "v1",
+        region: regionCode,
+        externalPlanId: size.code,
+      });
 
       return {
         provider: InfrastructureProvider.PARSPACK,
+        apiVersion: "v1",
+        productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
         regionCode,
         sizeCode: size.code,
+        externalPlanId: size.code,
+        externalKey,
         sizeName: size.name,
         compatibleImageCodes: compatibleImages,
         vcpu: size.vcpu == null ? null : Math.trunc(size.vcpu),
         ramMb: size.memoryMb == null ? null : Math.trunc(size.memoryMb),
         diskGb: size.diskGb == null ? null : Math.trunc(size.diskGb),
         transfer: size.transfer == null ? null : String(size.transfer),
-        available,
-        priceHourlyAmount: parseOptionalPrice(size.priceHourly),
-        priceMonthlyAmount: parseOptionalPrice(size.priceMonthly),
+        available: status === ProviderCatalogStatus.ACTIVE,
+        status,
+        priceHourlyAmount,
+        priceMonthlyAmount,
         priceScale: PROVIDER_PRICE_SCALE,
         currencyCode: contract?.currencyCode ?? null,
         amountUnit: contract?.amountUnit ?? null,
+        providerHourlyPriceIrr,
+        providerMonthlyPriceIrr,
         lastSyncedAt: syncedAt,
+        lastSeenAt: syncedAt,
         rawUpdatedAt: parseRawUpdatedAt(size.rawUpdatedAt),
-        unavailableAt: available ? null : syncedAt,
+        unavailableAt:
+          status === ProviderCatalogStatus.ACTIVE ? null : syncedAt,
+        rawPayload: rawPayload as Prisma.InputJsonValue,
+        payloadHash,
+        catalogVersion: `parspack:v1:${syncedAt.toISOString()}`,
       };
     });
   });
@@ -228,10 +286,31 @@ export async function persistProviderCatalog(
   const contract = normalizeProviderPriceContract(catalog.priceContract);
   const pricingConfig = await tx.providerPricingConfig.upsert({
     where: { provider: InfrastructureProvider.PARSPACK },
-    update: {},
+    update: {
+      apiVersion: "v1",
+      sourceMoneyUnit: contract?.amountUnit ?? null,
+    },
     create: {
       id: "parspack",
       provider: InfrastructureProvider.PARSPACK,
+      apiVersion: "v1",
+      sourceMoneyUnit: contract?.amountUnit ?? null,
+      markupBasisPoints: 0,
+    },
+  });
+  await tx.productPricingConfig.upsert({
+    where: {
+      provider_apiVersion_productKind: {
+        provider: InfrastructureProvider.PARSPACK,
+        apiVersion: "v1",
+        productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
+      },
+    },
+    update: {},
+    create: {
+      provider: InfrastructureProvider.PARSPACK,
+      apiVersion: "v1",
+      productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
       markupBasisPoints: 0,
     },
   });
@@ -243,6 +322,7 @@ export async function persistProviderCatalog(
     },
     data: {
       available: false,
+      status: ProviderCatalogStatus.UNAVAILABLE,
       unavailableAt: syncedAt,
     },
   });
@@ -250,13 +330,18 @@ export async function persistProviderCatalog(
   for (const item of items) {
     await tx.providerCatalogItem.upsert({
       where: {
-        provider_regionCode_sizeCode: {
+        provider_apiVersion_regionCode_externalPlanId: {
           provider: item.provider,
+          apiVersion: item.apiVersion,
           regionCode: item.regionCode,
-          sizeCode: item.sizeCode,
+          externalPlanId: item.externalPlanId,
         },
       },
       update: {
+        apiVersion: item.apiVersion,
+        productKind: item.productKind,
+        externalPlanId: item.externalPlanId,
+        externalKey: item.externalKey,
         sizeName: item.sizeName,
         compatibleImageCodes: item.compatibleImageCodes,
         vcpu: item.vcpu,
@@ -265,14 +350,21 @@ export async function persistProviderCatalog(
         transfer: item.transfer,
         available: item.available,
         active: true,
+        status: item.status,
         priceHourlyAmount: item.priceHourlyAmount,
         priceMonthlyAmount: item.priceMonthlyAmount,
         priceScale: item.priceScale,
         currencyCode: item.currencyCode,
         amountUnit: item.amountUnit,
+        providerHourlyPriceIrr: item.providerHourlyPriceIrr,
+        providerMonthlyPriceIrr: item.providerMonthlyPriceIrr,
         lastSyncedAt: item.lastSyncedAt,
+        lastSeenAt: item.lastSeenAt,
         rawUpdatedAt: item.rawUpdatedAt,
         unavailableAt: item.unavailableAt,
+        rawPayload: item.rawPayload,
+        payloadHash: item.payloadHash,
+        catalogVersion: item.catalogVersion,
       },
       create: item,
     });

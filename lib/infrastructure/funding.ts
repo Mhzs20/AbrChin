@@ -2,6 +2,7 @@ import {
   AdminNotificationStatus,
   AdminNotificationType,
   InfrastructureOrderStatus,
+  InfrastructureProvider,
   ProvisioningJobStatus,
 } from "@prisma/client";
 
@@ -62,6 +63,12 @@ export async function confirmProviderFunding(params: {
 
     if (!FUNDING_ALLOWED_STATUSES.includes(order.status)) {
       throw new WalletError("invalid_status", "این سفارش در وضعیت تأیید شارژ نیست.");
+    }
+    if (order.provider !== InfrastructureProvider.PARSPACK) {
+      throw new WalletError(
+        "provider_route_mismatch",
+        "تأیید شارژ دستی فقط برای سفارش سرور آماده مجاز است.",
+      );
     }
     if (!isProviderConfigured()) {
       throw new WalletError("provider_disabled", "Provider فعال نیست؛ صف‌بندی مجاز نیست.");

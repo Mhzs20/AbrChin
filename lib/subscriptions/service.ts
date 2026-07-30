@@ -18,6 +18,8 @@ import { addBillingMonth, addGracePeriod } from "@/lib/subscriptions/period";
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 import { WalletError } from "@/lib/wallet/errors";
 import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
+import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
+import { serializeQuoteLineItems } from "@/lib/pricing/quote-line-items";
 
 export const RENEWAL_QUOTE_VALIDITY_MS = 10 * 60 * 1000;
 
@@ -52,7 +54,15 @@ export async function createRenewalQuote(params: {
   userId: string;
   now?: Date;
 }) {
-  await refreshProviderCatalogForPricing();
+  const providerRoute = await prisma.serviceSubscription.findUnique({
+    where: { cloudInstanceId: params.instanceId },
+    select: { plan: { select: { provider: true } } },
+  });
+  if (providerRoute?.plan.provider === "ARVAN") {
+    await refreshMultiProviderCatalog("ARVAN");
+  } else {
+    await refreshProviderCatalogForPricing();
+  }
   const now = params.now ?? new Date();
   const subscription = await prisma.serviceSubscription.findUnique({
     where: { cloudInstanceId: params.instanceId },
@@ -73,7 +83,34 @@ export async function createRenewalQuote(params: {
   const config = await prisma.providerPricingConfig.findUnique({
     where: { provider: subscription.plan.provider },
   });
-  const currentPricing = resolvePlanPricing(subscription.plan, config);
+  const parchinLevel =
+    subscription.parchinLevel ??
+    subscription.plan.minimumParchinLevel ??
+    "PARCHIN_START";
+  const [productConfig, commerce, parchin] = await Promise.all([
+    prisma.productPricingConfig.findUnique({
+      where: {
+        provider_apiVersion_productKind: {
+          provider: subscription.plan.provider,
+          apiVersion: subscription.plan.providerApiVersion,
+          productKind: subscription.plan.productKind,
+        },
+      },
+    }),
+    prisma.commercePricingConfig.findUnique({ where: { id: "default" } }),
+    prisma.parchinPricingConfig.findUnique({
+      where: { level: parchinLevel },
+    }),
+  ]);
+  const currentPricing =
+    config?.enabled && productConfig?.enabled && parchin?.active
+      ? resolvePlanPricing(subscription.plan, config, {
+          productMarkupBasisPoints: productConfig.markupBasisPoints,
+          taxBasisPoints: commerce?.taxBps ?? 1000,
+          parchinLevel,
+          parchinPriceRial: parchin.priceRial,
+        })
+      : null;
   if (!currentPricing) {
     throw new WalletError(
       "renewal_unavailable",
@@ -103,6 +140,16 @@ export async function createRenewalQuote(params: {
         finalPriceRialSnapshot: currentPricing.finalPriceRial,
         currency: currentPricing.currency,
         providerPriceCheckedAt: currentPricing.providerPriceCheckedAt,
+        provider: subscription.plan.provider,
+        providerApiVersion: subscription.plan.providerApiVersion,
+        productKind: subscription.plan.productKind,
+        parchinLevel: currentPricing.parchinLevel,
+        parchinPriceIrrSnapshot: currentPricing.parchinPriceRial,
+        taxBasisPointsSnapshot: currentPricing.taxBasisPoints,
+        taxAmountIrrSnapshot: currentPricing.taxAmountRial,
+        lineItemsSnapshot: serializeQuoteLineItems(
+          currentPricing.lineItems,
+        ),
         periodStartSnapshot: periodStart,
         periodEndSnapshot: periodEnd,
         expiresAt,
@@ -116,7 +163,19 @@ export async function payRenewalQuote(params: {
   userId: string;
   renewalQuoteId: string;
 }) {
-  await refreshProviderCatalogForPricing();
+  const providerRoute = await prisma.serviceRenewalQuote.findUnique({
+    where: { id: params.renewalQuoteId },
+    select: {
+      subscription: {
+        select: { plan: { select: { provider: true } } },
+      },
+    },
+  });
+  if (providerRoute?.subscription.plan.provider === "ARVAN") {
+    await refreshMultiProviderCatalog("ARVAN");
+  } else {
+    await refreshProviderCatalogForPricing();
+  }
   return prisma.$transaction(async (tx) => {
     const quote = await tx.serviceRenewalQuote.findUnique({
       where: { id: params.renewalQuoteId },
@@ -159,7 +218,33 @@ export async function payRenewalQuote(params: {
     const config = await tx.providerPricingConfig.findUnique({
       where: { provider: subscription.plan.provider },
     });
-    const currentPricing = resolvePlanPricing(subscription.plan, config);
+    const parchinLevel =
+      quote.parchinLevel ??
+      subscription.parchinLevel ??
+      subscription.plan.minimumParchinLevel ??
+      "PARCHIN_START";
+    const [productConfig, commerce, parchin] = await Promise.all([
+      tx.productPricingConfig.findUnique({
+        where: {
+          provider_apiVersion_productKind: {
+            provider: subscription.plan.provider,
+            apiVersion: subscription.plan.providerApiVersion,
+            productKind: subscription.plan.productKind,
+          },
+        },
+      }),
+      tx.commercePricingConfig.findUnique({ where: { id: "default" } }),
+      tx.parchinPricingConfig.findUnique({ where: { level: parchinLevel } }),
+    ]);
+    const currentPricing =
+      config?.enabled && productConfig?.enabled && parchin?.active
+        ? resolvePlanPricing(subscription.plan, config, {
+            productMarkupBasisPoints: productConfig.markupBasisPoints,
+            taxBasisPoints: commerce?.taxBps ?? 1000,
+            parchinLevel,
+            parchinPriceRial: parchin.priceRial,
+          })
+        : null;
     if (!currentPricing) {
       throw new WalletError(
         "renewal_unavailable",
@@ -173,6 +258,10 @@ export async function payRenewalQuote(params: {
         markupBasisPointsSnapshot: quote.markupBasisPointsSnapshot,
         finalPriceRialSnapshot: quote.finalPriceRialSnapshot,
         currencySnapshot: quote.currency,
+        parchinLevel: quote.parchinLevel,
+        parchinPriceIrr: quote.parchinPriceIrrSnapshot,
+        taxBasisPointsSnapshot: quote.taxBasisPointsSnapshot,
+        taxAmountIrr: quote.taxAmountIrrSnapshot,
       })
     ) {
       throw new WalletError(

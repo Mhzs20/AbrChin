@@ -47,10 +47,11 @@ async function seedDevPlan() {
   const syncedAt = new Date();
   const catalogItem = await prisma.providerCatalogItem.upsert({
     where: {
-      provider_regionCode_sizeCode: {
+      provider_apiVersion_regionCode_externalPlanId: {
         provider: "PARSPACK",
+        apiVersion: "v1",
         regionCode: "tehran11",
-        sizeCode: "irLinuxVPS4",
+        externalPlanId: "irLinuxVPS4",
       },
     },
     update: {
@@ -65,8 +66,12 @@ async function seedDevPlan() {
     },
     create: {
       provider: "PARSPACK",
+      apiVersion: "v1",
+      productKind: "READY_INSTANT_SERVER",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
+      externalPlanId: "irLinuxVPS4",
+      externalKey: "parspack:v1:tehran11:irLinuxVPS4",
       sizeName: "Development",
       compatibleImageCodes: ["ubuntu24-cloudinit-qcow2"],
       vcpu: 2,
@@ -74,11 +79,17 @@ async function seedDevPlan() {
       diskGb: 50,
       available: true,
       active: true,
+      status: "ACTIVE",
       priceMonthlyAmount: decimalToScaledInteger("120000"),
       priceScale: 6,
       currencyCode: "IRR",
       amountUnit: "TOMAN",
+      providerMonthlyPriceIrr: 1_200_000n,
       lastSyncedAt: syncedAt,
+      lastSeenAt: syncedAt,
+      rawPayload: {},
+      payloadHash: "infrastructure-test",
+      catalogVersion: syncedAt.toISOString(),
     },
   });
   await prisma.providerPricingConfig.upsert({

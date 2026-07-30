@@ -3,10 +3,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ReadyCloudCatalog } from "@/components/ready-cloud-catalog";
-import { listLiveReadyServerOffers } from "@/lib/orders/plans";
+import { listLiveCloudServerOffers } from "@/lib/orders/plans";
 
 export const metadata: Metadata = {
-  title: "سرورهای ابری آماده | ابرچین",
+  title: "سرور ابری قابل انتخاب | ابرچین",
   description:
     "همه ظرفیت‌های معتبر و قیمت‌دار سرور ابری، با پرچین و تحویل امن از ابرچین.",
   alternates: { canonical: "/cloud-servers" },
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function CloudServersPage() {
-  const catalog = await listLiveReadyServerOffers();
+  const catalog = await listLiveCloudServerOffers();
   const checkedAt = catalog.checkedAt
     ? new Intl.DateTimeFormat("fa-IR", {
         dateStyle: "short",
@@ -28,7 +28,7 @@ export default async function CloudServersPage() {
       <header className="quick-buy-heading">
         <div>
           <span className="eyebrow">
-            <Cloud size={15} aria-hidden="true" /> سرورهای ابری آماده
+            <Cloud size={15} aria-hidden="true" /> سرورهای ابری قابل انتخاب
           </span>
           <h1 id="quick-buy-title">همه ظرفیت‌های قابل خرید، با قیمت زنده.</h1>
           <p>
@@ -54,7 +54,7 @@ export default async function CloudServersPage() {
         </span>
       </div>
 
-      <ReadyCloudCatalog offers={catalog.offers} />
+      <ReadyCloudCatalog offers={catalog.offers} productPath="cloud-servers" />
     </section>
   );
 }

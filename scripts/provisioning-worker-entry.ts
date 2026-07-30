@@ -1,10 +1,24 @@
 #!/usr/bin/env node
+import { InfrastructureProvider } from "@prisma/client";
+
+import { validateProviderEnvironment } from "@/lib/env";
+import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
+import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
+import {
+  isCloudProviderConfigured,
+  isProviderConfigured,
+} from "@/lib/infrastructure/provider-factory";
 import { runProvisioningWorkerCycle, touchWorkerHeartbeat } from "@/lib/infrastructure/provisioning-service";
 import { processSubscriptionLifecycle } from "@/lib/subscriptions/service";
 import { getWorkerConfig } from "@/lib/worker/config";
 
 const config = getWorkerConfig();
+validateProviderEnvironment();
 const SUBSCRIPTION_LIFECYCLE_INTERVAL_MS = 60_000;
+const CATALOG_SYNC_INTERVAL_MS = Math.max(
+  Number.parseInt(process.env.CATALOG_SYNC_INTERVAL_MS ?? "300000", 10),
+  60_000,
+);
 
 let stopping = false;
 process.on("SIGINT", () => {
@@ -22,6 +36,7 @@ async function main() {
   console.log(`[abrchin-worker] provisioning worker started id=${config.workerId}`);
   let idleRounds = 0;
   let nextSubscriptionLifecycleAt = 0;
+  let nextCatalogSyncAt = 0;
 
   while (!stopping) {
     try {
@@ -30,6 +45,31 @@ async function main() {
         await processSubscriptionLifecycle();
         nextSubscriptionLifecycleAt =
           Date.now() + SUBSCRIPTION_LIFECYCLE_INTERVAL_MS;
+      }
+      if (Date.now() >= nextCatalogSyncAt) {
+        const syncResults = await Promise.allSettled([
+          ...(isCloudProviderConfigured(InfrastructureProvider.ARVAN)
+            ? [
+                refreshMultiProviderCatalog(
+                  InfrastructureProvider.ARVAN,
+                ),
+              ]
+            : []),
+          ...(isProviderConfigured()
+            ? [refreshProviderCatalogForPricing()]
+            : []),
+        ]);
+        for (const result of syncResults) {
+          if (result.status === "rejected") {
+            console.error(
+              "[abrchin-worker] catalog_sync_failed",
+              result.reason instanceof Error
+                ? result.reason.message
+                : "unknown",
+            );
+          }
+        }
+        nextCatalogSyncAt = Date.now() + CATALOG_SYNC_INTERVAL_MS;
       }
       await touchWorkerHeartbeat({ cycleOk: true });
       if (processed) {

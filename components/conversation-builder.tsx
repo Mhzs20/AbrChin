@@ -20,6 +20,11 @@ import { useEffect, useMemo, useState } from "react";
 import { ConversationCloud } from "@/components/conversation-cloud";
 import { QuickCloudPlans } from "@/components/quick-cloud-plans";
 import {
+  parchinLevelRank,
+  parchinLevels,
+  recommendedParchinLevel,
+} from "@/lib/parchin/recommendation";
+import {
   adjustRecommendationProfile,
   buildRecommendation,
 } from "@/lib/recommendation/engine";
@@ -36,6 +41,7 @@ import type {
   RecommendationAnswers,
   RecommendationDirection,
 } from "@/lib/recommendation/types";
+import type { ParchinLevel } from "@prisma/client";
 
 const storageKey = "abrchin:conversation:v1";
 
@@ -52,11 +58,17 @@ const backupLabels = {
 } as const;
 
 type StoredDraft = {
+  sessionId?: string;
+  guestToken?: string | null;
   answers: RecommendationAnswers;
   sources: AnswerSources;
   stepIndex: number;
   showResult: boolean;
+  showUnderstanding: boolean;
+  understandingConfirmed: boolean;
+  showComparisons: boolean;
   direction: RecommendationDirection;
+  parchinLevel?: ParchinLevel;
 };
 
 function isStoredDraft(value: unknown): value is StoredDraft {
@@ -94,9 +106,14 @@ export function ConversationBuilder({
       ...(initialManagement ? { management: "user" as const } : {}),
     },
   );
-  const [stepIndex, setStepIndex] = useState(initialProject ? 1 : 0);
+  const [stepIndex, setStepIndex] = useState(0);
   const [showResult, setShowResult] = useState(false);
+  const [showUnderstanding, setShowUnderstanding] = useState(false);
+  const [understandingConfirmed, setUnderstandingConfirmed] = useState(false);
+  const [showComparisons, setShowComparisons] = useState(false);
   const [direction, setDirection] = useState<RecommendationDirection>("balanced");
+  const [requestedParchinLevel, setRequestedParchinLevel] =
+    useState<ParchinLevel>("PARCHIN_START");
   const [helpOpen, setHelpOpen] = useState(false);
   const [restored, setRestored] = useState(false);
   const [quotes, setQuotes] = useState<PublicRecommendationQuote[]>([]);
@@ -104,7 +121,16 @@ export function ConversationBuilder({
   const [quotesError, setQuotesError] = useState<string | null>(null);
   const [quotesNotice, setQuotesNotice] = useState<string | null>(null);
   const [quotesRetry, setQuotesRetry] = useState(0);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [guestToken, setGuestToken] = useState<string | null>(null);
+  const [savingAnswer, setSavingAnswer] = useState(false);
   const questionOrder = useMemo(() => getRecommendationQuestionOrder(answers), [answers]);
+  const minimumParchinLevel = recommendedParchinLevel(answers);
+  const selectedParchinLevel =
+    parchinLevelRank(requestedParchinLevel) <
+    parchinLevelRank(minimumParchinLevel)
+      ? minimumParchinLevel
+      : requestedParchinLevel;
 
   useEffect(() => {
     if (!resume) return;
@@ -126,7 +152,18 @@ export function ConversationBuilder({
             Math.max(0, Math.min(parsed.stepIndex, restoredOrder.length - 1)),
           );
           setShowResult(parsed.showResult);
+          setShowUnderstanding(parsed.showUnderstanding ?? false);
+          setUnderstandingConfirmed(parsed.understandingConfirmed ?? false);
+          setShowComparisons(parsed.showComparisons ?? false);
           setDirection(parsed.direction ?? "balanced");
+          if (
+            parsed.parchinLevel &&
+            parchinLevels.includes(parsed.parchinLevel)
+          ) {
+            setRequestedParchinLevel(parsed.parchinLevel);
+          }
+          setSessionId(parsed.sessionId ?? null);
+          setGuestToken(parsed.guestToken ?? null);
           setRestored(true);
         }
       } catch {
@@ -138,10 +175,57 @@ export function ConversationBuilder({
   }, [resume]);
 
   useEffect(() => {
+    if (!hydrated || sessionId) return;
+    const controller = new AbortController();
+    void fetch("/api/recommendations/sessions", {
+      method: "POST",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const body = (await response.json()) as {
+          sessionId?: string;
+          guestToken?: string | null;
+        };
+        if (body.sessionId) {
+          setSessionId(body.sessionId);
+          setGuestToken(body.guestToken ?? null);
+        }
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [hydrated, sessionId]);
+
+  useEffect(() => {
     if (!hydrated) return;
-    const draft: StoredDraft = { answers, sources, stepIndex, showResult, direction };
+    const draft: StoredDraft = {
+      sessionId: sessionId ?? undefined,
+      guestToken,
+      answers,
+      sources,
+      stepIndex,
+      showResult,
+      showUnderstanding,
+      understandingConfirmed,
+      showComparisons,
+      direction,
+      parchinLevel: selectedParchinLevel,
+    };
     window.sessionStorage.setItem(storageKey, JSON.stringify(draft));
-  }, [answers, direction, hydrated, showResult, sources, stepIndex]);
+  }, [
+    answers,
+    direction,
+    guestToken,
+    hydrated,
+    sessionId,
+    selectedParchinLevel,
+    showComparisons,
+    showResult,
+    showUnderstanding,
+    sources,
+    stepIndex,
+    understandingConfirmed,
+  ]);
 
   useEffect(() => {
     if (!showResult) return;
@@ -152,8 +236,19 @@ export function ConversationBuilder({
       try {
         const response = await fetch("/api/recommendations/quotes", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ answers, sources }),
+          headers: {
+            "Content-Type": "application/json",
+            ...(guestToken
+              ? { "x-recommendation-session-token": guestToken }
+              : {}),
+          },
+          body: JSON.stringify({
+            answers,
+            sources,
+            sessionId,
+            includeComparisons: showComparisons,
+            parchinLevel: selectedParchinLevel,
+          }),
           signal: controller.signal,
         });
         const body = (await response.json()) as {
@@ -179,7 +274,16 @@ export function ConversationBuilder({
     void loadQuotes();
 
     return () => controller.abort();
-  }, [answers, quotesRetry, showResult, sources]);
+  }, [
+    answers,
+    guestToken,
+    quotesRetry,
+    sessionId,
+    selectedParchinLevel,
+    showComparisons,
+    showResult,
+    sources,
+  ]);
 
   const questionId = questionOrder[Math.min(stepIndex, questionOrder.length - 1)];
   const question = getRecommendationQuestion(questionId, answers);
@@ -197,6 +301,32 @@ export function ConversationBuilder({
     .filter((id) => Boolean(answers[id]));
   const quotesLoading = showResult && !quotesResolved && quotesError === null;
 
+  async function persistAnswer(
+    id: QuestionId,
+    value: string,
+    source: AnswerSources[QuestionId] = "user",
+  ) {
+    if (!sessionId) throw new Error("conversation_session_not_ready");
+    const response = await fetch(
+      `/api/recommendations/sessions/${sessionId}/answers`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(guestToken
+            ? { "x-recommendation-session-token": guestToken }
+            : {}),
+        },
+        body: JSON.stringify({
+          questionId: id,
+          answer: value,
+          source: source ?? "user",
+        }),
+      },
+    );
+    if (!response.ok) throw new Error("conversation_answer_not_saved");
+  }
+
   function choose(value: string, source: AnswerSources[QuestionId] = "user") {
     setAnswers((current) => ({ ...current, [questionId]: value }));
     setSources((current) => ({ ...current, [questionId]: source }));
@@ -204,6 +334,9 @@ export function ConversationBuilder({
     setQuotesResolved(false);
     setQuotesError(null);
     setQuotesNotice(null);
+    if (questionId === "project") {
+      setUnderstandingConfirmed(false);
+    }
   }
 
   function helpMeChoose() {
@@ -212,19 +345,85 @@ export function ConversationBuilder({
     setHelpOpen(false);
   }
 
-  function next() {
+  function chooseUnknown() {
+    const explicitUnknown = question.options.find(
+      (option) => option.value === "unknown",
+    );
+    choose(
+      explicitUnknown?.value ??
+        getDefaultAssistedAnswer(questionId, answers),
+      "estimate",
+    );
+  }
+
+  async function next() {
     if (!selected) return;
-    if (stepIndex === questionOrder.length - 1) {
-      setShowResult(true);
-      return;
+    setSavingAnswer(true);
+    try {
+      await persistAnswer(
+        questionId,
+        selected,
+        sources[questionId] ?? "user",
+      );
+      if (stepIndex === 0 && !understandingConfirmed) {
+        setShowUnderstanding(true);
+      } else if (stepIndex === questionOrder.length - 1) {
+        setShowResult(true);
+      } else {
+        setStepIndex((current) => current + 1);
+        setHelpOpen(false);
+      }
+    } catch {
+      setQuotesError("ذخیرهٔ پاسخ کامل نشد؛ دوباره تلاش کن.");
+    } finally {
+      setSavingAnswer(false);
     }
-    setStepIndex((current) => current + 1);
-    setHelpOpen(false);
+  }
+
+  async function confirmUnderstanding() {
+    if (!sessionId || !answers.project) return;
+    setSavingAnswer(true);
+    try {
+      const response = await fetch(
+        `/api/recommendations/sessions/${sessionId}/understanding`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            ...(guestToken
+              ? { "x-recommendation-session-token": guestToken }
+              : {}),
+          },
+          body: JSON.stringify({
+            understanding: {
+              project: answers.project,
+              label:
+                selectedLabel("project", answers.project, answers) ??
+                answers.project,
+              version: 1,
+            },
+          }),
+        },
+      );
+      if (!response.ok) throw new Error("understanding_not_saved");
+      setUnderstandingConfirmed(true);
+      setShowUnderstanding(false);
+      setStepIndex(1);
+      setQuotesError(null);
+    } catch {
+      setQuotesError("تأیید برداشت ذخیره نشد؛ دوباره تلاش کن.");
+    } finally {
+      setSavingAnswer(false);
+    }
   }
 
   function back() {
     if (showResult) {
       setShowResult(false);
+      return;
+    }
+    if (showUnderstanding) {
+      setShowUnderstanding(false);
       return;
     }
     setStepIndex((current) => Math.max(0, current - 1));
@@ -236,6 +435,9 @@ export function ConversationBuilder({
     setSources({});
     setStepIndex(0);
     setShowResult(false);
+    setShowUnderstanding(false);
+    setUnderstandingConfirmed(false);
+    setShowComparisons(false);
     setDirection("balanced");
     setHelpOpen(false);
     setRestored(false);
@@ -243,6 +445,8 @@ export function ConversationBuilder({
     setQuotesResolved(false);
     setQuotesError(null);
     setQuotesNotice(null);
+    setSessionId(null);
+    setGuestToken(null);
     window.sessionStorage.removeItem(storageKey);
   }
 
@@ -283,6 +487,8 @@ export function ConversationBuilder({
           <span>
             {showResult
               ? "پیشنهاد آماده"
+              : showUnderstanding
+                ? "تأیید برداشت"
               : `سؤال ${stepIndex + 1} از ${questionOrder.length}`}
           </span>
           <div>
@@ -292,6 +498,8 @@ export function ConversationBuilder({
                 width: `${
                   showResult
                     ? 100
+                    : showUnderstanding
+                      ? 20
                     : ((stepIndex + (selected ? 1 : 0)) / questionOrder.length) * 100
                 }%`,
               }}
@@ -321,6 +529,8 @@ export function ConversationBuilder({
               <p>
                 {showResult
                   ? "نیازت رو جمع‌بندی کردم. این انتخاب اصلی منه؛ هر فرضی هم که زدم پایینش نوشته شده."
+                  : showUnderstanding
+                    ? "قبل از سؤال‌های بعدی، برداشتم را با تو چک می‌کنم."
                   : question.helper}
               </p>
             </div>
@@ -337,7 +547,55 @@ export function ConversationBuilder({
           </div>
 
           <AnimatePresence mode="wait" initial={false}>
-            {!showResult ? (
+            {showUnderstanding ? (
+              <motion.div
+                key="understanding"
+                className="conversation-question-card"
+                initial={reduceMotion ? false : { opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={reduceMotion ? undefined : { opacity: 0, y: -10 }}
+                transition={transition}
+              >
+                <div className="question-meta">
+                  <span>تأیید برداشت ابرچین</span>
+                </div>
+                <h2>
+                  برداشت من اینه که برای «
+                  {answers.project
+                    ? selectedLabel("project", answers.project, answers)
+                    : "نیازت"}
+                  » سرور ابری می‌خوای.
+                </h2>
+                <p>
+                  در ادامه فقط چند سؤال مؤثر دربارهٔ مرحله، مصرف، ریسک و یک
+                  نکتهٔ تطبیقی می‌پرسم. این برداشت در هر زمان قابل اصلاح است.
+                </p>
+                <div className="question-actions">
+                  <button
+                    className="button button-quiet"
+                    type="button"
+                    onClick={() => {
+                      setUnderstandingConfirmed(false);
+                      setShowUnderstanding(false);
+                      setStepIndex(0);
+                    }}
+                  >
+                    <ArrowRight size={17} aria-hidden="true" />
+                    اصلاح برداشت
+                  </button>
+                  <button
+                    className="button button-primary"
+                    disabled={savingAnswer}
+                    type="button"
+                    onClick={() => void confirmUnderstanding()}
+                  >
+                    برداشت درسته
+                    <ArrowLeft size={17} aria-hidden="true" />
+                  </button>
+                </div>
+                {quotesError ? <p className="product-error">{quotesError}</p> : null}
+              </motion.div>
+            ) : !showResult ? (
               <motion.div
                 key={questionId}
                 className="conversation-question-card"
@@ -393,10 +651,23 @@ export function ConversationBuilder({
                 </div>
 
                 <div className="question-actions">
-                  <button className="question-assist" type="button" onClick={() => setHelpOpen(true)}>
-                    <CircleHelp size={16} aria-hidden="true" />
-                    کمکم کن انتخاب کنم
-                  </button>
+                  <div>
+                    <button
+                      className="question-assist"
+                      type="button"
+                      onClick={chooseUnknown}
+                    >
+                      نمی‌دانم
+                    </button>
+                    <button
+                      className="question-assist"
+                      type="button"
+                      onClick={() => setHelpOpen(true)}
+                    >
+                      <CircleHelp size={16} aria-hidden="true" />
+                      کمکم کن انتخاب کنم
+                    </button>
+                  </div>
                   <div>
                     {stepIndex > 0 ? (
                       <button className="button button-quiet" type="button" onClick={back}>
@@ -407,8 +678,8 @@ export function ConversationBuilder({
                     <button
                       className="button button-primary"
                       type="button"
-                      disabled={!selected}
-                      onClick={next}
+                      disabled={!selected || savingAnswer}
+                      onClick={() => void next()}
                     >
                       {stepIndex === questionOrder.length - 1
                         ? "پیشنهاد رو بساز"
@@ -441,22 +712,20 @@ export function ConversationBuilder({
                 </div>
 
                 <div className="result-direction" aria-label="تنظیم جهت پیشنهاد">
-                  {(
-                    [
-                      ["economy", "ارزان‌ترش کن"],
-                      ["balanced", "متعادل"],
-                      ["performance", "قوی‌ترش کن"],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={direction === value ? "is-active" : ""}
-                      onClick={() => setDirection(value)}
-                    >
-                      {label}
-                    </button>
-                  ))}
+                  <button
+                    type="button"
+                    className={showComparisons ? "is-active" : ""}
+                    onClick={() => {
+                      setShowComparisons((current) => !current);
+                      setDirection("balanced");
+                      setQuotesResolved(false);
+                      setQuotesError(null);
+                    }}
+                  >
+                    {showComparisons
+                      ? "بستن مقایسهٔ اختیاری"
+                      : "مقایسه با اقتصادی‌تر و قوی‌تر"}
+                  </button>
                 </div>
 
                 <div className="recommendation-resources">
@@ -496,6 +765,44 @@ export function ConversationBuilder({
                   </ul>
                 </details>
 
+                <div className="result-direction" aria-label="انتخاب سطح پرچین">
+                  <span>
+                    حداقل پیشنهادی:{" "}
+                    {minimumParchinLevel === "PARCHIN_START"
+                      ? "پرچین شروع"
+                      : minimumParchinLevel === "PARCHIN_ACTIVE"
+                        ? "پرچین فعال"
+                        : "پرچین پایدار"}
+                  </span>
+                  {parchinLevels
+                    .filter(
+                      (level) =>
+                        parchinLevelRank(level) >=
+                        parchinLevelRank(minimumParchinLevel),
+                    )
+                    .map((level) => (
+                      <button
+                        key={level}
+                        type="button"
+                        className={
+                          selectedParchinLevel === level ? "is-active" : ""
+                        }
+                        onClick={() => {
+                          setRequestedParchinLevel(level);
+                          setQuotes([]);
+                          setQuotesResolved(false);
+                          setQuotesError(null);
+                        }}
+                      >
+                        {level === "PARCHIN_START"
+                          ? "پرچین شروع"
+                          : level === "PARCHIN_ACTIVE"
+                            ? "پرچین فعال"
+                            : "پرچین پایدار"}
+                      </button>
+                    ))}
+                </div>
+
                 {recommendation.assumptions.length > 0 ? (
                   <details className="recommendation-details recommendation-details--assumptions">
                     <summary>
@@ -522,9 +829,13 @@ export function ConversationBuilder({
 
                 <div className="result-live-plans">
                   <div>
-                    <span>سه چینش واقعی ابرچین</span>
+                    <span>
+                      {showComparisons
+                        ? "مقایسهٔ اختیاری چینش‌های واقعی"
+                        : "پیشنهاد اصلی واقعی ابرچین"}
+                    </span>
                     <strong>
-                      {quotes.length >= 3
+                      {showComparisons && quotes.length >= 3
                         ? "قیمت‌های فروش تأیید شده‌اند"
                         : quotesLoading
                           ? "در حال بررسی قیمت و ظرفیت واقعی"
@@ -595,7 +906,7 @@ export function ConversationBuilder({
                     </Link>
                   ) : (
                     <Link className="button button-primary" href="/cloud-servers">
-                      همه سرورهای آماده
+                      همه سرورهای ابری
                       <ArrowLeft size={17} aria-hidden="true" />
                     </Link>
                   )}
