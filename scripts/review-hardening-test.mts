@@ -150,11 +150,59 @@ test("health and secure delivery gate activation and subscription", async () => 
   assert.match(health, /MAX_CONNECT_ATTEMPTS = 3/);
   assert.match(health, /expectedNetworkId/);
   assert.match(health, /observedNetworkId/);
+  assert.match(health, /PROVIDER_MANAGED/);
+  assert.match(health, /topologyVerificationMode/);
   assert.match(health, /provider_network_mismatch/);
   assert.match(health, /HEALTH_CHECK_FAILED/);
   assert.match(health, /DELIVERY_RETRYABLE/);
   assert.match(health, /serviceSubscription\.upsert/);
   assert.doesNotMatch(provisioning, /serviceSubscription\.upsert/);
+});
+
+test("health retry is a provider-read-only worker job with guarded admin recovery", async () => {
+  const retry = await source(
+    "lib/infrastructure/health-retry-service.ts",
+  );
+  const provisioning = await source(
+    "lib/infrastructure/provisioning-service.ts",
+  );
+  const route = await source(
+    "app/api/admin/infrastructure/orders/[id]/health-retry/route.ts",
+  );
+  assert.match(retry, /HEALTH_RETRY_OPERATION/);
+  assert.match(retry, /HEALTH_RETRY_LIMIT = 3/);
+  assert.match(retry, /findExistingResource/);
+  assert.match(retry, /availableAt/);
+  assert.match(retry, /PROVISIONING_MANUAL_REVIEW/);
+  assert.doesNotMatch(retry, /\.createServer\(/);
+  assert.match(provisioning, /operation === "health_check_retry"/);
+  assert.match(provisioning, /"availableAt" <= CURRENT_TIMESTAMP/);
+  assert.match(route, /requireAdminUser/);
+  assert.match(route, /rejectCrossOrigin/);
+  assert.match(route, /readIdempotencyKey/);
+  assert.match(route, /reason/);
+});
+
+test("direct catalog checkout uses audited bootstrap and request idempotency", async () => {
+  const quote = await source("lib/recommendation/quote-service.ts");
+  const flow = await source("lib/product-flow/service.ts");
+  const cloudRoute = await source(
+    "app/api/cloud-servers/quotes/route.ts",
+  );
+  const readyRoute = await source(
+    "app/api/ready-servers/quotes/route.ts",
+  );
+  assert.match(quote, /catalogCheckoutIdempotencyKey/);
+  assert.match(quote, /pg_advisory_xact_lock/);
+  assert.match(quote, /productFlowState: "DRAFT"/);
+  assert.doesNotMatch(
+    quote,
+    /recommendationSession\.create\([\s\S]{0,900}?productFlowState: "DELIVERY_CONFIGURED"/,
+  );
+  assert.match(flow, /bootstrapCatalogCheckoutFlowTx/);
+  assert.match(flow, /catalog_delivery_configured/);
+  assert.match(cloudRoute, /readIdempotencyKey/);
+  assert.match(readyRoute, /readIdempotencyKey/);
 });
 
 test("review migrations prevent double markup and preserve ambiguous legacy states safely", async () => {
@@ -163,6 +211,9 @@ test("review migrations prevent double markup and preserve ambiguous legacy stat
   );
   const hardening = await source(
     "prisma/migrations/20260730190000_provider_review_hardening/migration.sql",
+  );
+  const recovery = await source(
+    "prisma/migrations/20260730223000_provider_review_recovery_v2/migration.sql",
   );
   assert.match(
     multi,
@@ -175,4 +226,17 @@ test("review migrations prevent double markup and preserve ambiguous legacy stat
   assert.match(hardening, /CREATE TABLE "InfrastructureHealthCheck"/);
   assert.match(hardening, /CREATE TABLE "SecureDeliveryEvent"/);
   assert.doesNotMatch(hardening, /UPDATE "WalletLedgerEntry"/);
+  assert.match(recovery, /row_number\(\) OVER/);
+  assert.match(recovery, /PARTITION BY q\."sessionId"/);
+  assert.match(recovery, /legacy_checkout_graph_aligned/);
+  assert.match(
+    recovery,
+    /paid\."sessionState" IS DISTINCT FROM paid\."targetState"/,
+  );
+  assert.match(
+    recovery,
+    /paid\."infrastructureOrderState"[\s\S]*IS DISTINCT FROM paid\."targetState"/,
+  );
+  assert.doesNotMatch(recovery, /UPDATE "WalletLedgerEntry"/);
+  assert.doesNotMatch(recovery, /SET "providerSelectionSnapshot"/);
 });

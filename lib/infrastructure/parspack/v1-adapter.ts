@@ -35,6 +35,7 @@ import {
 export class ParsPackV1Adapter implements CloudProviderAdapter {
   readonly provider = InfrastructureProvider.PARSPACK;
   readonly apiVersion = "v1";
+  readonly topologyVerificationMode = "PROVIDER_MANAGED" as const;
   private catalogPromise: Promise<ProviderCatalog> | null = null;
   private readonly client: ParsPackProvider;
 
@@ -157,8 +158,9 @@ export class ParsPackV1Adapter implements CloudProviderAdapter {
   resolveSelectionDefaults(region: string) {
     return Promise.resolve({
       region,
-      externalNetworkId: "provider-default",
-      externalSecurityId: "provider-default",
+      externalNetworkId: null,
+      externalSecurityId: null,
+      topologyVerificationMode: this.topologyVerificationMode,
       checkedAt: new Date(),
       providerRequestIds: [],
     });

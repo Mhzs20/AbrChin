@@ -1,4 +1,9 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 
 import {
   Prisma,
@@ -7,6 +12,7 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
+import { getEnv } from "@/lib/env";
 import {
   transitionProductFlowTx,
   type ProductFlowOwner,
@@ -40,6 +46,19 @@ function tokenHash(token: string): string {
 
 export function createGuestSessionCredential() {
   const token = randomBytes(32).toString("base64url");
+  return { token, hash: tokenHash(token) };
+}
+
+export function createCatalogGuestSessionCredential(
+  idempotencyKey: string,
+) {
+  const secret = getEnv().sessionSecret;
+  if (secret.length < 16) {
+    throw new Error("SESSION_SECRET must be set (min 16 characters)");
+  }
+  const token = createHmac("sha256", secret)
+    .update(`catalog-checkout:${idempotencyKey}`, "utf8")
+    .digest("base64url");
   return { token, hash: tokenHash(token) };
 }
 
@@ -109,8 +128,18 @@ function publicDeliveryConfiguration(value: Prisma.JsonValue | null) {
       typeof record.accessMethod === "string" ? record.accessMethod : null,
     sshKeyConfigured:
       typeof record.sshKeyName === "string" && record.sshKeyName.length > 0,
-    network: record.externalNetworkId ? "DEFAULT_LOCKED" : null,
-    security: record.externalSecurityId ? "DEFAULT_LOCKED" : null,
+    network:
+      record.topologyVerificationMode === "PROVIDER_MANAGED"
+        ? "PROVIDER_MANAGED"
+        : record.externalNetworkId
+          ? "DEFAULT_LOCKED"
+          : null,
+    security:
+      record.topologyVerificationMode === "PROVIDER_MANAGED"
+        ? "PROVIDER_MANAGED"
+        : record.externalSecurityId
+          ? "DEFAULT_LOCKED"
+          : null,
     startupScriptConfigured:
       typeof record.startupScriptCode === "string" &&
       record.startupScriptCode.length > 0,

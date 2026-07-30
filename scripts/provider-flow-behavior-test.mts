@@ -25,6 +25,7 @@ const lockedDelivery = {
   externalImageId: "ubuntu",
   externalNetworkId: "network-1",
   externalSecurityId: "security-1",
+  topologyVerificationMode: "STRICT_OBSERVED",
   accessMethod: "SSH_KEY",
   sshKeyName: "abrchin-key",
 };
@@ -99,6 +100,7 @@ test("fake adapter exposes correct, wrong and unknown observed topology", async 
   assert.ok(correct?.observedAt instanceof Date);
   assert.equal(
     assessProviderObservation({
+      topologyVerificationMode: "STRICT_OBSERVED",
       providerState: correct!.state,
       ipv4: correct!.ipv4,
       providerObservedAt: correct!.observedAt,
@@ -118,6 +120,7 @@ test("fake adapter exposes correct, wrong and unknown observed topology", async 
   assert.deepEqual(wrong?.securityIds, ["security-other"]);
   assert.equal(
     assessProviderObservation({
+      topologyVerificationMode: "STRICT_OBSERVED",
       providerState: wrong!.state,
       ipv4: wrong!.ipv4,
       providerObservedAt: wrong!.observedAt,
@@ -137,6 +140,7 @@ test("fake adapter exposes correct, wrong and unknown observed topology", async 
   assert.equal(unknown?.securityIds, null);
   assert.equal(
     assessProviderObservation({
+      topologyVerificationMode: "STRICT_OBSERVED",
       providerState: unknown!.state,
       ipv4: unknown!.ipv4,
       providerObservedAt: unknown!.observedAt,
@@ -147,6 +151,68 @@ test("fake adapter exposes correct, wrong and unknown observed topology", async 
     }).ready,
     false,
   );
+});
+
+test("provider-managed topology still requires active state, IPv4 and observation", () => {
+  const base = {
+    topologyVerificationMode: "PROVIDER_MANAGED" as const,
+    providerState: "active",
+    ipv4: "192.0.2.20",
+    providerObservedAt: new Date(),
+    expectedNetworkId: null,
+    observedNetworkId: null,
+    expectedSecurityId: null,
+    observedSecurityId: null,
+  };
+  assert.deepEqual(assessProviderObservation(base), {
+    ready: true,
+    code: "provider_managed_topology_verified",
+  });
+  assert.equal(
+    assessProviderObservation({ ...base, ipv4: null }).ready,
+    false,
+  );
+  assert.equal(
+    assessProviderObservation({
+      ...base,
+      providerState: "unknown",
+    }).ready,
+    false,
+  );
+  assert.equal(
+    assessProviderObservation({
+      ...base,
+      providerObservedAt: null,
+    }).ready,
+    false,
+  );
+});
+
+test("ParsPack paid snapshots normalize legacy defaults to provider-managed topology", () => {
+  const delivery = {
+    provider: InfrastructureProvider.PARSPACK,
+    providerApiVersion: "v1",
+    productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
+    region: "tehran",
+    externalPlanId: "s1",
+    externalImageId: "ubuntu",
+    externalNetworkId: "provider-default",
+    externalSecurityId: "provider-default",
+    accessMethod: "ONE_TIME_PASSWORD",
+  };
+  const parsed = parseLockedProvisioningSelection({
+    snapshot: {
+      ...delivery,
+      deliveryConfiguration: delivery,
+    },
+    provider: InfrastructureProvider.PARSPACK,
+    providerApiVersion: "v1",
+    productKind:
+      InfrastructureProductKind.READY_INSTANT_SERVER,
+  });
+  assert.equal(parsed.topologyVerificationMode, "PROVIDER_MANAGED");
+  assert.equal(parsed.externalNetworkId, null);
+  assert.equal(parsed.externalSecurityId, null);
 });
 
 test("Arvan SSH key validation uses the official read-only v1 endpoint", async () => {

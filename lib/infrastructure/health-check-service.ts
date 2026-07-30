@@ -4,12 +4,14 @@ import {
   CloudInstanceStatus,
   InfrastructureHealthCheckStatus,
   InfrastructureOrderStatus,
+  InfrastructureProvider,
   SecureDeliveryStatus,
   SubscriptionStatus,
   type Prisma,
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
+import type { ProviderTopologyVerificationMode } from "@/lib/infrastructure/cloud-provider-adapter";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
 import { addBillingMonth, addGracePeriod } from "@/lib/subscriptions/period";
 
@@ -17,6 +19,7 @@ const CONNECT_TIMEOUT_MS = 3_000;
 const MAX_CONNECT_ATTEMPTS = 3;
 
 export function assessProviderObservation(input: {
+  topologyVerificationMode: ProviderTopologyVerificationMode;
   providerState: string | null;
   ipv4: string | null;
   providerObservedAt: Date | null;
@@ -25,21 +28,29 @@ export function assessProviderObservation(input: {
   expectedSecurityId: string | null;
   observedSecurityId: string | null;
 }) {
-  if (
-    input.providerState?.toLowerCase() !== "active" ||
-    !input.ipv4 ||
-    !input.providerObservedAt
-  ) {
-    return { ready: false as const, code: "provider_state_unknown" };
+  if (input.providerState?.toLowerCase() !== "active") {
+    return { ready: false as const, code: "provider_state_not_active" };
+  }
+  if (!input.ipv4) {
+    return { ready: false as const, code: "provider_ipv4_missing" };
+  }
+  if (!input.providerObservedAt) {
+    return { ready: false as const, code: "provider_observation_missing" };
+  }
+  if (input.topologyVerificationMode === "PROVIDER_MANAGED") {
+    return {
+      ready: true as const,
+      code: "provider_managed_topology_verified",
+    };
   }
   if (
-    input.expectedNetworkId != null &&
+    input.expectedNetworkId == null ||
     input.observedNetworkId !== input.expectedNetworkId
   ) {
     return { ready: false as const, code: "provider_network_mismatch" };
   }
   if (
-    input.expectedSecurityId != null &&
+    input.expectedSecurityId == null ||
     input.observedSecurityId !== input.expectedSecurityId
   ) {
     return { ready: false as const, code: "provider_security_mismatch" };
@@ -78,6 +89,27 @@ function asSelection(value: Prisma.JsonValue | null) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+export function resolveTopologyVerificationMode(input: {
+  provider: InfrastructureProvider;
+  snapshot: Prisma.JsonValue | null;
+}): ProviderTopologyVerificationMode {
+  const selection = asSelection(input.snapshot);
+  const delivery = asSelection(
+    (selection.deliveryConfiguration ?? null) as Prisma.JsonValue | null,
+  );
+  const explicit =
+    selection.topologyVerificationMode ??
+    delivery.topologyVerificationMode;
+  const expected =
+    input.provider === InfrastructureProvider.PARSPACK
+      ? "PROVIDER_MANAGED"
+      : "STRICT_OBSERVED";
+  if (explicit != null && explicit !== expected) {
+    throw new Error("provider_topology_mode_conflict");
+  }
+  return expected;
 }
 
 function owner(order: {
@@ -236,6 +268,10 @@ export async function runInfrastructureHealthCheck(input: {
   infrastructureOrderId: string;
   probe?: ConnectivityProbe;
   maxAttempts?: number;
+  retryTransition?: {
+    idempotencyKey: string;
+    actorUserId?: string | null;
+  };
 }) {
   const probe = input.probe ?? tcpConnectivityProbe;
   const maxAttempts = Math.min(
@@ -252,11 +288,18 @@ export async function runInfrastructureHealthCheck(input: {
     });
     const instance = order.cloudInstance;
     const selection = asSelection(order.providerSelectionSnapshot);
+    const topologyVerificationMode =
+      resolveTopologyVerificationMode({
+        provider: order.provider,
+        snapshot: order.providerSelectionSnapshot,
+      });
     const expectedNetworkId =
+      topologyVerificationMode === "STRICT_OBSERVED" &&
       typeof selection.externalNetworkId === "string"
         ? selection.externalNetworkId
         : null;
     const expectedSecurityId =
+      topologyVerificationMode === "STRICT_OBSERVED" &&
       typeof selection.externalSecurityId === "string"
         ? selection.externalSecurityId
         : null;
@@ -271,12 +314,16 @@ export async function runInfrastructureHealthCheck(input: {
         idempotencyKey: `health-start:${order.id}:${instance.providerInstanceId}`,
       });
     } else if (currentState === "HEALTH_CHECK_FAILED") {
+      if (!input.retryTransition?.idempotencyKey) {
+        throw new Error("health_retry_context_required");
+      }
       await transitionProductFlowTx(tx, {
         owner: owner(order),
         from: "HEALTH_CHECK_FAILED",
         to: "HEALTH_CHECKING",
         reason: "health_check_retry",
-        idempotencyKey: `health-retry:${order.id}:${Date.now()}`,
+        idempotencyKey: input.retryTransition.idempotencyKey,
+        actorUserId: input.retryTransition.actorUserId ?? null,
       });
     } else if (currentState !== "HEALTH_CHECKING") {
       throw new Error("health_check_state_conflict");
@@ -297,6 +344,7 @@ export async function runInfrastructureHealthCheck(input: {
         observedNetworkId: instance.networkId,
         expectedSecurityId,
         observedSecurityId: instance.securityId,
+        topologyVerificationMode,
         providerObservedAt: instance.providerObservedAt,
         connectivityProtocol: instance.image
           .toLowerCase()
@@ -306,6 +354,7 @@ export async function runInfrastructureHealthCheck(input: {
       },
     });
     const observation = assessProviderObservation({
+      topologyVerificationMode,
       providerState: instance.providerState,
       ipv4: instance.ipv4,
       providerObservedAt: instance.providerObservedAt,
@@ -321,6 +370,7 @@ export async function runInfrastructureHealthCheck(input: {
       port: instance.image.toLowerCase().includes("windows") ? 3389 : 22,
       providerContractReady: observation.ready,
       providerObservationCode: observation.code,
+      topologyVerificationMode,
     };
   });
 
@@ -340,7 +390,12 @@ export async function runInfrastructureHealthCheck(input: {
           resultCode: prepared.providerObservationCode,
           durationMs: Date.now() - startedAt,
           finishedAt: new Date(),
-          metadata: { containsSecret: false },
+          metadata: {
+            containsSecret: false,
+            topologyVerificationMode:
+              prepared.topologyVerificationMode,
+            observationCode: prepared.providerObservationCode,
+          },
         },
       });
       await transitionProductFlowTx(tx, {
@@ -357,12 +412,16 @@ export async function runInfrastructureHealthCheck(input: {
   let attemptsUsed = 0;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     attemptsUsed = attempt;
-    reachable = await probe({
-      host: prepared.instance.ipv4!,
-      port: prepared.port,
-      timeoutMs: CONNECT_TIMEOUT_MS,
-      attempt,
-    });
+    try {
+      reachable = await probe({
+        host: prepared.instance.ipv4!,
+        port: prepared.port,
+        timeoutMs: CONNECT_TIMEOUT_MS,
+        attempt,
+      });
+    } catch {
+      reachable = false;
+    }
     if (reachable) break;
   }
 
@@ -384,7 +443,13 @@ export async function runInfrastructureHealthCheck(input: {
         resultCode: reachable ? "port_reachable" : "port_unreachable",
         durationMs: Date.now() - startedAt,
         finishedAt: new Date(),
-        metadata: { attempts: attemptsUsed, containsSecret: false },
+        metadata: {
+          attempts: attemptsUsed,
+          containsSecret: false,
+          topologyVerificationMode:
+            prepared.topologyVerificationMode,
+          observationCode: prepared.providerObservationCode,
+        },
       },
     });
     if (!reachable) {

@@ -84,11 +84,16 @@ export type ProviderSelection = {
 
 export type ProviderSelectionDefaults = {
   region: string;
-  externalNetworkId: string;
-  externalSecurityId: string;
+  externalNetworkId: string | null;
+  externalSecurityId: string | null;
+  topologyVerificationMode: ProviderTopologyVerificationMode;
   checkedAt: Date;
   providerRequestIds: string[];
 };
+
+export type ProviderTopologyVerificationMode =
+  | "STRICT_OBSERVED"
+  | "PROVIDER_MANAGED";
 
 export type ValidationResult =
   | { valid: true; checkedAt: Date }
@@ -184,6 +189,7 @@ export type ProviderResizeInput = ProviderResourceInput & {
 export interface CloudProviderAdapter {
   readonly provider: InfrastructureProvider;
   readonly apiVersion: string;
+  readonly topologyVerificationMode: ProviderTopologyVerificationMode;
 
   syncRegions(): Promise<ProviderRegion[]>;
   syncPlans(region: string): Promise<ProviderPlan[]>;

@@ -298,6 +298,7 @@ function parseResource(raw: UnknownRecord, region: string): ProviderResource {
 export class ArvanV1Adapter implements CloudProviderAdapter {
   readonly provider = InfrastructureProvider.ARVAN;
   readonly apiVersion = "v1";
+  readonly topologyVerificationMode = "STRICT_OBSERVED" as const;
 
   private readonly apiKey: string;
   private readonly baseUrl: string;
@@ -719,6 +720,7 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
       region,
       externalNetworkId: network.externalId,
       externalSecurityId: security.externalId,
+      topologyVerificationMode: this.topologyVerificationMode,
       checkedAt: new Date(),
       providerRequestIds: [
         network.providerRequestId,

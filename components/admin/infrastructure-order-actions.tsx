@@ -4,7 +4,11 @@ import { useState } from "react";
 
 import { ConfirmDialog, FormField } from "@/components/product";
 
-type ActionKind = "reconcile" | "retry" | "confirm-no-resource";
+type ActionKind =
+  | "reconcile"
+  | "retry"
+  | "health-retry"
+  | "confirm-no-resource";
 
 const actionConfig: Record<
   ActionKind,
@@ -22,6 +26,13 @@ const actionConfig: Record<
     endpoint: (id) => `/api/admin/infrastructure/orders/${id}/retry`,
     confirmLabel: "اجرای Retry",
   },
+  "health-retry": {
+    label: "Retry سلامت",
+    title: "تلاش مجدد بررسی سلامت",
+    endpoint: (id) =>
+      `/api/admin/infrastructure/orders/${id}/health-retry`,
+    confirmLabel: "ثبت Retry سلامت",
+  },
   "confirm-no-resource": {
     label: "منبع ساخته نشده",
     title: "تأیید منبع ساخته‌نشده",
@@ -34,15 +45,18 @@ export function InfrastructureOrderActions({
   orderId,
   status,
   hasCloudInstance,
+  productFlowState,
 }: {
   orderId: string;
   status: string;
   hasCloudInstance: boolean;
+  productFlowState: string | null;
 }) {
   const [kind, setKind] = useState<ActionKind | null>(null);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [idempotencyKey, setIdempotencyKey] = useState("");
 
   const available: ActionKind[] = [];
   if (status === "NEEDS_RECONCILIATION" && !hasCloudInstance) {
@@ -50,6 +64,12 @@ export function InfrastructureOrderActions({
   }
   if (status === "FAILED" && !hasCloudInstance) {
     available.push("retry");
+  }
+  if (
+    productFlowState === "HEALTH_CHECK_FAILED" &&
+    hasCloudInstance
+  ) {
+    available.push("health-retry");
   }
 
   if (available.length === 0) return <>—</>;
@@ -66,7 +86,12 @@ export function InfrastructureOrderActions({
       const config = actionConfig[kind];
       const response = await fetch(config.endpoint(orderId), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(kind === "health-retry"
+            ? { "Idempotency-Key": idempotencyKey }
+            : {}),
+        },
         body: JSON.stringify({ reason: reason.trim() }),
       });
       const data = await response.json();
@@ -94,6 +119,7 @@ export function InfrastructureOrderActions({
               setKind(action);
               setReason("");
               setError("");
+              setIdempotencyKey(crypto.randomUUID());
             }}
           >
             {actionConfig[action].label}

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test, { after } from "node:test";
 import {
   InfrastructureOrderStatus,
+  InfrastructureProvider,
   PrismaClient,
   ProvisioningJobStatus,
   ServiceOrderStatus,
@@ -9,6 +10,7 @@ import {
 } from "@prisma/client";
 
 import { confirmProviderFunding } from "../lib/infrastructure/funding.ts";
+import { FakeCloudProviderAdapter } from "../lib/infrastructure/fake-cloud-provider-adapter.ts";
 import { retryFailedProvisioning } from "../lib/infrastructure/retry.ts";
 import { payOrderWithWallet, refundOrder } from "../lib/orders/service.ts";
 import { getActivePlanByCode, toPlanSnapshot } from "../lib/orders/plans.ts";
@@ -19,6 +21,48 @@ const databaseUrl = process.env.DATABASE_URL;
 const prisma = databaseUrl ? new PrismaClient() : null;
 const previousMode = process.env.INFRASTRUCTURE_PROVIDER_MODE;
 const previousNodeEnv = process.env.NODE_ENV;
+
+function createParsPackPricingAdapter() {
+  return new FakeCloudProviderAdapter({
+    provider: InfrastructureProvider.PARSPACK,
+    plansByRegion: {
+      tehran11: [
+        {
+          externalPlanId: "irLinuxVPS4",
+          region: "tehran11",
+          name: "Linux VPS 4",
+          vcpu: 2,
+          ramMb: 4096,
+          diskGb: 50,
+          resourceContractValid: true,
+          available: true,
+          priceHourlyIrr: 12_000n,
+          priceMonthlyIrr: 1_200_000n,
+          sourceMoneyUnit: "TOMAN",
+          rawUpdatedAt: null,
+          rawPayload: {},
+        },
+      ],
+    },
+    imagesByRegion: {
+      tehran11: [
+        {
+          externalId: "ubuntu24-cloudinit-qcow2",
+          region: "tehran11",
+          name: "Ubuntu 24",
+          operatingSystem: "linux",
+          minDiskGb: null,
+          minRamMb: null,
+          available: true,
+          sshKeySupported: true,
+          sshPasswordSupported: true,
+          rawUpdatedAt: null,
+          rawPayload: {},
+        },
+      ],
+    },
+  });
+}
 
 after(async () => {
   process.env.INFRASTRUCTURE_PROVIDER_MODE = previousMode;
@@ -94,19 +138,51 @@ async function seedDevPlan() {
   });
   await prisma.providerPricingConfig.upsert({
     where: { provider: "PARSPACK" },
-    update: { markupBasisPoints: 2500 },
+    update: {
+      apiVersion: "v1",
+      enabled: true,
+      markupBasisPoints: 2500,
+      sourceMoneyUnit: "TOMAN",
+    },
     create: {
       id: "parspack",
       provider: "PARSPACK",
+      apiVersion: "v1",
+      enabled: true,
       markupBasisPoints: 2500,
+      sourceMoneyUnit: "TOMAN",
+    },
+  });
+  await prisma.productPricingConfig.upsert({
+    where: {
+      provider_apiVersion_productKind: {
+        provider: "PARSPACK",
+        apiVersion: "v1",
+        productKind: "READY_INSTANT_SERVER",
+      },
+    },
+    update: { enabled: true, markupBasisPoints: 0 },
+    create: {
+      id: "infrastructure-test-parspack-ready",
+      provider: "PARSPACK",
+      apiVersion: "v1",
+      productKind: "READY_INSTANT_SERVER",
+      enabled: true,
+      markupBasisPoints: 0,
     },
   });
   return prisma.infrastructurePlan.upsert({
     where: { code: "DEV_STARTER" },
     update: {
+      provider: "PARSPACK",
+      providerApiVersion: "v1",
+      productKind: "READY_INSTANT_SERVER",
+      deliveryMode: "MANAGED",
       salePriceRial: tomanToRial(150_000),
       estimatedProviderCostRial: tomanToRial(120_000),
       active: true,
+      parchinIncluded: true,
+      minimumParchinLevel: "PARCHIN_START",
       catalogItemId: catalogItem.id,
       catalogMappingStatus: "MAPPED",
       catalogMappedAt: syncedAt,
@@ -118,7 +194,9 @@ async function seedDevPlan() {
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       imageCode: "ubuntu24-cloudinit-qcow2",
-      deliveryMode: "RAW",
+      providerApiVersion: "v1",
+      productKind: "READY_INSTANT_SERVER",
+      deliveryMode: "MANAGED",
       salePriceRial: tomanToRial(150_000),
       estimatedProviderCostRial: tomanToRial(120_000),
       renewalPriceRial: tomanToRial(150_000),
@@ -128,6 +206,8 @@ async function seedDevPlan() {
       catalogItemId: catalogItem.id,
       catalogMappingStatus: "MAPPED",
       catalogMappedAt: syncedAt,
+      parchinIncluded: true,
+      minimumParchinLevel: "PARCHIN_START",
       active: true,
       sortOrder: 1,
     },
@@ -150,7 +230,7 @@ async function createPaidOrderFixture(mobile: string) {
     data: {
       userId: user.id,
       title: plan.title,
-      amount: plan.salePriceRial,
+      amount: pricedPlan.pricing.finalPriceRial,
       status: ServiceOrderStatus.PENDING_PAYMENT,
       planId: plan.id,
       planCode: plan.code,
@@ -159,6 +239,11 @@ async function createPaidOrderFixture(mobile: string) {
         expiresAt: quoteExpiresAt,
       }),
       quoteExpiresAt,
+      provider: pricedPlan.provider,
+      providerApiVersion: pricedPlan.providerApiVersion,
+      productKind: pricedPlan.productKind,
+      parchinLevel: pricedPlan.pricing.parchinLevel,
+      productFlowState: "AWAITING_PAYMENT",
     },
   });
   return { user, plan, order };
@@ -179,6 +264,7 @@ test("payOrderWithWallet rolls back all writes on injected failure after debit",
     () =>
       payOrderWithWallet(user.id, order.id, {
         testInjectFailureAfterDebit: true,
+        providerAdapter: createParsPackPricingAdapter(),
       }),
     /Injected failure/,
   );
@@ -210,7 +296,9 @@ test("payment is atomic and creates infrastructure order without cloud instance"
   await cleanupMobile(mobile);
   const { user, order } = await createPaidOrderFixture(mobile);
 
-  const result = await payOrderWithWallet(user.id, order.id);
+  const result = await payOrderWithWallet(user.id, order.id, {
+    providerAdapter: createParsPackPricingAdapter(),
+  });
   assert.equal(result.order.status, ServiceOrderStatus.PAID);
   assert.equal(result.infrastructureOrder?.status, InfrastructureOrderStatus.WAITING_ADMIN_FUNDING);
   assert.equal(await prisma.cloudInstance.count({ where: { userId: user.id } }), 0);
@@ -234,7 +322,9 @@ test("payment uses the locked order quote when the plan price changes", async (t
     data: { salePriceRial: quotedAmount + tomanToRial(50_000) },
   });
 
-  await payOrderWithWallet(user.id, order.id);
+  await payOrderWithWallet(user.id, order.id, {
+    providerAdapter: createParsPackPricingAdapter(),
+  });
   const ledger = await prisma.walletLedgerEntry.findFirstOrThrow({
     where: { referenceId: order.id, direction: "DEBIT" },
   });
@@ -258,7 +348,13 @@ test("payment rejects an expired quote without debiting the wallet", async (t) =
     data: { quoteExpiresAt: new Date(Date.now() - 1_000) },
   });
 
-  await assert.rejects(() => payOrderWithWallet(user.id, order.id), /اعتبار قیمت/);
+  await assert.rejects(
+    () =>
+      payOrderWithWallet(user.id, order.id, {
+        providerAdapter: createParsPackPricingAdapter(),
+      }),
+    /اعتبار قیمت/,
+  );
   const walletAfter = await prisma.wallet.findUniqueOrThrow({ where: { userId: user.id } });
   assert.equal(walletAfter.availableBalance, walletBefore.availableBalance);
   assert.equal(
@@ -281,7 +377,9 @@ test("funding confirmation supports multiple attempts after provider balance blo
   await cleanupMobile(adminMobile);
 
   const { user, order } = await createPaidOrderFixture(mobile);
-  const paid = await payOrderWithWallet(user.id, order.id);
+  const paid = await payOrderWithWallet(user.id, order.id, {
+    providerAdapter: createParsPackPricingAdapter(),
+  });
   const admin = await prisma.user.create({ data: { mobile: adminMobile, role: "ADMIN" } });
   const infraId = paid.infrastructureOrder!.id;
 
@@ -301,7 +399,14 @@ test("funding confirmation supports multiple attempts after provider balance blo
 
   await prisma.infrastructureOrder.update({
     where: { id: infraId },
-    data: { status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING },
+    data: {
+      status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
+      productFlowState: "PROVISIONING_MANUAL_REVIEW",
+    },
+  });
+  await prisma.serviceOrder.update({
+    where: { id: order.id },
+    data: { productFlowState: "PROVISIONING_MANUAL_REVIEW" },
   });
   await prisma.provisioningJob.updateMany({
     where: { infrastructureOrderId: infraId },
@@ -337,7 +442,9 @@ test("refund keeps original ledger immutable and creates reverse entry", async (
   await cleanupMobile(adminMobile);
 
   const { user, order } = await createPaidOrderFixture(mobile);
-  await payOrderWithWallet(user.id, order.id);
+  await payOrderWithWallet(user.id, order.id, {
+    providerAdapter: createParsPackPricingAdapter(),
+  });
   const debit = await prisma.walletLedgerEntry.findFirstOrThrow({
     where: { referenceId: order.id, direction: "DEBIT" },
   });
@@ -390,7 +497,9 @@ test("retry is blocked for NEEDS_RECONCILIATION until reconcile", async (t) => {
   await cleanupMobile(adminMobile);
 
   const { user, order } = await createPaidOrderFixture(mobile);
-  await payOrderWithWallet(user.id, order.id);
+  await payOrderWithWallet(user.id, order.id, {
+    providerAdapter: createParsPackPricingAdapter(),
+  });
   const infra = await prisma.infrastructureOrder.findUniqueOrThrow({ where: { serviceOrderId: order.id } });
   const admin = await prisma.user.create({ data: { mobile: adminMobile, role: "ADMIN" } });
 

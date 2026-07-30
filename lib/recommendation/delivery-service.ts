@@ -316,6 +316,7 @@ export async function configureConversationDelivery(input: {
     backupAddon: null,
     externalNetworkId: defaults.externalNetworkId,
     externalSecurityId: defaults.externalSecurityId,
+    topologyVerificationMode: defaults.topologyVerificationMode,
     configuredAt: currentPrice.checkedAt.toISOString(),
   } satisfies Prisma.InputJsonObject;
 

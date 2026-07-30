@@ -2,7 +2,7 @@
 
 import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 type AccessMethod =
   | "SSH_KEY"
@@ -40,6 +40,10 @@ export function ReadyServerQuoteButton({
   const [accessMethod, setAccessMethod] =
     useState<AccessMethod | "">("");
   const [sshKeyName, setSshKeyName] = useState("");
+  const requestKeyRef = useRef<{
+    fingerprint: string;
+    key: string;
+  } | null>(null);
   const selectedImage = useMemo(
     () => options?.images.find((image) => image.id === imageAssetId) ?? null,
     [imageAssetId, options],
@@ -82,9 +86,26 @@ export function ReadyServerQuoteButton({
     setLoading(true);
     setError("");
     try {
+      const fingerprint = JSON.stringify({
+        planId,
+        imageAssetId,
+        accessMethod,
+        sshKeyName:
+          accessMethod === "SSH_KEY" ? sshKeyName.trim() : null,
+      });
+      if (requestKeyRef.current?.fingerprint !== fingerprint) {
+        requestKeyRef.current = {
+          fingerprint,
+          key: crypto.randomUUID(),
+        };
+      }
+      const idempotencyKey = requestKeyRef.current.key;
       const response = await fetch(`/api/${productPath}/quotes`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
         body: JSON.stringify({
           planId,
           imageAssetId,
@@ -160,8 +181,9 @@ export function ReadyServerQuoteButton({
             </label>
           ) : null}
           <small>
-            شبکه و Security Group پیش‌فرض همین Region پیش از Quote
-            بررسی و قفل می‌شوند.
+            {productPath === "cloud-servers"
+              ? "شبکه و Security Group پیش‌فرض همین Region پیش از Quote بررسی و قفل می‌شوند."
+              : "تنظیمات شبکهٔ سرور آماده توسط زیرساخت تحویل مدیریت می‌شود."}
           </small>
           <button
             className="button button-primary"

@@ -62,6 +62,7 @@ async function seedQueuedJob() {
       planId: plan.id,
       planCode: plan.code,
       paidAt: new Date(),
+      productFlowState: "PROVISIONING_SUBMITTED",
     },
   });
   const infra = await prisma.infrastructureOrder.create({
@@ -73,6 +74,7 @@ async function seedQueuedJob() {
       deliveryMode: plan.deliveryMode,
       status: InfrastructureOrderStatus.QUEUED,
       requiredFundingRial: plan.estimatedProviderCostRial,
+      productFlowState: "PROVISIONING_SUBMITTED",
     },
   });
   const job = await prisma.provisioningJob.create({
@@ -82,6 +84,7 @@ async function seedQueuedJob() {
       status: ProvisioningJobStatus.QUEUED,
       idempotencyKey: `worker_test_${infra.id}_a1`,
       attempt: 1,
+      availableAt: new Date(0),
     },
   });
   return { job, infra, mobile };

@@ -172,6 +172,7 @@ export async function claimNextProvisioningJob(workerId?: string) {
       SELECT id
       FROM "ProvisioningJob"
       WHERE status = 'QUEUED'
+        AND "availableAt" <= CURRENT_TIMESTAMP
       ORDER BY "createdAt" ASC
       LIMIT 1
       FOR UPDATE SKIP LOCKED
@@ -244,8 +245,11 @@ type LockedProvisioningSelection = {
   region: string;
   externalPlanId: string;
   externalImageId: string;
-  externalNetworkId: string;
-  externalSecurityId: string;
+  externalNetworkId: string | null;
+  externalSecurityId: string | null;
+  topologyVerificationMode:
+    | "STRICT_OBSERVED"
+    | "PROVIDER_MANAGED";
   accessMethod: CreateServerInput["accessMethod"];
   sshKeyName: string | null;
   initScript: string | null;
@@ -277,6 +281,20 @@ export function parseLockedProvisioningSelection(input: {
   const externalImageId = string(snapshot.externalImageId);
   const externalNetworkId = string(snapshot.externalNetworkId);
   const externalSecurityId = string(snapshot.externalSecurityId);
+  const explicitTopologyMode =
+    string(snapshot.topologyVerificationMode) ??
+    string(delivery.topologyVerificationMode);
+  const expectedTopologyMode =
+    input.provider === InfrastructureProvider.ARVAN
+      ? "STRICT_OBSERVED"
+      : "PROVIDER_MANAGED";
+  const topologyVerificationMode =
+    explicitTopologyMode ??
+    (input.provider === InfrastructureProvider.PARSPACK &&
+    externalNetworkId === "provider-default" &&
+    externalSecurityId === "provider-default"
+      ? "PROVIDER_MANAGED"
+      : null);
   const accessMethod = string(delivery.accessMethod);
   if (
     provider !== input.provider ||
@@ -285,8 +303,9 @@ export function parseLockedProvisioningSelection(input: {
     !region ||
     !externalPlanId ||
     !externalImageId ||
-    !externalNetworkId ||
-    !externalSecurityId ||
+    topologyVerificationMode !== expectedTopologyMode ||
+    (topologyVerificationMode === "STRICT_OBSERVED" &&
+      (!externalNetworkId || !externalSecurityId)) ||
     !["SSH_KEY", "ONE_TIME_PASSWORD", "WINDOWS_PASSWORD"].includes(
       accessMethod ?? "",
     ) ||
@@ -296,8 +315,11 @@ export function parseLockedProvisioningSelection(input: {
     delivery.region !== region ||
     delivery.externalPlanId !== externalPlanId ||
     delivery.externalImageId !== externalImageId ||
-    delivery.externalNetworkId !== externalNetworkId ||
-    delivery.externalSecurityId !== externalSecurityId
+    (topologyVerificationMode === "STRICT_OBSERVED" &&
+      (delivery.externalNetworkId !== externalNetworkId ||
+        delivery.externalSecurityId !== externalSecurityId)) ||
+    (explicitTopologyMode != null &&
+      delivery.topologyVerificationMode !== topologyVerificationMode)
   ) {
     throw new InfrastructureError(
       "provider_lock_incomplete",
@@ -318,8 +340,15 @@ export function parseLockedProvisioningSelection(input: {
     region,
     externalPlanId,
     externalImageId,
-    externalNetworkId,
-    externalSecurityId,
+    externalNetworkId:
+      topologyVerificationMode === "PROVIDER_MANAGED"
+        ? null
+        : externalNetworkId,
+    externalSecurityId:
+      topologyVerificationMode === "PROVIDER_MANAGED"
+        ? null
+        : externalSecurityId,
+    topologyVerificationMode,
     accessMethod: accessMethod as CreateServerInput["accessMethod"],
     sshKeyName,
     initScript: string(delivery.initScript) ?? null,
@@ -392,6 +421,15 @@ export async function processProvisioningJob(
     },
   });
   if (!job || job.status !== ProvisioningJobStatus.RUNNING) return;
+  if (job.operation === "health_check_retry") {
+    const { processHealthCheckRetryJob } = await import(
+      "@/lib/infrastructure/health-retry-service"
+    );
+    await processHealthCheckRetryJob(job.id, providerOverride, {
+      healthProbe: options?.healthProbe,
+    });
+    return;
+  }
 
   const order = job.infrastructureOrder;
   if (order.cloudInstance?.status === CloudInstanceStatus.ACTIVE) {
@@ -572,13 +610,21 @@ export async function processProvisioningJob(
       );
     }
     const observedNetworkId =
+      locked.topologyVerificationMode === "STRICT_OBSERVED" &&
+      locked.externalNetworkId &&
       observed.networkIds?.includes(locked.externalNetworkId)
         ? locked.externalNetworkId
-        : observed.networkIds?.[0] ?? null;
+        : locked.topologyVerificationMode === "STRICT_OBSERVED"
+          ? observed.networkIds?.[0] ?? null
+          : null;
     const observedSecurityId =
+      locked.topologyVerificationMode === "STRICT_OBSERVED" &&
+      locked.externalSecurityId &&
       observed.securityIds?.includes(locked.externalSecurityId)
         ? locked.externalSecurityId
-        : observed.securityIds?.[0] ?? null;
+        : locked.topologyVerificationMode === "STRICT_OBSERVED"
+          ? observed.securityIds?.[0] ?? null
+          : null;
     await prisma.$transaction([
       prisma.cloudInstance.upsert({
         where: { infrastructureOrderId: order.id },
@@ -626,6 +672,15 @@ export async function processProvisioningJob(
       infrastructureOrderId: order.id,
       probe: options?.healthProbe,
     });
+    if (!health.healthy) {
+      const { scheduleAutomaticHealthRetry } = await import(
+        "@/lib/infrastructure/health-retry-service"
+      );
+      await scheduleAutomaticHealthRetry({
+        infrastructureOrderId: order.id,
+        sourceCheckId: job.id,
+      });
+    }
     if (health.delivered) {
       await createAdminNotification({
         type: AdminNotificationType.INSTANCE_ACTIVE,

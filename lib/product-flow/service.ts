@@ -140,6 +140,18 @@ async function currentOwnerState(
   return normalized[0] as { state: ProductFlowState; revision: number };
 }
 
+export async function assertProductFlowOwnerStateTx(
+  tx: Prisma.TransactionClient,
+  owner: ProductFlowOwner,
+  expected: ProductFlowState,
+) {
+  const current = await currentOwnerState(tx, owner);
+  if (current.state !== expected) {
+    throw new ProductFlowConflictError("product_flow_state_conflict");
+  }
+  return current;
+}
+
 export async function transitionProductFlowTx(
   tx: Prisma.TransactionClient,
   input: ProductFlowTransitionInput,
@@ -237,6 +249,47 @@ export async function transitionProductFlowTx(
       actorUserId: input.actorUserId ?? null,
     },
   });
+}
+
+export async function bootstrapCatalogCheckoutFlowTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    recommendationSessionId: string;
+    idempotencyKey: string;
+    actorUserId?: string | null;
+    metadata?: Prisma.InputJsonValue;
+  },
+) {
+  const transitions = [
+    ["DRAFT", "UNDERSTANDING_CONFIRMED", "catalog_need_confirmed"],
+    [
+      "UNDERSTANDING_CONFIRMED",
+      "REQUIREMENTS_COMPLETE",
+      "catalog_requirements_confirmed",
+    ],
+    ["REQUIREMENTS_COMPLETE", "RECOMMENDED", "catalog_plan_selected"],
+    ["RECOMMENDED", "PARCHIN_SELECTED", "catalog_parchin_selected"],
+    [
+      "PARCHIN_SELECTED",
+      "DELIVERY_CONFIGURED",
+      "catalog_delivery_configured",
+    ],
+    ["DELIVERY_CONFIGURED", "QUOTED", "catalog_selection_quoted"],
+  ] as const;
+  const owner = {
+    recommendationSessionId: input.recommendationSessionId,
+  };
+  for (const [index, [from, to, reason]] of transitions.entries()) {
+    await transitionProductFlowTx(tx, {
+      owner,
+      from,
+      to,
+      reason,
+      idempotencyKey: `${input.idempotencyKey}:transition:${index}`,
+      actorUserId: input.actorUserId ?? null,
+      metadata: input.metadata,
+    });
+  }
 }
 
 export async function transitionProductFlow(

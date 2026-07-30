@@ -261,14 +261,39 @@ Network و Security پیش‌فرض Region در Server دوباره Resolve و V
 سرور آماده نیز Image واقعی Catalog و روش دسترسی بدون ابهام را Snapshot
 می‌کند.
 
-پس از ساخت، صرف وجود IP کافی نیست: State Provider باید `active` و IP و شبکه
-و Security مشاهده‌شده از GET Resource باید با Snapshot قفل‌شده منطبق باشند.
-مقدار مشاهده‌نشده Success محسوب نمی‌شود و Timestamp مشاهده جداگانه Persist
-می‌شود. سپس اتصال TCP محدود SSH یا RDP Audit می‌شود. برای Password، اشتراک
-فقط پس از Credential رمزنگاری‌شدهٔ یک‌بارمصرف فعال می‌شود؛ برای `SSH_KEY`
-تحویل یک Artifact غیرمحرمانه است و نبود Password مانع Activation نیست.
-شکست به `HEALTH_CHECK_FAILED` یا
-`DELIVERY_RETRYABLE` می‌رود و مسیر Retry/Manual Review دارد.
+ورود از Catalog مستقیم نیز State Machine را دور نمی‌زند. درخواست باید
+`Idempotency-Key` معتبر داشته باشد؛ همان Key و همان Payload دقیقاً همان
+Session/Quote را برمی‌گرداند و استفادهٔ دوباره از Key با Payload متفاوت رد
+می‌شود. Session از `DRAFT` ساخته و Transitionهای
+`UNDERSTANDING_CONFIRMED → REQUIREMENTS_COMPLETE → RECOMMENDED →
+PARCHIN_SELECTED → DELIVERY_CONFIGURED → QUOTED` از سرویس مرکزی ثبت
+می‌شوند. بنابراین مسیر حرفه‌ای هم Transition، Revision و Audit کامل دارد.
+
+پس از ساخت، صرف وجود IP کافی نیست: State Provider باید `active`، IP باید
+معتبر و Timestamp مشاهده باید ثبت شده باشد. کنترل Topology بر مبنای Capability
+قفل‌شدهٔ Adapter است:
+
+- آروان `STRICT_OBSERVED` است؛ Network و Security مشاهده‌شده باید دقیقاً با
+  Snapshot قفل‌شده برابر باشند و مقدار `null` یا mismatch شکست است.
+- ParsPack `PROVIDER_MANAGED` است؛ چون API مشاهدهٔ مستقل Network/Security
+  ارائه نمی‌کند، این دو مقدار `null` ذخیره می‌شوند ولی State/IP/Timestamp و
+  Probe سلامت همچنان اجباری‌اند. Snapshotهای Legacy با
+  `provider-default` فقط برای سازگاری خوانده و به همین حالت normalize
+  می‌شوند.
+
+سپس اتصال TCP محدود SSH یا RDP Audit می‌شود. برای Password، اشتراک فقط پس از
+Credential رمزنگاری‌شدهٔ یک‌بارمصرف فعال می‌شود؛ برای `SSH_KEY` تحویل یک
+Artifact غیرمحرمانه است و نبود Password مانع Activation نیست. شکست به
+`HEALTH_CHECK_FAILED` یا `DELIVERY_RETRYABLE` می‌رود.
+
+Health Retry یک Job مستقل `health_check_retry` است و هیچ Createای اجرا
+نمی‌کند. هر تلاش ابتدا Resource موجود را با GET/Reconciliation مشاهده و سپس
+Health Check را تکرار می‌کند. Jobها Lease و Claim اتمیک دارند، با Backoff
+نمایی از ۳۰ ثانیه و سقف سه تلاش اجرا می‌شوند. Admin فقط با Role معتبر،
+Origin معتبر، دلیل اجباری و Idempotency Key می‌تواند Retry فوری درخواست کند.
+پس از اتمام سقف، جریان به `PROVISIONING_MANUAL_REVIEW` و وضعیت Order به
+`MANUAL_REVIEW` می‌رود، آخرین State/IP/Network/Security و زمان مشاهده در
+Metadata انتقال ثبت و Notification مدیریتی ساخته می‌شود.
 
 ## Reconciliation و ایمنی
 
@@ -326,3 +351,25 @@ Snapshot مالی کامل باشند؛ در غیر این صورت Quote Invali
 `DRAFT` و Session `REQUIREMENTS_COMPLETE` می‌شود تا Customer تنظیم تحویل و
 Quote تازه بگیرد. مبلغ، Ledger، Paid status و Snapshot مالی Paid Order
 بازنویسی نمی‌شوند.
+
+Migration `20260730223000_provider_review_recovery_v2` اصلاح Review دوم و
+Forward-only است:
+
+- Quoteها را در سطح کل Graph هر Session ارزیابی می‌کند، نه به‌صورت ردیفی؛
+- یک Quote قطعی منتخب را با ترتیب پایدار انتخاب می‌کند و siblingهای
+  `ECONOMY/GROWTH` را بدون عقب‌بردن Graph معتبر Invalid می‌کند؛
+- Graph ناقص را فقط یک‌بار به آخرین State قابل اثبات برمی‌گرداند و Transition
+  Audit یکتا ثبت می‌کند؛
+- Session، ServiceOrder و InfrastructureOrder پرداخت‌شده را حتی با Revision
+  برابر ولی State ناسازگار هم‌تراز می‌کند؛
+- Amount، Ledger، `paidAt`، Quote financial snapshot، Plan snapshot و
+  Provider selection snapshot پرداخت‌شده را تغییر نمی‌دهد؛
+- ستون‌های Idempotency مسیر Catalog، زمان/Metadata Job و Capability Health
+  را افزایشی اضافه و Backfill می‌کند.
+
+Integration Test این Migration روی PostgreSQL واقعی، Graphهای چند Quote،
+Graph ناقص، Paid State ناسازگار، ثبات مالی/Provider، رقابت Transition،
+Health آروان و ParsPack، Retry هم‌زمان، جلوگیری از Create تکراری و رسیدن به
+Manual Review پس از سه تلاش را پوشش می‌دهد. اجرای دوم `prisma migrate deploy`
+فقط no-op بودن سازوکار Deployment Prisma را ثابت می‌کند؛ ادعای اجرای دوبارهٔ
+SQL یک Migration ثبت‌شده نیست.

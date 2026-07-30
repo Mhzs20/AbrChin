@@ -67,6 +67,7 @@ export default async function AdminInfrastructureOrdersPage() {
             orderId={order.id}
             status={order.status}
             hasCloudInstance={Boolean(order.cloudInstance)}
+            productFlowState={order.productFlowState}
           />
         ),
     },
@@ -88,7 +89,14 @@ export default async function AdminInfrastructureOrdersPage() {
           requiredTomanFa={formatTomanFa(order.requiredFundingRial)}
           adminName={admin.displayName || admin.mobile}
         />
-      ) : null,
+      ) : (
+        <InfrastructureOrderActions
+          orderId={order.id}
+          status={order.status}
+          hasCloudInstance={Boolean(order.cloudInstance)}
+          productFlowState={order.productFlowState}
+        />
+      ),
   }));
 
   return (

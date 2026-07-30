@@ -155,6 +155,7 @@ enum InfrastructureOrderStatus {
   ACTIVE
   BLOCKED_PROVIDER_BALANCE
   NEEDS_RECONCILIATION
+  MANUAL_REVIEW
   FAILED
   CANCELED
   REFUNDED
@@ -429,28 +430,30 @@ model ServiceOrder {
 }
 
 model RecommendationSession {
-  id                     String                   @id @default(cuid())
-  userId                 String?
-  guestAccessTokenHash   String?
-  claimedAt              DateTime?
-  status                 RecommendationFlowStatus @default(DISCOVERY)
-  answers                Json
-  answerSources          Json
-  understandingSnapshot  Json?
-  requirementsSummary    Json?
-  revision               Int                      @default(0)
-  profile                Json?
-  confidence             String?
-  architectureEscalation Boolean                  @default(false)
-  productFlowState       String?
-  productFlowRevision    Int                      @default(0)
-  selectedParchinLevel   ParchinLevel?
-  deliveryConfiguration  Json?
-  expiresAt              DateTime
-  createdAt              DateTime                 @default(now())
-  updatedAt              DateTime                 @updatedAt
-  user                   User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  quotes                 RecommendationQuote[]
+  id                            String                   @id @default(cuid())
+  userId                        String?
+  guestAccessTokenHash          String?
+  claimedAt                     DateTime?
+  status                        RecommendationFlowStatus @default(DISCOVERY)
+  answers                       Json
+  answerSources                 Json
+  understandingSnapshot         Json?
+  requirementsSummary           Json?
+  revision                      Int                      @default(0)
+  profile                       Json?
+  confidence                    String?
+  architectureEscalation        Boolean                  @default(false)
+  productFlowState              String?
+  productFlowRevision           Int                      @default(0)
+  selectedParchinLevel          ParchinLevel?
+  deliveryConfiguration         Json?
+  catalogCheckoutIdempotencyKey String?                  @unique
+  catalogCheckoutRequestHash    String?
+  expiresAt                     DateTime
+  createdAt                     DateTime                 @default(now())
+  updatedAt                     DateTime                 @updatedAt
+  user                          User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  quotes                        RecommendationQuote[]
 
   @@index([userId, createdAt])
   @@index([status, expiresAt])
@@ -629,6 +632,8 @@ model ProvisioningJob {
   workerId              String?
   lockedAt              DateTime?
   leaseExpiresAt        DateTime?
+  availableAt           DateTime               @default(now())
+  jobMetadata           Json?
   createSentAt          DateTime?
   providerRequestId     String?
   providerTaskId        String?
@@ -648,6 +653,7 @@ model ProvisioningJob {
   @@index([infrastructureOrderId, createdAt])
   @@index([status, createdAt])
   @@index([infrastructureOrderId, operation, status])
+  @@index([status, availableAt, createdAt])
 }
 
 model CloudInstance {
@@ -818,17 +824,18 @@ model WorkerHeartbeat {
 }
 
 model AuditLog {
-  id          String   @id @default(cuid())
-  actorUserId String
-  action      String
-  entityType  String
-  entityId    String?
-  beforeData  Json?
-  afterData   Json?
-  ip          String?
-  userAgent   String?
-  createdAt   DateTime @default(now())
-  actor       User     @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  actorUserId    String
+  action         String
+  entityType     String
+  entityId       String?
+  beforeData     Json?
+  afterData      Json?
+  ip             String?
+  userAgent      String?
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
+  actor          User     @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: Cascade)
 
   @@index([actorUserId, createdAt])
   @@index([entityType, entityId])
@@ -1045,27 +1052,28 @@ model ProductFlowTransition {
 }
 
 model InfrastructureHealthCheck {
-  id                    String                          @id @default(cuid())
-  infrastructureOrderId String
-  cloudInstanceId       String
-  attempt               Int
-  status                InfrastructureHealthCheckStatus @default(RUNNING)
-  providerState         String?
-  expectedIpv4          String?
-  observedIpv4          String?
-  expectedNetworkId     String?
-  observedNetworkId     String?
-  expectedSecurityId    String?
-  observedSecurityId    String?
-  providerObservedAt    DateTime?
-  connectivityProtocol  String?
-  resultCode            String?
-  durationMs            Int?
-  checkedAt             DateTime                        @default(now())
-  finishedAt            DateTime?
-  metadata              Json?
-  infrastructureOrder   InfrastructureOrder             @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
-  cloudInstance         CloudInstance                   @relation(fields: [cloudInstanceId], references: [id], onDelete: Cascade)
+  id                       String                          @id @default(cuid())
+  infrastructureOrderId    String
+  cloudInstanceId          String
+  attempt                  Int
+  status                   InfrastructureHealthCheckStatus @default(RUNNING)
+  providerState            String?
+  expectedIpv4             String?
+  observedIpv4             String?
+  expectedNetworkId        String?
+  observedNetworkId        String?
+  expectedSecurityId       String?
+  observedSecurityId       String?
+  topologyVerificationMode String                          @default("STRICT_OBSERVED")
+  providerObservedAt       DateTime?
+  connectivityProtocol     String?
+  resultCode               String?
+  durationMs               Int?
+  checkedAt                DateTime                        @default(now())
+  finishedAt               DateTime?
+  metadata                 Json?
+  infrastructureOrder      InfrastructureOrder             @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+  cloudInstance            CloudInstance                   @relation(fields: [cloudInstanceId], references: [id], onDelete: Cascade)
 
   @@unique([infrastructureOrderId, attempt])
   @@index([infrastructureOrderId, status, checkedAt])

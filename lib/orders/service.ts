@@ -18,6 +18,7 @@ import {
   resolveProviderSelectionDefaults,
   revalidateLockedSelection,
 } from "@/lib/infrastructure/selection-revalidation";
+import type { CloudProviderAdapter } from "@/lib/infrastructure/cloud-provider-adapter";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
 import {
   CloudInstanceStatus,
@@ -46,7 +47,7 @@ async function lockAndRevalidateLegacyOrder(plan: {
     externalPlanId: string | null;
     providerMonthlyPriceIrr: bigint | null;
   } | null;
-}) {
+}, adapterOverride?: CloudProviderAdapter) {
   if (!plan.catalogItem?.providerMonthlyPriceIrr) {
     throw new WalletError(
       "quote_unavailable",
@@ -55,23 +56,28 @@ async function lockAndRevalidateLegacyOrder(plan: {
   }
   const defaults =
     plan.provider === "ARVAN"
-      ? await resolveProviderSelectionDefaults({
-          provider: plan.provider,
-          providerApiVersion: plan.providerApiVersion,
-          productKind: plan.productKind,
-          region: plan.regionCode,
-        })
+      ? adapterOverride
+        ? await adapterOverride.resolveSelectionDefaults(plan.regionCode)
+        : await resolveProviderSelectionDefaults({
+            provider: plan.provider,
+            providerApiVersion: plan.providerApiVersion,
+            productKind: plan.productKind,
+            region: plan.regionCode,
+          })
       : null;
-  const current = await revalidateLockedSelection({
-    provider: plan.provider,
-    providerApiVersion: plan.providerApiVersion,
-    productKind: plan.productKind,
-    region: plan.regionCode,
-    externalPlanId: plan.catalogItem.externalPlanId ?? plan.sizeCode,
-    externalImageId: plan.imageCode,
-    externalNetworkId: defaults?.externalNetworkId ?? null,
-    externalSecurityId: defaults?.externalSecurityId ?? null,
-  });
+  const current = await revalidateLockedSelection(
+    {
+      provider: plan.provider,
+      providerApiVersion: plan.providerApiVersion,
+      productKind: plan.productKind,
+      region: plan.regionCode,
+      externalPlanId: plan.catalogItem.externalPlanId ?? plan.sizeCode,
+      externalImageId: plan.imageCode,
+      externalNetworkId: defaults?.externalNetworkId ?? null,
+      externalSecurityId: defaults?.externalSecurityId ?? null,
+    },
+    adapterOverride,
+  );
   if (
     current.monthlyPriceIrr !== plan.catalogItem.providerMonthlyPriceIrr
   ) {
@@ -314,7 +320,10 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
 export async function payOrderWithWallet(
   userId: string,
   orderId: string,
-  options?: PayOrderTxOptions,
+  options?: PayOrderTxOptions & {
+    /** Test-only provider fixture; production calls never pass this. */
+    providerAdapter?: CloudProviderAdapter;
+  },
 ) {
   const existing = await prisma.serviceOrder.findFirst({
     where: { id: orderId, userId },
@@ -333,16 +342,19 @@ export async function payOrderWithWallet(
       quote.externalPlanId &&
       quote.externalImageId
     ) {
-      const current = await revalidateLockedSelection({
-        provider: quote.provider,
-        providerApiVersion: quote.providerApiVersion,
-        productKind: quote.productKind,
-        region: quote.providerRegion,
-        externalPlanId: quote.externalPlanId,
-        externalImageId: quote.externalImageId,
-        externalNetworkId: quote.externalNetworkId,
-        externalSecurityId: quote.externalSecurityId,
-      });
+      const current = await revalidateLockedSelection(
+        {
+          provider: quote.provider,
+          providerApiVersion: quote.providerApiVersion,
+          productKind: quote.productKind,
+          region: quote.providerRegion,
+          externalPlanId: quote.externalPlanId,
+          externalImageId: quote.externalImageId,
+          externalNetworkId: quote.externalNetworkId,
+          externalSecurityId: quote.externalSecurityId,
+        },
+        options?.providerAdapter,
+      );
       if (
         quote.providerMonthlyPriceIrr == null ||
         current.monthlyPriceIrr !== quote.providerMonthlyPriceIrr
@@ -353,7 +365,10 @@ export async function payOrderWithWallet(
         );
       }
     } else if (existing?.plan?.catalogItem) {
-      await lockAndRevalidateLegacyOrder(existing.plan);
+      await lockAndRevalidateLegacyOrder(
+        existing.plan,
+        options?.providerAdapter,
+      );
     }
   }
   return prisma.$transaction(async (tx) => executePayOrderWithWalletTx(tx, userId, orderId, options));

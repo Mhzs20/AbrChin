@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   InfrastructureProductKind,
   InfrastructureProvider,
@@ -27,6 +29,7 @@ import {
   revalidateLockedSelection,
 } from "@/lib/infrastructure/selection-revalidation";
 import {
+  bootstrapCatalogCheckoutFlowTx,
   transitionProductFlowTx,
   type ProductFlowTransitionInput,
 } from "@/lib/product-flow/service";
@@ -46,7 +49,7 @@ import type {
 import { WalletError } from "@/lib/wallet/errors";
 import { serializeQuoteLineItems } from "@/lib/pricing/quote-line-items";
 import {
-  createGuestSessionCredential,
+  createCatalogGuestSessionCredential,
   requireConversationAccess,
 } from "@/lib/recommendation/session-service";
 import {
@@ -77,6 +80,7 @@ type LockedDeliveryConfiguration = {
   externalImageId: string;
   externalNetworkId: string | null;
   externalSecurityId: string | null;
+  topologyVerificationMode: "STRICT_OBSERVED" | "PROVIDER_MANAGED";
   operatingSystem: string;
   accessMethod:
     | "ONE_TIME_PASSWORD"
@@ -114,6 +118,7 @@ function parseLockedDeliveryConfiguration(
     typeof configuration.externalImageId !== "string" ||
     typeof configuration.externalNetworkId !== "string" ||
     typeof configuration.externalSecurityId !== "string" ||
+    configuration.topologyVerificationMode !== "STRICT_OBSERVED" ||
     typeof configuration.operatingSystem !== "string" ||
     ![
       "ONE_TIME_PASSWORD",
@@ -301,6 +306,7 @@ async function lockAndRevalidatePlan(
       externalImageId: image.externalId,
       externalNetworkId: defaults.externalNetworkId,
       externalSecurityId: defaults.externalSecurityId,
+      topologyVerificationMode: defaults.topologyVerificationMode,
       operatingSystem: image.name,
       accessMethod: delivery.accessMethod,
       imageAssetId: image.id,
@@ -461,13 +467,72 @@ function isCloudServerProfile(value: Prisma.JsonValue | null): boolean {
   );
 }
 
+function catalogCheckoutRequestHash(input: {
+  planId: string;
+  expectedProductKind: InfrastructureProductKind;
+  delivery: CatalogDeliverySelection;
+}) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        planId: input.planId,
+        expectedProductKind: input.expectedProductKind,
+        imageAssetId: input.delivery.imageAssetId,
+        accessMethod: input.delivery.accessMethod,
+        sshKeyName: input.delivery.sshKeyName?.trim() || null,
+      }),
+    )
+    .digest("hex");
+}
+
 async function createCatalogServerQuote(params: {
   planId: string;
   userId?: string | null;
   now?: Date;
   expectedProductKind: InfrastructureProductKind;
   delivery: CatalogDeliverySelection;
+  idempotencyKey: string;
 }) {
+  if (!/^[A-Za-z0-9._:-]{16,128}$/.test(params.idempotencyKey)) {
+    throw new WalletError(
+      "invalid_idempotency_key",
+      "شناسه یکتای درخواست معتبر نیست.",
+    );
+  }
+  const requestHash = catalogCheckoutRequestHash(params);
+  const guestCredential = params.userId
+    ? null
+    : createCatalogGuestSessionCredential(params.idempotencyKey);
+  const existing = await prisma.recommendationSession.findUnique({
+    where: {
+      catalogCheckoutIdempotencyKey: params.idempotencyKey,
+    },
+    include: {
+      quotes: {
+        orderBy: { createdAt: "asc" },
+        take: 1,
+      },
+    },
+  });
+  if (existing) {
+    if (
+      existing.catalogCheckoutRequestHash !== requestHash ||
+      existing.userId !== (params.userId ?? null)
+    ) {
+      throw new WalletError(
+        "idempotency_conflict",
+        "این شناسه برای درخواست دیگری استفاده شده است.",
+      );
+    }
+    const quote = existing.quotes[0];
+    if (!quote) throw new Error("catalog_quote_not_created");
+    return {
+      sessionId: existing.id,
+      guestToken: guestCredential?.token ?? null,
+      quote: toPublicRecommendationQuote(quote),
+      expiresAt: quote.expiresAt,
+    };
+  }
   const route = await prisma.infrastructurePlan.findUnique({
     where: { id: params.planId },
     select: { provider: true, providerApiVersion: true, productKind: true },
@@ -519,16 +584,45 @@ async function createCatalogServerQuote(params: {
     ramGb: plan.pricing.ramGb,
     storageGb: plan.pricing.storageGb,
   } satisfies Prisma.InputJsonObject;
-  const guestCredential = params.userId
-    ? null
-    : createGuestSessionCredential();
-  const session = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended(${`catalog:${params.idempotencyKey}`}, 0)
+      )
+    `;
+    const repeated = await tx.recommendationSession.findUnique({
+      where: {
+        catalogCheckoutIdempotencyKey: params.idempotencyKey,
+      },
+      include: {
+        quotes: {
+          orderBy: { createdAt: "asc" },
+          take: 1,
+        },
+      },
+    });
+    if (repeated) {
+      if (
+        repeated.catalogCheckoutRequestHash !== requestHash ||
+        repeated.userId !== (params.userId ?? null)
+      ) {
+        throw new WalletError(
+          "idempotency_conflict",
+          "این شناسه برای درخواست دیگری استفاده شده است.",
+        );
+      }
+      const quote = repeated.quotes[0];
+      if (!quote) throw new Error("catalog_quote_not_created");
+      return { session: repeated, quote };
+    }
     const created = await tx.recommendationSession.create({
       data: {
         userId: params.userId ?? null,
         guestAccessTokenHash: guestCredential?.hash ?? null,
         status: RecommendationFlowStatus.QUOTED,
-        productFlowState: "DELIVERY_CONFIGURED",
+        productFlowState: "DRAFT",
+        catalogCheckoutIdempotencyKey: params.idempotencyKey,
+        catalogCheckoutRequestHash: requestHash,
         answers: {
           source: profileSource,
           planId: plan.id,
@@ -541,101 +635,108 @@ async function createCatalogServerQuote(params: {
         deliveryConfiguration:
           locked.configuration as unknown as Prisma.InputJsonValue,
         expiresAt,
-        quotes: {
-          create: {
-          role: RecommendationQuoteRole.RECOMMENDED,
-          status: RecommendationQuoteStatus.ACTIVE,
-          planId: plan.id,
-          score: 100,
-          scoreBreakdown: {
-            source: profileSource,
-            liveCatalog: true,
-          },
-          reasons: [
-            "قیمت و ظرفیت همین سرور پیش از ساخت Quote دوباره بررسی شده است.",
-            "منابع، موقعیت و سیستم‌عامل در Quote ده‌دقیقه‌ای قفل شده‌اند.",
-            "پرچین پایه بخشی اجباری از تحویل امن این سرور است.",
-          ],
-          profileSnapshot,
-          planSnapshot: toPlanSnapshot(plan, {
-            createdAt: now,
-            expiresAt,
-          }) as Prisma.InputJsonValue,
-          amountRial: plan.pricing.finalPriceRial,
-          renewalAmountRial: plan.pricing.finalPriceRial,
-          catalogItemId: plan.pricing.catalogItemId,
-          providerBasePriceRialSnapshot: plan.pricing.providerBasePriceRial,
-          markupBasisPointsSnapshot: plan.pricing.markupBasisPoints,
-          finalPriceRialSnapshot: plan.pricing.finalPriceRial,
-          currencySnapshot: plan.pricing.currency,
-          providerPriceCheckedAt: locked.providerPriceCheckedAt,
-          provider: plan.provider,
-          providerApiVersion: plan.providerApiVersion,
-          productKind: plan.productKind,
-          providerRegion: plan.regionCode,
-          externalPlanId:
-            plan.catalogItem.externalPlanId ?? plan.sizeCode,
-          externalImageId: locked.configuration.externalImageId,
-          externalNetworkId:
-            locked.configuration.externalNetworkId,
-          externalSecurityId:
-            locked.configuration.externalSecurityId,
-          vcpuSnapshot: plan.pricing.vcpu,
-          ramMbSnapshot:
-            plan.pricing.ramGb == null ? null : plan.pricing.ramGb * 1024,
-          diskGbSnapshot: plan.pricing.storageGb,
-          operatingSystemSnapshot: locked.configuration.operatingSystem,
-          providerHourlyPriceIrr:
-            plan.catalogItem.providerHourlyPriceIrr,
-          providerMonthlyPriceIrr: plan.pricing.providerBasePriceRial,
-          markupAmountIrr: plan.pricing.markupAmountRial,
-          parchinLevel: plan.pricing.parchinLevel,
-          parchinPriceIrr: plan.pricing.parchinPriceRial,
-          providerAddonsSnapshot: [],
-          deliveryConfigurationSnapshot:
-            locked.configuration as unknown as Prisma.InputJsonValue,
-          taxBasisPointsSnapshot: plan.pricing.taxBasisPoints,
-          taxAmountIrr: plan.pricing.taxAmountRial,
-          lineItemsSnapshot: serializeQuoteLineItems(
-            plan.pricing.lineItems,
-          ),
-          quotedAt: now,
-          catalogVersion: plan.catalogItem.catalogVersion,
-          providerPayloadHash: plan.catalogItem.payloadHash,
-          expiresAt,
-          },
-        },
       },
-      include: { quotes: true },
     });
-    await transitionProductFlowTx(tx, {
-      owner: { recommendationSessionId: created.id },
-      from: "DELIVERY_CONFIGURED",
-      to: "QUOTED",
-      reason: "catalog_selection_quoted",
-      idempotencyKey: `catalog-quote:${created.id}`,
+    await bootstrapCatalogCheckoutFlowTx(tx, {
+      recommendationSessionId: created.id,
+      idempotencyKey: `catalog-bootstrap:${params.idempotencyKey}`,
       actorUserId: params.userId ?? null,
       metadata: {
         planId: plan.id,
         productKind: plan.productKind,
+        region: plan.regionCode,
+        externalPlanId:
+          plan.catalogItem.externalPlanId ?? plan.sizeCode,
+        externalImageId: locked.configuration.externalImageId,
+        externalNetworkId: locked.configuration.externalNetworkId,
+        externalSecurityId: locked.configuration.externalSecurityId,
+        topologyVerificationMode:
+          locked.configuration.topologyVerificationMode,
+        accessMethod: locked.configuration.accessMethod,
       },
     });
-    return created;
+    const quote = await tx.recommendationQuote.create({
+      data: {
+        sessionId: created.id,
+        role: RecommendationQuoteRole.RECOMMENDED,
+        status: RecommendationQuoteStatus.ACTIVE,
+        planId: plan.id,
+        score: 100,
+        scoreBreakdown: {
+          source: profileSource,
+          liveCatalog: true,
+        },
+        reasons: [
+          "قیمت و ظرفیت همین سرور پیش از ساخت Quote دوباره بررسی شده است.",
+          "منابع، موقعیت و سیستم‌عامل در Quote ده‌دقیقه‌ای قفل شده‌اند.",
+          "پرچین پایه بخشی اجباری از تحویل امن این سرور است.",
+        ],
+        profileSnapshot,
+        planSnapshot: toPlanSnapshot(plan, {
+          createdAt: now,
+          expiresAt,
+        }) as Prisma.InputJsonValue,
+        amountRial: plan.pricing.finalPriceRial,
+        renewalAmountRial: plan.pricing.finalPriceRial,
+        catalogItemId: plan.pricing.catalogItemId,
+        providerBasePriceRialSnapshot:
+          plan.pricing.providerBasePriceRial,
+        markupBasisPointsSnapshot: plan.pricing.markupBasisPoints,
+        finalPriceRialSnapshot: plan.pricing.finalPriceRial,
+        currencySnapshot: plan.pricing.currency,
+        providerPriceCheckedAt: locked.providerPriceCheckedAt,
+        provider: plan.provider,
+        providerApiVersion: plan.providerApiVersion,
+        productKind: plan.productKind,
+        providerRegion: plan.regionCode,
+        externalPlanId:
+          plan.catalogItem.externalPlanId ?? plan.sizeCode,
+        externalImageId: locked.configuration.externalImageId,
+        externalNetworkId: locked.configuration.externalNetworkId,
+        externalSecurityId: locked.configuration.externalSecurityId,
+        vcpuSnapshot: plan.pricing.vcpu,
+        ramMbSnapshot:
+          plan.pricing.ramGb == null
+            ? null
+            : plan.pricing.ramGb * 1024,
+        diskGbSnapshot: plan.pricing.storageGb,
+        operatingSystemSnapshot: locked.configuration.operatingSystem,
+        providerHourlyPriceIrr:
+          plan.catalogItem.providerHourlyPriceIrr,
+        providerMonthlyPriceIrr:
+          plan.pricing.providerBasePriceRial,
+        markupAmountIrr: plan.pricing.markupAmountRial,
+        parchinLevel: plan.pricing.parchinLevel,
+        parchinPriceIrr: plan.pricing.parchinPriceRial,
+        providerAddonsSnapshot: [],
+        deliveryConfigurationSnapshot:
+          locked.configuration as unknown as Prisma.InputJsonValue,
+        taxBasisPointsSnapshot: plan.pricing.taxBasisPoints,
+        taxAmountIrr: plan.pricing.taxAmountRial,
+        lineItemsSnapshot: serializeQuoteLineItems(
+          plan.pricing.lineItems,
+        ),
+        quotedAt: now,
+        catalogVersion: plan.catalogItem.catalogVersion,
+        providerPayloadHash: plan.catalogItem.payloadHash,
+        expiresAt,
+      },
+    });
+    return { session: created, quote };
   });
-  const quote = session.quotes[0];
-  if (!quote) throw new Error("ready_server_quote_not_created");
 
   return {
-    sessionId: session.id,
+    sessionId: result.session.id,
     guestToken: guestCredential?.token ?? null,
-    quote: toPublicRecommendationQuote(quote),
-    expiresAt,
+    quote: toPublicRecommendationQuote(result.quote),
+    expiresAt: result.quote.expiresAt,
   };
 }
 
 export async function createReadyServerQuote(params: {
   planId: string;
   delivery: CatalogDeliverySelection;
+  idempotencyKey: string;
   userId?: string | null;
   now?: Date;
 }) {
@@ -649,6 +750,7 @@ export async function createReadyServerQuote(params: {
 export async function createCloudServerQuote(params: {
   planId: string;
   delivery: CatalogDeliverySelection;
+  idempotencyKey: string;
   userId?: string | null;
   now?: Date;
 }) {
@@ -1132,6 +1234,7 @@ export async function refreshRecommendationQuote(params: {
       await createReadyServerQuote({
         planId: previous.planId,
         userId: params.userId,
+        idempotencyKey: `quote-refresh:${previous.id}`,
         delivery: {
           imageAssetId: delivery.imageAssetId,
           accessMethod: delivery.accessMethod as
@@ -1163,6 +1266,7 @@ export async function refreshRecommendationQuote(params: {
       await createCloudServerQuote({
         planId: previous.planId,
         userId: params.userId,
+        idempotencyKey: `quote-refresh:${previous.id}`,
         delivery: {
           imageAssetId: delivery.imageAssetId,
           accessMethod: delivery.accessMethod as

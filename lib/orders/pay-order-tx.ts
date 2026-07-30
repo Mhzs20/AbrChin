@@ -2,6 +2,7 @@ import {
   AdminNotificationStatus,
   AdminNotificationType,
   InfrastructureOrderStatus,
+  InfrastructureProvider,
   LedgerDirection,
   LedgerStatus,
   LedgerType,
@@ -20,7 +21,10 @@ import {
   samePriceSnapshot,
 } from "@/lib/pricing/plan-pricing";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
-import { transitionProductFlowTx } from "@/lib/product-flow/service";
+import {
+  assertProductFlowOwnerStateTx,
+  transitionProductFlowTx,
+} from "@/lib/product-flow/service";
 
 export type PayOrderTxOptions = {
   /** Test-only: throw after debit ledger to verify full rollback. */
@@ -104,6 +108,14 @@ export async function executePayOrderWithWalletTx(
     if (quote.amountRial !== order.amount || quote.planId !== order.planId) {
       throw new WalletError("quote_mismatch", "جزئیات سفارش با پیشنهاد قفل‌شده همخوان نیست.");
     }
+    await assertProductFlowOwnerStateTx(
+      tx,
+      {
+        recommendationSessionId: quote.sessionId,
+        serviceOrderId: order.id,
+      },
+      "AWAITING_PAYMENT",
+    );
   }
 
   const plan = order.plan;
@@ -316,6 +328,10 @@ export async function executePayOrderWithWalletTx(
           order.recommendationQuote?.externalNetworkId ?? null,
         externalSecurityId:
           order.recommendationQuote?.externalSecurityId ?? null,
+        topologyVerificationMode:
+          plan.provider === InfrastructureProvider.PARSPACK
+            ? "PROVIDER_MANAGED"
+            : "STRICT_OBSERVED",
         deliveryConfiguration:
           order.recommendationQuote?.deliveryConfigurationSnapshot ??
           null,

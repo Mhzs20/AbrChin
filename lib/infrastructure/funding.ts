@@ -129,6 +129,18 @@ export async function confirmProviderFunding(params: {
       where: { id: order.id },
       data: { status: InfrastructureOrderStatus.QUEUED },
     });
+    const fundingFromState =
+      order.productFlowState === "PAID" ||
+      order.productFlowState === "PROVISIONING_RETRYABLE" ||
+      order.productFlowState === "PROVISIONING_MANUAL_REVIEW"
+        ? order.productFlowState
+        : null;
+    if (!fundingFromState) {
+      throw new WalletError(
+        "invalid_status",
+        "وضعیت جریان سفارش برای تأیید شارژ معتبر نیست.",
+      );
+    }
     await transitionProductFlowTx(tx, {
       owner: {
         recommendationSessionId:
@@ -136,7 +148,7 @@ export async function confirmProviderFunding(params: {
         serviceOrderId: order.serviceOrderId,
         infrastructureOrderId: order.id,
       },
-      from: "PAID",
+      from: fundingFromState,
       to: "PROVISIONING_SUBMITTED",
       reason: "provider_funding_confirmed",
       idempotencyKey: `funding-flow:${fundingConfirmation.id}`,
@@ -170,6 +182,7 @@ export async function confirmProviderFunding(params: {
         },
         ip: params.ip,
         userAgent: params.userAgent,
+        idempotencyKey: `audit:funding:${confirmationKey}`,
       },
       tx,
     );

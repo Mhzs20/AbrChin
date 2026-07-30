@@ -1,6 +1,12 @@
 import { InfrastructureProductKind } from "@prisma/client";
 
-import { getClientIp, jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
+import {
+  getClientIp,
+  jsonError,
+  jsonOk,
+  readIdempotencyKey,
+  rejectCrossOrigin,
+} from "@/lib/http";
 import { readyServerQuoteIpLimiter } from "@/lib/rate-limit";
 import { setRecommendationGuestCookie } from "@/lib/recommendation/guest-session-cookie";
 import {
@@ -30,6 +36,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const rejected = rejectCrossOrigin(request);
   if (rejected) return rejected;
+  const idempotencyKey = readIdempotencyKey(request);
+  if (!idempotencyKey) {
+    return jsonError("شناسه یکتای درخواست الزامی است.", 400);
+  }
 
   const limit = readyServerQuoteIpLimiter.check(
     `ready-server:${getClientIp(request)}`,
@@ -75,6 +85,7 @@ export async function POST(request: Request) {
     const user = await getCurrentUser();
     const result = await createCloudServerQuote({
       planId,
+      idempotencyKey,
       userId: user?.id ?? null,
       delivery: {
         imageAssetId,

@@ -33,7 +33,11 @@ export type FakeCloudProviderFixtures = {
   imagesByRegion?: Record<string, ProviderImage[]>;
   networksByRegion?: Record<string, ProviderNetwork[]>;
   securityByRegion?: Record<string, ProviderSecurity[]>;
-  createBehavior?: "success" | "timeout_after_accept" | "failure";
+  createBehavior?:
+    | "success"
+    | "timeout_after_accept"
+    | "insufficient_balance"
+    | "failure";
   sshKeysByRegion?: Record<string, ProviderSshKey[]>;
   observedResource?: {
     state?: string;
@@ -46,6 +50,9 @@ export type FakeCloudProviderFixtures = {
 export class FakeCloudProviderAdapter implements CloudProviderAdapter {
   readonly provider: InfrastructureProvider;
   readonly apiVersion: string;
+  readonly topologyVerificationMode:
+    | "STRICT_OBSERVED"
+    | "PROVIDER_MANAGED";
   readonly createCalls: CreateServerInput[] = [];
   private readonly fixtures: FakeCloudProviderFixtures;
   private readonly resources = new Map<string, ProviderResource>();
@@ -53,6 +60,10 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
   constructor(fixtures: FakeCloudProviderFixtures = {}) {
     this.provider = fixtures.provider ?? InfrastructureProvider.ARVAN;
     this.apiVersion = fixtures.apiVersion ?? "v1";
+    this.topologyVerificationMode =
+      this.provider === InfrastructureProvider.PARSPACK
+        ? "PROVIDER_MANAGED"
+        : "STRICT_OBSERVED";
     this.fixtures = fixtures;
   }
 
@@ -81,6 +92,16 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
   }
 
   async resolveSelectionDefaults(region: string) {
+    if (this.topologyVerificationMode === "PROVIDER_MANAGED") {
+      return {
+        region,
+        externalNetworkId: null,
+        externalSecurityId: null,
+        topologyVerificationMode: this.topologyVerificationMode,
+        checkedAt: new Date(),
+        providerRequestIds: [],
+      };
+    }
     const network = (await this.syncNetworks(region)).find(
       (candidate) => candidate.available && candidate.isDefault,
     );
@@ -97,6 +118,7 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
       region,
       externalNetworkId: network.externalId,
       externalSecurityId: security.externalId,
+      topologyVerificationMode: this.topologyVerificationMode,
       checkedAt: new Date(),
       providerRequestIds: [],
     };
@@ -220,6 +242,13 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
       throw new InfrastructureError(
         "provider_unavailable",
         "Fake create failed",
+      );
+    }
+    if (this.fixtures.createBehavior === "insufficient_balance") {
+      this.resources.delete(id);
+      throw new InfrastructureError(
+        "provider_insufficient_balance",
+        "Fake provider balance is insufficient",
       );
     }
     if (this.fixtures.createBehavior === "timeout_after_accept") {

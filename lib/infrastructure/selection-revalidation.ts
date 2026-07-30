@@ -4,6 +4,7 @@ import type {
 } from "@prisma/client";
 
 import type {
+  CloudProviderAdapter,
   ProviderPriceSnapshot,
   ProviderSelection,
   ProviderSelectionDefaults,
@@ -36,16 +37,28 @@ export async function resolveProviderSelectionDefaults(input: {
 
 export async function revalidateLockedSelection(
   input: LockedProviderSelection,
+  adapterOverride?: CloudProviderAdapter,
 ): Promise<ProviderPriceSnapshot> {
   assertProviderRoute({
     productKind: input.productKind,
     provider: input.provider,
     apiVersion: input.providerApiVersion,
   });
-  const adapter = createCloudProviderAdapter(
-    input.provider,
-    input.providerApiVersion,
-  );
+  const adapter =
+    adapterOverride ??
+    createCloudProviderAdapter(
+      input.provider,
+      input.providerApiVersion,
+    );
+  if (
+    adapter.provider !== input.provider ||
+    adapter.apiVersion !== input.providerApiVersion
+  ) {
+    throw new InfrastructureError(
+      "provider_route_mismatch",
+      "Provider revalidation must use the locked route",
+    );
+  }
   const validation = await adapter.validateSelection(input);
   if (!validation.valid) {
     throw new InfrastructureError(

@@ -11,10 +11,17 @@ export type AuditInput = {
   afterData?: Prisma.InputJsonValue;
   ip?: string | null;
   userAgent?: string | null;
+  idempotencyKey?: string | null;
 };
 
 export async function writeAuditLog(input: AuditInput, tx?: Prisma.TransactionClient) {
   const client = tx ?? prisma;
+  if (input.idempotencyKey) {
+    const existing = await client.auditLog.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+    });
+    if (existing) return existing;
+  }
   return client.auditLog.create({
     data: {
       actorUserId: input.actorUserId,
@@ -25,6 +32,7 @@ export async function writeAuditLog(input: AuditInput, tx?: Prisma.TransactionCl
       afterData: input.afterData,
       ip: input.ip?.slice(0, 64) ?? null,
       userAgent: input.userAgent?.slice(0, 255) ?? null,
+      idempotencyKey: input.idempotencyKey ?? null,
     },
   });
 }
@@ -40,6 +48,7 @@ export const AuditActions = {
   PLAN_DISABLE: "plan_disable",
   FUNDING_CONFIRMATION: "funding_confirmation",
   PROVISIONING_RETRY: "provisioning_retry",
+  HEALTH_CHECK_RETRY: "health_check_retry",
   RECONCILIATION: "reconciliation",
   PROVIDER_TOGGLE: "provider_toggle",
   NOTIFICATION_RESOLVE: "notification_resolve",

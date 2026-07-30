@@ -85,13 +85,21 @@ export async function reconcileInfrastructureOrder(params: {
           ipv4: instance.ipv4,
           providerState: instance.state,
           networkId:
+            locked.topologyVerificationMode === "STRICT_OBSERVED" &&
+            locked.externalNetworkId &&
             instance.networkIds?.includes(locked.externalNetworkId)
               ? locked.externalNetworkId
-              : instance.networkIds?.[0] ?? null,
+              : locked.topologyVerificationMode === "STRICT_OBSERVED"
+                ? instance.networkIds?.[0] ?? null
+                : null,
           securityId:
+            locked.topologyVerificationMode === "STRICT_OBSERVED" &&
+            locked.externalSecurityId &&
             instance.securityIds?.includes(locked.externalSecurityId)
               ? locked.externalSecurityId
-              : instance.securityIds?.[0] ?? null,
+              : locked.topologyVerificationMode === "STRICT_OBSERVED"
+                ? instance.securityIds?.[0] ?? null
+                : null,
           providerObservedAt: instance.observedAt,
           status: CloudInstanceStatus.PENDING,
         },
