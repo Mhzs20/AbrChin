@@ -2,9 +2,9 @@ import {
   AdminNotificationStatus,
   AdminNotificationType,
   InfrastructureOrderStatus,
+  Prisma,
   ProvisioningJobStatus,
   ServiceOrderStatus,
-  type Prisma,
 } from "@prisma/client";
 
 import {
@@ -48,6 +48,21 @@ export const HEALTH_MANUAL_RECOVERY_OPERATION =
 export const HEALTH_RETRY_LIMIT = 3;
 const HEALTH_RETRY_BASE_BACKOFF_MS = 30_000;
 const HEALTH_RETRY_MAX_BACKOFF_MS = 5 * 60_000;
+export const HEALTH_RETRY_DISPATCH_MAX_ATTEMPTS = 5;
+const HEALTH_RETRY_DISPATCH_BASE_BACKOFF_MS = 30_000;
+const HEALTH_RETRY_DISPATCH_MAX_BACKOFF_MS = 15 * 60_000;
+const HEALTH_RETRY_DISPATCH_STATES = {
+  PENDING: "PENDING",
+  DISPATCHED: "DISPATCHED",
+  EXHAUSTED: "EXHAUSTED",
+  OBSOLETE: "OBSOLETE",
+  DEAD_LETTER: "DEAD_LETTER",
+} as const;
+type HealthRetryDispatchTerminalState =
+  | typeof HEALTH_RETRY_DISPATCH_STATES.DISPATCHED
+  | typeof HEALTH_RETRY_DISPATCH_STATES.EXHAUSTED
+  | typeof HEALTH_RETRY_DISPATCH_STATES.OBSOLETE
+  | typeof HEALTH_RETRY_DISPATCH_STATES.DEAD_LETTER;
 const ACTIVE_JOB_STATUSES: ProvisioningJobStatus[] = [
   ProvisioningJobStatus.QUEUED,
   ProvisioningJobStatus.RUNNING,
@@ -103,6 +118,14 @@ function retryBackoffMs(attempt: number) {
   return Math.min(
     HEALTH_RETRY_BASE_BACKOFF_MS * 2 ** Math.max(attempt - 1, 0),
     HEALTH_RETRY_MAX_BACKOFF_MS,
+  );
+}
+
+function dispatchBackoffMs(attempt: number) {
+  return Math.min(
+    HEALTH_RETRY_DISPATCH_BASE_BACKOFF_MS *
+      2 ** Math.max(attempt - 1, 0),
+    HEALTH_RETRY_DISPATCH_MAX_BACKOFF_MS,
   );
 }
 
@@ -479,6 +502,196 @@ export async function scheduleAutomaticHealthRetry(input: {
   );
 }
 
+async function moveDispatchToManualReviewIfPossibleTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    infrastructureOrderId: string;
+    dispatchId: string;
+    reason: string;
+    attemptCount: number;
+  },
+) {
+  const order = await tx.infrastructureOrder.findUnique({
+    where: { id: input.infrastructureOrderId },
+    include: {
+      cloudInstance: true,
+      serviceOrder: { include: { recommendationQuote: true } },
+    },
+  });
+  if (
+    !order ||
+    ![
+      "HEALTH_CHECKING",
+      "HEALTH_CHECK_FAILED",
+      "PROVISIONING_MANUAL_REVIEW",
+    ].includes(order.productFlowState ?? "")
+  ) {
+    return false;
+  }
+  await moveHealthToManualReviewTx(
+    tx,
+    order,
+    input.reason,
+    input.attemptCount,
+    {
+      transitionIdempotencyKey:
+        `health-dispatch-dead-letter:${input.dispatchId}`,
+      retryLimit: HEALTH_RETRY_LIMIT,
+      source: "AUTO",
+    },
+  );
+  return true;
+}
+
+async function terminalizeHealthRetryDispatchTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    dispatchId: string;
+    status: HealthRetryDispatchTerminalState;
+    reason: string;
+    dispatchedJobId?: string | null;
+    deadLetteredAt?: Date | null;
+  },
+) {
+  const dispatch = await tx.healthRetryDispatch.findUnique({
+    where: { id: input.dispatchId },
+    include: {
+      infrastructureOrder: {
+        select: {
+          provider: true,
+          providerApiVersion: true,
+        },
+      },
+    },
+  });
+  if (!dispatch || dispatch.status !== HEALTH_RETRY_DISPATCH_STATES.PENDING) {
+    return false;
+  }
+  const updated = await tx.healthRetryDispatch.updateMany({
+    where: {
+      id: dispatch.id,
+      status: HEALTH_RETRY_DISPATCH_STATES.PENDING,
+    },
+    data: {
+      status: input.status,
+      attemptCount: { increment: 1 },
+      dispatchedJobId: input.dispatchedJobId ?? null,
+      lastError:
+        input.status === HEALTH_RETRY_DISPATCH_STATES.DEAD_LETTER
+          ? "health_retry_dispatch_dead_lettered"
+          : null,
+      terminalReason: input.reason,
+      deadLetteredAt: input.deadLetteredAt ?? null,
+      processedAt: new Date(),
+    },
+  });
+  if (updated.count !== 1) return false;
+
+  await tx.providerOperationLog.create({
+    data: {
+      provider: dispatch.infrastructureOrder.provider,
+      providerApiVersion:
+        dispatch.infrastructureOrder.providerApiVersion,
+      operation: "health_retry_dispatch",
+      infrastructureOrderId: dispatch.infrastructureOrderId,
+      provisioningJobId: input.dispatchedJobId ?? null,
+      status: input.status,
+      responseSummary: {
+        dispatchId: dispatch.id,
+        sourceHealthCheckId: dispatch.sourceHealthCheckId,
+        terminalReason: input.reason,
+        containsSecret: false,
+      },
+      errorCode:
+        input.status === HEALTH_RETRY_DISPATCH_STATES.DEAD_LETTER
+          ? input.reason
+          : null,
+    },
+  });
+  return true;
+}
+
+async function queueDispatchDeadLetterNotificationTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    dispatchId: string;
+    infrastructureOrderId: string;
+    reason: string;
+  },
+) {
+  await tx.provisioningNotificationOutbox.createMany({
+    data: {
+      idempotencyKey:
+        `health-retry-dispatch-dead-letter:${input.dispatchId}`,
+      type: AdminNotificationType.NEEDS_RECONCILIATION,
+      infrastructureOrderId: input.infrastructureOrderId,
+      title: "بررسی دستی Dispatch سلامت",
+      message:
+        "Dispatch بررسی سلامت به سقف تلاش رسید یا دیگر قابل اجرا نیست؛ وضعیت منبع باید بدون ساخت مجدد بررسی شود.",
+    },
+    skipDuplicates: true,
+  });
+}
+
+async function deadLetterHealthRetryDispatchTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    dispatchId: string;
+    infrastructureOrderId: string;
+    reason: string;
+    attemptCount: number;
+  },
+) {
+  const movedToManualReview =
+    await moveDispatchToManualReviewIfPossibleTx(tx, input);
+  const terminalized = await terminalizeHealthRetryDispatchTx(tx, {
+    dispatchId: input.dispatchId,
+    status: HEALTH_RETRY_DISPATCH_STATES.DEAD_LETTER,
+    reason: input.reason,
+    deadLetteredAt: new Date(),
+  });
+  if (terminalized && !movedToManualReview) {
+    await queueDispatchDeadLetterNotificationTx(tx, input);
+  }
+  return terminalized;
+}
+
+async function recordHealthRetryDispatchFailure(dispatchId: string) {
+  await prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id
+      FROM "HealthRetryDispatch"
+      WHERE id = ${dispatchId}
+        AND status = 'PENDING'
+      FOR UPDATE
+    `;
+    if (!rows[0]) return;
+    const dispatch = await tx.healthRetryDispatch.findUniqueOrThrow({
+      where: { id: dispatchId },
+    });
+    const nextAttemptCount = dispatch.attemptCount + 1;
+    if (nextAttemptCount >= HEALTH_RETRY_DISPATCH_MAX_ATTEMPTS) {
+      await deadLetterHealthRetryDispatchTx(tx, {
+        dispatchId: dispatch.id,
+        infrastructureOrderId: dispatch.infrastructureOrderId,
+        reason: "dispatch_retry_limit_exhausted",
+        attemptCount: nextAttemptCount,
+      });
+      return;
+    }
+    await tx.healthRetryDispatch.update({
+      where: { id: dispatch.id },
+      data: {
+        attemptCount: nextAttemptCount,
+        lastError: "health_retry_dispatch_transient_failure",
+        nextAttemptAt: new Date(
+          Date.now() + dispatchBackoffMs(nextAttemptCount),
+        ),
+      },
+    });
+  });
+}
+
 export async function processPendingHealthRetryDispatches(
   limit = 10,
   options?: {
@@ -486,14 +699,20 @@ export async function processPendingHealthRetryDispatches(
   },
 ) {
   let processed = 0;
+  const skippedIds: string[] = [];
   for (let index = 0; index < limit; index += 1) {
     let selectedId: string | null = null;
     try {
       const dispatched = await prisma.$transaction(async (tx) => {
+        const skippedClause = skippedIds.length
+          ? Prisma.sql`AND id NOT IN (${Prisma.join(skippedIds)})`
+          : Prisma.empty;
         const rows = await tx.$queryRaw<Array<{ id: string }>>`
           SELECT id
           FROM "HealthRetryDispatch"
           WHERE status = 'PENDING'
+            AND "nextAttemptAt" <= ${new Date()}
+            ${skippedClause}
           ORDER BY "createdAt" ASC
           LIMIT 1
           FOR UPDATE SKIP LOCKED
@@ -503,6 +722,86 @@ export async function processPendingHealthRetryDispatches(
         const dispatch = await tx.healthRetryDispatch.findUniqueOrThrow({
           where: { id: selectedId },
         });
+        const exactJob = await tx.provisioningJob.findUnique({
+          where: {
+            idempotencyKey:
+              `health-retry-auto:${dispatch.sourceHealthCheckId}`,
+          },
+        });
+        if (exactJob) {
+          await terminalizeHealthRetryDispatchTx(tx, {
+            dispatchId: dispatch.id,
+            status: HEALTH_RETRY_DISPATCH_STATES.DISPATCHED,
+            reason: "retry_job_already_exists",
+            dispatchedJobId: exactJob.id,
+          });
+          return true;
+        }
+        const order = await tx.infrastructureOrder.findUnique({
+          where: { id: dispatch.infrastructureOrderId },
+          include: {
+            cloudInstance: true,
+            serviceOrder: true,
+          },
+        });
+        if (!order) {
+          await terminalizeHealthRetryDispatchTx(tx, {
+            dispatchId: dispatch.id,
+            status: HEALTH_RETRY_DISPATCH_STATES.OBSOLETE,
+            reason: "infrastructure_order_missing",
+          });
+          return true;
+        }
+        if (
+          order.status === InfrastructureOrderStatus.ACTIVE ||
+          order.productFlowState === "ACTIVE" ||
+          order.productFlowState === "DELIVERED" ||
+          order.productFlowState === "DELIVERY_RETRYABLE"
+        ) {
+          await terminalizeHealthRetryDispatchTx(tx, {
+            dispatchId: dispatch.id,
+            status: HEALTH_RETRY_DISPATCH_STATES.OBSOLETE,
+            reason: "service_already_healthy_or_delivered",
+          });
+          return true;
+        }
+        if (order.productFlowState === "PROVISIONING_MANUAL_REVIEW") {
+          await terminalizeHealthRetryDispatchTx(tx, {
+            dispatchId: dispatch.id,
+            status: HEALTH_RETRY_DISPATCH_STATES.EXHAUSTED,
+            reason: "manual_review_already_required",
+          });
+          return true;
+        }
+        if (
+          order.serviceOrder.status !== ServiceOrderStatus.PAID ||
+          !order.cloudInstance ||
+          order.productFlowState !== "HEALTH_CHECK_FAILED"
+        ) {
+          await deadLetterHealthRetryDispatchTx(tx, {
+            dispatchId: dispatch.id,
+            infrastructureOrderId: dispatch.infrastructureOrderId,
+            reason: "health_retry_state_permanently_invalid",
+            attemptCount: dispatch.attemptCount + 1,
+          });
+          return true;
+        }
+        try {
+          parseLockedProvisioningSelection({
+            snapshot: order.providerSelectionSnapshot,
+            provider: order.provider,
+            providerApiVersion: order.providerApiVersion,
+            productKind: order.productKind,
+          });
+        } catch {
+          await deadLetterHealthRetryDispatchTx(tx, {
+            dispatchId: dispatch.id,
+            infrastructureOrderId: dispatch.infrastructureOrderId,
+            reason: "locked_provider_selection_invalid",
+            attemptCount: dispatch.attemptCount + 1,
+          });
+          return true;
+        }
         await options?.beforeSchedule?.(dispatch.id);
         const job = await scheduleHealthRetryTx(tx, {
           infrastructureOrderId: dispatch.infrastructureOrderId,
@@ -511,15 +810,15 @@ export async function processPendingHealthRetryDispatches(
           requestKey: dispatch.sourceHealthCheckId,
           immediate: false,
         });
-        await tx.healthRetryDispatch.update({
-          where: { id: dispatch.id },
-          data: {
-            status: job ? "DISPATCHED" : "EXHAUSTED",
-            attemptCount: { increment: 1 },
-            dispatchedJobId: job?.id ?? null,
-            lastError: null,
-            processedAt: new Date(),
-          },
+        await terminalizeHealthRetryDispatchTx(tx, {
+          dispatchId: dispatch.id,
+          status: job
+            ? HEALTH_RETRY_DISPATCH_STATES.DISPATCHED
+            : HEALTH_RETRY_DISPATCH_STATES.EXHAUSTED,
+          reason: job
+            ? "retry_job_dispatched"
+            : "health_retry_limit_exhausted",
+          dispatchedJobId: job?.id ?? null,
         });
         return true;
       });
@@ -527,15 +826,15 @@ export async function processPendingHealthRetryDispatches(
       processed += 1;
     } catch {
       if (selectedId) {
-        await prisma.healthRetryDispatch.updateMany({
-          where: { id: selectedId, status: "PENDING" },
-          data: {
-            attemptCount: { increment: 1 },
-            lastError: "health_retry_dispatch_failed",
-          },
-        });
+        skippedIds.push(selectedId);
+        try {
+          await recordHealthRetryDispatchFailure(selectedId);
+        } catch {
+          // The current in-memory batch still advances. A database-wide
+          // failure leaves the durable row for a later worker cycle.
+        }
+        processed += 1;
       }
-      break;
     }
   }
   return processed;

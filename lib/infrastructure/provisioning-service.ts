@@ -166,30 +166,79 @@ export async function processPendingProvisioningNotifications(
 }
 
 export async function reconcileProvisioningDispatches(limit = 50) {
+  const batchSize = Math.max(0, Math.min(limit, 200));
+  if (batchSize === 0) {
+    return {
+      activeNotifications: 0,
+      failureNotifications: 0,
+      healthRetryDispatches: 0,
+    };
+  }
+  const [activeCandidates, failureCandidates] = await Promise.all([
+    prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT infrastructure_order.id
+      FROM "InfrastructureOrder" infrastructure_order
+      JOIN "CloudInstance" cloud_instance
+        ON cloud_instance."infrastructureOrderId" =
+          infrastructure_order.id
+      WHERE infrastructure_order.status =
+        'ACTIVE'::"InfrastructureOrderStatus"
+        AND cloud_instance.status = 'ACTIVE'::"CloudInstanceStatus"
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "ProvisioningNotificationOutbox" outbox
+          WHERE outbox."idempotencyKey" =
+            'instance-active:' || infrastructure_order.id
+        )
+      ORDER BY infrastructure_order."updatedAt" ASC,
+        infrastructure_order.id ASC
+      LIMIT ${batchSize}
+    `,
+    prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT job.id
+      FROM "ProvisioningJob" job
+      WHERE job.phase = 'PROVIDER_FAILED'
+        AND job.status IN (
+          'FAILED'::"ProvisioningJobStatus",
+          'NEEDS_RECONCILIATION'::"ProvisioningJobStatus",
+          'BLOCKED_PROVIDER_BALANCE'::"ProvisioningJobStatus"
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "ProvisioningNotificationOutbox" outbox
+          WHERE outbox."idempotencyKey" =
+            'provider-failure:' || job.id
+        )
+      ORDER BY job."updatedAt" ASC, job.id ASC
+      LIMIT ${batchSize}
+    `,
+  ]);
   const [activeOrders, failedJobs] = await Promise.all([
-    prisma.infrastructureOrder.findMany({
-      where: {
-        status: InfrastructureOrderStatus.ACTIVE,
-        cloudInstance: { status: CloudInstanceStatus.ACTIVE },
-      },
-      include: { serviceOrder: true },
-      orderBy: { updatedAt: "asc" },
-      take: limit,
-    }),
-    prisma.provisioningJob.findMany({
-      where: {
-        phase: "PROVIDER_FAILED",
-        status: {
-          in: [
-            ProvisioningJobStatus.FAILED,
-            ProvisioningJobStatus.NEEDS_RECONCILIATION,
-            ProvisioningJobStatus.BLOCKED_PROVIDER_BALANCE,
-          ],
-        },
-      },
-      orderBy: { updatedAt: "asc" },
-      take: limit,
-    }),
+    activeCandidates.length
+      ? prisma.infrastructureOrder.findMany({
+          where: {
+            id: { in: activeCandidates.map((item) => item.id) },
+            status: InfrastructureOrderStatus.ACTIVE,
+            cloudInstance: { status: CloudInstanceStatus.ACTIVE },
+          },
+          include: { serviceOrder: true },
+        })
+      : [],
+    failureCandidates.length
+      ? prisma.provisioningJob.findMany({
+          where: {
+            id: { in: failureCandidates.map((item) => item.id) },
+            phase: "PROVIDER_FAILED",
+            status: {
+              in: [
+                ProvisioningJobStatus.FAILED,
+                ProvisioningJobStatus.NEEDS_RECONCILIATION,
+                ProvisioningJobStatus.BLOCKED_PROVIDER_BALANCE,
+              ],
+            },
+          },
+        })
+      : [],
   ]);
 
   for (const order of activeOrders) {

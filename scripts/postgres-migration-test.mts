@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import {
+  AdminNotificationType,
   CloudInstanceStatus,
   InfrastructureOrderStatus,
   InfrastructureProductKind,
@@ -56,6 +57,8 @@ const terminalAndWorkerRecoveryV5 =
   "20260731043000_terminal_and_worker_recovery_v5";
 const terminalAndDispatchRecoveryV6 =
   "20260731120000_terminal_and_dispatch_recovery_v6";
+const healthDispatchStarvationRecoveryV7 =
+  "20260731200000_health_dispatch_starvation_recovery_v7";
 
 async function copyThrough(lastName: string) {
   for (const name of migrationNames.filter((entry) => entry <= lastName)) {
@@ -2017,6 +2020,7 @@ try {
   const auditBefore = await db.productFlowTransition.count({
     where: { idempotencyKey: { startsWith: "migration:v2:" } },
   });
+  await copyThrough(healthDispatchStarvationRecoveryV7);
   await deploy();
   const auditAfter = await db.productFlowTransition.count({
     where: { idempotencyKey: { startsWith: "migration:v2:" } },
@@ -4914,6 +4918,11 @@ try {
       });
       assert.equal(dispatch.status, "PENDING");
       assert.equal(dispatch.attemptCount, 1);
+      assert.ok(dispatch.nextAttemptAt > new Date());
+      await db.healthRetryDispatch.update({
+        where: { id: dispatch.id },
+        data: { nextAttemptAt: new Date(0) },
+      });
       await Promise.all([
         processPendingHealthRetryDispatches(100),
         processPendingHealthRetryDispatches(100),
@@ -4945,6 +4954,437 @@ try {
     id: "main-finalize-failure",
     healthy: false,
   });
+
+  // Reconciler progress: rows that already have their deterministic
+  // outbox key must never consume a bounded batch.
+  for (let cycle = 0; cycle < 20; cycle += 1) {
+    const baseline = await reconcileProvisioningDispatches(50);
+    if (
+      baseline.activeNotifications === 0 &&
+      baseline.failureNotifications === 0
+    ) {
+      break;
+    }
+  }
+  async function seedActiveOutboxCandidate(
+    id: string,
+    existingOutbox = false,
+  ) {
+    const seeded = await seedRuntimeOrder({
+      id,
+      infrastructureStatus: InfrastructureOrderStatus.ACTIVE,
+      productFlowState: "ACTIVE",
+    });
+    await db.cloudInstance.create({
+      data: {
+        id: `outbox-instance-${id}`,
+        infrastructureOrderId: seeded.infrastructureOrder.id,
+        userId: "migration-user",
+        provider: InfrastructureProvider.PARSPACK,
+        providerApiVersion: "v1",
+        providerInstanceId: `outbox-provider-${id}`,
+        name: `abrchin-outbox-${id}`,
+        region: "tehran",
+        size: "s1",
+        image: "ubuntu",
+        deliveryMode: "MANAGED",
+        ipv4: "192.0.2.90",
+        providerState: "active",
+        providerObservedAt: now,
+        status: CloudInstanceStatus.ACTIVE,
+      },
+    });
+    await db.infrastructureOrder.update({
+      where: { id: seeded.infrastructureOrder.id },
+      data: { updatedAt: new Date("2020-01-01T00:00:00.000Z") },
+    });
+    if (existingOutbox) {
+      await db.provisioningNotificationOutbox.create({
+        data: {
+          idempotencyKey:
+            `instance-active:${seeded.infrastructureOrder.id}`,
+          infrastructureOrderId: seeded.infrastructureOrder.id,
+          type: AdminNotificationType.INSTANCE_ACTIVE,
+          title: "already queued",
+          message: "already queued",
+        },
+      });
+    }
+    return seeded.infrastructureOrder.id;
+  }
+
+  async function seedFailureOutboxCandidate(
+    id: string,
+    existingOutbox = false,
+  ) {
+    const seeded = await seedRuntimeOrder({
+      id,
+      infrastructureStatus: InfrastructureOrderStatus.FAILED,
+      productFlowState: "PROVISIONING_MANUAL_REVIEW",
+    });
+    const job = await db.provisioningJob.create({
+      data: {
+        infrastructureOrderId: seeded.infrastructureOrder.id,
+        operation: "create_instance",
+        status: ProvisioningJobStatus.FAILED,
+        phase: "PROVIDER_FAILED",
+        idempotencyKey: `outbox-provider-failure-${id}`,
+        attempt: 1,
+        availableAt: new Date(0),
+        finishedAt: now,
+        updatedAt: new Date("2020-01-01T00:00:00.000Z"),
+      },
+    });
+    if (existingOutbox) {
+      await db.provisioningNotificationOutbox.create({
+        data: {
+          idempotencyKey: `provider-failure:${job.id}`,
+          infrastructureOrderId: seeded.infrastructureOrder.id,
+          type: AdminNotificationType.PROVISIONING_FAILED,
+          title: "already queued",
+          message: "already queued",
+        },
+      });
+    }
+    return job.id;
+  }
+
+  const existingActiveOutbox = await seedActiveOutboxCandidate(
+    "outbox-active-existing",
+    true,
+  );
+  const existingFailureOutbox = await seedFailureOutboxCandidate(
+    "outbox-failure-existing",
+    true,
+  );
+  const missingActiveOutboxes: string[] = [];
+  const missingFailureOutboxes: string[] = [];
+  for (let index = 1; index <= 6; index += 1) {
+    missingActiveOutboxes.push(
+      await seedActiveOutboxCandidate(`outbox-active-${index}`),
+    );
+    missingFailureOutboxes.push(
+      await seedFailureOutboxCandidate(`outbox-failure-${index}`),
+    );
+  }
+  const firstBoundedReconciliation =
+    await reconcileProvisioningDispatches(2);
+  assert.deepEqual(
+    {
+      active: firstBoundedReconciliation.activeNotifications,
+      failed: firstBoundedReconciliation.failureNotifications,
+    },
+    { active: 2, failed: 2 },
+  );
+  await Promise.all([
+    reconcileProvisioningDispatches(2),
+    reconcileProvisioningDispatches(2),
+  ]);
+  for (let cycle = 0; cycle < 10; cycle += 1) {
+    const progress = await reconcileProvisioningDispatches(2);
+    if (
+      progress.activeNotifications === 0 &&
+      progress.failureNotifications === 0
+    ) {
+      break;
+    }
+  }
+  const expectedActiveOutboxKeys = [
+    existingActiveOutbox,
+    ...missingActiveOutboxes,
+  ].map((id) => `instance-active:${id}`);
+  const expectedFailureOutboxKeys = [
+    existingFailureOutbox,
+    ...missingFailureOutboxes,
+  ].map((id) => `provider-failure:${id}`);
+  assert.equal(
+    await db.provisioningNotificationOutbox.count({
+      where: { idempotencyKey: { in: expectedActiveOutboxKeys } },
+    }),
+    expectedActiveOutboxKeys.length,
+  );
+  assert.equal(
+    await db.provisioningNotificationOutbox.count({
+      where: { idempotencyKey: { in: expectedFailureOutboxKeys } },
+    }),
+    expectedFailureOutboxKeys.length,
+  );
+  const reconciliationNoop = await reconcileProvisioningDispatches(2);
+  assert.equal(reconciliationNoop.activeNotifications, 0);
+  assert.equal(reconciliationNoop.failureNotifications, 0);
+
+  // Dispatch starvation: an older permanently obsolete row cannot block a
+  // healthy dispatch, even when two workers run concurrently.
+  const dispatchFakeAdapter = new FakeCloudProviderAdapter({
+    provider: InfrastructureProvider.ARVAN,
+  });
+  const poisonInfrastructureId = await seedHealthGraph({
+    id: "dispatch-poison-active",
+    provider: InfrastructureProvider.ARVAN,
+    flowState: "HEALTH_CHECK_FAILED",
+    providerState: "active",
+    ipv4: "192.0.2.101",
+    networkId: "network-1",
+    securityId: "security-1",
+    providerObservedAt: now,
+  });
+  const poisonInfrastructure =
+    await db.infrastructureOrder.findUniqueOrThrow({
+      where: { id: poisonInfrastructureId },
+      include: {
+        serviceOrder: { include: { recommendationQuote: true } },
+        cloudInstance: true,
+      },
+    });
+  await db.$transaction([
+    db.recommendationSession.update({
+      where: {
+        id: poisonInfrastructure.serviceOrder.recommendationQuote!
+          .sessionId,
+      },
+      data: { productFlowState: "ACTIVE", productFlowRevision: 1 },
+    }),
+    db.serviceOrder.update({
+      where: { id: poisonInfrastructure.serviceOrderId },
+      data: { productFlowState: "ACTIVE", productFlowRevision: 1 },
+    }),
+    db.infrastructureOrder.update({
+      where: { id: poisonInfrastructure.id },
+      data: {
+        status: InfrastructureOrderStatus.ACTIVE,
+        productFlowState: "ACTIVE",
+        productFlowRevision: 1,
+      },
+    }),
+    db.cloudInstance.update({
+      where: { id: poisonInfrastructure.cloudInstance!.id },
+      data: { status: CloudInstanceStatus.ACTIVE },
+    }),
+  ]);
+  const healthyDispatchInfrastructureId = await seedHealthGraph({
+    id: "dispatch-healthy-next",
+    provider: InfrastructureProvider.ARVAN,
+    flowState: "HEALTH_CHECK_FAILED",
+    providerState: "active",
+    ipv4: "192.0.2.102",
+    networkId: "network-1",
+    securityId: "security-1",
+    providerObservedAt: now,
+  });
+  const poisonDispatch = await db.healthRetryDispatch.create({
+    data: {
+      idempotencyKey: "health-dispatch-poison-active",
+      infrastructureOrderId: poisonInfrastructureId,
+      sourceHealthCheckId: "poison-active-source",
+      nextAttemptAt: new Date(0),
+      createdAt: new Date("2020-01-01T00:00:00.000Z"),
+    },
+  });
+  const healthyDispatch = await db.healthRetryDispatch.create({
+    data: {
+      idempotencyKey: "health-dispatch-healthy-next",
+      infrastructureOrderId: healthyDispatchInfrastructureId,
+      sourceHealthCheckId: "healthy-next-source",
+      nextAttemptAt: new Date(0),
+      createdAt: new Date("2020-01-02T00:00:00.000Z"),
+    },
+  });
+  await Promise.all([
+    processPendingHealthRetryDispatches(2),
+    processPendingHealthRetryDispatches(2),
+  ]);
+  assert.deepEqual(
+    await db.healthRetryDispatch.findUniqueOrThrow({
+      where: { id: poisonDispatch.id },
+      select: { status: true, terminalReason: true },
+    }),
+    {
+      status: "OBSOLETE",
+      terminalReason: "service_already_healthy_or_delivered",
+    },
+  );
+  const healthyDispatchAfter =
+    await db.healthRetryDispatch.findUniqueOrThrow({
+      where: { id: healthyDispatch.id },
+    });
+  assert.equal(healthyDispatchAfter.status, "DISPATCHED");
+  assert.ok(healthyDispatchAfter.dispatchedJobId);
+  assert.equal(
+    await db.provisioningJob.count({
+      where: {
+        infrastructureOrderId: healthyDispatchInfrastructureId,
+        operation: "health_check_retry",
+      },
+    }),
+    1,
+  );
+
+  const retryLimitInfrastructureId = await seedHealthGraph({
+    id: "dispatch-three-attempt-limit",
+    provider: InfrastructureProvider.ARVAN,
+    flowState: "HEALTH_CHECK_FAILED",
+    providerState: "active",
+    ipv4: "192.0.2.103",
+    networkId: "network-1",
+    securityId: "security-1",
+    providerObservedAt: now,
+  });
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const dispatch = await db.healthRetryDispatch.create({
+      data: {
+        idempotencyKey: `health-dispatch-limit-${attempt}`,
+        infrastructureOrderId: retryLimitInfrastructureId,
+        sourceHealthCheckId: `health-dispatch-limit-source-${attempt}`,
+        nextAttemptAt: new Date(0),
+      },
+    });
+    await processPendingHealthRetryDispatches(1);
+    const processedDispatch =
+      await db.healthRetryDispatch.findUniqueOrThrow({
+        where: { id: dispatch.id },
+      });
+    if (attempt <= 3) {
+      assert.equal(processedDispatch.status, "DISPATCHED");
+      await db.provisioningJob.update({
+        where: { id: processedDispatch.dispatchedJobId! },
+        data: {
+          status: ProvisioningJobStatus.FAILED,
+          finishedAt: new Date(),
+        },
+      });
+    } else {
+      assert.equal(processedDispatch.status, "EXHAUSTED");
+      assert.equal(processedDispatch.dispatchedJobId, null);
+    }
+  }
+  assert.equal(
+    await db.provisioningJob.count({
+      where: {
+        infrastructureOrderId: retryLimitInfrastructureId,
+        operation: "health_check_retry",
+      },
+    }),
+    3,
+  );
+
+  const transientInfrastructureId = await seedHealthGraph({
+    id: "dispatch-transient-backoff",
+    provider: InfrastructureProvider.ARVAN,
+    flowState: "HEALTH_CHECK_FAILED",
+    providerState: "active",
+    ipv4: "192.0.2.104",
+    networkId: "network-1",
+    securityId: "security-1",
+    providerObservedAt: now,
+  });
+  const transientDispatch = await db.healthRetryDispatch.create({
+    data: {
+      idempotencyKey: "health-dispatch-transient",
+      infrastructureOrderId: transientInfrastructureId,
+      sourceHealthCheckId: "health-dispatch-transient-source",
+      nextAttemptAt: new Date(0),
+    },
+  });
+  await db.healthRetryDispatch.updateMany({
+    where: {
+      status: "PENDING",
+      id: { not: transientDispatch.id },
+    },
+    data: { nextAttemptAt: new Date(Date.now() + 60 * 60 * 1000) },
+  });
+  await processPendingHealthRetryDispatches(1, {
+    beforeSchedule: () => {
+      throw new Error("injected_transient_dispatch_failure");
+    },
+  });
+  const transientAfter =
+    await db.healthRetryDispatch.findUniqueOrThrow({
+      where: { id: transientDispatch.id },
+    });
+  assert.equal(transientAfter.status, "PENDING");
+  assert.equal(transientAfter.attemptCount, 1);
+  assert.ok(transientAfter.nextAttemptAt > new Date());
+  await processPendingHealthRetryDispatches(1);
+  assert.deepEqual(
+    await db.healthRetryDispatch.findUniqueOrThrow({
+      where: { id: transientDispatch.id },
+      select: { status: true, attemptCount: true },
+    }),
+    { status: "PENDING", attemptCount: 1 },
+  );
+
+  const deadLetterInfrastructureId = await seedHealthGraph({
+    id: "dispatch-dead-letter",
+    provider: InfrastructureProvider.ARVAN,
+    flowState: "HEALTH_CHECK_FAILED",
+    providerState: "active",
+    ipv4: "192.0.2.105",
+    networkId: "network-1",
+    securityId: "security-1",
+    providerObservedAt: now,
+  });
+  const deadLetterDispatch = await db.healthRetryDispatch.create({
+    data: {
+      idempotencyKey: "health-dispatch-dead-letter",
+      infrastructureOrderId: deadLetterInfrastructureId,
+      sourceHealthCheckId: "health-dispatch-dead-letter-source",
+      attemptCount: 4,
+      nextAttemptAt: new Date(0),
+    },
+  });
+  await db.healthRetryDispatch.updateMany({
+    where: {
+      status: "PENDING",
+      id: { not: deadLetterDispatch.id },
+    },
+    data: { nextAttemptAt: new Date(Date.now() + 60 * 60 * 1000) },
+  });
+  await processPendingHealthRetryDispatches(1, {
+    beforeSchedule: () => {
+      throw new Error("injected_final_dispatch_failure");
+    },
+  });
+  const deadLetterAfter =
+    await db.healthRetryDispatch.findUniqueOrThrow({
+      where: { id: deadLetterDispatch.id },
+    });
+  assert.equal(deadLetterAfter.status, "DEAD_LETTER");
+  assert.equal(deadLetterAfter.attemptCount, 5);
+  assert.equal(
+    deadLetterAfter.terminalReason,
+    "dispatch_retry_limit_exhausted",
+  );
+  assert.ok(deadLetterAfter.deadLetteredAt);
+  assert.deepEqual(
+    await db.infrastructureOrder.findUniqueOrThrow({
+      where: { id: deadLetterInfrastructureId },
+      select: { status: true, productFlowState: true },
+    }),
+    {
+      status: InfrastructureOrderStatus.MANUAL_REVIEW,
+      productFlowState: "PROVISIONING_MANUAL_REVIEW",
+    },
+  );
+  assert.equal(
+    await db.providerOperationLog.count({
+      where: {
+        infrastructureOrderId: deadLetterInfrastructureId,
+        operation: "health_retry_dispatch",
+        status: "DEAD_LETTER",
+      },
+    }),
+    1,
+  );
+  assert.equal(
+    await db.adminNotification.count({
+      where: {
+        infrastructureOrderId: deadLetterInfrastructureId,
+        type: AdminNotificationType.NEEDS_RECONCILIATION,
+      },
+    }),
+    1,
+  );
+  assert.equal(dispatchFakeAdapter.createCalls.length, 0);
 
   const adminSafety = await seedRuntimeOrder({
     id: "admin-safety-source-of-truth",
@@ -5086,7 +5526,7 @@ try {
   );
 
   console.log(
-    "PostgreSQL integration passed (82 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, and durable concurrent health-retry dispatch",
+    "PostgreSQL integration passed (94 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, durable concurrent health-retry dispatch, poison dispatch isolation, persisted dispatch backoff, dead-letter manual review, three-attempt health retry ceiling, missing-outbox batch progress, concurrent outbox uniqueness, and idempotent reconciler replay",
   );
 } finally {
   await flowDb?.$disconnect();

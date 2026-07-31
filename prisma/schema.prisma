@@ -902,8 +902,11 @@ model HealthRetryDispatch {
   sourceHealthCheckId   String
   status                String              @default("PENDING")
   attemptCount          Int                 @default(0)
+  nextAttemptAt         DateTime            @default(now()) @db.Timestamptz(3)
   dispatchedJobId       String?
   lastError             String?
+  terminalReason        String?
+  deadLetteredAt        DateTime?
   processedAt           DateTime?
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
@@ -911,6 +914,7 @@ model HealthRetryDispatch {
 
   @@unique([infrastructureOrderId, sourceHealthCheckId])
   @@index([status, createdAt])
+  @@index([status, nextAttemptAt, createdAt])
   @@index([infrastructureOrderId, createdAt])
 }
 
