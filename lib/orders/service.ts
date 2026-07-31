@@ -1,6 +1,12 @@
 import { type Prisma } from "@prisma/client";
 
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
+import {
+  assertAdminActorTx,
+  normalizeAdminCommand,
+  persistAdminCommandReceiptTx,
+  replayAdminCommandTx,
+} from "@/lib/admin/command-receipt";
 import { prisma } from "@/lib/db";
 import {
   executePayOrderWithWalletTx,
@@ -22,6 +28,7 @@ import type { CloudProviderAdapter } from "@/lib/infrastructure/cloud-provider-a
 import {
   absenceAuditMatchesAttempt,
   assessRefundResourceSafety,
+  loadInfrastructureRecoveryAssessmentTx,
 } from "@/lib/infrastructure/resource-disposition";
 import {
   assertProductFlowOwnerStateTx,
@@ -385,17 +392,11 @@ export async function refundOrder(params: {
   orderId: string;
   actorUserId: string;
   reason: string;
+  idempotencyKey: string;
   ip?: string | null;
   userAgent?: string | null;
 }) {
   return prisma.$transaction(async (tx) => {
-    const reason = params.reason.trim();
-    if (reason.length < 3 || reason.length > 500) {
-      throw new WalletError(
-        "invalid_reason",
-        "دلیل بازگشت وجه باید بین ۳ تا ۵۰۰ کاراکتر باشد.",
-      );
-    }
     await tx.$queryRaw`
       SELECT id
       FROM "ServiceOrder"
@@ -409,10 +410,6 @@ export async function refundOrder(params: {
       },
     });
     if (!order) throw new WalletError("not_found", "سفارش پیدا نشد.");
-    if (order.status === ServiceOrderStatus.REFUNDED) return order;
-    if (order.status !== ServiceOrderStatus.PAID) {
-      throw new WalletError("invalid_status", "فقط سفارش پرداخت‌شده قابل بازگشت است.");
-    }
 
     let infra = await tx.infrastructureOrder.findUnique({
       where: { serviceOrderId: order.id },
@@ -436,6 +433,36 @@ export async function refundOrder(params: {
         },
       });
     }
+    const command = normalizeAdminCommand({
+      operation: "ADMIN_REFUND_ORDER",
+      idempotencyKey: params.idempotencyKey,
+      actorUserId: params.actorUserId,
+      infrastructureOrderId: infra?.id ?? null,
+      serviceOrderId: order.id,
+      reason: params.reason,
+    });
+    await assertAdminActorTx(tx, params.actorUserId);
+    const replay = await replayAdminCommandTx(tx, command);
+    if (replay) {
+      return {
+        ...order,
+        status: ServiceOrderStatus.REFUNDED,
+      };
+    }
+    if (order.status === ServiceOrderStatus.REFUNDED) {
+      await persistAdminCommandReceiptTx(tx, command, {
+        serviceOrderId: order.id,
+        infrastructureOrderId: infra?.id ?? null,
+        orderStatus: ServiceOrderStatus.REFUNDED,
+        replayedTerminalResult: true,
+        containsSecret: false,
+      });
+      return order;
+    }
+    if (order.status !== ServiceOrderStatus.PAID) {
+      throw new WalletError("invalid_status", "فقط سفارش پرداخت‌شده قابل بازگشت است.");
+    }
+    const reason = command.reason;
     const sessionId = order.recommendationQuote?.sessionId ?? null;
     if (sessionId) {
       await tx.$queryRaw`
@@ -446,6 +473,26 @@ export async function refundOrder(params: {
       `;
     }
     if (infra) {
+      const actionAssessment =
+        await loadInfrastructureRecoveryAssessmentTx(tx, {
+          id: infra.id,
+          status: infra.status,
+          productFlowState: infra.productFlowState,
+          provisioningJobs: infra.provisioningJobs,
+          cloudInstance: infra.cloudInstance,
+          reconcileNoResourceConfirmedAt:
+            infra.reconcileNoResourceConfirmedAt,
+          reconcileNoResourceConfirmedJobId:
+            infra.reconcileNoResourceConfirmedJobId,
+          reconcileNoResourceConfirmedAttempt:
+            infra.reconcileNoResourceConfirmedAttempt,
+        });
+      if (!actionAssessment.allowedActions.includes("refund")) {
+        throw new WalletError(
+          "refund_blocked",
+          "بازگشت وجه با وضعیت فعلی Resource مجاز نیست.",
+        );
+      }
       const refundableStatuses: InfrastructureOrderStatus[] = [
         InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
         InfrastructureOrderStatus.BLOCKED_PROVIDER_BALANCE,
@@ -675,6 +722,7 @@ export async function refundOrder(params: {
         },
         afterData: {
           reason,
+          requestFingerprint: command.requestFingerprint,
           serviceOrderStatus: ServiceOrderStatus.REFUNDED,
           infrastructureOrderStatus: infra
             ? InfrastructureOrderStatus.REFUNDED
@@ -690,6 +738,19 @@ export async function refundOrder(params: {
       },
       tx,
     );
+
+    await persistAdminCommandReceiptTx(tx, command, {
+      serviceOrderId: order.id,
+      infrastructureOrderId: infra?.id ?? null,
+      orderStatus: ServiceOrderStatus.REFUNDED,
+      infrastructureOrderStatus: infra
+        ? InfrastructureOrderStatus.REFUNDED
+        : null,
+      productFlowState: "CANCELLED",
+      refundLedgerEntryId: refundEntry.id,
+      amountRial: refundEntry.amount.toString(),
+      containsSecret: false,
+    });
 
     return tx.serviceOrder.findUniqueOrThrow({ where: { id: order.id } });
   });

@@ -1,6 +1,7 @@
 import {
   CloudInstanceStatus,
   ProvisioningJobStatus,
+  type Prisma,
 } from "@prisma/client";
 
 type ProviderAttempt = {
@@ -208,6 +209,38 @@ export function assessInfrastructureRecoveryActions(input: {
   }
 
   if (
+    !actions.includes("refund") &&
+    disposition.safe &&
+    !hasCloudInstance &&
+    [
+      "WAITING_ADMIN_FUNDING",
+      "BLOCKED_PROVIDER_BALANCE",
+      "CANCELED",
+    ].includes(input.status) &&
+    [
+      "PAID",
+      "PROVISIONING_RETRYABLE",
+      "PROVISIONING_MANUAL_REVIEW",
+      "CANCELLED",
+    ].includes(input.productFlowState ?? "")
+  ) {
+    actions.push("refund");
+  }
+  if (
+    !actions.includes("refund") &&
+    disposition.safe &&
+    input.cloudInstance?.status === CloudInstanceStatus.TERMINATED &&
+    ["FAILED", "MANUAL_REVIEW", "CANCELED"].includes(input.status) &&
+    [
+      "PROVISIONING_RETRYABLE",
+      "PROVISIONING_MANUAL_REVIEW",
+      "CANCELLED",
+    ].includes(input.productFlowState ?? "")
+  ) {
+    actions.push("refund");
+  }
+
+  if (
     input.productFlowState === "HEALTH_CHECK_FAILED" &&
     hasCloudInstance
   ) {
@@ -228,4 +261,27 @@ export function assessInfrastructureRecoveryActions(input: {
     absenceAuditMatches,
     allowedActions: actions,
   };
+}
+
+export async function loadInfrastructureRecoveryAssessmentTx(
+  tx: Prisma.TransactionClient,
+  input: Omit<
+    Parameters<typeof assessInfrastructureRecoveryActions>[0],
+    "absenceAudit"
+  >,
+) {
+  const auditKey =
+    input.reconcileNoResourceConfirmedJobId &&
+    input.reconcileNoResourceConfirmedAttempt != null
+      ? `provider-absence-confirmed:${input.id}:${input.reconcileNoResourceConfirmedJobId}:${input.reconcileNoResourceConfirmedAttempt}`
+      : null;
+  const absenceAudit = auditKey
+    ? await tx.auditLog.findUnique({
+        where: { idempotencyKey: auditKey },
+      })
+    : null;
+  return assessInfrastructureRecoveryActions({
+    ...input,
+    absenceAudit,
+  });
 }

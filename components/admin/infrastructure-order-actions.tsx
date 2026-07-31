@@ -108,13 +108,7 @@ export function InfrastructureOrderActions({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...([
-            "health-retry",
-            "health-observe",
-            "health-recovery",
-          ].includes(kind)
-            ? { "Idempotency-Key": idempotencyKey }
-            : {}),
+          "Idempotency-Key": idempotencyKey,
         },
         body: JSON.stringify({ reason: reason.trim() }),
       });

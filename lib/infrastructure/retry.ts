@@ -5,6 +5,12 @@ import {
 } from "@prisma/client";
 
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
+import {
+  assertAdminActorTx,
+  normalizeAdminCommand,
+  persistAdminCommandReceiptTx,
+  replayAdminCommandTx,
+} from "@/lib/admin/command-receipt";
 import { prisma } from "@/lib/db";
 import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
 import type { CloudProviderAdapter } from "@/lib/infrastructure/cloud-provider-adapter";
@@ -12,6 +18,8 @@ import {
   absenceAuditMatchesAttempt,
   assessRefundResourceSafety,
   latestCreateAttempt,
+  loadInfrastructureRecoveryAssessmentTx,
+  type InfrastructureRecoveryAction,
 } from "@/lib/infrastructure/resource-disposition";
 import {
   buildDesiredInstanceName,
@@ -25,14 +33,95 @@ const ACTIVE_JOB_STATUSES: ProvisioningJobStatus[] = [
   ProvisioningJobStatus.RUNNING,
 ];
 
+async function requireAllowedRecoveryActionTx(
+  tx: Parameters<typeof loadInfrastructureRecoveryAssessmentTx>[0],
+  order: {
+    id: string;
+    status: InfrastructureOrderStatus;
+    productFlowState: string | null;
+    reconcileNoResourceConfirmedAt: Date | null;
+    reconcileNoResourceConfirmedJobId: string | null;
+    reconcileNoResourceConfirmedAttempt: number | null;
+    cloudInstance: {
+      status: CloudInstanceStatus;
+      terminatedAt: Date | null;
+    } | null;
+    provisioningJobs: Array<{
+      id: string;
+      operation: string;
+      attempt: number;
+      status: ProvisioningJobStatus;
+      createSentAt: Date | null;
+      providerTaskId: string | null;
+      providerResourceId: string | null;
+      lastErrorCode: string | null;
+      createdAt: Date;
+    }>;
+  },
+  action: InfrastructureRecoveryAction,
+) {
+  const assessment = await loadInfrastructureRecoveryAssessmentTx(
+    tx,
+    {
+      id: order.id,
+      status: order.status,
+      productFlowState: order.productFlowState,
+      provisioningJobs: order.provisioningJobs,
+      cloudInstance: order.cloudInstance,
+      reconcileNoResourceConfirmedAt:
+        order.reconcileNoResourceConfirmedAt,
+      reconcileNoResourceConfirmedJobId:
+        order.reconcileNoResourceConfirmedJobId,
+      reconcileNoResourceConfirmedAttempt:
+        order.reconcileNoResourceConfirmedAttempt,
+    },
+  );
+  if (!assessment.allowedActions.includes(action)) {
+    throw new WalletError(
+      "invalid_status",
+      "این عملیات با وضعیت فعلی سفارش مجاز نیست.",
+    );
+  }
+  return assessment;
+}
+
 export async function reconcileInfrastructureOrder(params: {
   infrastructureOrderId: string;
   adminUserId: string;
   reason: string;
+  idempotencyKey: string;
   ip?: string | null;
   userAgent?: string | null;
 }, providerOverride?: CloudProviderAdapter) {
+  const command = normalizeAdminCommand({
+    operation: "ADMIN_RECONCILE_RESOURCE",
+    idempotencyKey: params.idempotencyKey,
+    actorUserId: params.adminUserId,
+    infrastructureOrderId: params.infrastructureOrderId,
+    reason: params.reason,
+  });
   return prisma.$transaction(async (tx) => {
+    await assertAdminActorTx(tx, params.adminUserId);
+    const replay = await replayAdminCommandTx(tx, command);
+    if (replay && typeof replay === "object" && !Array.isArray(replay)) {
+      const snapshot = replay as Record<string, unknown>;
+      const [order, job, instance] = await Promise.all([
+        tx.infrastructureOrder.findUniqueOrThrow({
+          where: { id: params.infrastructureOrderId },
+        }),
+        tx.provisioningJob.findUniqueOrThrow({
+          where: { id: String(snapshot.jobId) },
+        }),
+        tx.cloudInstance.findUniqueOrThrow({
+          where: { id: String(snapshot.instanceId) },
+        }),
+      ]);
+      return {
+        order: { ...order, status: snapshot.orderStatus as InfrastructureOrderStatus },
+        job: { ...job, status: snapshot.jobStatus as ProvisioningJobStatus },
+        instance,
+      };
+    }
     await tx.$queryRaw`SELECT id FROM "InfrastructureOrder" WHERE id = ${params.infrastructureOrderId} FOR UPDATE`;
     const order = await tx.infrastructureOrder.findUnique({
       where: { id: params.infrastructureOrderId },
@@ -43,6 +132,7 @@ export async function reconcileInfrastructureOrder(params: {
       },
     });
     if (!order) throw new WalletError("not_found", "سفارش زیرساخت پیدا نشد.");
+    await requireAllowedRecoveryActionTx(tx, order, "reconcile");
     const reconciling =
       order.status === InfrastructureOrderStatus.NEEDS_RECONCILIATION &&
       order.productFlowState === "PROVISIONING_RECONCILING";
@@ -174,14 +264,33 @@ export async function reconcileInfrastructureOrder(params: {
         action: AuditActions.RECONCILIATION,
         entityType: "infrastructure_order",
         entityId: order.id,
-        afterData: { reason: params.reason, providerInstanceId: instance.id },
+        afterData: {
+          reason: command.reason,
+          providerInstanceId: instance.id,
+          requestFingerprint: command.requestFingerprint,
+        },
         ip: params.ip,
         userAgent: params.userAgent,
+        idempotencyKey: `audit:${command.receiptKey}`,
       },
       tx,
     );
 
-    return { order, job, instance };
+    await persistAdminCommandReceiptTx(tx, command, {
+      infrastructureOrderId: order.id,
+      orderStatus: InfrastructureOrderStatus.PROVISIONING,
+      jobId: job.id,
+      jobStatus: job.status,
+      instanceId: instance.id,
+      providerResourceId: instance.id,
+      containsSecret: false,
+    });
+
+    const updatedOrder =
+      await tx.infrastructureOrder.findUniqueOrThrow({
+        where: { id: order.id },
+      });
+    return { order: updatedOrder, job, instance };
   });
 }
 
@@ -189,17 +298,31 @@ export async function confirmNoProviderResource(params: {
   infrastructureOrderId: string;
   adminUserId: string;
   reason: string;
+  idempotencyKey: string;
   ip?: string | null;
   userAgent?: string | null;
 }, providerOverride?: CloudProviderAdapter) {
-  const reason = params.reason.trim();
-  if (reason.length < 3 || reason.length > 500) {
-    throw new WalletError(
-      "invalid_reason",
-      "دلیل تأیید باید بین ۳ تا ۵۰۰ کاراکتر باشد.",
-    );
-  }
+  const command = normalizeAdminCommand({
+    operation: "ADMIN_CONFIRM_NO_RESOURCE",
+    idempotencyKey: params.idempotencyKey,
+    actorUserId: params.adminUserId,
+    infrastructureOrderId: params.infrastructureOrderId,
+    reason: params.reason,
+  });
   return prisma.$transaction(async (tx) => {
+    await assertAdminActorTx(tx, params.adminUserId);
+    const replay = await replayAdminCommandTx(tx, command);
+    if (replay && typeof replay === "object" && !Array.isArray(replay)) {
+      const snapshot = replay as Record<string, unknown>;
+      const persisted = await tx.infrastructureOrder.findUniqueOrThrow({
+        where: { id: params.infrastructureOrderId },
+      });
+      return {
+        ...persisted,
+        status: snapshot.orderStatus as InfrastructureOrderStatus,
+        productFlowState: String(snapshot.productFlowState),
+      };
+    }
     await tx.$queryRaw`SELECT id FROM "InfrastructureOrder" WHERE id = ${params.infrastructureOrderId} FOR UPDATE`;
     const order = await tx.infrastructureOrder.findUnique({
       where: { id: params.infrastructureOrderId },
@@ -210,6 +333,11 @@ export async function confirmNoProviderResource(params: {
       },
     });
     if (!order) throw new WalletError("not_found", "سفارش زیرساخت پیدا نشد.");
+    await requireAllowedRecoveryActionTx(
+      tx,
+      order,
+      "confirm-no-resource",
+    );
     const reconciling =
       order.status === InfrastructureOrderStatus.NEEDS_RECONCILIATION &&
       order.productFlowState === "PROVISIONING_RECONCILING";
@@ -289,7 +417,7 @@ export async function confirmNoProviderResource(params: {
         entityType: "infrastructure_order",
         entityId: order.id,
         afterData: {
-          reason,
+          reason: command.reason,
           noResourceConfirmed: true,
           provisioningJobId: createAttempt.id,
           attempt: createAttempt.attempt,
@@ -298,13 +426,24 @@ export async function confirmNoProviderResource(params: {
         },
         ip: params.ip,
         userAgent: params.userAgent,
-        idempotencyKey:
-          `provider-absence-confirmed:${order.id}:${createAttempt.id}:${createAttempt.attempt}`,
+        idempotencyKey: `provider-absence-confirmed:${order.id}:${createAttempt.id}:${createAttempt.attempt}`,
       },
       tx,
     );
 
-    return order;
+    await persistAdminCommandReceiptTx(tx, command, {
+      infrastructureOrderId: order.id,
+      orderStatus: InfrastructureOrderStatus.FAILED,
+      productFlowState: "PROVISIONING_RETRYABLE",
+      provisioningJobId: createAttempt.id,
+      attempt: createAttempt.attempt,
+      providerObservation: "NOT_FOUND",
+      containsSecret: false,
+    });
+
+    return tx.infrastructureOrder.findUniqueOrThrow({
+      where: { id: order.id },
+    });
   });
 }
 
@@ -312,14 +451,44 @@ export async function retryFailedProvisioning(params: {
   infrastructureOrderId: string;
   adminUserId: string;
   reason: string;
+  idempotencyKey: string;
   ip?: string | null;
   userAgent?: string | null;
 }) {
-  if (params.reason.trim().length < 3) {
-    throw new WalletError("invalid_reason", "دلیل Retry الزامی است.");
-  }
+  const command = normalizeAdminCommand({
+    operation: "ADMIN_RETRY_PROVISIONING",
+    idempotencyKey: params.idempotencyKey,
+    actorUserId: params.adminUserId,
+    infrastructureOrderId: params.infrastructureOrderId,
+    reason: params.reason,
+  });
 
   return prisma.$transaction(async (tx) => {
+    await assertAdminActorTx(tx, params.adminUserId);
+    const replay = await replayAdminCommandTx(tx, command);
+    if (replay && typeof replay === "object" && !Array.isArray(replay)) {
+      const snapshot = replay as Record<string, unknown>;
+      const [order, job] = await Promise.all([
+        tx.infrastructureOrder.findUniqueOrThrow({
+          where: { id: params.infrastructureOrderId },
+        }),
+        tx.provisioningJob.findUniqueOrThrow({
+          where: { id: String(snapshot.jobId) },
+        }),
+      ]);
+      return {
+        order: {
+          ...order,
+          status: snapshot.orderStatus as InfrastructureOrderStatus,
+          productFlowState: String(snapshot.productFlowState),
+        },
+        job: {
+          ...job,
+          status: snapshot.jobStatus as ProvisioningJobStatus,
+          attempt: Number(snapshot.attempt),
+        },
+      };
+    }
     await tx.$queryRaw`SELECT id FROM "InfrastructureOrder" WHERE id = ${params.infrastructureOrderId} FOR UPDATE`;
     const order = await tx.infrastructureOrder.findUnique({
       where: { id: params.infrastructureOrderId },
@@ -330,20 +499,7 @@ export async function retryFailedProvisioning(params: {
       },
     });
     if (!order) throw new WalletError("not_found", "سفارش زیرساخت پیدا نشد.");
-
-    if (order.status === InfrastructureOrderStatus.NEEDS_RECONCILIATION) {
-      throw new WalletError("invalid_status", "ابتدا تطبیق دستی انجام دهید.");
-    }
-
-    if (
-      order.cloudInstance
-    ) {
-      throw new WalletError("invalid_status", "منبع Provider از قبل وجود دارد؛ Retry مجاز نیست.");
-    }
-
-    if (order.status !== InfrastructureOrderStatus.FAILED) {
-      throw new WalletError("invalid_status", "فقط سفارش‌های ناموفق قابل Retry هستند.");
-    }
+    await requireAllowedRecoveryActionTx(tx, order, "retry");
 
     const activeCreate = order.provisioningJobs.find(
       (job) => job.operation === "create_instance" && ACTIVE_JOB_STATUSES.includes(job.status),
@@ -384,6 +540,12 @@ export async function retryFailedProvisioning(params: {
         "پیش از Retry باید نبود Resource برای آخرین Attempt قطعی و Audit شود.",
       );
     }
+    parseLockedProvisioningSelection({
+      snapshot: order.providerSelectionSnapshot,
+      provider: order.provider,
+      providerApiVersion: order.providerApiVersion,
+      productKind: order.productKind,
+    });
 
     const lastAttempt = order.provisioningJobs.reduce((max, job) => Math.max(max, job.attempt), 0);
     const nextAttempt = Math.max(lastAttempt, 0) + 1;
@@ -420,7 +582,10 @@ export async function retryFailedProvisioning(params: {
         serviceOrderId: order.serviceOrderId,
         infrastructureOrderId: order.id,
       },
-      from: "PROVISIONING_RETRYABLE",
+      from:
+        order.productFlowState === "PROVISIONING_MANUAL_REVIEW"
+          ? "PROVISIONING_MANUAL_REVIEW"
+          : "PROVISIONING_RETRYABLE",
       to: "PROVISIONING_SUBMITTED",
       reason: "admin_approved_provisioning_retry",
       idempotencyKey: `provider-retry-submitted:${order.id}:${nextAttempt}`,
@@ -433,13 +598,33 @@ export async function retryFailedProvisioning(params: {
         action: AuditActions.PROVISIONING_RETRY,
         entityType: "infrastructure_order",
         entityId: order.id,
-        afterData: { reason: params.reason, attempt: nextAttempt, jobId: job.id },
+        afterData: {
+          reason: command.reason,
+          attempt: nextAttempt,
+          jobId: job.id,
+          requestFingerprint: command.requestFingerprint,
+        },
         ip: params.ip,
         userAgent: params.userAgent,
+        idempotencyKey: `audit:${command.receiptKey}`,
       },
       tx,
     );
 
-    return { order, job };
+    await persistAdminCommandReceiptTx(tx, command, {
+      infrastructureOrderId: order.id,
+      orderStatus: InfrastructureOrderStatus.QUEUED,
+      productFlowState: "PROVISIONING_SUBMITTED",
+      jobId: job.id,
+      jobStatus: ProvisioningJobStatus.QUEUED,
+      attempt: nextAttempt,
+      containsSecret: false,
+    });
+
+    const updatedOrder =
+      await tx.infrastructureOrder.findUniqueOrThrow({
+        where: { id: order.id },
+      });
+    return { order: updatedOrder, job };
   });
 }

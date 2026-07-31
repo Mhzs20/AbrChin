@@ -1,6 +1,7 @@
 import { connect } from "node:net";
 
 import {
+  AdminNotificationType,
   CloudInstanceStatus,
   InfrastructureHealthCheckStatus,
   InfrastructureOrderStatus,
@@ -181,6 +182,26 @@ function deliveryAccessMethod(value: Prisma.JsonValue | null) {
     : null;
 }
 
+async function queueHealthRetryDispatchTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    infrastructureOrderId: string;
+    sourceHealthCheckId: string;
+  },
+) {
+  return tx.healthRetryDispatch.upsert({
+    where: {
+      idempotencyKey: `health-retry-dispatch:${input.sourceHealthCheckId}`,
+    },
+    update: {},
+    create: {
+      idempotencyKey: `health-retry-dispatch:${input.sourceHealthCheckId}`,
+      infrastructureOrderId: input.infrastructureOrderId,
+      sourceHealthCheckId: input.sourceHealthCheckId,
+    },
+  });
+}
+
 async function activateDeliveredServiceTx(
   tx: Prisma.TransactionClient,
   infrastructureOrderId: string,
@@ -268,6 +289,17 @@ async function activateDeliveredServiceTx(
     where: { id: order.id },
     data: { status: InfrastructureOrderStatus.ACTIVE },
   });
+  await tx.provisioningNotificationOutbox.upsert({
+    where: { idempotencyKey: `instance-active:${order.id}` },
+    update: {},
+    create: {
+      idempotencyKey: `instance-active:${order.id}`,
+      type: AdminNotificationType.INSTANCE_ACTIVE,
+      infrastructureOrderId: order.id,
+      title: "سرور فعال شد",
+      message: `سرور سفارش ${order.serviceOrder.title} آماده است.`,
+    },
+  });
   const periodEnd = addBillingMonth(deliveredAt);
   await tx.serviceSubscription.upsert({
     where: { cloudInstanceId: instance.id },
@@ -313,6 +345,7 @@ export async function runInfrastructureHealthCheck(input: {
   durableJob?: {
     jobId: string;
     workerFence: ProvisioningJobFence;
+    automaticRetryDispatch?: boolean;
   };
 }) {
   const probe = input.probe ?? tcpConnectivityProbe;
@@ -525,6 +558,12 @@ export async function runInfrastructureHealthCheck(input: {
         if (persisted.count !== 1) {
           throw new WorkerLeaseLostError();
         }
+        if (input.durableJob.automaticRetryDispatch !== false) {
+          await queueHealthRetryDispatchTx(tx, {
+            infrastructureOrderId: order.id,
+            sourceHealthCheckId: prepared.check.id,
+          });
+        }
       }
     });
     throw error;
@@ -587,6 +626,12 @@ export async function runInfrastructureHealthCheck(input: {
         });
         if (persisted.count !== 1) {
           throw new WorkerLeaseLostError();
+        }
+        if (input.durableJob.automaticRetryDispatch !== false) {
+          await queueHealthRetryDispatchTx(tx, {
+            infrastructureOrderId: order.id,
+            sourceHealthCheckId: prepared.check.id,
+          });
         }
       }
       return { healthy: false as const, delivered: false as const };
@@ -670,6 +715,12 @@ export async function runInfrastructureHealthCheck(input: {
         });
         if (persisted.count !== 1) {
           throw new WorkerLeaseLostError();
+        }
+        if (input.durableJob.automaticRetryDispatch !== false) {
+          await queueHealthRetryDispatchTx(tx, {
+            infrastructureOrderId: order.id,
+            sourceHealthCheckId: prepared.check.id,
+          });
         }
       }
       return { healthy: false as const, delivered: false as const };

@@ -30,6 +30,22 @@ export async function assertProvisioningJobFenceTx(
   if (!owned) throw new WorkerLeaseLostError();
 }
 
+export async function proveProvisioningJobFenceTx(
+  tx: Prisma.TransactionClient,
+  fence: ProvisioningJobFence,
+) {
+  const proved = await tx.provisioningJob.updateMany({
+    where: {
+      id: fence.jobId,
+      status: ProvisioningJobStatus.RUNNING,
+      claimToken: fence.claimToken,
+      leaseExpiresAt: { gt: new Date() },
+    },
+    data: { updatedAt: new Date() },
+  });
+  if (proved.count !== 1) throw new WorkerLeaseLostError();
+}
+
 export function isWorkerLeaseLostError(
   error: unknown,
 ): error is WorkerLeaseLostError {

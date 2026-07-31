@@ -4,10 +4,15 @@ import {
   InfrastructureOrderStatus,
   ProvisioningJobStatus,
   ServiceOrderStatus,
-  UserRole,
   type Prisma,
 } from "@prisma/client";
 
+import {
+  assertAdminActorTx,
+  normalizeAdminCommand,
+  persistAdminCommandReceiptTx,
+  replayAdminCommandTx,
+} from "@/lib/admin/command-receipt";
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { prisma } from "@/lib/db";
 import {
@@ -24,6 +29,10 @@ import {
 } from "@/lib/infrastructure/health-check-service";
 import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
 import { parseLockedProvisioningSelection } from "@/lib/infrastructure/provisioning-service";
+import {
+  loadInfrastructureRecoveryAssessmentTx,
+  type InfrastructureRecoveryAction,
+} from "@/lib/infrastructure/resource-disposition";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
 import { WalletError } from "@/lib/wallet/errors";
 import {
@@ -43,6 +52,46 @@ const ACTIVE_JOB_STATUSES: ProvisioningJobStatus[] = [
   ProvisioningJobStatus.QUEUED,
   ProvisioningJobStatus.RUNNING,
 ];
+
+async function requireRecoveryActionTx(
+  tx: Prisma.TransactionClient,
+  infrastructureOrderId: string,
+  action: InfrastructureRecoveryAction,
+) {
+  const order = await tx.infrastructureOrder.findUnique({
+    where: { id: infrastructureOrderId },
+    include: {
+      cloudInstance: true,
+      provisioningJobs: { orderBy: { createdAt: "asc" } },
+    },
+  });
+  if (!order) {
+    throw new WalletError("not_found", "سفارش زیرساخت پیدا نشد.");
+  }
+  const assessment = await loadInfrastructureRecoveryAssessmentTx(
+    tx,
+    {
+      id: order.id,
+      status: order.status,
+      productFlowState: order.productFlowState,
+      provisioningJobs: order.provisioningJobs,
+      cloudInstance: order.cloudInstance,
+      reconcileNoResourceConfirmedAt:
+        order.reconcileNoResourceConfirmedAt,
+      reconcileNoResourceConfirmedJobId:
+        order.reconcileNoResourceConfirmedJobId,
+      reconcileNoResourceConfirmedAttempt:
+        order.reconcileNoResourceConfirmedAttempt,
+    },
+  );
+  if (!assessment.allowedActions.includes(action)) {
+    throw new WalletError(
+      "invalid_status",
+      "این عملیات با وضعیت فعلی سفارش مجاز نیست.",
+    );
+  }
+  return assessment;
+}
 
 function asRecord(value: Prisma.JsonValue | null | undefined) {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -116,10 +165,6 @@ function assertHealthOperationReplay(
   }
 }
 
-function adminHealthReceiptKey(idempotencyKey: string) {
-  return `health-retry-admin:${idempotencyKey}`;
-}
-
 function asHealthRetryReceipt(value: Prisma.JsonValue) {
   const snapshot = asRecord(value);
   if (
@@ -138,33 +183,11 @@ function asHealthRetryReceipt(value: Prisma.JsonValue) {
   };
 }
 
-async function replayAdminHealthReceiptTx(
+async function healthJobFromReceiptTx(
   tx: Prisma.TransactionClient,
-  input: {
-    idempotencyKey: string;
-    requestFingerprint: string;
-    infrastructureOrderId: string;
-    adminUserId: string;
-  },
+  value: Prisma.JsonValue,
 ) {
-  const receipt = await tx.adminCommandReceipt.findUnique({
-    where: {
-      idempotencyKey: adminHealthReceiptKey(input.idempotencyKey),
-    },
-  });
-  if (!receipt) return null;
-  if (
-    receipt.operation !== "ADMIN_HEALTH_RETRY" ||
-    receipt.requestFingerprint !== input.requestFingerprint ||
-    receipt.infrastructureOrderId !== input.infrastructureOrderId ||
-    receipt.actorUserId !== input.adminUserId
-  ) {
-    throw new WalletError(
-      "idempotency_conflict",
-      "شناسه یکتا قبلاً برای درخواست دیگری استفاده شده است.",
-    );
-  }
-  const snapshot = asHealthRetryReceipt(receipt.resultSnapshot);
+  const snapshot = asHealthRetryReceipt(value);
   const job = await tx.provisioningJob.findUniqueOrThrow({
     where: { id: snapshot.jobId },
   });
@@ -352,6 +375,13 @@ async function scheduleHealthRetryTx(
   if (!order) {
     throw new WalletError("not_found", "سفارش زیرساخت پیدا نشد.");
   }
+  if (input.source === "ADMIN") {
+    await requireRecoveryActionTx(
+      tx,
+      input.infrastructureOrderId,
+      "health-retry",
+    );
+  }
   if (
     order.serviceOrder.status !== ServiceOrderStatus.PAID ||
     !order.cloudInstance
@@ -449,6 +479,68 @@ export async function scheduleAutomaticHealthRetry(input: {
   );
 }
 
+export async function processPendingHealthRetryDispatches(
+  limit = 10,
+  options?: {
+    beforeSchedule?: (dispatchId: string) => void | Promise<void>;
+  },
+) {
+  let processed = 0;
+  for (let index = 0; index < limit; index += 1) {
+    let selectedId: string | null = null;
+    try {
+      const dispatched = await prisma.$transaction(async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id
+          FROM "HealthRetryDispatch"
+          WHERE status = 'PENDING'
+          ORDER BY "createdAt" ASC
+          LIMIT 1
+          FOR UPDATE SKIP LOCKED
+        `;
+        selectedId = rows[0]?.id ?? null;
+        if (!selectedId) return false;
+        const dispatch = await tx.healthRetryDispatch.findUniqueOrThrow({
+          where: { id: selectedId },
+        });
+        await options?.beforeSchedule?.(dispatch.id);
+        const job = await scheduleHealthRetryTx(tx, {
+          infrastructureOrderId: dispatch.infrastructureOrderId,
+          source: "AUTO",
+          reason: "automatic_health_recovery",
+          requestKey: dispatch.sourceHealthCheckId,
+          immediate: false,
+        });
+        await tx.healthRetryDispatch.update({
+          where: { id: dispatch.id },
+          data: {
+            status: job ? "DISPATCHED" : "EXHAUSTED",
+            attemptCount: { increment: 1 },
+            dispatchedJobId: job?.id ?? null,
+            lastError: null,
+            processedAt: new Date(),
+          },
+        });
+        return true;
+      });
+      if (!dispatched) break;
+      processed += 1;
+    } catch {
+      if (selectedId) {
+        await prisma.healthRetryDispatch.updateMany({
+          where: { id: selectedId, status: "PENDING" },
+          data: {
+            attemptCount: { increment: 1 },
+            lastError: "health_retry_dispatch_failed",
+          },
+        });
+      }
+      break;
+    }
+  }
+  return processed;
+}
+
 export async function scheduleManualHealthRetry(input: {
   infrastructureOrderId: string;
   adminUserId: string;
@@ -457,26 +549,15 @@ export async function scheduleManualHealthRetry(input: {
   ip?: string | null;
   userAgent?: string | null;
 }) {
-  const reason = input.reason.trim();
-  if (reason.length < 3 || reason.length > 500) {
-    throw new WalletError(
-      "invalid_reason",
-      "دلیل Retry باید بین ۳ تا ۵۰۰ کاراکتر باشد.",
-    );
-  }
-  if (!/^[A-Za-z0-9._:-]{16,128}$/.test(input.idempotencyKey)) {
-    throw new WalletError(
-      "invalid_idempotency_key",
-      "شناسه یکتای Retry معتبر نیست.",
-    );
-  }
-  const admin = await prisma.user.findUnique({
-    where: { id: input.adminUserId },
-    select: { role: true },
+  const command = normalizeAdminCommand({
+    operation: "ADMIN_HEALTH_RETRY",
+    idempotencyKey: input.idempotencyKey,
+    actorUserId: input.adminUserId,
+    infrastructureOrderId: input.infrastructureOrderId,
+    reason: input.reason,
+    payload: { source: "ADMIN" },
   });
-  if (admin?.role !== UserRole.ADMIN) {
-    throw new WalletError("forbidden", "دسترسی مجاز نیست.");
-  }
+  const reason = command.reason;
   const requestFingerprint = healthOperationFingerprint({
     infrastructureOrderId: input.infrastructureOrderId,
     actorUserId: input.adminUserId,
@@ -486,19 +567,9 @@ export async function scheduleManualHealthRetry(input: {
   });
 
   const job = await prisma.$transaction(async (tx) => {
-    const receiptKey = adminHealthReceiptKey(input.idempotencyKey);
-    await tx.$queryRaw`
-      SELECT pg_advisory_xact_lock(
-        hashtextextended(${`command:${receiptKey}`}, 0)
-      )::text AS locked
-    `;
-    const replay = await replayAdminHealthReceiptTx(tx, {
-      idempotencyKey: input.idempotencyKey,
-      requestFingerprint,
-      infrastructureOrderId: input.infrastructureOrderId,
-      adminUserId: input.adminUserId,
-    });
-    if (replay) return replay;
+    await assertAdminActorTx(tx, input.adminUserId);
+    const replay = await replayAdminCommandTx(tx, command);
+    if (replay) return healthJobFromReceiptTx(tx, replay);
 
     const job = await scheduleHealthRetryTx(tx, {
       infrastructureOrderId: input.infrastructureOrderId,
@@ -520,16 +591,7 @@ export async function scheduleManualHealthRetry(input: {
       infrastructureOrderId: input.infrastructureOrderId,
       containsSecret: false,
     };
-    await tx.adminCommandReceipt.create({
-      data: {
-        operation: "ADMIN_HEALTH_RETRY",
-        idempotencyKey: receiptKey,
-        requestFingerprint,
-        actorUserId: input.adminUserId,
-        infrastructureOrderId: input.infrastructureOrderId,
-        resultSnapshot,
-      },
-    });
+    await persistAdminCommandReceiptTx(tx, command, resultSnapshot);
     await writeAuditLog(
       {
         actorUserId: input.adminUserId,
@@ -542,7 +604,7 @@ export async function scheduleManualHealthRetry(input: {
           retryAttempt: job.attempt,
           idempotencyKey: input.idempotencyKey,
           requestFingerprint,
-          receiptKey,
+          receiptKey: command.receiptKey,
           containsSecret: false,
         },
         ip: input.ip,
@@ -571,45 +633,6 @@ function observedTopology(
   return expected && ids?.includes(expected)
     ? expected
     : ids?.[0] ?? null;
-}
-
-async function requireAdminOperation(input: {
-  adminUserId: string;
-  reason: string;
-  idempotencyKey: string;
-  operation: string;
-  infrastructureOrderId: string;
-}) {
-  const reason = input.reason.trim();
-  if (reason.length < 3 || reason.length > 500) {
-    throw new WalletError(
-      "invalid_reason",
-      "دلیل عملیات باید بین ۳ تا ۵۰۰ کاراکتر باشد.",
-    );
-  }
-  if (!/^[A-Za-z0-9._:-]{16,128}$/.test(input.idempotencyKey)) {
-    throw new WalletError(
-      "invalid_idempotency_key",
-      "شناسه یکتای عملیات معتبر نیست.",
-    );
-  }
-  const admin = await prisma.user.findUnique({
-    where: { id: input.adminUserId },
-    select: { role: true },
-  });
-  if (admin?.role !== UserRole.ADMIN) {
-    throw new WalletError("forbidden", "دسترسی مجاز نیست.");
-  }
-  return {
-    reason,
-    requestFingerprint: healthOperationFingerprint({
-      infrastructureOrderId: input.infrastructureOrderId,
-      actorUserId: input.adminUserId,
-      reason,
-      source: "ADMIN",
-      operation: input.operation,
-    }),
-  };
 }
 
 async function fetchLockedProviderObservation(
@@ -760,33 +783,38 @@ export async function observeManualReviewResource(
   },
   providerOverride?: CloudProviderAdapter,
 ) {
-  const { reason, requestFingerprint } =
-    await requireAdminOperation({
-      ...input,
-      operation: "health_check_manual_observe",
-    });
-  const auditKey = `audit:health-observe:${input.idempotencyKey}`;
-  const existing = await prisma.auditLog.findUnique({
-    where: { idempotencyKey: auditKey },
+  const command = normalizeAdminCommand({
+    operation: "ADMIN_HEALTH_OBSERVE",
+    idempotencyKey: input.idempotencyKey,
+    actorUserId: input.adminUserId,
+    infrastructureOrderId: input.infrastructureOrderId,
+    reason: input.reason,
   });
-  if (existing) {
-    const after = asRecord(existing.afterData);
-    if (
-      existing.actorUserId !== input.adminUserId ||
-      existing.action !== AuditActions.HEALTH_CHECK_MANUAL_OBSERVE ||
-      existing.entityType !== "infrastructure_order" ||
-      existing.entityId !== input.infrastructureOrderId ||
-      after.requestFingerprint !== requestFingerprint
-    ) {
-      throw new WalletError(
-        "idempotency_conflict",
-        "شناسه یکتا قبلاً برای درخواست دیگری استفاده شده است.",
+  const reason = command.reason;
+  const requestFingerprint = command.requestFingerprint;
+  const auditKey = `audit:health-observe:${input.idempotencyKey}`;
+
+  const replay = await prisma.$transaction(async (tx) => {
+    await assertAdminActorTx(tx, input.adminUserId);
+    const receipt = await replayAdminCommandTx(tx, command);
+    if (receipt && typeof receipt === "object" && !Array.isArray(receipt)) {
+      return asRecord(
+        (receipt as Record<string, Prisma.JsonValue>).observation ?? null,
       );
     }
-    return asRecord(
-      (after.observation ?? null) as Prisma.JsonValue | null,
+    await tx.$queryRaw`
+      SELECT id FROM "InfrastructureOrder"
+      WHERE id = ${input.infrastructureOrderId}
+      FOR UPDATE
+    `;
+    await requireRecoveryActionTx(
+      tx,
+      input.infrastructureOrderId,
+      "health-observe",
     );
-  }
+    return null;
+  });
+  if (replay) return replay;
 
   const fetched = await fetchLockedProviderObservation(
     input.infrastructureOrderId,
@@ -804,37 +832,28 @@ export async function observeManualReviewResource(
   }
   const observation = serializedObservation(fetched.observation);
   return prisma.$transaction(async (tx) => {
+    await assertAdminActorTx(tx, input.adminUserId);
+    const receipt = await replayAdminCommandTx(tx, command);
+    if (receipt && typeof receipt === "object" && !Array.isArray(receipt)) {
+      return asRecord(
+        (receipt as Record<string, Prisma.JsonValue>).observation ?? null,
+      );
+    }
     await tx.$queryRaw`
       SELECT id
       FROM "InfrastructureOrder"
       WHERE id = ${input.infrastructureOrderId}
       FOR UPDATE
     `;
-    const repeated = await tx.auditLog.findUnique({
-      where: { idempotencyKey: auditKey },
-    });
-    if (repeated) {
-      const after = asRecord(repeated.afterData);
-      if (
-        repeated.actorUserId !== input.adminUserId ||
-        repeated.action !==
-          AuditActions.HEALTH_CHECK_MANUAL_OBSERVE ||
-        repeated.entityId !== input.infrastructureOrderId ||
-        after.requestFingerprint !== requestFingerprint
-      ) {
-        throw new WalletError(
-          "idempotency_conflict",
-          "شناسه یکتا قبلاً برای درخواست دیگری استفاده شده است.",
-        );
-      }
-      return asRecord(
-        (after.observation ?? null) as Prisma.JsonValue | null,
-      );
-    }
     const current = await tx.infrastructureOrder.findUniqueOrThrow({
       where: { id: input.infrastructureOrderId },
       include: { cloudInstance: true },
     });
+    await requireRecoveryActionTx(
+      tx,
+      input.infrastructureOrderId,
+      "health-observe",
+    );
     if (
       current.status !== InfrastructureOrderStatus.MANUAL_REVIEW ||
       current.productFlowState !==
@@ -894,6 +913,11 @@ export async function observeManualReviewResource(
       },
       tx,
     );
+    await persistAdminCommandReceiptTx(tx, command, {
+      observation,
+      requestFingerprint,
+      containsSecret: false,
+    });
     return observation;
   });
 }
@@ -906,18 +930,38 @@ export async function scheduleManualHealthRecovery(input: {
   ip?: string | null;
   userAgent?: string | null;
 }) {
-  const { reason, requestFingerprint } =
-    await requireAdminOperation({
-      ...input,
-      operation: HEALTH_MANUAL_RECOVERY_OPERATION,
-    });
+  const command = normalizeAdminCommand({
+    operation: "ADMIN_HEALTH_RECOVERY",
+    idempotencyKey: input.idempotencyKey,
+    actorUserId: input.adminUserId,
+    infrastructureOrderId: input.infrastructureOrderId,
+    reason: input.reason,
+  });
+  const reason = command.reason;
+  const requestFingerprint = healthOperationFingerprint({
+    infrastructureOrderId: input.infrastructureOrderId,
+    actorUserId: input.adminUserId,
+    reason,
+    source: "ADMIN",
+    operation: HEALTH_MANUAL_RECOVERY_OPERATION,
+  });
   return prisma.$transaction(async (tx) => {
+    await assertAdminActorTx(tx, input.adminUserId);
+    const receipt = await replayAdminCommandTx(tx, command);
+    if (receipt && typeof receipt === "object" && !Array.isArray(receipt)) {
+      return healthJobFromReceiptTx(tx, receipt);
+    }
     await tx.$queryRaw`
       SELECT id
       FROM "InfrastructureOrder"
       WHERE id = ${input.infrastructureOrderId}
       FOR UPDATE
     `;
+    await requireRecoveryActionTx(
+      tx,
+      input.infrastructureOrderId,
+      "health-recovery",
+    );
     const jobKey = `health-manual-recovery:${input.idempotencyKey}`;
     const repeated = await tx.provisioningJob.findUnique({
       where: { idempotencyKey: jobKey },
@@ -1029,6 +1073,14 @@ export async function scheduleManualHealthRecovery(input: {
       },
       tx,
     );
+    await persistAdminCommandReceiptTx(tx, command, {
+      jobId: job.id,
+      status: job.status,
+      availableAt: job.availableAt.toISOString(),
+      attempt: job.attempt,
+      requestFingerprint,
+      containsSecret: false,
+    });
     return job;
   });
 }
@@ -1223,6 +1275,37 @@ async function ensureHealthFailureIsRecoverable(input: {
         `health_failure_state_conflict:${order.productFlowState ?? "null"}`,
       );
     }
+    const sourceHealthCheckId = `provider-observation:${input.jobId}`;
+    const durable = await tx.provisioningJob.updateMany({
+      where: {
+        id: input.jobId,
+        status: ProvisioningJobStatus.RUNNING,
+        claimToken: input.workerFence.claimToken,
+        leaseExpiresAt: { gt: new Date() },
+      },
+      data: {
+        phase: "HEALTH_RESULT_PERSISTED",
+        healthResultSnapshot: {
+          healthCheckId: sourceHealthCheckId,
+          healthy: false,
+          delivered: false,
+          resultCode: input.resultCode,
+        },
+        healthResultPersistedAt: new Date(),
+      },
+    });
+    if (durable.count !== 1) throw new WorkerLeaseLostError();
+    await tx.healthRetryDispatch.upsert({
+      where: {
+        idempotencyKey: `health-retry-dispatch:${sourceHealthCheckId}`,
+      },
+      update: {},
+      create: {
+        idempotencyKey: `health-retry-dispatch:${sourceHealthCheckId}`,
+        infrastructureOrderId: order.id,
+        sourceHealthCheckId,
+      },
+    });
   });
 }
 
@@ -1341,10 +1424,7 @@ export async function processHealthCheckRetryJob(
     }
     if (!persistedHealthResult.healthy && !isManualRecovery) {
       try {
-        await scheduleAutomaticHealthRetry({
-          infrastructureOrderId: order.id,
-          sourceCheckId: job.id,
-        });
+        await processPendingHealthRetryDispatches(1);
       } catch {
         console.error(
           "[health-retry-schedule]",
@@ -1470,10 +1550,7 @@ export async function processHealthCheckRetryJob(
       throw finalizeError;
     }
     if (!isManualRecovery) {
-      await scheduleAutomaticHealthRetry({
-        infrastructureOrderId: order.id,
-        sourceCheckId: job.id,
-      });
+      await processPendingHealthRetryDispatches(1);
     }
     return { healthy: false as const, delivered: false as const };
   }
@@ -1491,6 +1568,7 @@ export async function processHealthCheckRetryJob(
       durableJob: {
         jobId: job.id,
         workerFence,
+        automaticRetryDispatch: !isManualRecovery,
       },
       afterTransition: options?.afterHealthTransition,
       retryTransition: {
@@ -1579,10 +1657,7 @@ export async function processHealthCheckRetryJob(
   if (!result.healthy) {
     if (!isManualRecovery) {
       try {
-        await scheduleAutomaticHealthRetry({
-          infrastructureOrderId: order.id,
-          sourceCheckId: job.id,
-        });
+        await processPendingHealthRetryDispatches(1);
       } catch {
         console.error(
           "[health-retry-schedule]",

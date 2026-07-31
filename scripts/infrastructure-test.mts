@@ -457,7 +457,12 @@ test("refund keeps original ledger immutable and creates reverse entry", async (
   };
 
   const admin = await prisma.user.create({ data: { mobile: adminMobile, role: "ADMIN" } });
-  await refundOrder({ orderId: order.id, actorUserId: admin.id, reason: "تست بازگشت" });
+  await refundOrder({
+    orderId: order.id,
+    actorUserId: admin.id,
+    reason: "تست بازگشت",
+    idempotencyKey: "infrastructure-refund-test-0001",
+  });
 
   const original = await prisma.walletLedgerEntry.findUniqueOrThrow({ where: { id: debit.id } });
   assert.deepEqual(
@@ -514,8 +519,9 @@ test("retry is blocked for NEEDS_RECONCILIATION until reconcile", async (t) => {
         infrastructureOrderId: infra.id,
         adminUserId: admin.id,
         reason: "تلاش مجدد",
+        idempotencyKey: "infrastructure-retry-test-0001",
       }),
-    /تطبیق/,
+    /تطبیق|وضعیت فعلی سفارش مجاز نیست/,
   );
 
   await cleanupMobile(mobile);

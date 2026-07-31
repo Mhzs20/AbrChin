@@ -256,8 +256,8 @@ test("health recovery has durable command receipts and lease fencing", async () 
   const durableHealth = await source(
     "lib/infrastructure/health-check-service.ts",
   );
-  assert.match(retry, /adminCommandReceipt/);
-  assert.match(retry, /replayAdminHealthReceiptTx/);
+  assert.match(retry, /persistAdminCommandReceiptTx/);
+  assert.match(retry, /replayAdminCommandTx/);
   assert.match(retry, /resultSnapshot/);
   assert.match(retry, /finalizePending/);
   assert.match(retry, /assertProvisioningJobFenceTx/);
@@ -329,7 +329,7 @@ test("idempotency compares stable request payloads", async () => {
   );
   assert.match(retry, /requestFingerprint/);
   assert.match(retry, /assertHealthOperationReplay/);
-  assert.match(retry, /adminCommandReceipt/);
+  assert.match(retry, /persistAdminCommandReceiptTx/);
   assert.match(retryRoute, /idempotency_conflict/);
   assert.match(retryRoute, /409/);
 });

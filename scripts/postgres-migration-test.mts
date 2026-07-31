@@ -54,6 +54,8 @@ const multiOrderTerminalRecovery =
   "20260731003000_multi_order_terminal_recovery_v4";
 const terminalAndWorkerRecoveryV5 =
   "20260731043000_terminal_and_worker_recovery_v5";
+const terminalAndDispatchRecoveryV6 =
+  "20260731120000_terminal_and_dispatch_recovery_v6";
 
 async function copyThrough(lastName: string) {
   for (const name of migrationNames.filter((entry) => entry <= lastName)) {
@@ -1277,6 +1279,113 @@ try {
       'PARSPACK', 'v1', 'READY_INSTANT_SERVER',
       'PARCHIN_START', 'ACTIVE', 44, CURRENT_TIMESTAMP
     );
+
+    INSERT INTO "RecommendationSession" (
+      id, "userId", status, answers, "answerSources",
+      "productFlowState", "productFlowRevision",
+      "expiresAt", "createdAt", "updatedAt"
+    ) VALUES (
+      'v6-payment-review', 'migration-user', 'CHECKOUT', '{}', '{}',
+      'PAYMENT_REVIEW', 6,
+      CURRENT_TIMESTAMP + INTERVAL '1 hour',
+      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    );
+
+    INSERT INTO "RecommendationQuote"
+    SELECT (
+      jsonb_populate_record(
+        NULL::"RecommendationQuote",
+        to_jsonb(template) || jsonb_build_object(
+          'id', 'v6-quote-payment-review',
+          'sessionId', 'v6-payment-review',
+          'status', 'SELECTED',
+          'role', 'RECOMMENDED',
+          'planSnapshot', jsonb_build_object(
+            'immutable', 'v6-payment-review-financial-provider-snapshot'
+          )
+        )
+      )
+    ).*
+    FROM "RecommendationQuote" template
+    WHERE template.id = 'quote-valid';
+
+    INSERT INTO "ServiceOrder" (
+      id, "userId", title, amount, status, "planId",
+      "planSnapshot", "recommendationQuoteId", "quoteExpiresAt",
+      provider, "providerApiVersion", "productKind", "parchinLevel",
+      "productFlowState", "productFlowRevision", "updatedAt"
+    ) VALUES (
+      'v6-order-payment-review', 'migration-user',
+      'Payment review valid runtime graph', 6250000,
+      'PENDING_PAYMENT', 'migration-plan',
+      '{"immutable":"v6-service-order-snapshot"}',
+      'v6-quote-payment-review',
+      CURRENT_TIMESTAMP + INTERVAL '10 minutes',
+      'PARSPACK', 'v1', 'READY_INSTANT_SERVER',
+      'PARCHIN_START', 'PAYMENT_REVIEW', 6, CURRENT_TIMESTAMP
+    );
+
+    INSERT INTO "ProductFlowTransition" (
+      id, "recommendationSessionId", "serviceOrderId",
+      "fromState", "toState", reason, "idempotencyKey",
+      "ownerFingerprint", "fromRevision", "toRevision"
+    ) VALUES
+      (
+        'migration:v4:session-restore:v6-payment-review',
+        'v6-payment-review', NULL, 'AWAITING_PAYMENT',
+        'AWAITING_PAYMENT', 'v4_live_sibling_graph_restored',
+        'migration:v4:session-restore:v6-payment-review',
+        'v6-payment-review:-:-', 20, 5
+      ),
+      (
+        'v6-runtime-payment-review', 'v6-payment-review',
+        'v6-order-payment-review', 'AWAITING_PAYMENT',
+        'PAYMENT_REVIEW', 'payment_requires_review',
+        'v6-runtime-payment-review',
+        'v6-payment-review:v6-order-payment-review:-', 5, 6
+      );
+
+    INSERT INTO "RecommendationSession" (
+      id, "userId", status, answers, "answerSources",
+      "productFlowState", "productFlowRevision",
+      "expiresAt", "createdAt", "updatedAt"
+    ) VALUES (
+      'v6-quote-expired', 'migration-user', 'CHECKOUT', '{}', '{}',
+      'QUOTE_EXPIRED', 9,
+      CURRENT_TIMESTAMP + INTERVAL '1 hour',
+      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    );
+
+    INSERT INTO "RecommendationQuote"
+    SELECT (
+      jsonb_populate_record(
+        NULL::"RecommendationQuote",
+        to_jsonb(template) || jsonb_build_object(
+          'id', 'v6-quote-expired-quote',
+          'sessionId', 'v6-quote-expired',
+          'status', 'EXPIRED',
+          'role', 'RECOMMENDED'
+        )
+      )
+    ).*
+    FROM "RecommendationQuote" template
+    WHERE template.id = 'quote-valid';
+
+    INSERT INTO "ServiceOrder" (
+      id, "userId", title, amount, status, "planId",
+      "planSnapshot", "recommendationQuoteId", "quoteExpiresAt",
+      provider, "providerApiVersion", "productKind", "parchinLevel",
+      "productFlowState", "productFlowRevision", "updatedAt"
+    ) VALUES (
+      'v6-order-quote-expired', 'migration-user',
+      'Quote expired valid runtime graph', 6250000,
+      'PENDING_PAYMENT', 'migration-plan',
+      '{"immutable":"v6-quote-expired-service-snapshot"}',
+      'v6-quote-expired-quote',
+      CURRENT_TIMESTAMP - INTERVAL '1 minute',
+      'PARSPACK', 'v1', 'READY_INSTANT_SERVER',
+      'PARCHIN_START', 'QUOTE_EXPIRED', 9, CURRENT_TIMESTAMP
+    );
   `);
 
   await copyThrough(terminalAndWorkerRecoveryV5);
@@ -1367,6 +1476,22 @@ try {
     productFlowState: "ACTIVE",
     productFlowRevision: 44,
   });
+  const paymentReviewV5Case =
+    await db.productFlowRemediationCase.findUnique({
+      where: {
+        idempotencyKey:
+          "migration:v5:manual:v6-payment-review",
+      },
+    });
+  assert.equal(paymentReviewV5Case?.status, "OPEN");
+  const quoteExpiredV5Case =
+    await db.productFlowRemediationCase.findUnique({
+      where: {
+        idempotencyKey:
+          "migration:v5:manual:v6-quote-expired",
+      },
+    });
+  assert.equal(quoteExpiredV5Case?.status, "OPEN");
 
   const v5FinancialAfter = await db.$queryRawUnsafe<
     typeof v4FinancialBefore
@@ -1403,6 +1528,168 @@ try {
     WHERE wallet.id = 'migration-wallet'
   `);
   assert.deepEqual(v5FinancialAfter, v4FinancialBefore);
+
+  const v6PaymentReviewFinancialBefore =
+    await db.$queryRawUnsafe<
+      Array<{
+        orderSnapshot: unknown;
+        quoteSnapshot: unknown;
+        walletSnapshot: unknown;
+        ledgerSnapshot: unknown;
+      }>
+    >(`
+      SELECT
+        jsonb_build_object(
+          'amount', service_order.amount,
+          'paidAt', service_order."paidAt",
+          'planSnapshot', service_order."planSnapshot",
+          'provider', service_order.provider,
+          'providerApiVersion', service_order."providerApiVersion"
+        ) AS "orderSnapshot",
+        jsonb_build_object(
+          'amountRial', quote."amountRial",
+          'renewalAmountRial', quote."renewalAmountRial",
+          'providerBasePriceRialSnapshot',
+            quote."providerBasePriceRialSnapshot",
+          'finalPriceRialSnapshot', quote."finalPriceRialSnapshot",
+          'lineItemsSnapshot', quote."lineItemsSnapshot",
+          'planSnapshot', quote."planSnapshot",
+          'provider', quote.provider,
+          'providerApiVersion', quote."providerApiVersion"
+        ) AS "quoteSnapshot",
+        to_jsonb(wallet) AS "walletSnapshot",
+        (
+          SELECT jsonb_agg(to_jsonb(entry) ORDER BY entry.id)
+          FROM "WalletLedgerEntry" entry
+          WHERE entry."walletId" = wallet.id
+        ) AS "ledgerSnapshot"
+      FROM "ServiceOrder" service_order
+      JOIN "RecommendationQuote" quote
+        ON quote.id = service_order."recommendationQuoteId"
+      JOIN "Wallet" wallet ON wallet.id = 'migration-wallet'
+      WHERE service_order.id = 'v6-order-payment-review'
+    `);
+
+  await copyThrough(terminalAndDispatchRecoveryV6);
+  await deploy();
+
+  const v6PaymentReview = await db.$queryRawUnsafe<
+    Array<{
+      sessionState: string;
+      serviceState: string;
+      sessionRevision: number;
+      serviceRevision: number;
+      caseStatus: string;
+      resolvedEvidence: unknown;
+    }>
+  >(`
+    SELECT
+      session."productFlowState" AS "sessionState",
+      service_order."productFlowState" AS "serviceState",
+      session."productFlowRevision" AS "sessionRevision",
+      service_order."productFlowRevision" AS "serviceRevision",
+      remediation.status AS "caseStatus",
+      remediation.evidence AS "resolvedEvidence"
+    FROM "RecommendationSession" session
+    JOIN "RecommendationQuote" quote
+      ON quote."sessionId" = session.id
+    JOIN "ServiceOrder" service_order
+      ON service_order."recommendationQuoteId" = quote.id
+    JOIN "ProductFlowRemediationCase" remediation
+      ON remediation."idempotencyKey" =
+        'migration:v5:manual:' || session.id
+    WHERE session.id = 'v6-payment-review'
+  `);
+  assert.equal(v6PaymentReview[0]?.sessionState, "PAYMENT_REVIEW");
+  assert.equal(v6PaymentReview[0]?.serviceState, "PAYMENT_REVIEW");
+  assert.equal(
+    v6PaymentReview[0]?.sessionRevision,
+    v6PaymentReview[0]?.serviceRevision,
+  );
+  assert.ok((v6PaymentReview[0]?.sessionRevision ?? 0) > 20);
+  assert.equal(v6PaymentReview[0]?.caseStatus, "RESOLVED");
+  const v6QuoteExpired = await db.$queryRawUnsafe<
+    Array<{
+      sessionState: string;
+      serviceState: string;
+      sessionRevision: number;
+      serviceRevision: number;
+      caseStatus: string;
+    }>
+  >(`
+    SELECT
+      session."productFlowState" AS "sessionState",
+      service_order."productFlowState" AS "serviceState",
+      session."productFlowRevision" AS "sessionRevision",
+      service_order."productFlowRevision" AS "serviceRevision",
+      remediation.status AS "caseStatus"
+    FROM "RecommendationSession" session
+    JOIN "RecommendationQuote" quote
+      ON quote."sessionId" = session.id
+    JOIN "ServiceOrder" service_order
+      ON service_order."recommendationQuoteId" = quote.id
+    JOIN "ProductFlowRemediationCase" remediation
+      ON remediation."idempotencyKey" =
+        'migration:v5:manual:' || session.id
+    WHERE session.id = 'v6-quote-expired'
+  `);
+  assert.deepEqual(v6QuoteExpired, [
+    {
+      sessionState: "QUOTE_EXPIRED",
+      serviceState: "QUOTE_EXPIRED",
+      sessionRevision: 10,
+      serviceRevision: 10,
+      caseStatus: "RESOLVED",
+    },
+  ]);
+  const v6NonIncreasing = await db.$queryRawUnsafe<
+    Array<{ count: bigint }>
+  >(`
+    SELECT count(*) AS count
+    FROM "ProductFlowTransition"
+    WHERE "idempotencyKey" LIKE 'migration:v6:%'
+      AND "toRevision" <= "fromRevision"
+  `);
+  assert.equal(v6NonIncreasing[0]?.count, 0n);
+  const v6PaymentReviewFinancialAfter =
+    await db.$queryRawUnsafe<
+      typeof v6PaymentReviewFinancialBefore
+    >(`
+      SELECT
+        jsonb_build_object(
+          'amount', service_order.amount,
+          'paidAt', service_order."paidAt",
+          'planSnapshot', service_order."planSnapshot",
+          'provider', service_order.provider,
+          'providerApiVersion', service_order."providerApiVersion"
+        ) AS "orderSnapshot",
+        jsonb_build_object(
+          'amountRial', quote."amountRial",
+          'renewalAmountRial', quote."renewalAmountRial",
+          'providerBasePriceRialSnapshot',
+            quote."providerBasePriceRialSnapshot",
+          'finalPriceRialSnapshot', quote."finalPriceRialSnapshot",
+          'lineItemsSnapshot', quote."lineItemsSnapshot",
+          'planSnapshot', quote."planSnapshot",
+          'provider', quote.provider,
+          'providerApiVersion', quote."providerApiVersion"
+        ) AS "quoteSnapshot",
+        to_jsonb(wallet) AS "walletSnapshot",
+        (
+          SELECT jsonb_agg(to_jsonb(entry) ORDER BY entry.id)
+          FROM "WalletLedgerEntry" entry
+          WHERE entry."walletId" = wallet.id
+        ) AS "ledgerSnapshot"
+      FROM "ServiceOrder" service_order
+      JOIN "RecommendationQuote" quote
+        ON quote.id = service_order."recommendationQuoteId"
+      JOIN "Wallet" wallet ON wallet.id = 'migration-wallet'
+      WHERE service_order.id = 'v6-order-payment-review'
+    `);
+  assert.deepEqual(
+    v6PaymentReviewFinancialAfter,
+    v6PaymentReviewFinancialBefore,
+  );
 
   const terminalRecovered = await db.$queryRawUnsafe<
     Array<{
@@ -1755,6 +2042,53 @@ try {
   } = await import(
     "../lib/product-flow/service.ts"
   );
+  const v6BeforeRuntimeTransition =
+    await flowDb.recommendationSession.findUniqueOrThrow({
+      where: { id: "v6-payment-review" },
+      select: { productFlowRevision: true },
+    });
+  const v6RuntimeTransition = await transitionProductFlow({
+    owner: {
+      recommendationSessionId: "v6-payment-review",
+      serviceOrderId: "v6-order-payment-review",
+    },
+    from: "PAYMENT_REVIEW",
+    to: "AWAITING_PAYMENT",
+    idempotencyKey: "v6-next-transition-once",
+    reason: "payment_review_approved",
+  });
+  assert.equal(
+    v6RuntimeTransition.fromRevision,
+    v6BeforeRuntimeTransition.productFlowRevision,
+  );
+  assert.equal(
+    v6RuntimeTransition.toRevision,
+    v6BeforeRuntimeTransition.productFlowRevision + 1,
+  );
+  const v6Replay = await transitionProductFlow({
+    owner: {
+      recommendationSessionId: "v6-payment-review",
+      serviceOrderId: "v6-order-payment-review",
+    },
+    from: "PAYMENT_REVIEW",
+    to: "AWAITING_PAYMENT",
+    idempotencyKey: "v6-next-transition-once",
+    reason: "payment_review_approved",
+  });
+  assert.equal(v6Replay.id, v6RuntimeTransition.id);
+  await assert.rejects(
+    transitionProductFlow({
+      owner: {
+        recommendationSessionId: "v6-payment-review",
+        serviceOrderId: "v6-order-payment-review",
+      },
+      from: "PAYMENT_REVIEW",
+      to: "AWAITING_PAYMENT",
+      idempotencyKey: "v6-stale-revision-transition",
+      reason: "stale_payment_review_command",
+    }),
+    /product_flow_state_conflict/,
+  );
   const v5BeforeRuntimeTransition =
     await flowDb.recommendationSession.findUniqueOrThrow({
       where: { id: "v4-mixed-cancel-pending" },
@@ -2102,6 +2436,7 @@ try {
     orderId: refundRuntime.serviceOrder.id,
     actorUserId: "migration-admin",
     reason: "بازگشت وجه تراکنشی تست",
+    idempotencyKey: "postgres-refund-runtime-0001",
   });
   const walletAfterRuntimeRefund =
     await db.wallet.findUniqueOrThrow({
@@ -2176,6 +2511,7 @@ try {
     orderId: refundRuntime.serviceOrder.id,
     actorUserId: "migration-admin",
     reason: "بازگشت وجه تراکنشی تست",
+    idempotencyKey: "postgres-refund-runtime-0001",
   });
   assert.equal(
     await db.walletLedgerEntry.count({
@@ -2271,6 +2607,7 @@ try {
     orderId: refundWithLiveSibling.serviceOrder.id,
     actorUserId: "migration-admin",
     reason: "Refund فقط برای Order هدف با sibling فعال",
+    idempotencyKey: "postgres-refund-sibling-0001",
   });
   assert.deepEqual(
     await db.recommendationSession.findUniqueOrThrow({
@@ -2368,6 +2705,7 @@ try {
       orderId: refundRollback.serviceOrder.id,
       actorUserId: "migration-admin",
       reason: "این Refund باید Rollback شود",
+      idempotencyKey: "postgres-refund-rollback-0001",
     }),
     /product_flow_idempotency_conflict/,
   );
@@ -2437,8 +2775,9 @@ try {
         orderId: seeded.serviceOrder.id,
         actorUserId: "migration-admin",
         reason: "نبود منبع هنوز قطعی نیست",
+        idempotencyKey: `postgres-refund-blocked-${seeded.serviceOrder.id}`,
       }),
-      /تعیین قطعی نبود یا خاتمه Resource/,
+      /تعیین قطعی نبود یا خاتمه Resource|وضعیت فعلی Resource مجاز نیست/,
     );
     assert.deepEqual(
       await db.wallet.findUniqueOrThrow({
@@ -2511,6 +2850,7 @@ try {
         confirmedAbsent.infrastructureOrder.id,
       adminUserId: "migration-admin",
       reason: "Provider با GET نبود Resource را تأیید کرد",
+      idempotencyKey: "postgres-confirm-absent-0001",
     },
     absenceAdapter,
   );
@@ -2537,6 +2877,7 @@ try {
     orderId: confirmedAbsent.serviceOrder.id,
     actorUserId: "migration-admin",
     reason: "نبود Resource قطعی و Audit شده است",
+    idempotencyKey: "postgres-refund-absent-0001",
   });
   assert.equal(
     (
@@ -2586,6 +2927,7 @@ try {
     orderId: terminatedResource.serviceOrder.id,
     actorUserId: "migration-admin",
     reason: "Resource به‌طور قطعی خاتمه یافته است",
+    idempotencyKey: "postgres-refund-terminated-0001",
   });
   assert.equal(
     (
@@ -2616,6 +2958,7 @@ try {
     orderId: unusableNeverSent.serviceOrder.id,
     actorUserId: "migration-admin",
     reason: "Create ارسال نشده و Snapshot قابل استفاده نیست",
+    idempotencyKey: "postgres-refund-never-sent-0001",
   });
   assert.equal(
     (
@@ -2655,6 +2998,7 @@ try {
         retryConfirmedAbsent.infrastructureOrder.id,
       adminUserId: "migration-admin",
       reason: "عدم وجود Resource برای Retry قطعی شد",
+      idempotencyKey: "postgres-confirm-retry-absent-0001",
     },
     retryAbsenceAdapter,
   );
@@ -2663,6 +3007,7 @@ try {
       retryConfirmedAbsent.infrastructureOrder.id,
     adminUserId: "migration-admin",
     reason: "Retry پس از تأیید رسمی نبود Resource",
+    idempotencyKey: "postgres-retry-after-absence-0001",
   });
   assert.equal(retryResult.job.operation, "create_instance");
   assert.equal(retryResult.job.attempt, 2);
@@ -2764,6 +3109,7 @@ try {
         resourceFoundManual.infrastructureOrder.id,
       adminUserId: "migration-admin",
       reason: "Resource موجود با GET Provider پیدا شد",
+      idempotencyKey: "postgres-reconcile-found-0001",
     },
     resourceFoundAdapter,
   );
@@ -2832,7 +3178,7 @@ try {
       note: "funding-a",
       idempotencyKey: fundingKey,
     }),
-    /شناسه یکتا/,
+    /شناسه یکتا|idempotency_conflict/,
   );
   await assert.rejects(
     confirmProviderFunding({
@@ -2844,7 +3190,7 @@ try {
       note: "funding-a",
       idempotencyKey: fundingKey,
     }),
-    /شناسه یکتا/,
+    /شناسه یکتا|idempotency_conflict/,
   );
   assert.equal(
     await db.providerFundingConfirmation.count({
@@ -2965,6 +3311,7 @@ try {
   );
   const {
     observeManualReviewResource,
+    processPendingHealthRetryDispatches,
     processHealthCheckRetryJob,
     scheduleAutomaticHealthRetry,
     scheduleManualHealthRecovery,
@@ -2974,7 +3321,9 @@ try {
   );
   const {
     claimNextProvisioningJob,
+    processPendingProvisioningNotifications,
     processProvisioningJob,
+    reconcileProvisioningDispatches,
     recoverExpiredProvisioningJobs,
   } = await import("../lib/infrastructure/provisioning-service.ts");
 
@@ -3248,7 +3597,7 @@ try {
       reason: "",
       idempotencyKey: "health-retry-reason-01",
     }),
-    /دلیل Retry/,
+    /دلیل عملیات/,
   );
   await assert.rejects(
     scheduleManualHealthRetry({
@@ -3257,7 +3606,7 @@ try {
       reason: "valid reason",
       idempotencyKey: "short",
     }),
-    /شناسه یکتای Retry/,
+    /شناسه یکتای عملیات/,
   );
 
   const scheduled = await Promise.all([
@@ -3282,7 +3631,7 @@ try {
       reason: "different reason must conflict",
       idempotencyKey: "health-retry-concurrent-0001",
     }),
-    /شناسه یکتا/,
+    /شناسه یکتا|idempotency_conflict/,
   );
   assert.equal(
     await db.provisioningJob.count({
@@ -3432,7 +3781,7 @@ try {
       },
       retryAdapter,
     ),
-    /شناسه یکتا/,
+    /شناسه یکتا|idempotency_conflict/,
   );
 
   const manualRecoveryJobs = await Promise.all([
@@ -3763,7 +4112,7 @@ try {
       reason: "Payload متفاوت پس از پایان Job",
       idempotencyKey: "health-retry-attached-auto-0001",
     }),
-    /شناسه یکتا/,
+    /شناسه یکتا|idempotency_conflict/,
   );
   assert.equal(
     attachedSetup.adapter.createCalls.length,
@@ -4121,6 +4470,176 @@ try {
     InfrastructureOrderStatus.ACTIVE,
   );
 
+  const staleDesiredName = await seedMainProvisioning({
+    id: "stale-desired-name-fence",
+  });
+  await db.infrastructureOrder.update({
+    where: { id: staleDesiredName.infrastructureOrder.id },
+    data: { desiredInstanceName: null },
+  });
+  const desiredNameAdapter = mainAdapter();
+  const desiredNameA = await claimOnly(
+    staleDesiredName.job.id,
+    "desired-name-stale-worker-a",
+  );
+  let desiredNameBResult: Awaited<
+    ReturnType<typeof processProvisioningJob>
+  > = null;
+  const desiredNameAResult = await processProvisioningJob(
+    desiredNameA.id,
+    desiredNameAdapter,
+    {
+      claimToken: desiredNameA.claimToken!,
+      healthProbe: async () => true,
+      beforeDesiredNamePersist: async () => {
+        await db.provisioningJob.update({
+          where: { id: desiredNameA.id },
+          data: { leaseExpiresAt: new Date(Date.now() - 1000) },
+        });
+        await recoverExpiredProvisioningJobs();
+        const desiredNameB = await claimOnly(
+          desiredNameA.id,
+          "desired-name-current-worker-b",
+        );
+        desiredNameBResult = await processProvisioningJob(
+          desiredNameB.id,
+          desiredNameAdapter,
+          {
+            claimToken: desiredNameB.claimToken!,
+            healthProbe: async () => true,
+          },
+        );
+      },
+    },
+  );
+  assert.equal(desiredNameAResult, null);
+  assert.equal(desiredNameBResult?.healthy, true);
+  assert.equal(desiredNameAdapter.createCalls.length, 1);
+  const desiredNameFinal =
+    await db.infrastructureOrder.findUniqueOrThrow({
+      where: { id: staleDesiredName.infrastructureOrder.id },
+      select: {
+        desiredInstanceName: true,
+        status: true,
+        productFlowState: true,
+      },
+    });
+  assert.ok(desiredNameFinal.desiredInstanceName);
+  assert.equal(desiredNameFinal.status, InfrastructureOrderStatus.ACTIVE);
+  assert.equal(desiredNameFinal.productFlowState, "ACTIVE");
+
+  const staleReconciling = await seedMainProvisioning({
+    id: "stale-reconciling-fence",
+  });
+  const reconcilingAdapter = new FakeCloudProviderAdapter({
+    provider: InfrastructureProvider.PARSPACK,
+    createBehavior: "timeout_after_accept",
+    observedResource: {
+      state: "active",
+      ipv4: "192.0.2.81",
+      networkIds: null,
+      securityIds: null,
+    },
+  });
+  const reconcilingA = await claimOnly(
+    staleReconciling.job.id,
+    "reconciling-stale-worker-a",
+  );
+  let reconcilingBResult: Awaited<
+    ReturnType<typeof processProvisioningJob>
+  > = null;
+  const reconcilingAResult = await processProvisioningJob(
+    reconcilingA.id,
+    reconcilingAdapter,
+    {
+      claimToken: reconcilingA.claimToken!,
+      healthProbe: async () => true,
+      beforeReconcilingPersist: async () => {
+        await db.provisioningJob.update({
+          where: { id: reconcilingA.id },
+          data: { leaseExpiresAt: new Date(Date.now() - 1000) },
+        });
+        await recoverExpiredProvisioningJobs();
+        const reconcilingB = await claimOnly(
+          reconcilingA.id,
+          "reconciling-current-worker-b",
+        );
+        reconcilingBResult = await processProvisioningJob(
+          reconcilingB.id,
+          reconcilingAdapter,
+          {
+            claimToken: reconcilingB.claimToken!,
+            healthProbe: async () => true,
+          },
+        );
+      },
+    },
+  );
+  assert.equal(reconcilingAResult, null);
+  assert.equal(reconcilingBResult?.healthy, true);
+  assert.equal(reconcilingAdapter.createCalls.length, 1);
+  assert.deepEqual(
+    await db.infrastructureOrder.findUniqueOrThrow({
+      where: { id: staleReconciling.infrastructureOrder.id },
+      select: { status: true, productFlowState: true },
+    }),
+    {
+      status: InfrastructureOrderStatus.ACTIVE,
+      productFlowState: "ACTIVE",
+    },
+  );
+  const staleReconcilingTransitions =
+    await db.productFlowTransition.findMany({
+      where: {
+        infrastructureOrderId:
+          staleReconciling.infrastructureOrder.id,
+      },
+      select: { reason: true },
+    });
+  assert.equal(
+    staleReconcilingTransitions.some(
+      (transition) =>
+        transition.reason ===
+        "provider_create_requires_reconciliation",
+    ),
+    false,
+  );
+
+  const durableFailure = await seedMainProvisioning({
+    id: "transactional-failure-outbox",
+  });
+  const durableFailureAdapter = new FakeCloudProviderAdapter({
+    provider: InfrastructureProvider.PARSPACK,
+    createBehavior: "failure",
+  });
+  const durableFailureClaim = await claimOnly(
+    durableFailure.job.id,
+    "transactional-failure-worker",
+  );
+  const durableFailureResult = await processProvisioningJob(
+    durableFailureClaim.id,
+    durableFailureAdapter,
+    { claimToken: durableFailureClaim.claimToken! },
+  );
+  assert.equal(durableFailureResult?.state, "PROVIDER_FAILED");
+  assert.equal(durableFailureAdapter.createCalls.length, 1);
+  assert.equal(
+    await db.provisioningNotificationOutbox.count({
+      where: {
+        idempotencyKey: `provider-failure:${durableFailure.job.id}`,
+      },
+    }),
+    1,
+  );
+  assert.equal(
+    (
+      await db.provisioningJob.findUniqueOrThrow({
+        where: { id: durableFailure.job.id },
+      })
+    ).phase,
+    "PROVIDER_FAILED",
+  );
+
   const notificationFailure = await seedMainProvisioning({
     id: "main-notification-outbox",
   });
@@ -4218,6 +4737,62 @@ try {
       },
     });
   assert.equal(pendingNotification.status, "PENDING");
+  assert.equal(pendingNotification.attemptCount, 1);
+  await Promise.all([
+    reconcileProvisioningDispatches(),
+    reconcileProvisioningDispatches(),
+  ]);
+  assert.equal(
+    await db.provisioningNotificationOutbox.count({
+      where: {
+        idempotencyKey:
+          `instance-active:${notificationFailure.infrastructureOrder.id}`,
+      },
+    }),
+    1,
+  );
+  await processPendingProvisioningNotifications();
+  const deliveredNotification =
+    await db.provisioningNotificationOutbox.findUniqueOrThrow({
+      where: { id: pendingNotification.id },
+    });
+  assert.equal(deliveredNotification.status, "SENT");
+  assert.equal(deliveredNotification.attemptCount, 2);
+
+  const reconciledActive = await seedMainProvisioning({
+    id: "active-outbox-reconciler",
+  });
+  const reconciledActiveClaim = await claimOnly(
+    reconciledActive.job.id,
+    "active-outbox-reconciler-worker",
+  );
+  await processProvisioningJob(
+    reconciledActiveClaim.id,
+    mainAdapter(),
+    {
+      claimToken: reconciledActiveClaim.claimToken!,
+      healthProbe: async () => true,
+    },
+  );
+  await db.provisioningNotificationOutbox.delete({
+    where: {
+      idempotencyKey:
+        `instance-active:${reconciledActive.infrastructureOrder.id}`,
+    },
+  });
+  await Promise.all([
+    reconcileProvisioningDispatches(),
+    reconcileProvisioningDispatches(),
+  ]);
+  assert.equal(
+    await db.provisioningNotificationOutbox.count({
+      where: {
+        idempotencyKey:
+          `instance-active:${reconciledActive.infrastructureOrder.id}`,
+      },
+    }),
+    1,
+  );
 
   async function assertFinalizeOnly(input: {
     id: string;
@@ -4330,6 +4905,36 @@ try {
       ).status,
       ProvisioningJobStatus.SUCCEEDED,
     );
+    if (!input.healthy) {
+      const dispatch = await db.healthRetryDispatch.findFirstOrThrow({
+        where: {
+          infrastructureOrderId:
+            seeded.infrastructureOrder.id,
+        },
+      });
+      assert.equal(dispatch.status, "PENDING");
+      assert.equal(dispatch.attemptCount, 1);
+      await Promise.all([
+        processPendingHealthRetryDispatches(100),
+        processPendingHealthRetryDispatches(100),
+      ]);
+      const dispatched =
+        await db.healthRetryDispatch.findUniqueOrThrow({
+          where: { id: dispatch.id },
+        });
+      assert.equal(dispatched.status, "DISPATCHED");
+      assert.ok(dispatched.dispatchedJobId);
+      assert.equal(
+        await db.provisioningJob.count({
+          where: {
+            infrastructureOrderId:
+              seeded.infrastructureOrder.id,
+            operation: "health_check_retry",
+          },
+        }),
+        1,
+      );
+    }
   }
 
   await assertFinalizeOnly({
@@ -4430,8 +5035,58 @@ try {
     ["reconcile", "confirm-no-resource"],
   );
 
+  const adminParity = await seedRuntimeOrder({
+    id: "admin-action-backend-parity",
+    infrastructureStatus: InfrastructureOrderStatus.MANUAL_REVIEW,
+    productFlowState: "PROVISIONING_MANUAL_REVIEW",
+  });
+  const adminParityUi = (
+    await listInfrastructureOrders()
+  ).find(
+    (order) => order.id === adminParity.infrastructureOrder.id,
+  );
+  assert.deepEqual(adminParityUi?.recovery.allowedActions, [
+    "retry",
+    "refund",
+  ]);
+  const parityRetry = await retryFailedProvisioning({
+    infrastructureOrderId: adminParity.infrastructureOrder.id,
+    adminUserId: "migration-admin",
+    reason: "Retry کنترل‌شده از Manual Review بدون Create",
+    idempotencyKey: "admin-parity-retry-0001",
+  });
+  assert.equal(parityRetry.job.attempt, 1);
+  assert.equal(parityRetry.job.status, ProvisioningJobStatus.QUEUED);
+  assert.deepEqual(
+    await db.infrastructureOrder.findUniqueOrThrow({
+      where: { id: adminParity.infrastructureOrder.id },
+      select: { status: true, productFlowState: true },
+    }),
+    {
+      status: InfrastructureOrderStatus.QUEUED,
+      productFlowState: "PROVISIONING_SUBMITTED",
+    },
+  );
+  const parityReplay = await retryFailedProvisioning({
+    infrastructureOrderId: adminParity.infrastructureOrder.id,
+    adminUserId: "migration-admin",
+    reason: "Retry کنترل‌شده از Manual Review بدون Create",
+    idempotencyKey: "admin-parity-retry-0001",
+  });
+  assert.equal(parityReplay.job.id, parityRetry.job.id);
+  assert.equal(parityReplay.job.status, ProvisioningJobStatus.QUEUED);
+  await assert.rejects(
+    retryFailedProvisioning({
+      infrastructureOrderId: adminParity.infrastructureOrder.id,
+      adminUserId: "migration-admin",
+      reason: "Payload متفاوت برای همان کلید",
+      idempotencyKey: "admin-parity-retry-0001",
+    }),
+    /idempotency_conflict/,
+  );
+
   console.log(
-    "PostgreSQL integration passed (72 scenarios): V5 monotonic revision repair after V3/V4 regression, semantic remediation cases, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, idempotency conflicts, direct-catalog audit, provider-capability health verification, durable admin receipts, manual recovery, mandatory main-worker claim tokens, fenced stale-worker create recovery, one-create reconciliation, ACTIVE notification outbox isolation, finalize-only replay for successful and failed health results, and Admin actions derived from the same audited Backend disposition",
+    "PostgreSQL integration passed (82 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, and durable concurrent health-retry dispatch",
   );
 } finally {
   await flowDb?.$disconnect();

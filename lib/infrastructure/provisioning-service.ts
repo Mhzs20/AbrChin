@@ -39,6 +39,7 @@ import {
   isWorkerLeaseLostError,
   type ProvisioningJobFence,
   WorkerLeaseLostError,
+  proveProvisioningJobFenceTx,
 } from "@/lib/infrastructure/worker-fence";
 
 const POLL_ATTEMPTS = 8;
@@ -83,16 +84,18 @@ async function queueProvisioningNotification(input: {
   title: string;
   message: string;
 }) {
-  return prisma.provisioningNotificationOutbox.upsert({
-    where: { idempotencyKey: input.idempotencyKey },
-    update: {},
-    create: {
+  await prisma.provisioningNotificationOutbox.createMany({
+    data: {
       idempotencyKey: input.idempotencyKey,
       type: input.type,
       infrastructureOrderId: input.infrastructureOrderId,
       title: input.title,
       message: input.message,
     },
+    skipDuplicates: true,
+  });
+  return prisma.provisioningNotificationOutbox.findUniqueOrThrow({
+    where: { idempotencyKey: input.idempotencyKey },
   });
 }
 
@@ -105,8 +108,8 @@ async function deliverProvisioningNotification(
       where: { id: outboxId },
     });
   if (!outbox || outbox.status === "SENT") return;
-  await beforeDelivery?.();
   try {
+    await beforeDelivery?.();
     await prisma.$transaction([
       prisma.adminNotification.upsert({
         where: { id: `outbox:${outbox.id}` },
@@ -160,6 +163,79 @@ export async function processPendingProvisioningNotifications(
     }
   }
   return pending.length;
+}
+
+export async function reconcileProvisioningDispatches(limit = 50) {
+  const [activeOrders, failedJobs] = await Promise.all([
+    prisma.infrastructureOrder.findMany({
+      where: {
+        status: InfrastructureOrderStatus.ACTIVE,
+        cloudInstance: { status: CloudInstanceStatus.ACTIVE },
+      },
+      include: { serviceOrder: true },
+      orderBy: { updatedAt: "asc" },
+      take: limit,
+    }),
+    prisma.provisioningJob.findMany({
+      where: {
+        phase: "PROVIDER_FAILED",
+        status: {
+          in: [
+            ProvisioningJobStatus.FAILED,
+            ProvisioningJobStatus.NEEDS_RECONCILIATION,
+            ProvisioningJobStatus.BLOCKED_PROVIDER_BALANCE,
+          ],
+        },
+      },
+      orderBy: { updatedAt: "asc" },
+      take: limit,
+    }),
+  ]);
+
+  for (const order of activeOrders) {
+    await queueProvisioningNotification({
+      idempotencyKey: `instance-active:${order.id}`,
+      type: AdminNotificationType.INSTANCE_ACTIVE,
+      infrastructureOrderId: order.id,
+      title: "سرور فعال شد",
+      message: `سرور سفارش ${order.serviceOrder.title} آماده است.`,
+    });
+  }
+  for (const job of failedJobs) {
+    const insufficientBalance =
+      job.status === ProvisioningJobStatus.BLOCKED_PROVIDER_BALANCE;
+    const needsReconciliation =
+      job.status === ProvisioningJobStatus.NEEDS_RECONCILIATION;
+    await queueProvisioningNotification({
+      idempotencyKey: `provider-failure:${job.id}`,
+      type: insufficientBalance
+        ? AdminNotificationType.PROVIDER_BALANCE_BLOCKED
+        : needsReconciliation
+          ? AdminNotificationType.NEEDS_RECONCILIATION
+          : AdminNotificationType.PROVISIONING_FAILED,
+      infrastructureOrderId: job.infrastructureOrderId,
+      title: insufficientBalance
+        ? "کمبود اعتبار Provider"
+        : needsReconciliation
+          ? "نیاز به تطبیق"
+          : "خطای آماده‌سازی",
+      message: insufficientBalance
+        ? "اعتبار Provider کافی نیست و نیاز به بررسی دستی دارد."
+        : needsReconciliation
+          ? "وضعیت ساخت سرور مبهم است و نیاز به تطبیق دارد."
+          : "آماده‌سازی سرور با خطا مواجه شد.",
+    });
+  }
+  const { processPendingHealthRetryDispatches } = await import(
+    "@/lib/infrastructure/health-retry-service"
+  );
+  const healthRetryDispatches =
+    await processPendingHealthRetryDispatches(limit);
+  return {
+    activeNotifications: activeOrders.length,
+    failureNotifications: failedJobs.length,
+    healthRetryDispatches,
+  };
 }
 
 type ClaimedJobRow = { id: string };
@@ -502,6 +578,8 @@ type ProvisioningProcessOptions = {
   beforeNotificationDelivery?: () => void | Promise<void>;
   beforeHealthRetrySchedule?: () => void | Promise<void>;
   afterHealthTransition?: () => void | Promise<void>;
+  beforeReconcilingPersist?: () => void | Promise<void>;
+  beforeDesiredNamePersist?: () => void | Promise<void>;
 };
 
 function productFlowOwner(order: {
@@ -650,13 +728,13 @@ export async function processProvisioningJob(
     }
     if (persistedHealth && !persistedHealth.healthy) {
       try {
-        await options.beforeHealthRetrySchedule?.();
-        const { scheduleAutomaticHealthRetry } = await import(
+        const { processPendingHealthRetryDispatches } = await import(
           "@/lib/infrastructure/health-retry-service"
         );
-        await scheduleAutomaticHealthRetry({
-          infrastructureOrderId: order.id,
-          sourceCheckId: persistedHealth.healthCheckId,
+        await processPendingHealthRetryDispatches(1, {
+          beforeSchedule: options.beforeHealthRetrySchedule
+            ? async () => options.beforeHealthRetrySchedule?.()
+            : undefined,
         });
       } catch {
         console.error(
@@ -705,16 +783,24 @@ export async function processProvisioningJob(
     );
   if (!order.desiredInstanceName) {
     const desiredName = buildDesiredInstanceName(order.id);
-    await prisma.$transaction(async (tx) => {
-      await assertProvisioningJobFenceTx(tx, workerFence);
-      await tx.infrastructureOrder.updateMany({
-        where: {
-          id: order.id,
-          desiredInstanceName: null,
-        },
-        data: { desiredInstanceName: desiredName },
+    await options.beforeDesiredNamePersist?.();
+    try {
+      await prisma.$transaction(async (tx) => {
+        await proveProvisioningJobFenceTx(tx, workerFence);
+        const named = await tx.infrastructureOrder.updateMany({
+          where: {
+            id: order.id,
+            desiredInstanceName: null,
+          },
+          data: { desiredInstanceName: desiredName },
+        });
+        if (named.count !== 1) throw new WorkerLeaseLostError();
+        await proveProvisioningJobFenceTx(tx, workerFence);
       });
-    });
+    } catch (error) {
+      if (isWorkerLeaseLostError(error)) return null;
+      throw error;
+    }
     order.desiredInstanceName = desiredName;
   }
 
@@ -799,6 +885,7 @@ export async function processProvisioningJob(
     });
     await assertFence(workerFence);
     if (submission.state === "RECONCILING") {
+      await options.beforeReconcilingPersist?.();
       await prisma.$transaction(async (tx) => {
         await assertProvisioningJobFenceTx(tx, workerFence);
         await transitionProductFlowTx(tx, {
@@ -808,7 +895,7 @@ export async function processProvisioningJob(
           reason: "provider_create_requires_reconciliation",
           idempotencyKey: `provider-reconciling:${job.id}`,
         });
-        await tx.provisioningJob.updateMany({
+        const reconciled = await tx.provisioningJob.updateMany({
           where: {
             id: job.id,
             status: ProvisioningJobStatus.RUNNING,
@@ -827,10 +914,31 @@ export async function processProvisioningJob(
             leaseExpiresAt: null,
           },
         });
-        await tx.infrastructureOrder.update({
-          where: { id: order.id },
+        if (reconciled.count !== 1) {
+          throw new WorkerLeaseLostError();
+        }
+        const infrastructure = await tx.infrastructureOrder.updateMany({
+          where: {
+            id: order.id,
+            status: InfrastructureOrderStatus.PROVISIONING,
+          },
           data: {
             status: InfrastructureOrderStatus.NEEDS_RECONCILIATION,
+          },
+        });
+        if (infrastructure.count !== 1) {
+          throw new WorkerLeaseLostError();
+        }
+        await tx.provisioningNotificationOutbox.upsert({
+          where: { idempotencyKey: `provider-failure:${job.id}` },
+          update: {},
+          create: {
+            idempotencyKey: `provider-failure:${job.id}`,
+            type: AdminNotificationType.NEEDS_RECONCILIATION,
+            infrastructureOrderId: order.id,
+            title: "نیاز به تطبیق",
+            message:
+              "وضعیت ساخت سرور مبهم است و نیاز به تطبیق دارد.",
           },
         });
       });
@@ -1047,34 +1155,48 @@ export async function processProvisioningJob(
           },
         });
         if (failed.count !== 1) throw new WorkerLeaseLostError();
-        await tx.infrastructureOrder.update({
-          where: { id: order.id },
+        const infrastructure = await tx.infrastructureOrder.updateMany({
+          where: {
+            id: order.id,
+            productFlowState: targetFlow,
+          },
           data: { status: infraStatus },
+        });
+        if (infrastructure.count !== 1) {
+          throw new WorkerLeaseLostError();
+        }
+        await tx.provisioningNotificationOutbox.upsert({
+          where: { idempotencyKey: `provider-failure:${job.id}` },
+          update: {},
+          create: {
+            idempotencyKey: `provider-failure:${job.id}`,
+            type: insufficientBalance
+              ? AdminNotificationType.PROVIDER_BALANCE_BLOCKED
+              : needsReconciliation
+                ? AdminNotificationType.NEEDS_RECONCILIATION
+                : AdminNotificationType.PROVISIONING_FAILED,
+            infrastructureOrderId: order.id,
+            title: insufficientBalance
+              ? "کمبود اعتبار Provider"
+              : needsReconciliation
+                ? "نیاز به تطبیق"
+                : "خطای آماده‌سازی",
+            message: insufficientBalance
+              ? "اعتبار Provider کافی نیست و نیاز به بررسی دستی دارد."
+              : needsReconciliation
+                ? "وضعیت ساخت سرور مبهم است و نیاز به تطبیق دارد."
+                : "آماده‌سازی سرور با خطا مواجه شد.",
+          },
         });
       });
     } catch (fenceError) {
       if (isWorkerLeaseLostError(fenceError)) return null;
       throw fenceError;
     }
-    const notification = await queueProvisioningNotification({
-      idempotencyKey: `provider-failure:${job.id}`,
-      type: insufficientBalance
-        ? AdminNotificationType.PROVIDER_BALANCE_BLOCKED
-        : needsReconciliation
-          ? AdminNotificationType.NEEDS_RECONCILIATION
-          : AdminNotificationType.PROVISIONING_FAILED,
-      infrastructureOrderId: order.id,
-      title: insufficientBalance
-        ? "کمبود اعتبار Provider"
-        : needsReconciliation
-          ? "نیاز به تطبیق"
-          : "خطای آماده‌سازی",
-      message: insufficientBalance
-        ? "اعتبار Provider کافی نیست و نیاز به بررسی دستی دارد."
-        : needsReconciliation
-          ? "وضعیت ساخت سرور مبهم است و نیاز به تطبیق دارد."
-          : "آماده‌سازی سرور با خطا مواجه شد.",
-    });
+    const notification =
+      await prisma.provisioningNotificationOutbox.findUniqueOrThrow({
+        where: { idempotencyKey: `provider-failure:${job.id}` },
+      });
     try {
       await deliverProvisioningNotification(notification.id);
     } catch {
@@ -1150,13 +1272,13 @@ export async function processProvisioningJob(
 
   if (!healthResult.healthy) {
     try {
-      await options.beforeHealthRetrySchedule?.();
-      const { scheduleAutomaticHealthRetry } = await import(
+      const { processPendingHealthRetryDispatches } = await import(
         "@/lib/infrastructure/health-retry-service"
       );
-      await scheduleAutomaticHealthRetry({
-        infrastructureOrderId: order.id,
-        sourceCheckId: healthResult.healthCheckId,
+      await processPendingHealthRetryDispatches(1, {
+        beforeSchedule: options.beforeHealthRetrySchedule
+          ? async () => options.beforeHealthRetrySchedule?.()
+          : undefined,
       });
     } catch {
       console.error("[health-retry-schedule]", "schedule_pending");
@@ -1189,6 +1311,7 @@ export async function runProvisioningWorkerCycle(
   providerOverride?: CloudProviderAdapter,
   workerId?: string,
 ) {
+  await reconcileProvisioningDispatches();
   await processPendingProvisioningNotifications();
   const job = await claimNextProvisioningJob(workerId);
   if (!job) return false;

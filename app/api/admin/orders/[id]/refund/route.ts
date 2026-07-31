@@ -1,4 +1,4 @@
-import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
+import { jsonError, jsonOk, readIdempotencyKey, rejectCrossOrigin } from "@/lib/http";
 import { isIdempotencyConflictError } from "@/lib/idempotency";
 import { refundOrder } from "@/lib/orders/service";
 import { AuthRequiredError, readRequestMeta, requireCurrentUser } from "@/lib/session";
@@ -32,20 +32,26 @@ export async function POST(request: Request, { params }: Params) {
       orderId: id,
       actorUserId: user.id,
       reason,
+      idempotencyKey: readIdempotencyKey(request) ?? "",
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
     return jsonOk({ order: { id: order.id, status: order.status } });
   } catch (error) {
     if (error instanceof AuthRequiredError) return jsonError("برای ادامه وارد شوید.", 401);
-    if (error instanceof WalletError) {
-      if (error.code === "refund_blocked") return jsonError(error.message, 409);
-      return jsonError(error.message, 400);
-    }
     if (isIdempotencyConflictError(error)) {
       return jsonError("شناسه یکتا با درخواست قبلی تعارض دارد.", 409, {
         code: error.code,
       });
+    }
+    if (error instanceof WalletError) {
+      if (
+        error.code === "refund_blocked" ||
+        error.code === "idempotency_conflict"
+      ) {
+        return jsonError(error.message, 409);
+      }
+      return jsonError(error.message, 400);
     }
     console.error("[orders/refund]", error instanceof Error ? error.message : "unknown");
     return jsonError("بازگشت وجه ممکن نیست.", 500);

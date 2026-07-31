@@ -424,6 +424,7 @@ model ServiceOrder {
   recommendationQuote   RecommendationQuote?       @relation(fields: [recommendationQuoteId], references: [id], onDelete: SetNull)
   infrastructureOrder   InfrastructureOrder?
   subscription          ServiceSubscription?
+  adminCommandReceipts  AdminCommandReceipt[]
 
   @@index([userId, createdAt])
   @@index([status])
@@ -598,6 +599,7 @@ model InfrastructureOrder {
   secureDeliveryEvents                SecureDeliveryEvent[]
   adminCommandReceipts                AdminCommandReceipt[]
   notificationOutbox                  ProvisioningNotificationOutbox[]
+  healthRetryDispatches               HealthRetryDispatch[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -875,19 +877,41 @@ model AuditLog {
 }
 
 model AdminCommandReceipt {
-  id                    String              @id @default(cuid())
+  id                    String               @id @default(cuid())
   operation             String
-  idempotencyKey        String              @unique
+  idempotencyKey        String               @unique
   requestFingerprint    String
   actorUserId           String
-  infrastructureOrderId String
+  infrastructureOrderId String?
+  serviceOrderId        String?
   resultSnapshot        Json
-  createdAt             DateTime            @default(now())
-  actor                 User                @relation("AdminCommandActor", fields: [actorUserId], references: [id], onDelete: Restrict)
-  infrastructureOrder   InfrastructureOrder @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+  createdAt             DateTime             @default(now())
+  actor                 User                 @relation("AdminCommandActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  infrastructureOrder   InfrastructureOrder? @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+  serviceOrder          ServiceOrder?        @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
 
   @@index([actorUserId, createdAt])
   @@index([infrastructureOrderId, operation, createdAt])
+  @@index([serviceOrderId, operation, createdAt])
+}
+
+model HealthRetryDispatch {
+  id                    String              @id @default(cuid())
+  idempotencyKey        String              @unique
+  infrastructureOrderId String
+  sourceHealthCheckId   String
+  status                String              @default("PENDING")
+  attemptCount          Int                 @default(0)
+  dispatchedJobId       String?
+  lastError             String?
+  processedAt           DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  infrastructureOrder   InfrastructureOrder @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+
+  @@unique([infrastructureOrderId, sourceHealthCheckId])
+  @@index([status, createdAt])
+  @@index([infrastructureOrderId, createdAt])
 }
 
 model ProductFlowRemediationCase {

@@ -181,7 +181,10 @@ test("timeout after create marks NEEDS_RECONCILIATION without second create", as
     }),
     db.infrastructureOrder.update({
       where: { id: infra.id },
-      data: { productFlowState: "PROVISIONING" },
+      data: {
+        productFlowState: "PROVISIONING",
+        status: InfrastructureOrderStatus.PROVISIONING,
+      },
     }),
   ]);
   const provider = new FakeCloudProviderAdapter({
@@ -269,6 +272,7 @@ test("refund blocked for active cloud instance", async (t) => {
         orderId: serviceOrder.id,
         actorUserId: admin.id,
         reason: "test refund",
+        idempotencyKey: "production-refund-blocked-0001",
       }),
     (error: Error & { code?: string }) => error.code === "refund_blocked",
   );
