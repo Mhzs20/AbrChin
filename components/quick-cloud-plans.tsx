@@ -10,7 +10,10 @@ import Link from "next/link";
 
 import { QuoteCountdown } from "@/components/quote-countdown";
 import type { PublicPlanOffer } from "@/lib/orders/plans";
-import { parchinPlanLabel, parchinPlanSummary } from "@/lib/parchin/catalog";
+import {
+  parchinLevelLabel,
+  parchinPlanSummary,
+} from "@/lib/parchin/catalog";
 import type {
   PublicRecommendationQuote,
   RecommendationOfferRole,
@@ -106,12 +109,12 @@ export function QuickCloudPlans({
 
             <div className="quick-plan-price">
               <span><strong>{initial}</strong> تومان</span>
-              <small>ماه اول · تمدید {renewal} تومان</small>
+              <small>ماهانه · تمدید فعلی {renewal} تومان</small>
             </div>
 
             <ul>
               <li><Clock3 size={14} aria-hidden="true" /> تحویل حدود {plan.deliveryEstimateMinutes.toLocaleString("fa-IR")} دقیقه</li>
-              <li><ShieldCheck size={14} aria-hidden="true" /> {parchinPlanLabel(plan.parchinIncluded)}</li>
+              <li><ShieldCheck size={14} aria-hidden="true" /> {parchinLevelLabel(plan.parchinLevel)}</li>
               <li><Check size={14} aria-hidden="true" /> ظرفیت فعلی موجود و قیمت دوباره‌سنجی‌شده</li>
               <li><Check size={14} aria-hidden="true" /> قابل ارتقا بدون تغییر مسیر خرید</li>
             </ul>

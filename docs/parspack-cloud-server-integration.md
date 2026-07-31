@@ -54,8 +54,8 @@ PARSPACK_PRICE_AMOUNT_UNIT=TOMAN # یا RIAL، فقط مطابق قرارداد 
 ```dotenv
 INFRASTRUCTURE_PROVIDER_MODE=parspack
 PARSPACK_ENABLED=true
-PARSPACK_API_BASE_URL=https://my.parspack.com/cserver/api/v1
-PARSPACK_PUBLIC_API_BASE_URL=https://my.parspack.com/cserver/api/public/v1
+PARSPACK_API_BASE_URL=https://my.parspack.com/cserver/api/public/v1
+PARSPACK_MANAGEMENT_API_BASE_URL=https://my.parspack.com/cserver/api/v1
 PARSPACK_API_TOKEN=
 PARSPACK_TIMEOUT_MS=15000
 PARSPACK_PRICE_CURRENCY=
@@ -100,10 +100,11 @@ Cloud-init کنترل‌شده انتخاب می‌شود؛ Windows، MikroTik �
 رکورد فاقد Price Contract معتبر یا Availability در همان Sync غیرفعال و حفظ
 می‌شود.
 
-صفحه `/cloud-servers` با `no-store` در هر بار Render کاتالوگ Provider را
-دوباره می‌خواند، Persist می‌کند و تمام انتخاب‌های معتبر را نمایش می‌دهد. اگر
-Provider یا قرارداد قیمت قابل تأیید نباشد، صفحه Fail-closed است و قیمت
-Cacheشده را به‌عنوان قیمت زنده نمایش نمی‌دهد.
+صفحه `/ready-servers` با `no-store` در هر Render فقط Catalog تازهٔ دیتابیس را
+می‌خواند. Sync کامل فقط در Worker یا Admin اجرا می‌شود؛ اگر Freshness SLA
+گذشته باشد صفحه Fail-closed و Sync برای Worker علامت‌گذاری می‌شود. پیش از
+Quote و Payment فقط Region/Size/Image همان انتخاب با GET هدفمند Provider
+دوباره بررسی می‌شود.
 
 `parchinIncluded` در پلن فعلی فقط «پرچین پایه» یعنی کنترل تحویل و دسترسی
 یک‌بارمصرف را نشان می‌دهد. این مقدار نباید به‌عنوان قابلیت Backup یا Monitoring
@@ -136,7 +137,7 @@ Base Price، Markup، Final Price، Currency و زمان بررسی قیمت ر�
 می‌شوند. تغییر قیمت Quote قبلی را رد می‌کند و یک Quote جدید Customer-safe
 می‌سازد؛ نام Provider و Base Price در پاسخ مشتری وجود ندارند.
 
-مهمان می‌تواند از `/cloud-servers` Quote بسازد و همان URL را پس از ورود یا
+مهمان می‌تواند از `/ready-servers` Quote بسازد و همان URL را پس از ورود یا
 ثبت‌نام ادامه دهد. Region، Size، Image، Provider و حالت تحویل از Snapshot همان
 Quote خوانده می‌شوند. پیش از پرداخت علاوه بر Price و Availability، تطبیق کامل
 این تنظیمات Revalidate می‌شود. Worker هنگام ساخت، Region/Size/Image را از

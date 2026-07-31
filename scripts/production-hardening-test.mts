@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test, { after } from "node:test";
 import {
   CloudInstanceStatus,
+  InfrastructureProductKind,
   InfrastructureOrderStatus,
+  InfrastructureProvider,
   LedgerDirection,
   LedgerStatus,
   LedgerType,
@@ -13,7 +15,7 @@ import {
 } from "@prisma/client";
 
 import { confirmProviderFunding } from "../lib/infrastructure/funding.ts";
-import { createMockProviderWithBehavior } from "../lib/infrastructure/mock-provider.ts";
+import { FakeCloudProviderAdapter } from "../lib/infrastructure/fake-cloud-provider-adapter.ts";
 import {
   claimNextProvisioningJob,
   processProvisioningJob,
@@ -40,19 +42,44 @@ function requirePrisma(t: { skip: (message?: string) => void }) {
 async function seedInfra(mobile: string, suffix: string) {
   const db = prisma!;
   await db.user.deleteMany({ where: { mobile } });
+  const delivery = {
+    provider: InfrastructureProvider.PARSPACK,
+    providerApiVersion: "v1",
+    productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
+    region: "tehran11",
+    externalPlanId: "irLinuxVPS4",
+    externalImageId: "ubuntu24-cloudinit-qcow2",
+    externalNetworkId: null,
+    externalSecurityId: null,
+    topologyVerificationMode: "PROVIDER_MANAGED",
+    accessMethod: "ONE_TIME_PASSWORD",
+    sshKeyName: null,
+    initScript: null,
+  } as const;
   const plan = await db.infrastructurePlan.upsert({
     where: { code: "DEV_STARTER" },
-    update: {},
+    update: {
+      provider: InfrastructureProvider.PARSPACK,
+      providerApiVersion: "v1",
+      productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
+      deliveryMode: "MANAGED",
+      parchinIncluded: true,
+      minimumParchinLevel: "PARCHIN_START",
+    },
     create: {
       code: "DEV_STARTER",
       title: "شروع",
-      provider: "PARSPACK",
+      provider: InfrastructureProvider.PARSPACK,
+      providerApiVersion: "v1",
+      productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       imageCode: "ubuntu24-cloudinit-qcow2",
-      deliveryMode: "RAW",
+      deliveryMode: "MANAGED",
       salePriceRial: tomanToRial(150_000),
       estimatedProviderCostRial: tomanToRial(120_000),
+      parchinIncluded: true,
+      minimumParchinLevel: "PARCHIN_START",
       active: true,
       sortOrder: 1,
     },
@@ -67,6 +94,11 @@ async function seedInfra(mobile: string, suffix: string) {
       planId: plan.id,
       planCode: plan.code,
       paidAt: new Date(),
+      provider: InfrastructureProvider.PARSPACK,
+      providerApiVersion: "v1",
+      productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
+      parchinLevel: "PARCHIN_START",
+      productFlowState: "PROVISIONING_SUBMITTED",
     },
   });
   const infra = await db.infrastructureOrder.create({
@@ -74,8 +106,16 @@ async function seedInfra(mobile: string, suffix: string) {
       serviceOrderId: serviceOrder.id,
       userId: user.id,
       planId: plan.id,
-      provider: plan.provider,
-      deliveryMode: plan.deliveryMode,
+      provider: InfrastructureProvider.PARSPACK,
+      providerApiVersion: "v1",
+      productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
+      parchinLevel: "PARCHIN_START",
+      providerSelectionSnapshot: {
+        ...delivery,
+        deliveryConfiguration: delivery,
+      },
+      productFlowState: "PROVISIONING_SUBMITTED",
+      deliveryMode: "MANAGED",
       status: InfrastructureOrderStatus.QUEUED,
       requiredFundingRial: plan.estimatedProviderCostRial,
       desiredInstanceName: `abrchin-test-${suffix}`,
@@ -88,6 +128,7 @@ async function seedInfra(mobile: string, suffix: string) {
       status: ProvisioningJobStatus.QUEUED,
       idempotencyKey: `hardening_${suffix}_a1`,
       attempt: 1,
+      availableAt: new Date(0),
     },
   });
   return { user, plan, serviceOrder, infra, job };
@@ -98,11 +139,16 @@ test("failure before create leaves order retryable without cloud instance", asyn
   if (!db) return;
   const mobile = "09128883001";
   const { infra, job } = await seedInfra(mobile, "pre");
-  const provider = createMockProviderWithBehavior("blocked");
+  const provider = new FakeCloudProviderAdapter({
+    provider: InfrastructureProvider.PARSPACK,
+    createBehavior: "insufficient_balance",
+  });
   const claimed = await claimNextProvisioningJob("worker-a");
   assert.ok(claimed);
   assert.equal(claimed.id, job.id);
-  await processProvisioningJob(claimed.id, provider);
+  await processProvisioningJob(claimed.id, provider, {
+    claimToken: claimed.claimToken!,
+  });
   const refreshed = await db.infrastructureOrder.findUniqueOrThrow({ where: { id: infra.id } });
   const cloud = await db.cloudInstance.count({ where: { infrastructureOrderId: infra.id } });
   assert.equal(cloud, 0);
@@ -120,10 +166,34 @@ test("timeout after create marks NEEDS_RECONCILIATION without second create", as
   const { infra, job } = await seedInfra(mobile, "timeout");
   await db.provisioningJob.update({
     where: { id: job.id },
-    data: { createSentAt: new Date(), status: ProvisioningJobStatus.RUNNING, startedAt: new Date() },
+    data: {
+      createSentAt: new Date(),
+      status: ProvisioningJobStatus.RUNNING,
+      startedAt: new Date(),
+      claimToken: "hardening-timeout-claim",
+      leaseExpiresAt: new Date(Date.now() + 60_000),
+    },
   });
-  const provider = createMockProviderWithBehavior("timeout");
-  await processProvisioningJob(job.id, provider);
+  await db.$transaction([
+    db.serviceOrder.update({
+      where: { id: infra.serviceOrderId },
+      data: { productFlowState: "PROVISIONING" },
+    }),
+    db.infrastructureOrder.update({
+      where: { id: infra.id },
+      data: {
+        productFlowState: "PROVISIONING",
+        status: InfrastructureOrderStatus.PROVISIONING,
+      },
+    }),
+  ]);
+  const provider = new FakeCloudProviderAdapter({
+    provider: InfrastructureProvider.PARSPACK,
+    createBehavior: "timeout_after_accept",
+  });
+  await processProvisioningJob(job.id, provider, {
+    claimToken: "hardening-timeout-claim",
+  });
   const refreshed = await db.infrastructureOrder.findUniqueOrThrow({ where: { id: infra.id } });
   assert.equal(refreshed.status, InfrastructureOrderStatus.NEEDS_RECONCILIATION);
   const cloud = await db.cloudInstance.count({ where: { infrastructureOrderId: infra.id } });
@@ -202,6 +272,7 @@ test("refund blocked for active cloud instance", async (t) => {
         orderId: serviceOrder.id,
         actorUserId: admin.id,
         reason: "test refund",
+        idempotencyKey: "production-refund-blocked-0001",
       }),
     (error: Error & { code?: string }) => error.code === "refund_blocked",
   );
@@ -226,7 +297,14 @@ test("funding idempotency key replay returns same confirmation", async (t) => {
   const admin = await db.user.create({ data: { mobile: adminMobile, role: "ADMIN" } });
   await db.infrastructureOrder.update({
     where: { id: infra.id },
-    data: { status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING },
+    data: {
+      status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
+      productFlowState: "PAID",
+    },
+  });
+  await db.serviceOrder.update({
+    where: { id: infra.serviceOrderId },
+    data: { productFlowState: "PAID" },
   });
   await db.provisioningJob.deleteMany({ where: { infrastructureOrderId: infra.id } });
   const key = "funding-key-replay-1";

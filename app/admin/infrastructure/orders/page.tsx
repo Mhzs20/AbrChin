@@ -65,8 +65,11 @@ export default async function AdminInfrastructureOrdersPage() {
         ) : (
           <InfrastructureOrderActions
             orderId={order.id}
-            status={order.status}
-            hasCloudInstance={Boolean(order.cloudInstance)}
+            serviceOrderId={order.serviceOrderId}
+            allowedActions={order.recovery.allowedActions}
+            resourceDispositionReason={
+              order.recovery.resourceDispositionReason
+            }
           />
         ),
     },
@@ -88,7 +91,16 @@ export default async function AdminInfrastructureOrdersPage() {
           requiredTomanFa={formatTomanFa(order.requiredFundingRial)}
           adminName={admin.displayName || admin.mobile}
         />
-      ) : null,
+      ) : (
+        <InfrastructureOrderActions
+          orderId={order.id}
+          serviceOrderId={order.serviceOrderId}
+          allowedActions={order.recovery.allowedActions}
+          resourceDispositionReason={
+            order.recovery.resourceDispositionReason
+          }
+        />
+      ),
   }));
 
   return (

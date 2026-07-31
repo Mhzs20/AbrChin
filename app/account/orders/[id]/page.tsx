@@ -30,6 +30,8 @@ export default async function AccountOrderDetailPage({ params }: { params: Promi
       infrastructureOrder: {
         include: {
           provisioningJobs: { orderBy: { createdAt: "asc" } },
+          healthChecks: { orderBy: { checkedAt: "asc" } },
+          secureDeliveryEvents: { orderBy: { createdAt: "asc" } },
           cloudInstance: {
             select: {
               id: true,
@@ -55,6 +57,10 @@ export default async function AccountOrderDetailPage({ params }: { params: Promi
     },
   });
   if (!order) notFound();
+  const flowTransitions = await prisma.productFlowTransition.findMany({
+    where: { serviceOrderId: order.id },
+    orderBy: { createdAt: "asc" },
+  });
 
   const timeline = [
     { id: "created", title: "ثبت سفارش", description: new Date(order.createdAt).toLocaleString("fa-IR"), done: true },
@@ -72,8 +78,42 @@ export default async function AccountOrderDetailPage({ params }: { params: Promi
             description: getInfrastructureStage(order.infrastructureOrder.status),
             done: order.infrastructureOrder.status === "ACTIVE",
           },
+          ...order.infrastructureOrder.healthChecks.map((check) => ({
+            id: check.id,
+            title: "بررسی سلامت",
+            description:
+              check.status === "SUCCEEDED"
+                ? "اتصال امن و وضعیت شبکه تأیید شد"
+                : check.status === "FAILED"
+                  ? "ناموفق؛ امکان تلاش دوباره یا بررسی انسانی وجود دارد"
+                  : "در حال بررسی",
+            done: check.status === "SUCCEEDED",
+          })),
+          ...order.infrastructureOrder.secureDeliveryEvents.map(
+            (event) => ({
+              id: event.id,
+              title: "تحویل امن",
+              description:
+                event.status === "DELIVERED"
+                  ? "اطلاعات دسترسی رمزنگاری‌شده آماده است"
+                  : "در انتظار آماده‌شدن اطلاعات دسترسی امن",
+              done: event.status === "DELIVERED",
+            }),
+          ),
         ]
       : []),
+    ...flowTransitions.map((transition) => ({
+      id: transition.id,
+      title: transition.toState,
+      description:
+        transition.toState === "PROVISIONING_RECONCILING"
+          ? "در حال تطبیق با Provider؛ ساخت تکراری انجام نمی‌شود"
+          : transition.toState === "PROVISIONING_RETRYABLE" ||
+              transition.toState === "DELIVERY_RETRYABLE"
+            ? "قابل تلاش دوباره یا ارجاع به پشتیبانی"
+            : transition.reason ?? "وضعیت جریان به‌روزرسانی شد",
+      done: transition.toState === "ACTIVE",
+    })),
   ];
 
   return (

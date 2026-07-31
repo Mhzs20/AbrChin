@@ -1,7 +1,9 @@
 import type {
   DeliveryMode,
+  InfrastructureProductKind,
   InfrastructurePlan,
   InfrastructureProvider,
+  ParchinLevel,
   ProviderCatalogItem,
 } from "@prisma/client";
 
@@ -13,7 +15,10 @@ import {
 } from "@/lib/cloud-servers/catalog";
 import { prisma } from "@/lib/db";
 import { getEnv } from "@/lib/env";
-import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
+import {
+  getCatalogFreshness,
+  requestCatalogSync,
+} from "@/lib/infrastructure/multi-provider-catalog-service";
 import {
   type EffectivePlanPricing,
   catalogItemBaseHourlyPriceRial,
@@ -23,6 +28,7 @@ import {
   calculateFinalPriceRial,
   decimalToScaledInteger,
 } from "@/lib/pricing/provider-pricing";
+import { serializeQuoteLineItems } from "@/lib/pricing/quote-line-items";
 
 export type PricedInfrastructurePlan = InfrastructurePlan & {
   catalogItem: ProviderCatalogItem;
@@ -39,6 +45,8 @@ export type PlanSnapshot = {
   title: string;
   description: string | null;
   provider: InfrastructureProvider;
+  providerApiVersion: string;
+  productKind: InfrastructureProductKind;
   catalogItemId: string;
   regionCode: string;
   sizeCode: string;
@@ -49,6 +57,14 @@ export type PlanSnapshot = {
   storageGb: number | null;
   providerBasePriceRialSnapshot: string;
   markupBasisPointsSnapshot: number;
+  markupAmountRialSnapshot: string;
+  parchinLevel: ParchinLevel;
+  parchinPriceRialSnapshot: string;
+  taxBasisPointsSnapshot: number;
+  taxAmountRialSnapshot: string;
+  lineItemsSnapshot: ReturnType<typeof serializeQuoteLineItems>;
+  catalogVersion: string | null;
+  providerPayloadHash: string | null;
   finalPriceRialSnapshot: string;
   currency: "IRR";
   createdAt: string;
@@ -67,6 +83,8 @@ export type PublicPlanOffer = {
   title: string;
   description: string | null;
   deliveryMode: DeliveryMode;
+  productKind: InfrastructureProductKind;
+  parchinLevel: ParchinLevel;
   regionCode: string;
   locationLabel: string;
   imageLabel: string;
@@ -113,6 +131,9 @@ export function toPlanSnapshot(
     title: plan.title,
     description: plan.description,
     provider: plan.provider,
+    providerApiVersion: plan.providerApiVersion ?? "v1",
+    productKind:
+      plan.productKind ?? "READY_INSTANT_SERVER",
     catalogItemId: plan.pricing.catalogItemId,
     regionCode: plan.regionCode,
     sizeCode: plan.sizeCode,
@@ -123,6 +144,19 @@ export function toPlanSnapshot(
     storageGb: plan.pricing.storageGb,
     providerBasePriceRialSnapshot: plan.pricing.providerBasePriceRial.toString(),
     markupBasisPointsSnapshot: plan.pricing.markupBasisPoints,
+    markupAmountRialSnapshot: (
+      plan.pricing.markupAmountRial ??
+      plan.pricing.finalPriceRial - plan.pricing.providerBasePriceRial
+    ).toString(),
+    parchinLevel: plan.pricing.parchinLevel ?? "PARCHIN_START",
+    parchinPriceRialSnapshot: (
+      plan.pricing.parchinPriceRial ?? 0n
+    ).toString(),
+    taxBasisPointsSnapshot: plan.pricing.taxBasisPoints ?? 0,
+    taxAmountRialSnapshot: (plan.pricing.taxAmountRial ?? 0n).toString(),
+    lineItemsSnapshot: serializeQuoteLineItems(plan.pricing.lineItems ?? []),
+    catalogVersion: plan.catalogItem?.catalogVersion ?? null,
+    providerPayloadHash: plan.catalogItem?.payloadHash ?? null,
     finalPriceRialSnapshot: plan.pricing.finalPriceRial.toString(),
     currency: plan.pricing.currency,
     createdAt: createdAt.toISOString(),
@@ -151,6 +185,8 @@ export function toPublicPlanOffer(plan: PricedInfrastructurePlan): PublicPlanOff
     title: plan.title,
     description: plan.description,
     deliveryMode: plan.deliveryMode,
+    productKind: plan.productKind,
+    parchinLevel: plan.pricing.parchinLevel,
     regionCode: plan.regionCode,
     locationLabel: readyServerLocation(plan.regionCode).label,
     imageLabel: readyServerImageLabel(plan.imageCode),
@@ -168,14 +204,55 @@ export function toPublicPlanOffer(plan: PricedInfrastructurePlan): PublicPlanOff
   };
 }
 
-async function pricingConfig() {
-  return prisma.providerPricingConfig.findUnique({
-    where: { provider: "PARSPACK" },
+async function pricingConfigs() {
+  const [providers, products, commerce, parchin] = await Promise.all([
+    prisma.providerPricingConfig.findMany(),
+    prisma.productPricingConfig.findMany({ where: { enabled: true } }),
+    prisma.commercePricingConfig.findUnique({ where: { id: "default" } }),
+    prisma.parchinPricingConfig.findMany({ where: { active: true } }),
+  ]);
+  return { providers, products, commerce, parchin };
+}
+
+type PricingConfigs = Awaited<ReturnType<typeof pricingConfigs>>;
+
+function resolveConfiguredPlanPricing(
+  plan: InfrastructurePlan & { catalogItem: ProviderCatalogItem | null },
+  configs: PricingConfigs,
+  requestedParchinLevel?: ParchinLevel,
+) {
+  const provider = configs.providers.find(
+    (config) =>
+      config.provider === plan.provider &&
+      config.apiVersion === plan.providerApiVersion &&
+      config.enabled,
+  );
+  const product = configs.products.find(
+    (config) =>
+      config.provider === plan.provider &&
+      config.apiVersion === plan.providerApiVersion &&
+      config.productKind === plan.productKind,
+  );
+  const minimumParchinLevel =
+    plan.minimumParchinLevel ??
+    (plan.parchinIncluded ? ("PARCHIN_START" as const) : null);
+  const selectedParchinLevel =
+    requestedParchinLevel ?? minimumParchinLevel;
+  if (!selectedParchinLevel) return null;
+  const parchin = configs.parchin.find(
+    (config) => config.level === selectedParchinLevel,
+  );
+  if (!provider || !product || !minimumParchinLevel || !parchin) return null;
+  return resolvePlanPricing(plan, provider, {
+    productMarkupBasisPoints: product.markupBasisPoints,
+    taxBasisPoints: configs.commerce?.taxBps ?? 1000,
+    parchinLevel: selectedParchinLevel,
+    parchinPriceRial: parchin.priceRial,
   });
 }
 
 export async function getActivePlanByCode(code: string) {
-  const [plan, config] = await Promise.all([
+  const [plan, configs] = await Promise.all([
     prisma.infrastructurePlan.findFirst({
       where: {
         code,
@@ -185,15 +262,15 @@ export async function getActivePlanByCode(code: string) {
       },
       include: { catalogItem: true },
     }),
-    pricingConfig(),
+    pricingConfigs(),
   ]);
   if (!plan) return null;
-  const pricing = resolvePlanPricing(plan, config);
+  const pricing = resolveConfiguredPlanPricing(plan, configs);
   return pricing ? withEffectivePricing(plan, pricing) : null;
 }
 
 export async function getActivePlanById(id: string) {
-  const [plan, config] = await Promise.all([
+  const [plan, configs] = await Promise.all([
     prisma.infrastructurePlan.findFirst({
       where: {
         id,
@@ -203,43 +280,61 @@ export async function getActivePlanById(id: string) {
       },
       include: { catalogItem: true },
     }),
-    pricingConfig(),
+    pricingConfigs(),
   ]);
   if (!plan) return null;
-  const pricing = resolvePlanPricing(plan, config);
+  const pricing = resolveConfiguredPlanPricing(plan, configs);
   return pricing ? withEffectivePricing(plan, pricing) : null;
 }
 
-export async function listActivePlans(): Promise<PricedInfrastructurePlan[]> {
-  const [plans, config] = await Promise.all([
+export async function listActivePlans(
+  requestedParchinLevel?: ParchinLevel,
+): Promise<PricedInfrastructurePlan[]> {
+  const [plans, configs] = await Promise.all([
     prisma.infrastructurePlan.findMany({
       where: {
         active: true,
         catalogMappingStatus: "MAPPED",
         deliveryMode: "MANAGED",
         parchinIncluded: true,
+        provider: "ARVAN",
+        providerApiVersion: "v1",
+        productKind: "CLOUD_SERVER",
       },
       include: { catalogItem: true },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     }),
-    pricingConfig(),
+    pricingConfigs(),
   ]);
   return plans.flatMap((plan) => {
-    const pricing = resolvePlanPricing(plan, config);
+    const pricing = resolveConfiguredPlanPricing(
+      plan,
+      configs,
+      requestedParchinLevel,
+    );
     return pricing ? [withEffectivePricing(plan, pricing)] : [];
   });
 }
 
 export async function getActiveReadyServerPlanById(id: string) {
   const plan = await getActivePlanById(id);
-  return plan && isReadyServerPlanCode(plan.code) ? plan : null;
+  return plan &&
+    isReadyServerPlanCode(plan.code) &&
+    plan.provider === "PARSPACK" &&
+    plan.providerApiVersion === "v1" &&
+    plan.productKind === "READY_INSTANT_SERVER"
+    ? plan
+    : null;
 }
 
 export async function listReadyServerPlans(): Promise<PricedInfrastructurePlan[]> {
-  const [plans, config] = await Promise.all([
+  const [plans, configs] = await Promise.all([
     prisma.infrastructurePlan.findMany({
       where: {
         code: { startsWith: READY_SERVER_PLAN_PREFIX },
+        provider: "PARSPACK",
+        providerApiVersion: "v1",
+        productKind: "READY_INSTANT_SERVER",
         active: true,
         catalogMappingStatus: "MAPPED",
         deliveryMode: "MANAGED",
@@ -248,10 +343,38 @@ export async function listReadyServerPlans(): Promise<PricedInfrastructurePlan[]
       include: { catalogItem: true },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     }),
-    pricingConfig(),
+    pricingConfigs(),
   ]);
   return plans.flatMap((plan) => {
-    const pricing = resolvePlanPricing(plan, config);
+    const pricing = resolveConfiguredPlanPricing(plan, configs);
+    return pricing ? [withEffectivePricing(plan, pricing)] : [];
+  });
+}
+
+export async function listCloudServerPlans(): Promise<PricedInfrastructurePlan[]> {
+  const [plans, configs] = await Promise.all([
+    prisma.infrastructurePlan.findMany({
+      where: {
+        provider: "ARVAN",
+        providerApiVersion: "v1",
+        productKind: "CLOUD_SERVER",
+        active: true,
+        catalogMappingStatus: "MAPPED",
+        deliveryMode: "MANAGED",
+        parchinIncluded: true,
+        catalogItem: {
+          status: "ACTIVE",
+          available: true,
+          providerMonthlyPriceIrr: { gt: 0n },
+        },
+      },
+      include: { catalogItem: true },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    }),
+    pricingConfigs(),
+  ]);
+  return plans.flatMap((plan) => {
+    const pricing = resolveConfiguredPlanPricing(plan, configs);
     return pricing ? [withEffectivePricing(plan, pricing)] : [];
   });
 }
@@ -269,7 +392,11 @@ export async function listPublicPlanOffers() {
 
 export async function listLiveReadyServerOffers() {
   try {
-    await refreshProviderCatalogForPricing();
+    const freshness = await getCatalogFreshness("PARSPACK");
+    if (!freshness.fresh) {
+      await requestCatalogSync("PARSPACK");
+      throw new Error("catalog_stale");
+    }
     const offers = (await listReadyServerPlans()).map(toPublicPlanOffer);
     return {
       live: true as const,
@@ -285,16 +412,38 @@ export async function listLiveReadyServerOffers() {
   }
 }
 
+export async function listLiveCloudServerOffers() {
+  try {
+    const freshness = await getCatalogFreshness("ARVAN");
+    if (!freshness.fresh) {
+      await requestCatalogSync("ARVAN");
+      throw new Error("catalog_stale");
+    }
+    const offers = (await listCloudServerPlans()).map(toPublicPlanOffer);
+    return {
+      live: true as const,
+      offers,
+      checkedAt: offers[0]?.checkedAt ?? new Date().toISOString(),
+    };
+  } catch {
+    return {
+      live: false as const,
+      offers: [] as PublicPlanOffer[],
+      checkedAt: null,
+    };
+  }
+}
+
 export async function listAllPlans(): Promise<AdminInfrastructurePlan[]> {
-  const [plans, config] = await Promise.all([
+  const [plans, configs] = await Promise.all([
     prisma.infrastructurePlan.findMany({
       include: { catalogItem: true },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     }),
-    pricingConfig(),
+    pricingConfigs(),
   ]);
   return plans.map((plan) => {
-    const pricing = resolvePlanPricing(plan, config);
+    const pricing = resolveConfiguredPlanPricing(plan, configs);
     return pricing
       ? withEffectivePricing(plan, pricing)
       : {
@@ -311,28 +460,39 @@ export async function seedDevelopmentPlans() {
   const syncedAt = new Date();
   const catalogItem = await prisma.providerCatalogItem.upsert({
     where: {
-      provider_regionCode_sizeCode: {
+      provider_apiVersion_regionCode_externalPlanId: {
         provider: "PARSPACK",
+        apiVersion: "v1",
         regionCode: "tehran11",
-        sizeCode: "irLinuxVPS4",
+        externalPlanId: "irLinuxVPS4",
       },
     },
     update: {},
     create: {
       provider: "PARSPACK",
+      apiVersion: "v1",
+      productKind: "READY_INSTANT_SERVER",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
+      externalPlanId: "irLinuxVPS4",
+      externalKey: "parspack:v1:tehran11:irLinuxVPS4",
       sizeName: "Development Linux VPS",
       compatibleImageCodes: ["ubuntu24-cloudinit-qcow2"],
       vcpu: 2,
       ramMb: 4096,
       diskGb: 50,
       available: true,
+      status: "ACTIVE",
       priceMonthlyAmount: decimalToScaledInteger("120000"),
       priceScale: 6,
       currencyCode: "IRR",
       amountUnit: "TOMAN",
+      providerMonthlyPriceIrr: 1_200_000n,
       lastSyncedAt: syncedAt,
+      lastSeenAt: syncedAt,
+      rawPayload: {},
+      payloadHash: "development-seed",
+      catalogVersion: syncedAt.toISOString(),
     },
   });
   await prisma.providerPricingConfig.upsert({

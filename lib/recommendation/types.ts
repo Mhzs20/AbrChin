@@ -80,7 +80,7 @@ export type ResourceProfile = {
   ramGb: number;
   storageGb: number;
   regionPreference: "IRAN";
-  deliveryMode: "RAW" | "MANAGED";
+  deliveryMode: "MANAGED";
   backupPolicy: "NONE" | "WEEKLY" | "DAILY";
   needsResize: boolean;
 };
@@ -99,6 +99,17 @@ export type RecommendationResult = {
   title: string;
   summary: string;
   workloadLabel: string;
+  workloadClassification:
+    | "GENERAL_LINUX"
+    | "WINDOWS"
+    | "WEB_APPLICATION"
+    | "ECOMMERCE"
+    | "DATABASE"
+    | "CONTAINER"
+    | "API"
+    | "WORKER"
+    | "AI_LIGHT"
+    | "CUSTOM";
   profile: ResourceProfile;
   minimumProfile: ResourceProfile;
   confidence: RecommendationConfidence;
@@ -117,7 +128,7 @@ export type PublicRecommendationQuote = {
   role: RecommendationOfferRole;
   title: string;
   description: string | null;
-  deliveryMode: "RAW" | "MANAGED";
+  deliveryMode: "MANAGED";
   vcpu: number | null;
   ramGb: number | null;
   storageGb: number | null;
@@ -125,6 +136,7 @@ export type PublicRecommendationQuote = {
   renewalAmountRial: string;
   deliveryEstimateMinutes: number;
   parchinIncluded: boolean;
+  parchinLevel: "PARCHIN_START" | "PARCHIN_ACTIVE" | "PARCHIN_STABLE";
   reasons: string[];
   expiresAt: string;
 };

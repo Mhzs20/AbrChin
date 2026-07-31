@@ -11,8 +11,9 @@ import {
 } from "@/lib/cloud-servers/catalog";
 import { formatTomanFa } from "@/lib/money";
 import { parchinBase } from "@/lib/parchin/catalog";
+import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
 import {
-  getActiveReadyServerQuote,
+  getActiveCloudServerQuote,
   toPublicRecommendationQuote,
 } from "@/lib/recommendation/quote-service";
 import { getCurrentUser } from "@/lib/session";
@@ -31,7 +32,11 @@ export default async function ReadyServerQuotePage({
 }) {
   const { id } = await params;
   const user = await getCurrentUser();
-  const quoteRecord = await getActiveReadyServerQuote(id, user?.id ?? null);
+  const quoteRecord = await getActiveCloudServerQuote(
+    id,
+    user?.id ?? null,
+    user ? null : await getRecommendationGuestToken(),
+  );
   if (!quoteRecord) redirect("/cloud-servers?quote=expired");
 
   const quote = toPublicRecommendationQuote(quoteRecord);

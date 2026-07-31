@@ -1,6 +1,7 @@
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
 import { confirmProviderFunding, parseFundedAmountToman } from "@/lib/infrastructure/funding";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
+import { isIdempotencyConflictError } from "@/lib/idempotency";
 import { readRequestMeta } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/errors";
 
@@ -46,7 +47,18 @@ export async function POST(
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);
-    if (error instanceof WalletError) return jsonError(error.message, 400);
+    if (error instanceof WalletError) {
+      return jsonError(
+        error.message,
+        error.code === "idempotency_conflict" ? 409 : 400,
+        { code: error.code },
+      );
+    }
+    if (isIdempotencyConflictError(error)) {
+      return jsonError("شناسه یکتا با درخواست قبلی تعارض دارد.", 409, {
+        code: error.code,
+      });
+    }
     console.error("[admin/confirm-funding]", error instanceof Error ? error.message : "unknown");
     return jsonError("تأیید شارژ ممکن نیست.", 500);
   }

@@ -1,6 +1,7 @@
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
 import { confirmNoProviderResource } from "@/lib/infrastructure/retry";
-import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
+import { jsonError, jsonOk, readIdempotencyKey, rejectCrossOrigin } from "@/lib/http";
+import { isIdempotencyConflictError } from "@/lib/idempotency";
 import { readRequestMeta } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/errors";
 
@@ -32,6 +33,7 @@ export async function POST(
       infrastructureOrderId: id,
       adminUserId: admin.id,
       reason,
+      idempotencyKey: readIdempotencyKey(request) ?? "",
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
@@ -40,7 +42,17 @@ export async function POST(
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);
-    if (error instanceof WalletError) return jsonError(error.message, 400);
+    if (isIdempotencyConflictError(error)) {
+      return jsonError("شناسه یکتا با درخواست قبلی تعارض دارد.", 409, {
+        code: error.code,
+      });
+    }
+    if (error instanceof WalletError) {
+      return jsonError(
+        error.message,
+        error.code === "idempotency_conflict" ? 409 : 400,
+      );
+    }
     console.error("[admin/confirm-no-resource]", error instanceof Error ? error.message : "unknown");
     return jsonError("تأیید منبع ساخته‌نشده ممکن نیست.", 500);
   }

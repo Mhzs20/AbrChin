@@ -4,7 +4,14 @@ import { useState } from "react";
 
 import { ConfirmDialog, FormField } from "@/components/product";
 
-type ActionKind = "reconcile" | "retry" | "confirm-no-resource";
+type ActionKind =
+  | "reconcile"
+  | "retry"
+  | "health-retry"
+  | "health-observe"
+  | "health-recovery"
+  | "refund"
+  | "confirm-no-resource";
 
 const actionConfig: Record<
   ActionKind,
@@ -22,6 +29,33 @@ const actionConfig: Record<
     endpoint: (id) => `/api/admin/infrastructure/orders/${id}/retry`,
     confirmLabel: "اجرای Retry",
   },
+  "health-retry": {
+    label: "Retry سلامت",
+    title: "تلاش مجدد بررسی سلامت",
+    endpoint: (id) =>
+      `/api/admin/infrastructure/orders/${id}/health-retry`,
+    confirmLabel: "ثبت Retry سلامت",
+  },
+  "health-observe": {
+    label: "مشاهده Provider",
+    title: "مشاهده و تطبیق مجدد Provider",
+    endpoint: (id) =>
+      `/api/admin/infrastructure/orders/${id}/health-observe`,
+    confirmLabel: "اجرای تطبیق فقط‌خواندنی",
+  },
+  "health-recovery": {
+    label: "بررسی سلامت پس از اصلاح",
+    title: "اجرای Recovery دستی سلامت",
+    endpoint: (id) =>
+      `/api/admin/infrastructure/orders/${id}/health-recovery`,
+    confirmLabel: "ثبت Recovery سلامت",
+  },
+  refund: {
+    label: "لغو و بازگشت وجه",
+    title: "بستن پرونده و بازگشت وجه",
+    endpoint: (id) => `/api/admin/orders/${id}/refund`,
+    confirmLabel: "تأیید بازگشت وجه",
+  },
   "confirm-no-resource": {
     label: "منبع ساخته نشده",
     title: "تأیید منبع ساخته‌نشده",
@@ -32,27 +66,31 @@ const actionConfig: Record<
 
 export function InfrastructureOrderActions({
   orderId,
-  status,
-  hasCloudInstance,
+  serviceOrderId,
+  allowedActions,
+  resourceDispositionReason,
 }: {
   orderId: string;
-  status: string;
-  hasCloudInstance: boolean;
+  serviceOrderId: string;
+  allowedActions: ActionKind[];
+  resourceDispositionReason: string;
 }) {
   const [kind, setKind] = useState<ActionKind | null>(null);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [idempotencyKey, setIdempotencyKey] = useState("");
 
-  const available: ActionKind[] = [];
-  if (status === "NEEDS_RECONCILIATION" && !hasCloudInstance) {
-    available.push("reconcile", "confirm-no-resource");
+  if (allowedActions.length === 0) {
+    return (
+      <span
+        className="product-tech"
+        title={resourceDispositionReason}
+      >
+        —
+      </span>
+    );
   }
-  if (status === "FAILED" && !hasCloudInstance) {
-    available.push("retry");
-  }
-
-  if (available.length === 0) return <>—</>;
 
   async function submit() {
     if (!kind) return;
@@ -64,9 +102,14 @@ export function InfrastructureOrderActions({
     setError("");
     try {
       const config = actionConfig[kind];
-      const response = await fetch(config.endpoint(orderId), {
+      const endpointId =
+        kind === "refund" ? serviceOrderId : orderId;
+      const response = await fetch(config.endpoint(endpointId), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
         body: JSON.stringify({ reason: reason.trim() }),
       });
       const data = await response.json();
@@ -85,7 +128,7 @@ export function InfrastructureOrderActions({
   return (
     <>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {available.map((action) => (
+        {allowedActions.map((action) => (
           <button
             key={action}
             type="button"
@@ -94,6 +137,7 @@ export function InfrastructureOrderActions({
               setKind(action);
               setReason("");
               setError("");
+              setIdempotencyKey(crypto.randomUUID());
             }}
           >
             {actionConfig[action].label}

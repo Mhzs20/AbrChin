@@ -1,14 +1,18 @@
 import type {
   InfrastructurePlan,
+  ParchinLevel,
   ProviderCatalogItem,
   ProviderPricingConfig,
 } from "@prisma/client";
 
 import {
-  calculateFinalPriceRial,
   normalizeProviderPriceContract,
   providerAmountToRial,
 } from "@/lib/pricing/provider-pricing";
+import {
+  calculateQuotePricing,
+  type QuoteLineItem,
+} from "@/lib/pricing/quote-line-items";
 
 export type EffectivePlan = InfrastructurePlan & {
   catalogItem: ProviderCatalogItem | null;
@@ -18,6 +22,14 @@ export type EffectivePlanPricing = {
   catalogItemId: string;
   providerBasePriceRial: bigint;
   markupBasisPoints: number;
+  providerMarkupBasisPoints: number;
+  productMarkupBasisPoints: number;
+  markupAmountRial: bigint;
+  parchinLevel: ParchinLevel;
+  parchinPriceRial: bigint;
+  taxBasisPoints: number;
+  taxAmountRial: bigint;
+  lineItems: QuoteLineItem[];
   finalPriceRial: bigint;
   currency: "IRR";
   providerPriceCheckedAt: Date;
@@ -25,6 +37,13 @@ export type EffectivePlanPricing = {
   ramGb: number | null;
   storageGb: number | null;
   available: boolean;
+};
+
+export type PlanPricingOptions = {
+  productMarkupBasisPoints?: number;
+  taxBasisPoints?: number;
+  parchinLevel?: ParchinLevel;
+  parchinPriceRial?: bigint;
 };
 
 export function compatibleImageCodes(item: {
@@ -40,19 +59,38 @@ export function compatibleImageCodes(item: {
 export function resolveCatalogItemPricing(
   item: ProviderCatalogItem,
   config: Pick<ProviderPricingConfig, "markupBasisPoints">,
+  options: PlanPricingOptions = {},
 ): EffectivePlanPricing | null {
   const providerBasePriceRial = catalogItemBasePriceRial(item);
-  if (!item.active || !item.available || providerBasePriceRial == null) {
+  if (
+    !item.active ||
+    !item.available ||
+    ("status" in item && item.status !== "ACTIVE") ||
+    providerBasePriceRial == null
+  ) {
     return null;
   }
+  const quotePricing = calculateQuotePricing({
+    providerMonthlyPriceIrr: providerBasePriceRial,
+    providerMarkupBps: config.markupBasisPoints,
+    productMarkupBps: options.productMarkupBasisPoints ?? 0,
+    parchinLevel: options.parchinLevel ?? "PARCHIN_START",
+    parchinPriceIrr: options.parchinPriceRial ?? 0n,
+    taxBps: options.taxBasisPoints ?? 0,
+  });
   return {
     catalogItemId: item.id,
     providerBasePriceRial,
-    markupBasisPoints: config.markupBasisPoints,
-    finalPriceRial: calculateFinalPriceRial(
-      providerBasePriceRial,
-      config.markupBasisPoints,
-    ),
+    markupBasisPoints: quotePricing.markupBps,
+    providerMarkupBasisPoints: config.markupBasisPoints,
+    productMarkupBasisPoints: options.productMarkupBasisPoints ?? 0,
+    markupAmountRial: quotePricing.markupAmountIrr,
+    parchinLevel: options.parchinLevel ?? "PARCHIN_START",
+    parchinPriceRial: options.parchinPriceRial ?? 0n,
+    taxBasisPoints: options.taxBasisPoints ?? 0,
+    taxAmountRial: quotePricing.taxAmountIrr,
+    lineItems: quotePricing.lineItems,
+    finalPriceRial: quotePricing.finalPriceIrr,
     currency: "IRR",
     providerPriceCheckedAt: item.lastSyncedAt,
     vcpu: item.vcpu,
@@ -65,12 +103,28 @@ export function resolveCatalogItemPricing(
 export function catalogItemBasePriceRial(
   item: ProviderCatalogItem,
 ): bigint | null {
+  if (
+    "providerMonthlyPriceIrr" in item &&
+    item.providerMonthlyPriceIrr != null
+  ) {
+    return item.providerMonthlyPriceIrr > 0n
+      ? item.providerMonthlyPriceIrr
+      : null;
+  }
   return catalogItemPriceRial(item, item.priceMonthlyAmount);
 }
 
 export function catalogItemBaseHourlyPriceRial(
   item: ProviderCatalogItem,
 ): bigint | null {
+  if (
+    "providerHourlyPriceIrr" in item &&
+    item.providerHourlyPriceIrr != null
+  ) {
+    return item.providerHourlyPriceIrr > 0n
+      ? item.providerHourlyPriceIrr
+      : null;
+  }
   return catalogItemPriceRial(item, item.priceHourlyAmount);
 }
 
@@ -99,6 +153,7 @@ function catalogItemPriceRial(
 export function resolvePlanPricing(
   plan: EffectivePlan,
   config: Pick<ProviderPricingConfig, "markupBasisPoints"> | null,
+  options: PlanPricingOptions = {},
 ): EffectivePlanPricing | null {
   if (
     !plan.active ||
@@ -106,13 +161,34 @@ export function resolvePlanPricing(
     !plan.catalogItem ||
     !config ||
     plan.catalogItem.provider !== plan.provider ||
+    plan.catalogItem.apiVersion !== plan.providerApiVersion ||
+    plan.catalogItem.productKind !== plan.productKind ||
     plan.catalogItem.regionCode !== plan.regionCode ||
     plan.catalogItem.sizeCode !== plan.sizeCode ||
     !compatibleImageCodes(plan.catalogItem).includes(plan.imageCode)
   ) {
     return null;
   }
-  return resolveCatalogItemPricing(plan.catalogItem, config);
+  const minimumParchinLevel =
+    plan.minimumParchinLevel ??
+    (plan.parchinIncluded ? "PARCHIN_START" : null);
+  if (!minimumParchinLevel || plan.deliveryMode !== "MANAGED") return null;
+  if (
+    options.parchinLevel &&
+    parchinRank(options.parchinLevel) < parchinRank(minimumParchinLevel)
+  ) {
+    return null;
+  }
+  return resolveCatalogItemPricing(plan.catalogItem, config, {
+    ...options,
+    parchinLevel: options.parchinLevel ?? minimumParchinLevel,
+  });
+}
+
+function parchinRank(level: ParchinLevel): number {
+  if (level === "PARCHIN_START") return 1;
+  if (level === "PARCHIN_ACTIVE") return 2;
+  return 3;
 }
 
 export function samePriceSnapshot(
@@ -123,6 +199,10 @@ export function samePriceSnapshot(
     markupBasisPointsSnapshot: number | null;
     finalPriceRialSnapshot: bigint | null;
     currencySnapshot: string | null;
+    parchinLevel?: ParchinLevel | null;
+    parchinPriceIrr?: bigint | null;
+    taxBasisPointsSnapshot?: number | null;
+    taxAmountIrr?: bigint | null;
   },
 ): boolean {
   return (
@@ -130,7 +210,15 @@ export function samePriceSnapshot(
     snapshot.providerBasePriceRialSnapshot === current.providerBasePriceRial &&
     snapshot.markupBasisPointsSnapshot === current.markupBasisPoints &&
     snapshot.finalPriceRialSnapshot === current.finalPriceRial &&
-    snapshot.currencySnapshot === current.currency
+    snapshot.currencySnapshot === current.currency &&
+    (snapshot.parchinLevel === undefined ||
+      snapshot.parchinLevel === current.parchinLevel) &&
+    (snapshot.parchinPriceIrr === undefined ||
+      snapshot.parchinPriceIrr === current.parchinPriceRial) &&
+    (snapshot.taxBasisPointsSnapshot === undefined ||
+      snapshot.taxBasisPointsSnapshot === current.taxBasisPoints) &&
+    (snapshot.taxAmountIrr === undefined ||
+      snapshot.taxAmountIrr === current.taxAmountRial)
   );
 }
 
@@ -138,6 +226,8 @@ export function samePlanConfigurationSnapshot(
   plan: Pick<
     InfrastructurePlan,
     | "provider"
+    | "providerApiVersion"
+    | "productKind"
     | "regionCode"
     | "sizeCode"
     | "imageCode"
@@ -165,6 +255,10 @@ export function samePlanConfigurationSnapshot(
     value.vcpu === current.vcpu &&
     value.ramGb === current.ramGb &&
     value.storageGb === current.storageGb &&
-    value.parchinIncluded === plan.parchinIncluded
+    value.parchinIncluded === plan.parchinIncluded &&
+    (value.providerApiVersion == null ||
+      value.providerApiVersion === plan.providerApiVersion) &&
+    (value.productKind == null || value.productKind === plan.productKind) &&
+    (value.parchinLevel == null || value.parchinLevel === current.parchinLevel)
   );
 }

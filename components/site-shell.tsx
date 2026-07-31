@@ -7,6 +7,7 @@ import {
   HeartHandshake,
   Home,
   Layers3,
+  Server,
   Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -27,6 +28,7 @@ type NavigationItem = {
 const navigation: NavigationItem[] = [
   { href: "/", label: "خانه", shortLabel: "خانه", icon: Home },
   { href: "/cloud-servers", label: "سرور ابری", shortLabel: "خرید", icon: Cloud },
+  { href: "/ready-servers", label: "سرور آماده", shortLabel: "فوری", icon: Server },
   { href: "/compass", label: "راهنمای انتخاب", shortLabel: "راهنما", icon: Compass },
   { href: "/solutions", label: "راهکارها", shortLabel: "راهکارها", icon: Layers3 },
   { href: "/support", label: "سطح همراهی", shortLabel: "همراهی", icon: HeartHandshake },

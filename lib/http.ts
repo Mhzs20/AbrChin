@@ -31,3 +31,8 @@ export function rejectCrossOrigin(request: Request) {
   }
   return jsonError("درخواست از مبدأ غیرمجاز رد شد.", 403);
 }
+
+export function readIdempotencyKey(request: Request): string | null {
+  const value = request.headers.get("idempotency-key")?.trim() ?? "";
+  return /^[A-Za-z0-9._:-]{16,128}$/.test(value) ? value : null;
+}

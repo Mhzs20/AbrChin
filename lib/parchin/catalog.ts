@@ -19,6 +19,14 @@ export function parchinPlanLabel(included: boolean) {
   return included ? parchinBase.title : "بدون پرچین";
 }
 
+export function parchinLevelLabel(
+  level?: "PARCHIN_START" | "PARCHIN_ACTIVE" | "PARCHIN_STABLE" | null,
+) {
+  if (level === "PARCHIN_ACTIVE") return "پرچین فعال";
+  if (level === "PARCHIN_STABLE") return "پرچین پایدار";
+  return "پرچین شروع";
+}
+
 export function parchinPlanSummary(included: boolean) {
   return included
     ? "تحویل کنترل‌شده و دسترسی یک‌بارمصرف؛ پایش و بکاپ فقط وقتی جداگانه در سفارش ثبت شوند."

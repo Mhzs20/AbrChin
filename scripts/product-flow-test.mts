@@ -13,19 +13,34 @@ import { derivePlatformReadinessStatus } from "../lib/monitoring/readiness.ts";
 
 test("product flow covers discovery, quote, provisioning recovery, and lifecycle", () => {
   assert.equal(new Set(productFlowStates).size, productFlowStates.length);
-  assert.equal(canTransitionProductFlow("ENTRY", "DISCOVERY"), true);
-  assert.equal(canTransitionProductFlow("PROFILE_REVIEW", "DISCOVERY"), true);
-  assert.equal(canTransitionProductFlow("QUOTED", "EXPIRED"), true);
-  assert.equal(canTransitionProductFlow("PROVISIONING", "RECONCILING"), true);
-  assert.equal(canTransitionProductFlow("RECONCILING", "HEALTH_CHECK"), true);
-  assert.equal(canTransitionProductFlow("ACTIVE", "RENEWAL_DUE"), true);
-  assert.equal(canTransitionProductFlow("PAID", "CHECKOUT"), false);
-  assert.deepEqual(nextProductFlowStates("TERMINATED"), []);
+  assert.equal(
+    canTransitionProductFlow("DRAFT", "UNDERSTANDING_CONFIRMED"),
+    true,
+  );
+  assert.equal(
+    canTransitionProductFlow("DELIVERY_CONFIGURED", "QUOTED"),
+    true,
+  );
+  assert.equal(
+    canTransitionProductFlow("PROVISIONING", "PROVISIONING_RECONCILING"),
+    true,
+  );
+  assert.equal(
+    canTransitionProductFlow("PROVISIONING_RECONCILING", "HEALTH_CHECKING"),
+    true,
+  );
+  assert.equal(canTransitionProductFlow("DELIVERED", "ACTIVE"), true);
+  assert.equal(canTransitionProductFlow("PAID", "AWAITING_PAYMENT"), false);
+  assert.deepEqual(nextProductFlowStates("ACTIVE"), []);
 });
 
 test("invalid product flow transitions fail closed", () => {
   assert.throws(
-    () => assertProductFlowTransition("PAYMENT_PENDING", "ACTIVE"),
+    () =>
+      assertProductFlowTransition(
+        "PAYMENT_PENDING" as never,
+        "ACTIVE",
+      ),
     /invalid_product_flow_transition:PAYMENT_PENDING:ACTIVE/,
   );
 });
@@ -62,6 +77,20 @@ test("recommendation input requires every decision answer and normalizes sources
       }),
     /invalid_recommendation_answer:stage/,
   );
+  assert.throws(
+    () =>
+      parseRecommendationInput({
+        answers: {
+          project: "site",
+          stage: "idea",
+          usage: "light",
+          criticality: "low",
+          architecture: "single",
+          management: "raw",
+        },
+      }),
+    /invalid_recommendation_answer:management/,
+  );
 });
 
 test("conversation questions branch only when the workload needs them", () => {
@@ -70,9 +99,11 @@ test("conversation questions branch only when the workload needs them", () => {
     stage: "idea",
     usage: "light",
   });
+  assert.equal(simple.length, 5);
   assert.equal(simple.includes("storage"), false);
   assert.equal(simple.includes("growth"), false);
   assert.equal(simple.includes("downtime"), false);
+  assert.equal(simple.includes("architecture"), true);
 
   const migration = getRecommendationQuestionOrder({
     project: "migration",
@@ -80,8 +111,9 @@ test("conversation questions branch only when the workload needs them", () => {
     usage: "daily",
     architecture: "app_db",
   });
-  assert.equal(migration.includes("storage"), true);
-  assert.equal(migration.includes("growth"), true);
+  assert.equal(migration.length, 5);
+  assert.equal(migration.includes("storage"), false);
+  assert.equal(migration.includes("growth"), false);
   assert.equal(migration.includes("downtime"), true);
 });
 

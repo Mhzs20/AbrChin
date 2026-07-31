@@ -89,6 +89,24 @@ export function LoginForm({ nextPath = "/account" }: { nextPath?: string }) {
         return;
       }
 
+      try {
+        const claimResponse = await fetch(
+          "/api/recommendations/sessions/claim",
+          { method: "POST" },
+        );
+        if (!claimResponse.ok) {
+          setError(
+            "ورود انجام شد، اما اتصال گفت‌وگو به حساب کامل نشد. دوباره تلاش کن.",
+          );
+          return;
+        }
+      } catch {
+        setError(
+          "ورود انجام شد، اما اتصال گفت‌وگو به حساب کامل نشد. دوباره تلاش کن.",
+        );
+        return;
+      }
+
       router.replace(nextPath);
       router.refresh();
     } catch {

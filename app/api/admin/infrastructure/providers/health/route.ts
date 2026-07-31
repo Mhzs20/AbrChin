@@ -2,29 +2,15 @@ import { InfrastructureProvider } from "@prisma/client";
 
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/db";
-import { createInfrastructureProvider, isProviderConfigured } from "@/lib/infrastructure/provider-factory";
+import {
+  createCloudProviderAdapter,
+  createInfrastructureProvider,
+  isCloudProviderConfigured,
+  isProviderConfigured,
+} from "@/lib/infrastructure/provider-factory";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
-
-async function updateCatalogState(partial: {
-  lastHealthCheck?: Date;
-  lastCatalogSync?: Date;
-  regionCount?: number;
-  sizeCount?: number;
-  imageCount?: number;
-  lastError?: string | null;
-}) {
-  return prisma.providerCatalogState.upsert({
-    where: { provider: InfrastructureProvider.PARSPACK },
-    update: partial,
-    create: {
-      id: "parspack",
-      provider: InfrastructureProvider.PARSPACK,
-      ...partial,
-    },
-  });
-}
 
 export async function POST(request: Request) {
   const rejected = rejectCrossOrigin(request);
@@ -32,46 +18,64 @@ export async function POST(request: Request) {
 
   try {
     await requireAdminUser();
-    if (!isProviderConfigured()) {
-      const state = await updateCatalogState({
-        lastHealthCheck: new Date(),
-        lastError: "Provider not configured",
-      });
-      return jsonOk({
-        state: {
-          status: "unconfigured",
-          message: "تنظیم نشده",
-          lastHealthCheck: state.lastHealthCheck?.toISOString() ?? null,
-          lastCatalogSync: state.lastCatalogSync?.toISOString() ?? null,
-          regionCount: state.regionCount,
-          sizeCount: state.sizeCount,
-          imageCount: state.imageCount,
-          catalogItemCount: state.catalogItemCount,
-          pricedItemCount: state.pricedItemCount,
-          unavailableItemCount: state.unavailableItemCount,
-          markupBasisPoints:
-            (
-              await prisma.providerPricingConfig.findUnique({
-                where: { provider: InfrastructureProvider.PARSPACK },
-              })
-            )?.markupBasisPoints ?? 0,
-          lastError: state.lastError,
-          configured: false,
-        },
-      });
-    }
+    const body = (await request.json().catch(() => ({}))) as {
+      provider?: unknown;
+    };
+    const provider =
+      body.provider === InfrastructureProvider.ARVAN ||
+      body.provider === InfrastructureProvider.PARSPACK
+        ? body.provider
+        : null;
+    if (!provider) return jsonError("Provider معتبر نیست.", 400);
 
-    const provider = createInfrastructureProvider();
-    const health = await provider.checkConnection();
-    const state = await updateCatalogState({
-      lastHealthCheck: health.checkedAt,
-      lastError: health.ok ? null : health.message,
+    const configured =
+      provider === InfrastructureProvider.ARVAN
+        ? isCloudProviderConfigured(provider)
+        : isProviderConfigured();
+    const checkedAt = new Date();
+    let ok = false;
+    let message = "تنظیم نشده";
+    let providerRequestId: string | null = null;
+    if (configured) {
+      if (provider === InfrastructureProvider.ARVAN) {
+        const regions = await createCloudProviderAdapter(provider).syncRegions();
+        ok = regions.length > 0;
+        providerRequestId =
+          regions.find((region) => region.providerRequestId)
+            ?.providerRequestId ?? null;
+        message = ok ? "اتصال برقرار است" : "Region فعالی دریافت نشد";
+      } else {
+        const health = await createInfrastructureProvider().checkConnection();
+        ok = health.ok;
+        message = health.message;
+      }
+    }
+    const state = await prisma.providerCatalogState.upsert({
+      where: { provider },
+      update: {
+        lastHealthCheck: checkedAt,
+        lastProviderRequestId: providerRequestId,
+        lastError: ok ? null : message,
+      },
+      create: {
+        id: `${provider.toLowerCase()}-v1`,
+        provider,
+        apiVersion: "v1",
+        lastHealthCheck: checkedAt,
+        lastProviderRequestId: providerRequestId,
+        lastError: ok ? null : message,
+      },
+    });
+    const pricing = await prisma.providerPricingConfig.findUnique({
+      where: { provider },
     });
 
     return jsonOk({
       state: {
-        status: health.ok ? "healthy" : "error",
-        message: health.message,
+        status: configured ? (ok ? "healthy" : "error") : "unconfigured",
+        message,
+        apiVersion: state.apiVersion,
+        enabled: state.enabled,
         lastHealthCheck: state.lastHealthCheck?.toISOString() ?? null,
         lastCatalogSync: state.lastCatalogSync?.toISOString() ?? null,
         regionCount: state.regionCount,
@@ -80,20 +84,28 @@ export async function POST(request: Request) {
         catalogItemCount: state.catalogItemCount,
         pricedItemCount: state.pricedItemCount,
         unavailableItemCount: state.unavailableItemCount,
-        markupBasisPoints:
-          (
-            await prisma.providerPricingConfig.findUnique({
-              where: { provider: InfrastructureProvider.PARSPACK },
-            })
-          )?.markupBasisPoints ?? 0,
+        staleItemCount: state.staleItemCount,
+        invalidPriceCount: state.invalidPriceCount,
+        invalidResourceCount: state.invalidResourceCount,
+        networkCount: state.networkCount,
+        securityCount: state.securityCount,
+        syncDurationMs: state.lastSyncDurationMs,
+        lastSyncStatus: state.lastSyncStatus,
+        regionErrors: state.regionErrors,
+        sourceMoneyUnit: pricing?.sourceMoneyUnit ?? null,
+        lastProviderRequestId: state.lastProviderRequestId,
+        markupBasisPoints: pricing?.markupBasisPoints ?? 0,
         lastError: state.lastError,
-        configured: true,
+        configured,
       },
     });
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);
-    console.error("[admin/providers/health]", error instanceof Error ? error.message : "unknown");
+    console.error(
+      "[admin/providers/health]",
+      error instanceof Error ? error.message : "unknown",
+    );
     return jsonError("بررسی اتصال ممکن نیست.", 500);
   }
 }

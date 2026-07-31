@@ -29,12 +29,14 @@ Optional remote sync can be added with rclone after the dump.
 - `PAYMENT_CALLBACK_BASE_URL`
 - `ADMIN_MOBILES`
 - `PARSPACK_API_TOKEN` (when `PARSPACK_ENABLED=true`)
+- `ARVAN_API_KEY` (when `ARVAN_ENABLED=true`; server-side only)
 - `PARSPACK_PRICE_CURRENCY` and `PARSPACK_PRICE_AMOUNT_UNIT` only after the
   provider price contract is explicitly verified. Without them pricing fails closed.
 
 After migration, an admin must run Catalog Sync, inspect unmapped plans, set the
-global Markup, and only then activate sellable plans. The migration itself does
-not guess old Plan mappings and does not deploy or create VMs.
+Provider and Product Markup, Tax BPS and every Parchin price, and only then
+activate sellable plans. Keep `ARVAN_MUTATIONS_ENABLED=false`; the migration and
+Catalog Sync are read-only and never create Provider resources.
 
 ## Health endpoints
 

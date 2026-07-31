@@ -1,14 +1,45 @@
-import { getClientIp, jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
+import { InfrastructureProductKind } from "@prisma/client";
+
+import {
+  getClientIp,
+  jsonError,
+  jsonOk,
+  readIdempotencyKey,
+  rejectCrossOrigin,
+} from "@/lib/http";
 import { readyServerQuoteIpLimiter } from "@/lib/rate-limit";
-import { createReadyServerQuote } from "@/lib/recommendation/quote-service";
+import { setRecommendationGuestCookie } from "@/lib/recommendation/guest-session-cookie";
+import {
+  createCloudServerQuote,
+  getCatalogServerDeliveryOptions,
+} from "@/lib/recommendation/quote-service";
 import { getCurrentUser } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/errors";
 
 export const dynamic = "force-dynamic";
 
+export async function GET(request: Request) {
+  try {
+    const planId = new URL(request.url).searchParams.get("planId")?.trim();
+    if (!planId) return jsonError("انتخاب سرور معتبر نیست.", 400);
+    return jsonOk(
+      await getCatalogServerDeliveryOptions({
+        planId,
+        expectedProductKind: InfrastructureProductKind.CLOUD_SERVER,
+      }),
+    );
+  } catch {
+    return jsonError("تنظیمات معتبر تحویل در دسترس نیست.", 409);
+  }
+}
+
 export async function POST(request: Request) {
   const rejected = rejectCrossOrigin(request);
   if (rejected) return rejected;
+  const idempotencyKey = readIdempotencyKey(request);
+  if (!idempotencyKey) {
+    return jsonError("شناسه یکتای درخواست الزامی است.", 400);
+  }
 
   const limit = readyServerQuoteIpLimiter.check(
     `ready-server:${getClientIp(request)}`,
@@ -29,17 +60,52 @@ export async function POST(request: Request) {
       typeof (body as Record<string, unknown>).planId === "string"
         ? String((body as Record<string, unknown>).planId).trim()
         : "";
-    if (!planId) return jsonError("انتخاب سرور معتبر نیست.", 400);
+    const record =
+      typeof body === "object" && body !== null
+        ? (body as Record<string, unknown>)
+        : {};
+    const imageAssetId =
+      typeof record.imageAssetId === "string"
+        ? record.imageAssetId.trim()
+        : "";
+    const accessMethod =
+      typeof record.accessMethod === "string"
+        ? record.accessMethod
+        : "";
+    if (
+      !planId ||
+      !imageAssetId ||
+      !["ONE_TIME_PASSWORD", "SSH_KEY", "WINDOWS_PASSWORD"].includes(
+        accessMethod,
+      )
+    ) {
+      return jsonError("تنظیمات تحویل معتبر نیست.", 400);
+    }
 
     const user = await getCurrentUser();
-    const result = await createReadyServerQuote({
+    const result = await createCloudServerQuote({
       planId,
+      idempotencyKey,
       userId: user?.id ?? null,
+      delivery: {
+        imageAssetId,
+        accessMethod: accessMethod as
+          | "ONE_TIME_PASSWORD"
+          | "SSH_KEY"
+          | "WINDOWS_PASSWORD",
+        sshKeyName:
+          typeof record.sshKeyName === "string"
+            ? record.sshKeyName
+            : null,
+      },
     });
-    return jsonOk({
+    const response = jsonOk({
       quote: result.quote,
       expiresAt: result.expiresAt.toISOString(),
     });
+    return result.guestToken
+      ? setRecommendationGuestCookie(response, result.guestToken)
+      : response;
   } catch (error) {
     if (error instanceof SyntaxError) {
       return jsonError("درخواست نامعتبر است.", 400);

@@ -161,8 +161,13 @@ function fakeTransaction() {
   const planUpdates = new Map<string, Record<string, unknown>>();
   const readyPlans = new Map<string, Record<string, unknown>>();
   let nextId = 1;
-  const key = (value: { provider: string; regionCode: string; sizeCode: string }) =>
-    `${value.provider}:${value.regionCode}:${value.sizeCode}`;
+  const key = (value: {
+    provider: string;
+    apiVersion: string;
+    regionCode: string;
+    externalPlanId: string;
+  }) =>
+    `${value.provider}:${value.apiVersion}:${value.regionCode}:${value.externalPlanId}`;
   const tx = {
     providerPricingConfig: {
       async upsert() {
@@ -172,6 +177,21 @@ function fakeTransaction() {
           markupBasisPoints: 2500,
           updatedAt: syncedAt,
           updatedById: null,
+        };
+      },
+    },
+    productPricingConfig: {
+      async upsert() {
+        return {
+          id: "parspack-ready",
+          provider: InfrastructureProvider.PARSPACK,
+          apiVersion: "v1",
+          productKind: "READY_INSTANT_SERVER",
+          markupBasisPoints: 0,
+          enabled: true,
+          updatedById: null,
+          createdAt: syncedAt,
+          updatedAt: syncedAt,
         };
       },
     },
@@ -185,11 +205,20 @@ function fakeTransaction() {
         return { count: items.size };
       },
       async upsert(args: {
-        where: { provider_regionCode_sizeCode: Stored };
+        where: {
+          provider_apiVersion_regionCode_externalPlanId: {
+            provider: string;
+            apiVersion: string;
+            regionCode: string;
+            externalPlanId: string;
+          };
+        };
         update: Partial<Stored>;
         create: ReturnType<typeof buildCatalogItems>[number];
       }) {
-        const storedKey = key(args.where.provider_regionCode_sizeCode);
+        const storedKey = key(
+          args.where.provider_apiVersion_regionCode_externalPlanId,
+        );
         const prior = items.get(storedKey);
         const value: Stored = prior
           ? { ...prior, ...args.update, updatedAt: syncedAt }
@@ -438,7 +467,7 @@ test("pricing and renewal paths require auth, preserve paid orders, and never cr
   assert.match(adminRoute, /requireAdminUser/);
   assert.ok(
     paySource.indexOf("if (order.status === ServiceOrderStatus.PAID)") <
-      paySource.indexOf("const currentPricing = resolvePlanPricing"),
+      paySource.indexOf("const currentPricing"),
   );
   assert.match(renewalSource, /ServiceRenewalQuote|serviceRenewalQuote/);
   assert.match(renewalSource, /providerBasePriceRialSnapshot/);

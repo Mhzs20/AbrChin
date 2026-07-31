@@ -185,7 +185,11 @@ const questions: Record<QuestionId, RecommendationQuestion> = {
 export function getRecommendationQuestionOrder(
   answers: RecommendationAnswers,
 ): QuestionId[] {
-  const order: QuestionId[] = ["project", "stage", "audience", "usage", "architecture"];
+  // Four high-signal questions are always asked. Exactly one branch may be
+  // added, keeping the conversational discovery between 4 and 5 questions.
+  // Region and Parchin are deliberate configuration steps after the main
+  // recommendation, not extra discovery questions.
+  const order: QuestionId[] = ["project", "stage", "usage", "criticality"];
   const migration = answers.project === "migration" || answers.stage === "migration";
   const dataSensitive =
     answers.project === "data" ||
@@ -198,10 +202,10 @@ export function getRecommendationQuestionOrder(
     answers.usage === "daily" ||
     answers.usage === "busy";
 
-  if (dataSensitive) order.push("storage");
-  if (growthSensitive) order.push("growth");
   if (migration) order.push("downtime");
-  order.push("criticality", "management");
+  else if (dataSensitive) order.push("storage");
+  else if (growthSensitive) order.push("growth");
+  else order.push("architecture");
   return order;
 }
 
