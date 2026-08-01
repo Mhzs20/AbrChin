@@ -35,7 +35,10 @@ import {
   isProviderLockedSnapshot,
   resolveProviderRoute,
 } from "../lib/infrastructure/provider-routing.ts";
-import { getPublicSaleDecision } from "../lib/infrastructure/public-sale-policy.ts";
+import {
+  assertPublicSaleEnabled,
+  getPublicSaleDecision,
+} from "../lib/infrastructure/public-sale-policy.ts";
 import {
   irrToDisplayToman,
   normalizeProviderMoney,
@@ -228,6 +231,48 @@ test("Arvan public sale is fail-closed and independent for inventory", () => {
     else process.env.ARVAN_PUBLIC_SALE_ENABLED = previousSale;
     if (previousMutations === undefined) delete process.env.ARVAN_MUTATIONS_ENABLED;
     else process.env.ARVAN_MUTATIONS_ENABLED = previousMutations;
+  }
+});
+
+test("ParsPack public sale is fail-closed and independent from connectivity", () => {
+  const previousSale = process.env.PARSPACK_PUBLIC_SALE_ENABLED;
+  const previousEnabled = process.env.PARSPACK_ENABLED;
+  try {
+    delete process.env.PARSPACK_PUBLIC_SALE_ENABLED;
+    process.env.PARSPACK_ENABLED = "true";
+    assert.deepEqual(
+      getPublicSaleDecision({
+        provider: InfrastructureProvider.PARSPACK,
+        offerSource: "API_CATALOG",
+      }),
+      { allowed: false, code: "provider_sale_disabled" },
+    );
+    assert.throws(
+      () =>
+        assertPublicSaleEnabled({
+          provider: InfrastructureProvider.PARSPACK,
+          offerSource: "API_CATALOG",
+        }),
+      /فروش عمومی سرورهای فوری.*مبلغی برداشت نشد/,
+    );
+
+    process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
+    process.env.PARSPACK_ENABLED = "false";
+    assert.deepEqual(
+      getPublicSaleDecision({
+        provider: InfrastructureProvider.PARSPACK,
+        offerSource: "API_CATALOG",
+      }),
+      { allowed: true, code: "sale_enabled" },
+    );
+  } finally {
+    if (previousSale === undefined) {
+      delete process.env.PARSPACK_PUBLIC_SALE_ENABLED;
+    } else {
+      process.env.PARSPACK_PUBLIC_SALE_ENABLED = previousSale;
+    }
+    if (previousEnabled === undefined) delete process.env.PARSPACK_ENABLED;
+    else process.env.PARSPACK_ENABLED = previousEnabled;
   }
 });
 

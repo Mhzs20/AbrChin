@@ -11,7 +11,6 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
-import { getEnv } from "@/lib/env";
 import {
   getActivePlanById,
   getActiveReadyServerPlanById,
@@ -864,12 +863,6 @@ export async function createReadyServerQuote(params: {
   userId?: string | null;
   now?: Date;
 }) {
-  if (!getEnv().parspackPublicSaleEnabled) {
-    throw new WalletError(
-      "provider_sale_disabled",
-      "فروش عمومی سرورهای فوری موقتاً غیرفعال است.",
-    );
-  }
   return createCatalogServerQuote({
     ...params,
     expectedProductKind:
@@ -894,16 +887,6 @@ export async function getCatalogServerDeliveryOptions(params: {
   planId: string;
   expectedProductKind: InfrastructureProductKind;
 }) {
-  if (
-    params.expectedProductKind ===
-      InfrastructureProductKind.READY_INSTANT_SERVER &&
-    !getEnv().parspackPublicSaleEnabled
-  ) {
-    throw new WalletError(
-      "provider_sale_disabled",
-      "فروش عمومی سرورهای فوری موقتاً غیرفعال است.",
-    );
-  }
   const plan =
     params.expectedProductKind ===
     InfrastructureProductKind.READY_INSTANT_SERVER

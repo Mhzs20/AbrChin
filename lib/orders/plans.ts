@@ -358,6 +358,14 @@ export async function getActiveReadyServerPlanById(id: string) {
 }
 
 export async function listReadyServerPlans(): Promise<PricedInfrastructurePlan[]> {
+  if (
+    !isPublicSaleEnabled({
+      provider: "PARSPACK",
+      offerSource: "API_CATALOG",
+    })
+  ) {
+    return [];
+  }
   const [plans, configs] = await Promise.all([
     prisma.infrastructurePlan.findMany({
       where: {
@@ -430,7 +438,12 @@ export async function listPublicPlanOffers() {
 
 export async function listLiveReadyServerOffers() {
   try {
-    if (!getEnv().parspackPublicSaleEnabled) {
+    if (
+      !isPublicSaleEnabled({
+        provider: "PARSPACK",
+        offerSource: "API_CATALOG",
+      })
+    ) {
       return {
         live: false as const,
         degraded: true as const,

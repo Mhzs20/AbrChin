@@ -5899,6 +5899,61 @@ try {
   );
 
   const parsPackSuccessCalls: string[] = [];
+  const parsPackSuccessFetch: typeof fetch = async (input) => {
+    const url = String(input);
+    parsPackSuccessCalls.push(url);
+    if (url.includes("/regions?")) {
+      return Response.json({
+        regions: [
+          {
+            slug: "runtime-tehran",
+            name: "Runtime Tehran",
+            available: true,
+          },
+        ],
+      });
+    }
+    if (url.includes("/sizes?")) {
+      return Response.json({
+        sizes: [
+          {
+            slug: "runtime-priced",
+            description: "Runtime Priced",
+            regions: ["runtime-tehran"],
+            available: true,
+            vcpus: 2,
+            memory: 2048,
+            disk: 40,
+            price_hourly: "1200",
+            price_monthly: "829440",
+          },
+          {
+            slug: "runtime-no-price",
+            description: "Runtime Missing Price",
+            regions: ["runtime-tehran"],
+            available: true,
+            vcpus: 1,
+            memory: 1024,
+            disk: 25,
+          },
+        ],
+      });
+    }
+    if (url.includes("/images?")) {
+      return Response.json({
+        images: [
+          {
+            slug: "ubuntu24-cloudinit-qcow2",
+            name: "Ubuntu 24.04",
+            regions: ["runtime-tehran"],
+            min_disk_size: 20,
+            status: "available",
+          },
+        ],
+      });
+    }
+    return Response.json({ message: "not found" }, { status: 404 });
+  };
   const parsPackCatalogProvider = new ParsPackProvider({
     managementBaseUrl: "https://my.parspack.com/cserver/api/v1",
     publicBaseUrl: "https://my.parspack.com/cserver/api/public/v1",
@@ -5906,61 +5961,7 @@ try {
     timeoutMs: 1000,
     priceCurrencyCode: "IRR",
     priceAmountUnit: "TOMAN",
-    fetchImpl: async (input) => {
-      const url = String(input);
-      parsPackSuccessCalls.push(url);
-      if (url.includes("/regions?")) {
-        return Response.json({
-          regions: [
-            {
-              slug: "runtime-tehran",
-              name: "Runtime Tehran",
-              available: true,
-            },
-          ],
-        });
-      }
-      if (url.includes("/sizes?")) {
-        return Response.json({
-          sizes: [
-            {
-              slug: "runtime-priced",
-              description: "Runtime Priced",
-              regions: ["runtime-tehran"],
-              available: true,
-              vcpus: 2,
-              memory: 2048,
-              disk: 40,
-              price_hourly: "1200",
-              price_monthly: "829440",
-            },
-            {
-              slug: "runtime-no-price",
-              description: "Runtime Missing Price",
-              regions: ["runtime-tehran"],
-              available: true,
-              vcpus: 1,
-              memory: 1024,
-              disk: 25,
-            },
-          ],
-        });
-      }
-      if (url.includes("/images?")) {
-        return Response.json({
-          images: [
-            {
-              slug: "ubuntu24-cloudinit-qcow2",
-              name: "Ubuntu 24.04",
-              regions: ["runtime-tehran"],
-              min_disk_size: 20,
-              status: "available",
-            },
-          ],
-        });
-      }
-      return Response.json({ message: "not found" }, { status: 404 });
-    },
+    fetchImpl: parsPackSuccessFetch,
   });
   const parsPackSuccessResult = await syncParsPackCatalog(
     parsPackCatalogProvider,
@@ -7104,13 +7105,225 @@ try {
     "DELIVERED",
   );
 
-  const previousPublicSale = process.env.PARSPACK_PUBLIC_SALE_ENABLED;
-  process.env.PARSPACK_PUBLIC_SALE_ENABLED = "false";
-  assert.deepEqual((await listLiveReadyServerOffers()).offers, []);
-  if (previousPublicSale === undefined) {
-    delete process.env.PARSPACK_PUBLIC_SALE_ENABLED;
-  } else {
-    process.env.PARSPACK_PUBLIC_SALE_ENABLED = previousPublicSale;
+  const previousParsPackEnv = {
+    sale: process.env.PARSPACK_PUBLIC_SALE_ENABLED,
+    enabled: process.env.PARSPACK_ENABLED,
+    token: process.env.PARSPACK_API_TOKEN,
+    managementBase: process.env.PARSPACK_API_BASE_URL,
+    publicBase: process.env.PARSPACK_PUBLIC_API_BASE_URL,
+    currency: process.env.PARSPACK_PRICE_CURRENCY,
+    amountUnit: process.env.PARSPACK_PRICE_AMOUNT_UNIT,
+  };
+  const previousFetch = globalThis.fetch;
+  try {
+    process.env.PARSPACK_ENABLED = "true";
+    process.env.PARSPACK_API_TOKEN = "postgres-contract-token";
+    process.env.PARSPACK_API_BASE_URL =
+      "https://my.parspack.com/cserver/api/v1";
+    process.env.PARSPACK_PUBLIC_API_BASE_URL =
+      "https://my.parspack.com/cserver/api/public/v1";
+    process.env.PARSPACK_PRICE_CURRENCY = "IRR";
+    process.env.PARSPACK_PRICE_AMOUNT_UNIT = "TOMAN";
+    process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
+    globalThis.fetch = parsPackSuccessFetch;
+    await db.providerCatalogState.update({
+      where: { provider: InfrastructureProvider.PARSPACK },
+      data: {
+        enabled: true,
+        lastSyncStatus: "SUCCEEDED",
+        lastCatalogSync: new Date(),
+        freshnessSlaSeconds: 900,
+      },
+    });
+    const readyPlan = await db.infrastructurePlan.findFirstOrThrow({
+      where: {
+        provider: InfrastructureProvider.PARSPACK,
+        providerApiVersion: "v1",
+        productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
+        regionCode: "runtime-tehran",
+        sizeCode: "runtime-priced",
+        active: true,
+        publicationStatus: "PUBLISHED",
+      },
+    });
+    const readyImage = await db.providerCatalogAsset.upsert({
+      where: {
+        provider_apiVersion_regionCode_kind_externalId: {
+          provider: InfrastructureProvider.PARSPACK,
+          apiVersion: "v1",
+          regionCode: "runtime-tehran",
+          kind: "IMAGE",
+          externalId: "ubuntu24-cloudinit-qcow2",
+        },
+      },
+      update: { status: "ACTIVE", available: true },
+      create: {
+        provider: InfrastructureProvider.PARSPACK,
+        apiVersion: "v1",
+        regionCode: "runtime-tehran",
+        kind: "IMAGE",
+        externalId: "ubuntu24-cloudinit-qcow2",
+        name: "Ubuntu 24.04",
+        status: "ACTIVE",
+        available: true,
+        lastSeenAt: new Date(),
+        lastSyncedAt: new Date(),
+        rawPayload: { ssh_password: true },
+        payloadHash: "parspack-ready-gate-image",
+      },
+    });
+    const {
+      createReadyServerQuote,
+      getCatalogServerDeliveryOptions,
+    } = await import("../lib/recommendation/quote-service.ts");
+    const readyDelivery = {
+      imageAssetId: readyImage.id,
+      accessMethod: "ONE_TIME_PASSWORD" as const,
+    };
+    const deliveryOptions = await getCatalogServerDeliveryOptions({
+      planId: readyPlan.id,
+      expectedProductKind:
+        InfrastructureProductKind.READY_INSTANT_SERVER,
+    });
+    assert.equal(
+      deliveryOptions.images.some((image) => image.id === readyImage.id),
+      true,
+    );
+    const quoteBeforeGateClosed = await createReadyServerQuote({
+      planId: readyPlan.id,
+      userId: "inventory-customer",
+      idempotencyKey: "parspack-gate-quote-before-close",
+      delivery: readyDelivery,
+    });
+
+    process.env.PARSPACK_PUBLIC_SALE_ENABLED = "false";
+    assert.deepEqual((await listLiveReadyServerOffers()).offers, []);
+    await assert.rejects(
+      getCatalogServerDeliveryOptions({
+        planId: readyPlan.id,
+        expectedProductKind:
+          InfrastructureProductKind.READY_INSTANT_SERVER,
+      }),
+      /فروش عمومی سرورهای فوری/,
+    );
+    await assert.rejects(
+      createReadyServerQuote({
+        planId: readyPlan.id,
+        userId: "inventory-customer",
+        idempotencyKey: "parspack-gate-new-quote-blocked",
+        delivery: readyDelivery,
+      }),
+      /فروش عمومی سرورهای فوری/,
+    );
+    const ordersBeforeBlockedConversion = await db.serviceOrder.count();
+    await assert.rejects(
+      createServiceOrderFromQuote(
+        "inventory-customer",
+        quoteBeforeGateClosed.quote.id,
+      ),
+      /فروش عمومی سرورهای فوری.*مبلغی برداشت نشد/,
+    );
+    assert.equal(
+      await db.serviceOrder.count(),
+      ordersBeforeBlockedConversion,
+    );
+
+    process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
+    const payableQuote = await createReadyServerQuote({
+      planId: readyPlan.id,
+      userId: "inventory-customer",
+      idempotencyKey: "parspack-gate-old-order-payment",
+      delivery: readyDelivery,
+    });
+    const oldParsPackOrder = await createServiceOrderFromQuote(
+      "inventory-customer",
+      payableQuote.quote.id,
+    );
+    const walletBeforeParsPackGate =
+      await db.wallet.findUniqueOrThrow({
+        where: { userId: "inventory-customer" },
+      });
+    const ledgerBeforeParsPackGate = await db.walletLedgerEntry.count({
+      where: {
+        referenceType: "order",
+        referenceId: oldParsPackOrder.id,
+      },
+    });
+    const topupsBeforeParsPackGate = await db.walletTopUp.count();
+    const orderBeforeParsPackGate =
+      await db.serviceOrder.findUniqueOrThrow({
+        where: { id: oldParsPackOrder.id },
+        select: {
+          status: true,
+          paidAt: true,
+          amount: true,
+          planSnapshot: true,
+          provider: true,
+          providerApiVersion: true,
+          productKind: true,
+        },
+      });
+    process.env.PARSPACK_PUBLIC_SALE_ENABLED = "false";
+    await assert.rejects(
+      payOrderWithWallet("inventory-customer", oldParsPackOrder.id),
+      /فروش عمومی سرورهای فوری.*مبلغی برداشت نشد/,
+    );
+    assert.deepEqual(
+      await db.wallet.findUniqueOrThrow({
+        where: { userId: "inventory-customer" },
+      }),
+      walletBeforeParsPackGate,
+    );
+    assert.equal(
+      await db.walletLedgerEntry.count({
+        where: {
+          referenceType: "order",
+          referenceId: oldParsPackOrder.id,
+        },
+      }),
+      ledgerBeforeParsPackGate,
+    );
+    assert.equal(await db.walletTopUp.count(), topupsBeforeParsPackGate);
+    assert.deepEqual(
+      await db.serviceOrder.findUniqueOrThrow({
+        where: { id: oldParsPackOrder.id },
+        select: {
+          status: true,
+          paidAt: true,
+          amount: true,
+          planSnapshot: true,
+          provider: true,
+          providerApiVersion: true,
+          productKind: true,
+        },
+      }),
+      orderBeforeParsPackGate,
+    );
+    assert.equal(
+      await db.infrastructureOrder.count({
+        where: { serviceOrderId: oldParsPackOrder.id },
+      }),
+      0,
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+    const restore = (
+      name: string,
+      value: string | undefined,
+    ) => {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    };
+    restore("PARSPACK_PUBLIC_SALE_ENABLED", previousParsPackEnv.sale);
+    restore("PARSPACK_ENABLED", previousParsPackEnv.enabled);
+    restore("PARSPACK_API_TOKEN", previousParsPackEnv.token);
+    restore("PARSPACK_API_BASE_URL", previousParsPackEnv.managementBase);
+    restore(
+      "PARSPACK_PUBLIC_API_BASE_URL",
+      previousParsPackEnv.publicBase,
+    );
+    restore("PARSPACK_PRICE_CURRENCY", previousParsPackEnv.currency);
+    restore("PARSPACK_PRICE_AMOUNT_UNIT", previousParsPackEnv.amountUnit);
   }
   const { assertProviderRoute } = await import(
     "../lib/infrastructure/provider-routing.ts"
@@ -7168,7 +7381,7 @@ try {
   else process.env.ADMIN_MOBILES = priorAdminMobiles;
 
   console.log(
-    "PostgreSQL integration passed (136 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, durable concurrent health-retry dispatch, poison dispatch isolation, persisted dispatch backoff, dead-letter manual review, three-attempt health retry ceiling, missing-outbox batch progress, concurrent outbox uniqueness, idempotent reconciler replay, forward-only Admin catalog, preprovisioned inventory and inventory-credential migrations with immutable commerce snapshots, Arvan master-sale gate at quote and pre-debit payment, old-quote gate revalidation, API-backed mutation-gate enforcement, inventory-only sale with mutations disabled, credentialless/revoked/transferred inventory exclusion, unique encrypted inventory credentials, raw-secret non-disclosure, atomic credential transfer, post-debit rollback, idempotent payment replay, concurrent no-double-sell, shared Network/Security eligibility, secure delivery to ACTIVE, zero-create inventory recovery, API/manual outage fail-closed behavior, real healthy inventory-only outage sale, atomic no-double-sell reservation, expired and failed-payment reservation release, exact post-payment assignment, idempotent debit/assignment replay, unsellable inventory states, ParsPack public-sale feature gate with immutable routing, Kavenegar CONFIG_REQUIRED safety, Admin-curated Arvan publication isolation, Arvan partial-region last-known-good preservation, ParsPack 403 audit persistence without retry, exact TOMAN-to-IRR materialization, non-sellable invalid-price catalog enforcement, critical incident deduplication, durable SMS outbox delivery, and incident recovery",
+    "PostgreSQL integration passed (143 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, durable concurrent health-retry dispatch, poison dispatch isolation, persisted dispatch backoff, dead-letter manual review, three-attempt health retry ceiling, missing-outbox batch progress, concurrent outbox uniqueness, idempotent reconciler replay, forward-only Admin catalog, preprovisioned inventory and inventory-credential migrations with immutable commerce snapshots, Arvan master-sale gate at quote and pre-debit payment, old-quote gate revalidation, API-backed mutation-gate enforcement, inventory-only sale with mutations disabled, credentialless/revoked/transferred inventory exclusion, unique encrypted inventory credentials, raw-secret non-disclosure, atomic credential transfer, post-debit rollback, idempotent payment replay, concurrent no-double-sell, shared Network/Security eligibility, secure delivery to ACTIVE, zero-create inventory recovery, API/manual outage fail-closed behavior, real healthy inventory-only outage sale, atomic no-double-sell reservation, expired and failed-payment reservation release, exact post-payment assignment, idempotent debit/assignment replay, unsellable inventory states, ParsPack fail-closed listing, delivery, new-quote, old-quote conversion and pre-debit payment gates with immutable wallet, ledger, order and payment state, immutable routing, Kavenegar CONFIG_REQUIRED safety, Admin-curated Arvan publication isolation, Arvan partial-region last-known-good preservation, ParsPack 403 audit persistence without retry, exact TOMAN-to-IRR materialization, non-sellable invalid-price catalog enforcement, critical incident deduplication, durable SMS outbox delivery, and incident recovery",
   );
 } finally {
   await flowDb?.$disconnect();

@@ -21,6 +21,9 @@ const databaseUrl = process.env.DATABASE_URL;
 const prisma = databaseUrl ? new PrismaClient() : null;
 const previousMode = process.env.INFRASTRUCTURE_PROVIDER_MODE;
 const previousNodeEnv = process.env.NODE_ENV;
+const previousParsPackPublicSale =
+  process.env.PARSPACK_PUBLIC_SALE_ENABLED;
+process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
 
 function createParsPackPricingAdapter() {
   return new FakeCloudProviderAdapter({
@@ -67,6 +70,11 @@ function createParsPackPricingAdapter() {
 after(async () => {
   process.env.INFRASTRUCTURE_PROVIDER_MODE = previousMode;
   process.env.NODE_ENV = previousNodeEnv;
+  if (previousParsPackPublicSale === undefined) {
+    delete process.env.PARSPACK_PUBLIC_SALE_ENABLED;
+  } else {
+    process.env.PARSPACK_PUBLIC_SALE_ENABLED = previousParsPackPublicSale;
+  }
   if (prisma) await prisma.$disconnect();
 });
 
