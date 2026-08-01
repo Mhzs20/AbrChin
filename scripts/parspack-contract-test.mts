@@ -188,6 +188,16 @@ test("uses management V1 for create and public V1 for catalog/read operations", 
   const headers = new Headers(createCall.init?.headers);
   assert.equal(headers.get("Authorization"), "Bearer contract-test-token");
   assert.equal(headers.get("Accept-Language"), "en");
+  assert.equal(
+    headers.get("User-Agent"),
+    "AbrChin-ProviderClient/1.0 (+https://abrchin.ir)",
+  );
+  for (const call of calls) {
+    assert.equal(
+      new Headers(call.init?.headers).get("User-Agent"),
+      "AbrChin-ProviderClient/1.0 (+https://abrchin.ir)",
+    );
+  }
 
   assert.ok(
     calls.some((call) =>
