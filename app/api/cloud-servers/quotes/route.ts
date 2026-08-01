@@ -113,7 +113,9 @@ export async function POST(request: Request) {
     if (error instanceof WalletError) {
       const status =
         error.code === "quote_unavailable" ||
-        error.code === "quote_revalidation_failed"
+        error.code === "quote_revalidation_failed" ||
+        error.code === "provider_sale_disabled" ||
+        error.code === "provider_provisioning_not_enabled"
           ? 409
           : 400;
       return jsonError(error.message, status);

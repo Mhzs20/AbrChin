@@ -38,4 +38,10 @@ test("admin infrastructure action routes exist", async () => {
   assert.equal(existsSync("app/api/admin/infrastructure/orders/[id]/health-retry/route.ts"), true);
   assert.equal(existsSync("app/api/admin/infrastructure/orders/[id]/health-observe/route.ts"), true);
   assert.equal(existsSync("app/api/admin/infrastructure/orders/[id]/health-recovery/route.ts"), true);
+  assert.equal(
+    existsSync(
+      "app/api/admin/infrastructure/preprovisioned-inventory/[id]/credential/route.ts",
+    ),
+    true,
+  );
 });

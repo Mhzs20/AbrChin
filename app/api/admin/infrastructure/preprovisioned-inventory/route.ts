@@ -44,6 +44,9 @@ export async function GET() {
         assignedOrderId: true,
         deliveredAt: true,
         disabledAt: true,
+        credential: {
+          select: { status: true, username: true, transferredAt: true },
+        },
       },
     });
     return jsonOk({
@@ -56,6 +59,14 @@ export async function GET() {
           item.reservationExpiresAt?.toISOString() ?? null,
         deliveredAt: item.deliveredAt?.toISOString() ?? null,
         disabledAt: item.disabledAt?.toISOString() ?? null,
+        credential: item.credential
+          ? {
+              status: item.credential.status,
+              username: item.credential.username,
+              transferredAt:
+                item.credential.transferredAt?.toISOString() ?? null,
+            }
+          : null,
       })),
     });
   } catch (error) {

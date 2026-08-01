@@ -19,8 +19,8 @@ Call رد می‌شود.
 `/ready-servers` فقط سرورهای آمادهٔ ParsPack را با منابع ثابت نشان می‌دهد.
 Plan ناموجود، بدون قیمت یا ناسازگار با Image قابل خرید نیست. هنگام اختلال
 Provider، فقط Planهایی که Admin برای حالت Last-known-good مجاز کرده می‌تواند
-با برچسب روشن نمایش داده شود؛ Quote آن تا بازیابی Provider غیرفعال است، مگر
-این‌که منبع آن یک قرارداد دستی معتبر و تاریخ‌دار Admin باشد.
+با برچسب روشن نمایش داده شود؛ Quote آن تا بازیابی Provider غیرفعال است. تعریف
+دستی Plan یا ظرفیت عددی Admin هیچ‌وقت اثبات‌کنندهٔ موجودی قابل‌تحویل نیست.
 
 ## Arvan IaaS v1
 
@@ -102,11 +102,25 @@ Create payload شامل `name`، `network_ids`، `flavor_id`، `image_id`،
 نمی‌کند؛ Create، Resource ID را برمی‌گرداند و Inquiry با GET همان Server انجام
 می‌شود. Request ID هدر در Log عملیاتی ذخیره می‌شود.
 
-در این نسخه `ARVAN_MUTATIONS_ENABLED=false` است. صرف تنظیم API Key هیچ
-POST/DELETEای را فعال نمی‌کند. فعال‌سازی Lifecycle فقط پس از پذیرش صریح یک
-سرور Staging ارزان مجاز است. تا قبل از آن Quote کاتالوگ قابل بررسی است، اما
-Payment سفارش آروان پیش از Debit متوقف می‌شود؛ ابرچین برای قابلیتی که هنوز
-Provisioning آن فعال نشده از Customer وجه دریافت نمی‌کند.
+دو Gate عملیاتی مستقل و Fail-closed وجود دارد:
+
+```text
+ARVAN_PUBLIC_SALE_ENABLED=false
+ARVAN_MUTATIONS_ENABLED=false
+```
+
+Gate اول تمام مسیر عمومی Listing قابل‌خرید، Delivery Options، Quote،
+Quote-to-Order و Payment آروان را کنترل می‌کند و پیش‌فرض آن همیشه `false` است.
+Admin، Catalog Sync، Region Validation و Observation موجودی با خاموش‌بودن آن
+فعال می‌مانند. `API_CATALOG` و `MANUAL_API_BACKED` برای پرداخت هم‌زمان به هر
+دو Gate و Revalidation موفق نیاز دارند. `PREPROVISIONED_INVENTORY` فقط به
+Gate فروش عمومی نیاز دارد و هرگز `createServer` اجرا نمی‌کند. Gate هنگام
+Payment و پیش از Debit دوباره بررسی می‌شود؛ بنابراین خاموش‌شدن آن Quote یا
+Order در انتظار پرداخت را بدون برداشت وجه متوقف می‌کند.
+
+صرف تنظیم API Key هیچ POST/DELETEای را فعال نمی‌کند. فعال‌سازی Lifecycle فقط
+پس از پذیرش صریح یک سرور Staging ارزان مجاز است؛ در این نسخه هر دو Gate بالا
+`false` باقی می‌مانند.
 
 ## ParsPack v1
 
@@ -175,11 +189,24 @@ Region/Plan/Image، IP، Observation و Health تازه دارد. State موجو
 است. ثبت موجودی فقط پس از GET خواندنی آروان، تطبیق کامل Snapshot و Probe واقعی
 SSH/RDP انجام می‌شود؛ شناسهٔ Resource فقط در Snapshot داخلی می‌ماند.
 
+هر Row موجودی باید یک `PreprovisionedInventoryCredential` با وضعیت `READY`
+داشته باشد. Password با همان AES-256-GCM و
+`CREDENTIAL_ENCRYPTION_KEY` مکانیزم Credential فعلی رمز می‌شود؛ Fingerprint
+کلیددار فقط برای رد Password مشترک میان دو Resource استفاده می‌شود. Secret خام
+در Log، Audit، Quote، Snapshot، پیامک یا Response قرار نمی‌گیرد. مشاهدهٔ سالم
+بدون Credential تنها `STALE` است و ظرفیت قابل‌فروش محسوب نمی‌شود.
+
 Quote داخل Transaction و با `FOR UPDATE SKIP LOCKED` دقیقاً یک Row سالم را تا
 انقضای Quote رزرو می‌کند. انقضای Quote یا شکست Payment رزرو را Idempotent آزاد
 می‌کند. Debit موفق همان Row را به همان Order Assign می‌کند؛ Retry دوباره Debit
 یا Assignment نمی‌سازد و Worker فقط Health/Delivery همان Resource را ادامه
 می‌دهد، بدون `createServer`، Provider fallback یا Swap.
+
+در Payment، Inventory و Credential با Row Lock و همان تابع Eligibility مشترک
+دوباره بررسی می‌شوند. Debit، Assignment، ساخت `CloudInstance`، کپی Ciphertext
+به یک `InstanceCredential` و تغییر Credential موجودی به `TRANSFERRED` در یک
+Transaction انجام می‌شوند. شکست هر مرحله همهٔ این Writeها را Rollback می‌کند؛
+Secure Delivery نیز همان مکانیزم نمایش یک‌بارمصرف موجود را استفاده می‌کند.
 
 پاسخ `401/403` ParsPack با کد امن `provider_auth_failed` و بدون Retry ثبت
 می‌شود. شکست Provider، Timeout، ناسازگاری Response Contract و شکست

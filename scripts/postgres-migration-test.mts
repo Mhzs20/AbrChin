@@ -63,6 +63,8 @@ const adminCatalogResilience =
   "20260801120000_admin_catalog_resilience";
 const preprovisionedInventorySafety =
   "20260801210000_preprovisioned_inventory_safety";
+const arvanSaleInventoryCredentials =
+  "20260801230000_arvan_sale_inventory_credentials";
 
 async function copyThrough(lastName: string) {
   for (const name of migrationNames.filter((entry) => entry <= lastName)) {
@@ -2061,6 +2063,8 @@ try {
   await copyThrough(adminCatalogResilience);
   await deploy();
   await copyThrough(preprovisionedInventorySafety);
+  await deploy();
+  await copyThrough(arvanSaleInventoryCredentials);
   await deploy();
   const protectedCommerceAfter = {
     order: await db.serviceOrder.findUniqueOrThrow({
@@ -6475,9 +6479,16 @@ try {
     lockAvailableInventoryTx,
     releaseExpiredInventoryReservations,
     releaseInventoryReservationForOrder,
+    storePreprovisionedInventoryCredential,
   } = await import(
     "../lib/infrastructure/preprovisioned-inventory.ts"
   );
+  const previousCredentialKey = process.env.CREDENTIAL_ENCRYPTION_KEY;
+  const previousArvanPublicSale = process.env.ARVAN_PUBLIC_SALE_ENABLED;
+  const previousArvanMutations = process.env.ARVAN_MUTATIONS_ENABLED;
+  process.env.CREDENTIAL_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
+  process.env.ARVAN_PUBLIC_SALE_ENABLED = "false";
+  process.env.ARVAN_MUTATIONS_ENABLED = "false";
   const inventoryItem =
     await observeAndRegisterPreprovisionedInventory({
       planId: preprovisionedPlan.id,
@@ -6487,9 +6498,79 @@ try {
       adapterOverride: inventoryAdapter,
       probe: async () => true,
     });
-  assert.equal(inventoryItem.inventoryStatus, "AVAILABLE");
+  assert.equal(inventoryItem.inventoryStatus, "STALE");
   assert.equal(inventoryItem.healthStatus, "HEALTHY");
   assert.equal(inventoryAdapter.createCalls.length, 0);
+
+  const inventorySelection = {
+    planId: preprovisionedPlan.id,
+    catalogItemId: inventoryCatalog.id,
+    provider: InfrastructureProvider.ARVAN,
+    apiVersion: "v1",
+    regionCode: "ir-inventory-1",
+    externalPlanId: "inventory-g2",
+    externalImageId: inventoryImage.externalId,
+    externalNetworkId: "inventory-network",
+    externalSecurityId: "inventory-security",
+  } as const;
+  assert.equal(
+    await findFreshAvailableInventory(inventorySelection),
+    null,
+    "healthy inventory without a READY credential must not expose capacity",
+  );
+  await assert.rejects(
+    db.$transaction((tx) => lockAvailableInventoryTx(tx, inventorySelection)),
+    /Credential|موجود نیست|سالم/,
+  );
+  const rawInventorySecret = "Unique-Inventory-Password-001!";
+  const inventoryCredential =
+    await storePreprovisionedInventoryCredential({
+      inventoryItemId: inventoryItem.id,
+      actorUserId: "migration-admin",
+      username: "root",
+      secret: rawInventorySecret,
+    });
+  assert.equal(inventoryCredential.status, "READY");
+  assert.notEqual(inventoryCredential.ciphertext, rawInventorySecret);
+  assert.equal(
+    (
+      await db.preprovisionedInventoryItem.findUniqueOrThrow({
+        where: { id: inventoryItem.id },
+      })
+    ).inventoryStatus,
+    "AVAILABLE",
+  );
+
+  const duplicateInventory = await db.preprovisionedInventoryItem.create({
+    data: {
+      id: "duplicate-password-inventory",
+      catalogItemId: inventoryCatalog.id,
+      planId: preprovisionedPlan.id,
+      provider: InfrastructureProvider.ARVAN,
+      apiVersion: "v1",
+      providerResourceId: "provider-inventory-resource-duplicate",
+      regionCode: "ir-inventory-1",
+      externalPlanId: "inventory-g2",
+      externalImageId: inventoryImage.externalId,
+      observedState: "active",
+      observedIpv4: "192.0.2.211",
+      observedNetworkId: "inventory-network",
+      observedSecurityId: "inventory-security",
+      lastObservedAt: new Date(),
+      lastHealthCheckedAt: new Date(),
+      healthStatus: "HEALTHY",
+      inventoryStatus: "STALE",
+    },
+  });
+  await assert.rejects(
+    storePreprovisionedInventoryCredential({
+      inventoryItemId: duplicateInventory.id,
+      actorUserId: "migration-admin",
+      username: "root",
+      secret: rawInventorySecret,
+    }),
+    /Password یکتا/,
+  );
 
   const { listLiveCloudServerOffers, listLiveReadyServerOffers } =
     await import("../lib/orders/plans.ts");
@@ -6506,36 +6587,62 @@ try {
   assert.equal(degradedOffers.degraded, true);
   assert.equal(manualOffer?.purchasable, false);
   assert.equal(apiOffer?.purchasable, false);
-  assert.equal(inventoryOffer?.purchasable, true);
+  assert.equal(inventoryOffer?.purchasable, false);
   assert.equal(inventoryOffer?.availableInventory, 1);
+  const {
+    createCloudServerQuote,
+  } = await import("../lib/recommendation/quote-service.ts");
+  await assert.rejects(
+    createCloudServerQuote({
+      planId: preprovisionedPlan.id,
+      userId: "inventory-customer",
+      idempotencyKey: "inventory-sale-gate-disabled-quote",
+      delivery: {
+        imageAssetId: inventoryImage.id,
+        accessMethod: "ONE_TIME_PASSWORD",
+      },
+    }),
+    /فروش عمومی/,
+  );
+  process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
   assert.equal(
     (
-      await findFreshAvailableInventory({
-        planId: preprovisionedPlan.id,
-        catalogItemId: inventoryCatalog.id,
-        externalImageId: inventoryImage.externalId,
-      })
+      await findFreshAvailableInventory(inventorySelection)
     )?.id,
     inventoryItem.id,
   );
   assert.equal(
     (
       await db.$transaction((tx) =>
-        lockAvailableInventoryTx(tx, {
-          planId: preprovisionedPlan.id,
-          catalogItemId: inventoryCatalog.id,
-          externalImageId: inventoryImage.externalId,
-        }),
+        lockAvailableInventoryTx(tx, inventorySelection),
       )
     ).id,
     inventoryItem.id,
   );
+  await db.preprovisionedInventoryCredential.update({
+    where: { inventoryItemId: inventoryItem.id },
+    data: { status: "REVOKED" },
+  });
+  assert.equal(await findFreshAvailableInventory(inventorySelection), null);
+  await db.preprovisionedInventoryCredential.update({
+    where: { inventoryItemId: inventoryItem.id },
+    data: { status: "TRANSFERRED", transferredAt: new Date() },
+  });
+  assert.equal(await findFreshAvailableInventory(inventorySelection), null);
+  await db.preprovisionedInventoryCredential.update({
+    where: { inventoryItemId: inventoryItem.id },
+    data: { status: "READY", transferredAt: null },
+  });
+  await assert.rejects(
+    db.preprovisionedInventoryCredential.update({
+      where: { inventoryItemId: inventoryItem.id },
+      data: { ciphertext: "" },
+    }),
+    /constraint|check/i,
+  );
 
   const previousArvanEnabledForManual = process.env.ARVAN_ENABLED;
   process.env.ARVAN_ENABLED = "false";
-  const {
-    createCloudServerQuote,
-  } = await import("../lib/recommendation/quote-service.ts");
   await assert.rejects(
     createCloudServerQuote({
       planId: manualApiPlan.id,
@@ -6546,7 +6653,51 @@ try {
         accessMethod: "ONE_TIME_PASSWORD",
       },
     }),
-    /provider_disabled|not configured|quote/i,
+    /ساخت این سرور|فعال نشده/i,
+  );
+  const apiBackedBlockedOrder = await db.serviceOrder.create({
+    data: {
+      userId: "inventory-customer",
+      title: "API backed gate test",
+      amount: 8_100_000n,
+      currency: "IRR",
+      status: "PENDING_PAYMENT",
+      planCode: manualApiPlan.code,
+      planId: manualApiPlan.id,
+      planSnapshot: {},
+      provider: InfrastructureProvider.ARVAN,
+      providerApiVersion: "v1",
+      productKind: InfrastructureProductKind.CLOUD_SERVER,
+      parchinLevel: ParchinLevel.PARCHIN_START,
+      productFlowState: "AWAITING_PAYMENT",
+    },
+  });
+  const apiBackedWalletBefore =
+    await db.wallet.findUniqueOrThrow({
+      where: { userId: "inventory-customer" },
+    });
+  const { payOrderWithWallet: payGateCheckedOrder } =
+    await import("../lib/orders/service.ts");
+  await assert.rejects(
+    payGateCheckedOrder("inventory-customer", apiBackedBlockedOrder.id),
+    /ساخت این سرور|فعال نشده/i,
+  );
+  assert.equal(
+    (
+      await db.wallet.findUniqueOrThrow({
+        where: { userId: "inventory-customer" },
+      })
+    ).availableBalance,
+    apiBackedWalletBefore.availableBalance,
+  );
+  assert.equal(
+    await db.walletLedgerEntry.count({
+      where: {
+        referenceType: "order",
+        referenceId: apiBackedBlockedOrder.id,
+      },
+    }),
+    0,
   );
   if (previousArvanEnabledForManual === undefined) {
     delete process.env.ARVAN_ENABLED;
@@ -6599,6 +6750,39 @@ try {
     });
   assert.equal(firstReservation.inventoryStatus, "RESERVED");
   assert.ok(firstReservation.reservedByQuoteId);
+  const { createServiceOrderFromQuote, payOrderWithWallet } =
+    await import("../lib/orders/service.ts");
+  const saleGateQuote = await db.recommendationQuote.findUniqueOrThrow({
+    where: { id: firstReservation.reservedByQuoteId! },
+  });
+  const saleGateOrder = await createServiceOrderFromQuote(
+    "inventory-customer",
+    saleGateQuote.id,
+  );
+  const saleGateWalletBefore =
+    await db.wallet.findUniqueOrThrow({
+      where: { userId: "inventory-customer" },
+    });
+  process.env.ARVAN_PUBLIC_SALE_ENABLED = "false";
+  await assert.rejects(
+    payOrderWithWallet("inventory-customer", saleGateOrder.id),
+    /فروش عمومی/,
+  );
+  assert.equal(
+    (
+      await db.wallet.findUniqueOrThrow({
+        where: { userId: "inventory-customer" },
+      })
+    ).availableBalance,
+    saleGateWalletBefore.availableBalance,
+  );
+  assert.equal(
+    await db.walletLedgerEntry.count({
+      where: { referenceType: "order", referenceId: saleGateOrder.id },
+    }),
+    0,
+  );
+  process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
   await db.preprovisionedInventoryItem.update({
     where: { id: inventoryItem.id },
     data: { reservationExpiresAt: new Date(Date.now() - 1_000) },
@@ -6625,8 +6809,6 @@ try {
   const failureQuote = await db.recommendationQuote.findFirstOrThrow({
     where: { sessionId: failureQuoteResult.sessionId },
   });
-  const { createServiceOrderFromQuote, payOrderWithWallet } =
-    await import("../lib/orders/service.ts");
   const failureOrder = await createServiceOrderFromQuote(
     "inventory-customer",
     failureQuote.id,
@@ -6637,9 +6819,9 @@ try {
     });
   await assert.rejects(
     payOrderWithWallet("inventory-customer", failureOrder.id, {
-      testInjectFailureAfterDebit: true,
+      testInjectFailureAfterCredentialTransfer: true,
     }),
-    /Injected failure/,
+    /Injected failure after credential transfer/,
   );
   const walletAfterFailure = await db.wallet.findUniqueOrThrow({
     where: { userId: "inventory-customer" },
@@ -6653,6 +6835,26 @@ try {
       where: { referenceType: "order", referenceId: failureOrder.id },
     }),
     0,
+  );
+  assert.equal(
+    await db.infrastructureOrder.count({
+      where: { serviceOrderId: failureOrder.id },
+    }),
+    0,
+  );
+  assert.equal(
+    await db.instanceCredential.count({
+      where: { cloudInstance: { infrastructureOrder: { serviceOrderId: failureOrder.id } } },
+    }),
+    0,
+  );
+  assert.equal(
+    (
+      await db.preprovisionedInventoryCredential.findUniqueOrThrow({
+        where: { inventoryItemId: inventoryItem.id },
+      })
+    ).status,
+    "READY",
   );
   assert.equal(
     (
@@ -6686,11 +6888,12 @@ try {
     "inventory-customer",
     successQuote.id,
   );
-  const successfulPayment = await payOrderWithWallet(
-    "inventory-customer",
-    successOrder.id,
-  );
+  const [successfulPayment, concurrentPaymentReplay] = await Promise.all([
+    payOrderWithWallet("inventory-customer", successOrder.id),
+    payOrderWithWallet("inventory-customer", successOrder.id),
+  ]);
   assert.equal(successfulPayment.order.status, "PAID");
+  assert.equal(concurrentPaymentReplay.order.id, successfulPayment.order.id);
   const assignedInventory =
     await db.preprovisionedInventoryItem.findUniqueOrThrow({
       where: { id: inventoryItem.id },
@@ -6701,17 +6904,48 @@ try {
     successfulPayment.infrastructureOrder?.preprovisionedInventoryItemId,
     inventoryItem.id,
   );
+  const paidCloudInstance = await db.cloudInstance.findUniqueOrThrow({
+    where: {
+      infrastructureOrderId: successfulPayment.infrastructureOrder!.id,
+    },
+    include: { credential: true },
+  });
   assert.equal(
-    (
-      await db.cloudInstance.findUniqueOrThrow({
-        where: {
-          infrastructureOrderId:
-            successfulPayment.infrastructureOrder!.id,
-        },
-      })
-    ).providerInstanceId,
+    paidCloudInstance.providerInstanceId,
     inventoryItem.providerResourceId,
   );
+  assert.equal(paidCloudInstance.credential?.status, "READY");
+  assert.equal(
+    paidCloudInstance.credential?.ciphertext,
+    inventoryCredential.ciphertext,
+  );
+  assert.equal(
+    await db.instanceCredential.count({
+      where: { cloudInstanceId: paidCloudInstance.id },
+    }),
+    1,
+  );
+  const transferredInventoryCredential =
+    await db.preprovisionedInventoryCredential.findUniqueOrThrow({
+      where: { inventoryItemId: inventoryItem.id },
+    });
+  assert.equal(transferredInventoryCredential.status, "TRANSFERRED");
+  assert.ok(transferredInventoryCredential.transferredAt);
+  const persistedNonSecretSurfaces = JSON.stringify({
+    planSnapshot: successQuote.planSnapshot,
+    quoteDelivery: successQuote.deliveryConfigurationSnapshot,
+    providerSelection:
+      (
+        await db.infrastructureOrder.findUniqueOrThrow({
+          where: { id: successfulPayment.infrastructureOrder!.id },
+        })
+      ).providerSelectionSnapshot,
+    inventoryAudit: assignedInventory.adminAudit,
+    audits: await db.auditLog.findMany({
+      where: { entityId: { in: [inventoryItem.id, paidCloudInstance.id] } },
+    }),
+  });
+  assert.equal(persistedNonSecretSurfaces.includes(rawInventorySecret), false);
   await payOrderWithWallet("inventory-customer", successOrder.id);
   assert.equal(
     await db.walletLedgerEntry.count({
@@ -6724,6 +6958,36 @@ try {
       where: { assignedOrderId: successOrder.id },
     }),
     1,
+  );
+  assert.equal(
+    await db.instanceCredential.count({
+      where: { cloudInstanceId: paidCloudInstance.id },
+    }),
+    1,
+  );
+
+  await storePreprovisionedInventoryCredential({
+    inventoryItemId: duplicateInventory.id,
+    actorUserId: "migration-admin",
+    username: "root",
+    secret: "Unique-Inventory-Password-002!",
+  });
+  await db.preprovisionedInventoryItem.update({
+    where: { id: duplicateInventory.id },
+    data: {
+      observedNetworkId: null,
+      inventoryStatus: "AVAILABLE",
+    },
+  });
+  assert.equal(
+    await findFreshAvailableInventory(inventorySelection),
+    null,
+    "preview must reject a resource without an observed network",
+  );
+  await assert.rejects(
+    db.$transaction((tx) => lockAvailableInventoryTx(tx, inventorySelection)),
+    /سالم|موجود نیست/,
+    "the transactional lock must apply the same network/security eligibility",
   );
 
   await db.preprovisionedInventoryItem.createMany({
@@ -6812,6 +7076,33 @@ try {
   );
   assert.equal(recoveryAdapter.createCalls.length, 0);
   assert.equal(recoveryResult?.healthy, true);
+  assert.equal(recoveryResult?.delivered, true);
+  const activePreprovisionedOrder =
+    await db.infrastructureOrder.findUniqueOrThrow({
+      where: { id: successfulPayment.infrastructureOrder!.id },
+      include: { serviceOrder: true, cloudInstance: true },
+    });
+  assert.equal(activePreprovisionedOrder.status, "ACTIVE");
+  assert.equal(activePreprovisionedOrder.productFlowState, "ACTIVE");
+  assert.equal(activePreprovisionedOrder.serviceOrder.productFlowState, "ACTIVE");
+  assert.equal(activePreprovisionedOrder.cloudInstance?.status, "ACTIVE");
+  assert.equal(
+    await db.secureDeliveryEvent.count({
+      where: {
+        infrastructureOrderId: activePreprovisionedOrder.id,
+        resultCode: "secure_delivery_pending",
+      },
+    }),
+    0,
+  );
+  assert.equal(
+    (
+      await db.preprovisionedInventoryItem.findUniqueOrThrow({
+        where: { id: inventoryItem.id },
+      })
+    ).inventoryStatus,
+    "DELIVERED",
+  );
 
   const previousPublicSale = process.env.PARSPACK_PUBLIC_SALE_ENABLED;
   process.env.PARSPACK_PUBLIC_SALE_ENABLED = "false";
@@ -6831,6 +7122,22 @@ try {
       apiVersion: "v1",
     }),
   );
+
+  if (previousCredentialKey === undefined) {
+    delete process.env.CREDENTIAL_ENCRYPTION_KEY;
+  } else {
+    process.env.CREDENTIAL_ENCRYPTION_KEY = previousCredentialKey;
+  }
+  if (previousArvanPublicSale === undefined) {
+    delete process.env.ARVAN_PUBLIC_SALE_ENABLED;
+  } else {
+    process.env.ARVAN_PUBLIC_SALE_ENABLED = previousArvanPublicSale;
+  }
+  if (previousArvanMutations === undefined) {
+    delete process.env.ARVAN_MUTATIONS_ENABLED;
+  } else {
+    process.env.ARVAN_MUTATIONS_ENABLED = previousArvanMutations;
+  }
 
   const priorSmsProvider = process.env.SMS_PROVIDER;
   const priorKavenegarApiKey = process.env.KAVENEGAR_API_KEY;
@@ -6861,7 +7168,7 @@ try {
   else process.env.ADMIN_MOBILES = priorAdminMobiles;
 
   console.log(
-    "PostgreSQL integration passed (118 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, durable concurrent health-retry dispatch, poison dispatch isolation, persisted dispatch backoff, dead-letter manual review, three-attempt health retry ceiling, missing-outbox batch progress, concurrent outbox uniqueness, idempotent reconciler replay, forward-only Admin catalog and preprovisioned inventory migrations with immutable commerce snapshots, API/manual outage fail-closed behavior, real healthy inventory-only outage sale, atomic no-double-sell reservation, expired and failed-payment reservation release, exact post-payment assignment, idempotent debit/assignment replay, unsellable inventory states, no-create inventory recovery, ParsPack public-sale feature gate with immutable routing, Kavenegar CONFIG_REQUIRED safety, Admin-curated Arvan publication isolation, Arvan partial-region last-known-good preservation, ParsPack 403 audit persistence without retry, exact TOMAN-to-IRR materialization, non-sellable invalid-price catalog enforcement, critical incident deduplication, durable SMS outbox delivery, and incident recovery",
+    "PostgreSQL integration passed (136 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, durable concurrent health-retry dispatch, poison dispatch isolation, persisted dispatch backoff, dead-letter manual review, three-attempt health retry ceiling, missing-outbox batch progress, concurrent outbox uniqueness, idempotent reconciler replay, forward-only Admin catalog, preprovisioned inventory and inventory-credential migrations with immutable commerce snapshots, Arvan master-sale gate at quote and pre-debit payment, old-quote gate revalidation, API-backed mutation-gate enforcement, inventory-only sale with mutations disabled, credentialless/revoked/transferred inventory exclusion, unique encrypted inventory credentials, raw-secret non-disclosure, atomic credential transfer, post-debit rollback, idempotent payment replay, concurrent no-double-sell, shared Network/Security eligibility, secure delivery to ACTIVE, zero-create inventory recovery, API/manual outage fail-closed behavior, real healthy inventory-only outage sale, atomic no-double-sell reservation, expired and failed-payment reservation release, exact post-payment assignment, idempotent debit/assignment replay, unsellable inventory states, ParsPack public-sale feature gate with immutable routing, Kavenegar CONFIG_REQUIRED safety, Admin-curated Arvan publication isolation, Arvan partial-region last-known-good preservation, ParsPack 403 audit persistence without retry, exact TOMAN-to-IRR materialization, non-sellable invalid-price catalog enforcement, critical incident deduplication, durable SMS outbox delivery, and incident recovery",
   );
 } finally {
   await flowDb?.$disconnect();

@@ -35,6 +35,7 @@ import {
   isProviderLockedSnapshot,
   resolveProviderRoute,
 } from "../lib/infrastructure/provider-routing.ts";
+import { getPublicSaleDecision } from "../lib/infrastructure/public-sale-policy.ts";
 import {
   irrToDisplayToman,
   normalizeProviderMoney,
@@ -188,8 +189,46 @@ test("provider and API version remain locked in quote and paid-order snapshots",
   );
   assert.match(payment, /assertProviderRoute/);
   assert.match(payment, /providerSelectionSnapshot/);
-  assert.match(payment, /provider_provisioning_not_enabled/);
+  assert.match(payment, /assertPublicSaleEnabled/);
   assert.doesNotMatch(payment, /providerSwap|fallbackProvider/i);
+});
+
+test("Arvan public sale is fail-closed and independent for inventory", () => {
+  const previousSale = process.env.ARVAN_PUBLIC_SALE_ENABLED;
+  const previousMutations = process.env.ARVAN_MUTATIONS_ENABLED;
+  try {
+    delete process.env.ARVAN_PUBLIC_SALE_ENABLED;
+    process.env.ARVAN_MUTATIONS_ENABLED = "true";
+    assert.deepEqual(
+      getPublicSaleDecision({
+        provider: InfrastructureProvider.ARVAN,
+        offerSource: "PREPROVISIONED_INVENTORY",
+      }),
+      { allowed: false, code: "provider_sale_disabled" },
+    );
+
+    process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
+    process.env.ARVAN_MUTATIONS_ENABLED = "false";
+    assert.deepEqual(
+      getPublicSaleDecision({
+        provider: InfrastructureProvider.ARVAN,
+        offerSource: "API_CATALOG",
+      }),
+      { allowed: false, code: "provider_provisioning_not_enabled" },
+    );
+    assert.equal(
+      getPublicSaleDecision({
+        provider: InfrastructureProvider.ARVAN,
+        offerSource: "PREPROVISIONED_INVENTORY",
+      }).allowed,
+      true,
+    );
+  } finally {
+    if (previousSale === undefined) delete process.env.ARVAN_PUBLIC_SALE_ENABLED;
+    else process.env.ARVAN_PUBLIC_SALE_ENABLED = previousSale;
+    if (previousMutations === undefined) delete process.env.ARVAN_MUTATIONS_ENABLED;
+    else process.env.ARVAN_MUTATIONS_ENABLED = previousMutations;
+  }
 });
 
 test("provider money normalization is explicit, BigInt-only and exact", () => {

@@ -15,6 +15,7 @@ import {
   revalidateLockedSelection,
 } from "@/lib/infrastructure/selection-revalidation";
 import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
+import { assertPublicSaleEnabled } from "@/lib/infrastructure/public-sale-policy";
 import { listActivePlans } from "@/lib/orders/plans";
 import {
   assertParchinLevelAllowed,
@@ -66,6 +67,10 @@ export async function getConversationDeliveryOptions(input: {
   guestToken?: string | null;
   requestedParchinLevel?: ParchinLevel;
 }) {
+  assertPublicSaleEnabled({
+    provider: InfrastructureProvider.ARVAN,
+    offerSource: "API_CATALOG",
+  });
   const session = await requireConversationAccess(input);
   if (
     ![
@@ -174,6 +179,10 @@ export async function configureConversationDelivery(input: {
   userId?: string | null;
   guestToken?: string | null;
 }) {
+  assertPublicSaleEnabled({
+    provider: InfrastructureProvider.ARVAN,
+    offerSource: "API_CATALOG",
+  });
   const session = await requireConversationAccess(input);
   if (session.revision !== input.expectedRevision) {
     throw new ConversationRevisionConflictError(session.revision);

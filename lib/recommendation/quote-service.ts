@@ -24,6 +24,10 @@ import {
   requestCatalogSync,
 } from "@/lib/infrastructure/multi-provider-catalog-service";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
+import {
+  assertPublicSaleEnabled,
+  isPublicSaleEnabled,
+} from "@/lib/infrastructure/public-sale-policy";
 import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
 import {
   findFreshAvailableInventory,
@@ -297,6 +301,10 @@ async function lockAndRevalidatePlan(
     ? await findFreshAvailableInventory({
         planId: plan.id,
         catalogItemId: plan.catalogItem.id,
+        provider: plan.provider,
+        apiVersion: plan.providerApiVersion,
+        regionCode: plan.regionCode,
+        externalPlanId,
         externalImageId: image.externalId,
       })
     : null;
@@ -568,6 +576,32 @@ async function createCatalogServerQuote(params: {
   const guestCredential = params.userId
     ? null
     : createCatalogGuestSessionCredential(params.idempotencyKey);
+  const route = await prisma.infrastructurePlan.findUnique({
+    where: { id: params.planId },
+    select: {
+      provider: true,
+      providerApiVersion: true,
+      productKind: true,
+      offerSource: true,
+    },
+  });
+  if (
+    !route ||
+    route.productKind !== params.expectedProductKind ||
+    route.providerApiVersion !== "v1"
+  ) {
+    throw new WalletError("quote_unavailable", "این انتخاب معتبر نیست.");
+  }
+  try {
+    assertProviderRoute({
+      productKind: route.productKind,
+      provider: route.provider,
+      apiVersion: route.providerApiVersion,
+    });
+  } catch {
+    throw new WalletError("quote_unavailable", "این انتخاب معتبر نیست.");
+  }
+  assertPublicSaleEnabled(route);
   const existing = await prisma.recommendationSession.findUnique({
     where: {
       catalogCheckoutIdempotencyKey: params.idempotencyKey,
@@ -597,31 +631,6 @@ async function createCatalogServerQuote(params: {
       quote: toPublicRecommendationQuote(quote),
       expiresAt: quote.expiresAt,
     };
-  }
-  const route = await prisma.infrastructurePlan.findUnique({
-    where: { id: params.planId },
-    select: {
-      provider: true,
-      providerApiVersion: true,
-      productKind: true,
-      offerSource: true,
-    },
-  });
-  if (
-    !route ||
-    route.productKind !== params.expectedProductKind ||
-    route.providerApiVersion !== "v1"
-  ) {
-    throw new WalletError("quote_unavailable", "این انتخاب معتبر نیست.");
-  }
-  try {
-    assertProviderRoute({
-      productKind: route.productKind,
-      provider: route.provider,
-      apiVersion: route.providerApiVersion,
-    });
-  } catch {
-    throw new WalletError("quote_unavailable", "این انتخاب معتبر نیست.");
   }
   if (route.offerSource === "API_CATALOG") {
     await requireFreshCatalog(route.provider);
@@ -692,7 +701,14 @@ async function createCatalogServerQuote(params: {
         ? await lockAvailableInventoryTx(tx, {
             planId: plan.id,
             catalogItemId: plan.catalogItem.id,
+            provider: plan.provider,
+            apiVersion: plan.providerApiVersion,
+            regionCode: plan.regionCode,
+            externalPlanId:
+              plan.catalogItem.externalPlanId ?? plan.sizeCode,
             externalImageId: locked.configuration.externalImageId,
+            externalNetworkId: locked.configuration.externalNetworkId!,
+            externalSecurityId: locked.configuration.externalSecurityId!,
             now,
           })
         : null;
@@ -901,6 +917,10 @@ export async function getCatalogServerDeliveryOptions(params: {
     provider: plan.provider,
     apiVersion: plan.providerApiVersion,
   });
+  assertPublicSaleEnabled({
+    provider: plan.provider,
+    offerSource: plan.offerSource,
+  });
   if (plan.offerSource === "API_CATALOG") {
     await requireFreshCatalog(plan.provider);
   }
@@ -963,6 +983,10 @@ export async function createRecommendationQuotes(params: {
   guestToken?: string | null;
   requestedParchinLevel?: ParchinLevel;
 }) {
+  assertPublicSaleEnabled({
+    provider: InfrastructureProvider.ARVAN,
+    offerSource: "API_CATALOG",
+  });
   if (!params.sessionId) {
     throw new Error("conversation_session_required");
   }
@@ -1287,6 +1311,14 @@ export async function getActiveRecommendationQuote(
     include: { plan: true, session: true, serviceOrder: true },
   });
   if (!quote) return null;
+  if (
+    !isPublicSaleEnabled({
+      provider: quote.plan.provider,
+      offerSource: quote.plan.offerSource,
+    })
+  ) {
+    return null;
+  }
   try {
     await requireConversationAccess({
       sessionId: quote.sessionId,

@@ -160,6 +160,12 @@ enum PreprovisionedHealthStatus {
   UNKNOWN
 }
 
+enum PreprovisionedInventoryCredentialStatus {
+  READY
+  TRANSFERRED
+  REVOKED
+}
+
 enum InfrastructurePlanPublicationStatus {
   DRAFT
   PUBLISHED
@@ -292,35 +298,36 @@ enum PaymentGatewayEnvironment {
 }
 
 model User {
-  id                          String                        @id @default(cuid())
-  mobile                      String                        @unique
+  id                          String                              @id @default(cuid())
+  mobile                      String                              @unique
   displayName                 String?
-  role                        UserRole                      @default(CUSTOMER)
+  role                        UserRole                            @default(CUSTOMER)
   mobileVerifiedAt            DateTime?
-  createdAt                   DateTime                      @default(now())
-  updatedAt                   DateTime                      @updatedAt
+  createdAt                   DateTime                            @default(now())
+  updatedAt                   DateTime                            @updatedAt
   sessions                    Session[]
   wallet                      Wallet?
   orders                      ServiceOrder[]
-  gatewayAudits               PaymentGatewayAuditLog[]      @relation("GatewayAuditActor")
-  updatedGateways             PaymentGatewayConfig[]        @relation("GatewayUpdatedBy")
-  walletTopUpSettingsUpdated  WalletTopUpSettings[]         @relation("WalletTopUpSettingsUpdatedBy")
+  gatewayAudits               PaymentGatewayAuditLog[]            @relation("GatewayAuditActor")
+  updatedGateways             PaymentGatewayConfig[]              @relation("GatewayUpdatedBy")
+  walletTopUpSettingsUpdated  WalletTopUpSettings[]               @relation("WalletTopUpSettingsUpdatedBy")
   infrastructureOrders        InfrastructureOrder[]
   cloudInstances              CloudInstance[]
   recommendationSessions      RecommendationSession[]
-  credentialsCreated          InstanceCredential[]          @relation("CredentialCreatedBy")
+  credentialsCreated          InstanceCredential[]                @relation("CredentialCreatedBy")
   subscriptions               ServiceSubscription[]
   renewalQuotes               ServiceRenewalQuote[]
-  fundingConfirmations        ProviderFundingConfirmation[] @relation("FundingConfirmedBy")
-  auditLogs                   AuditLog[]                    @relation("AuditActor")
-  adminCommandReceipts        AdminCommandReceipt[]         @relation("AdminCommandActor")
-  infrastructurePlansUpdated  InfrastructurePlan[]          @relation("PlanUpdatedBy")
-  providerPricingUpdated      ProviderPricingConfig[]       @relation("ProviderPricingUpdatedBy")
-  providerRegionsCreated      ProviderRegionConfig[]        @relation("ProviderRegionCreatedBy")
-  providerRegionsUpdated      ProviderRegionConfig[]        @relation("ProviderRegionUpdatedBy")
-  catalogItemsManuallyUpdated ProviderCatalogItem[]         @relation("CatalogItemManualUpdatedBy")
-  inventoryItemsCreated       PreprovisionedInventoryItem[] @relation("InventoryCreatedBy")
-  inventoryItemsUpdated       PreprovisionedInventoryItem[] @relation("InventoryUpdatedBy")
+  fundingConfirmations        ProviderFundingConfirmation[]       @relation("FundingConfirmedBy")
+  auditLogs                   AuditLog[]                          @relation("AuditActor")
+  adminCommandReceipts        AdminCommandReceipt[]               @relation("AdminCommandActor")
+  infrastructurePlansUpdated  InfrastructurePlan[]                @relation("PlanUpdatedBy")
+  providerPricingUpdated      ProviderPricingConfig[]             @relation("ProviderPricingUpdatedBy")
+  providerRegionsCreated      ProviderRegionConfig[]              @relation("ProviderRegionCreatedBy")
+  providerRegionsUpdated      ProviderRegionConfig[]              @relation("ProviderRegionUpdatedBy")
+  catalogItemsManuallyUpdated ProviderCatalogItem[]               @relation("CatalogItemManualUpdatedBy")
+  inventoryItemsCreated       PreprovisionedInventoryItem[]       @relation("InventoryCreatedBy")
+  inventoryItemsUpdated       PreprovisionedInventoryItem[]       @relation("InventoryUpdatedBy")
+  inventoryCredentialsCreated PreprovisionedInventoryCredential[] @relation("InventoryCredentialCreatedBy")
   alertSubscription           AdminAlertSubscription?
 }
 
@@ -1098,11 +1105,11 @@ model ProviderCatalogItem {
 }
 
 model PreprovisionedInventoryItem {
-  id                   String                        @id @default(cuid())
+  id                   String                             @id @default(cuid())
   catalogItemId        String
   planId               String
   provider             InfrastructureProvider
-  apiVersion           String                        @default("v1")
+  apiVersion           String                             @default("v1")
   providerResourceId   String
   regionCode           String
   externalPlanId       String
@@ -1113,37 +1120,58 @@ model PreprovisionedInventoryItem {
   observedSecurityId   String?
   lastObservedAt       DateTime
   lastHealthCheckedAt  DateTime?
-  healthStatus         PreprovisionedHealthStatus    @default(UNKNOWN)
-  inventoryStatus      PreprovisionedInventoryStatus @default(STALE)
-  reservedByQuoteId    String?                       @unique
-  reservedByOrderId    String?                       @unique
+  healthStatus         PreprovisionedHealthStatus         @default(UNKNOWN)
+  inventoryStatus      PreprovisionedInventoryStatus      @default(STALE)
+  reservedByQuoteId    String?                            @unique
+  reservedByOrderId    String?                            @unique
   reservedRevision     Int?
   reservedAt           DateTime?
   reservationExpiresAt DateTime?
-  assignedOrderId      String?                       @unique
+  assignedOrderId      String?                            @unique
   assignedAt           DateTime?
   deliveredAt          DateTime?
   disabledAt           DateTime?
   adminAudit           Json?
   createdById          String?
   updatedById          String?
-  createdAt            DateTime                      @default(now())
-  updatedAt            DateTime                      @updatedAt
-  catalogItem          ProviderCatalogItem           @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
-  plan                 InfrastructurePlan            @relation(fields: [planId], references: [id], onDelete: Restrict)
-  reservedByQuote      RecommendationQuote?          @relation("InventoryReservedQuote", fields: [reservedByQuoteId], references: [id], onDelete: SetNull)
-  reservedByOrder      ServiceOrder?                 @relation("InventoryReservedOrder", fields: [reservedByOrderId], references: [id], onDelete: SetNull)
-  assignedOrder        ServiceOrder?                 @relation("InventoryAssignedOrder", fields: [assignedOrderId], references: [id], onDelete: Restrict)
+  createdAt            DateTime                           @default(now())
+  updatedAt            DateTime                           @updatedAt
+  catalogItem          ProviderCatalogItem                @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  plan                 InfrastructurePlan                 @relation(fields: [planId], references: [id], onDelete: Restrict)
+  reservedByQuote      RecommendationQuote?               @relation("InventoryReservedQuote", fields: [reservedByQuoteId], references: [id], onDelete: SetNull)
+  reservedByOrder      ServiceOrder?                      @relation("InventoryReservedOrder", fields: [reservedByOrderId], references: [id], onDelete: SetNull)
+  assignedOrder        ServiceOrder?                      @relation("InventoryAssignedOrder", fields: [assignedOrderId], references: [id], onDelete: Restrict)
   infrastructureOrder  InfrastructureOrder?
-  quotedBy             RecommendationQuote[]         @relation("QuoteInventorySnapshot")
-  createdBy            User?                         @relation("InventoryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedBy            User?                         @relation("InventoryUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  quotedBy             RecommendationQuote[]              @relation("QuoteInventorySnapshot")
+  createdBy            User?                              @relation("InventoryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy            User?                              @relation("InventoryUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  credential           PreprovisionedInventoryCredential?
 
   @@unique([provider, apiVersion, providerResourceId])
   @@index([planId, inventoryStatus, healthStatus])
   @@index([catalogItemId, inventoryStatus])
   @@index([reservationExpiresAt])
   @@index([assignedOrderId])
+}
+
+model PreprovisionedInventoryCredential {
+  id                String                                  @id @default(cuid())
+  inventoryItemId   String                                  @unique
+  username          String
+  ciphertext        String
+  iv                String
+  authTag           String
+  secretFingerprint String                                  @unique
+  status            PreprovisionedInventoryCredentialStatus @default(READY)
+  createdById       String
+  createdAt         DateTime                                @default(now())
+  updatedAt         DateTime                                @updatedAt
+  transferredAt     DateTime?
+  inventoryItem     PreprovisionedInventoryItem             @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  createdBy         User                                    @relation("InventoryCredentialCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+  @@index([createdById, createdAt])
 }
 
 model ProviderRegionConfig {

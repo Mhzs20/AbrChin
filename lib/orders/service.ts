@@ -20,6 +20,7 @@ import {
   samePriceSnapshot,
 } from "@/lib/pricing/plan-pricing";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
+import { assertPublicSaleEnabled } from "@/lib/infrastructure/public-sale-policy";
 import {
   resolveProviderSelectionDefaults,
   revalidateLockedSelection,
@@ -172,6 +173,10 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
   ) {
     throw new WalletError("invalid_quote", "پیشنهاد انتخاب‌شده پیدا نشد.");
   }
+  assertPublicSaleEnabled({
+    provider: preflight.provider,
+    offerSource: preflight.plan.offerSource,
+  });
   const preprovisioned =
     preflight.plan.offerSource === "PREPROVISIONED_INVENTORY";
   const livePrice = preprovisioned
@@ -240,6 +245,10 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
       productKind: quote.plan.productKind,
       provider: quote.plan.provider,
       apiVersion: quote.plan.providerApiVersion,
+    });
+    assertPublicSaleEnabled({
+      provider: quote.plan.provider,
+      offerSource: quote.plan.offerSource,
     });
     if (
       quote.provider != null &&
@@ -364,6 +373,18 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
         quoteId: quote.id,
         orderId: order.id,
         revision: transitioned.productFlowRevision,
+        expected: {
+          planId: quote.plan.id,
+          catalogItemId: quote.plan.catalogItem!.id,
+          provider: quote.plan.provider,
+          apiVersion: quote.plan.providerApiVersion,
+          regionCode: quote.plan.regionCode,
+          externalPlanId:
+            quote.plan.catalogItem?.externalPlanId ?? quote.plan.sizeCode,
+          externalImageId: quote.externalImageId!,
+          externalNetworkId: quote.externalNetworkId!,
+          externalSecurityId: quote.externalSecurityId!,
+        },
       });
     }
 
@@ -387,6 +408,12 @@ export async function payOrderWithWallet(
     },
   });
   if (existing?.status !== ServiceOrderStatus.PAID) {
+    if (existing?.plan) {
+      assertPublicSaleEnabled({
+        provider: existing.plan.provider,
+        offerSource: existing.plan.offerSource,
+      });
+    }
     const quote = existing?.recommendationQuote;
     if (
       quote?.provider &&
@@ -400,28 +427,28 @@ export async function payOrderWithWallet(
         // The exact resource was already observed and atomically reserved.
         // Payment revalidates the reservation inside its debit transaction.
       } else {
-      const current = await revalidateLockedSelection(
-        {
-          provider: quote.provider,
-          providerApiVersion: quote.providerApiVersion,
-          productKind: quote.productKind,
-          region: quote.providerRegion,
-          externalPlanId: quote.externalPlanId,
-          externalImageId: quote.externalImageId,
-          externalNetworkId: quote.externalNetworkId,
-          externalSecurityId: quote.externalSecurityId,
-        },
-        options?.providerAdapter,
-      );
-      if (
-        quote.providerMonthlyPriceIrr == null ||
-        current.monthlyPriceIrr !== quote.providerMonthlyPriceIrr
-      ) {
-        throw new WalletError(
-          "quote_price_changed",
-          "قیمت این پیشنهاد تغییر کرده؛ پیشنهاد تازه را دریافت کنید.",
+        const current = await revalidateLockedSelection(
+          {
+            provider: quote.provider,
+            providerApiVersion: quote.providerApiVersion,
+            productKind: quote.productKind,
+            region: quote.providerRegion,
+            externalPlanId: quote.externalPlanId,
+            externalImageId: quote.externalImageId,
+            externalNetworkId: quote.externalNetworkId,
+            externalSecurityId: quote.externalSecurityId,
+          },
+          options?.providerAdapter,
         );
-      }
+        if (
+          quote.providerMonthlyPriceIrr == null ||
+          current.monthlyPriceIrr !== quote.providerMonthlyPriceIrr
+        ) {
+          throw new WalletError(
+            "quote_price_changed",
+            "قیمت این پیشنهاد تغییر کرده؛ پیشنهاد تازه را دریافت کنید.",
+          );
+        }
       }
     } else if (existing?.plan?.catalogItem) {
       await lockAndRevalidateLegacyOrder(

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  credentialFingerprint,
   decryptCredential,
   encryptCredential,
 } from "../lib/security/credential-vault.ts";
@@ -23,6 +24,14 @@ test("instance credentials use authenticated encryption and round-trip safely", 
       testKey,
     ),
   );
+});
+
+test("inventory credential fingerprints are keyed and deterministic", () => {
+  const secret = "unique-inventory-password";
+  const first = credentialFingerprint(secret, testKey);
+  assert.equal(first, credentialFingerprint(secret, testKey));
+  assert.notEqual(first, credentialFingerprint(`${secret}-different`, testKey));
+  assert.equal(first.includes(secret), false);
 });
 
 test("credential reveal is one-time and clears encrypted material", async () => {
@@ -46,4 +55,17 @@ test("production compose requires the credential encryption key", async () => {
     compose,
     /CREDENTIAL_ENCRYPTION_KEY: \$\{CREDENTIAL_ENCRYPTION_KEY:\?CREDENTIAL_ENCRYPTION_KEY must be set\}/,
   );
+});
+
+test("inventory credential registration is admin-only and never returns the secret", async () => {
+  const route = await readFile(
+    "app/api/admin/infrastructure/preprovisioned-inventory/[id]/credential/route.ts",
+    "utf8",
+  );
+  assert.match(route, /rejectCrossOrigin/);
+  assert.match(route, /requireAdminUser/);
+  assert.match(route, /readIdempotencyKey/);
+  assert.match(route, /requestFingerprint/);
+  assert.doesNotMatch(route, /jsonOk\([^)]*secret/s);
+  assert.doesNotMatch(route, /console\.(?:log|error|warn)/);
 });

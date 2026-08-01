@@ -50,7 +50,9 @@ export async function POST(request: Request, { params }: Params) {
               error.code === "quote_configuration_changed" ||
               error.code === "quote_expired" ||
               error.code === "quote_unavailable" ||
-              error.code === "quote_revalidation_failed"
+              error.code === "quote_revalidation_failed" ||
+              error.code === "provider_sale_disabled" ||
+              error.code === "provider_provisioning_not_enabled"
             ? 409
             : 400;
       if (

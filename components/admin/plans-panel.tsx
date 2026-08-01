@@ -114,6 +114,8 @@ export function AdminPlansPanel({
   const [manualForm, setManualForm] = useState(emptyManualForm);
   const [inventoryPlan, setInventoryPlan] = useState<PlanRow | null>(null);
   const [inventoryResourceId, setInventoryResourceId] = useState("");
+  const [inventoryUsername, setInventoryUsername] = useState("root");
+  const [inventorySecret, setInventorySecret] = useState("");
   const [inventoryReason, setInventoryReason] = useState("");
   const selectedCatalog = useMemo(
     () => catalogItems.find((item) => item.id === form.catalogItemId) ?? null,
@@ -188,6 +190,38 @@ export function AdminPlansPanel({
       const data = await response.json();
       if (!response.ok) {
         setError(typeof data.error === "string" ? data.error : "ذخیره ممکن نشد.");
+        return;
+      }
+      const inventoryId =
+        data?.inventory && typeof data.inventory.id === "string"
+          ? data.inventory.id
+          : "";
+      if (!inventoryId) {
+        setError("شناسه موجودی ثبت‌شده دریافت نشد.");
+        return;
+      }
+      const credentialResponse = await fetch(
+        `/api/admin/infrastructure/preprovisioned-inventory/${inventoryId}/credential`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: JSON.stringify({
+            username: inventoryUsername,
+            secret: inventorySecret,
+            reason: inventoryReason,
+          }),
+        },
+      );
+      const credentialData = await credentialResponse.json();
+      if (!credentialResponse.ok) {
+        setError(
+          typeof credentialData.error === "string"
+            ? credentialData.error
+            : "ثبت Credential امن موجودی ممکن نشد.",
+        );
         return;
       }
       window.location.reload();
@@ -324,6 +358,8 @@ export function AdminPlansPanel({
                 onClick={() => {
                   setInventoryPlan(plan);
                   setInventoryResourceId("");
+                  setInventoryUsername("root");
+                  setInventorySecret("");
                   setInventoryReason("");
                   setError("");
                 }}
@@ -557,6 +593,12 @@ export function AdminPlansPanel({
         </p>
         <FormField id="inventory-resource" label="Provider Resource ID">
           <input id="inventory-resource" value={inventoryResourceId} onChange={(event) => setInventoryResourceId(event.target.value)} required />
+        </FormField>
+        <FormField id="inventory-username" label="نام کاربری تحویل">
+          <input id="inventory-username" value={inventoryUsername} onChange={(event) => setInventoryUsername(event.target.value)} autoComplete="username" required />
+        </FormField>
+        <FormField id="inventory-secret" label="Password یکتای یک‌بارمصرف">
+          <input id="inventory-secret" type="password" value={inventorySecret} onChange={(event) => setInventorySecret(event.target.value)} autoComplete="new-password" minLength={8} required />
         </FormField>
         <FormField id="inventory-reason" label="دلیل ثبت/بازبینی">
           <textarea id="inventory-reason" value={inventoryReason} onChange={(event) => setInventoryReason(event.target.value)} rows={2} required />

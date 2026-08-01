@@ -23,6 +23,7 @@ import {
   samePriceSnapshot,
 } from "@/lib/pricing/plan-pricing";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
+import { assertPublicSaleEnabled } from "@/lib/infrastructure/public-sale-policy";
 import {
   assertProductFlowOwnerStateTx,
   transitionProductFlowTx,
@@ -30,11 +31,14 @@ import {
 import {
   assignReservedInventoryTx,
   lockReservedInventoryForPaymentTx,
+  transferInventoryCredentialToInstanceTx,
 } from "@/lib/infrastructure/preprovisioned-inventory";
 
 export type PayOrderTxOptions = {
   /** Test-only: throw after debit ledger to verify full rollback. */
   testInjectFailureAfterDebit?: boolean;
+  /** Test-only: throw after inventory credential transfer to verify rollback. */
+  testInjectFailureAfterCredentialTransfer?: boolean;
 };
 
 const PAYABLE_QUOTE_STATUSES: RecommendationQuoteStatus[] = [
@@ -146,16 +150,10 @@ export async function executePayOrderWithWalletTx(
   }
   const preprovisioned =
     plan.offerSource === "PREPROVISIONED_INVENTORY";
-  if (plan.provider === "ARVAN" && !preprovisioned) {
-    // The v1 lifecycle contract and fake orchestrator are implemented, but
-    // real mutations are intentionally outside this task. Never debit a
-    // customer for an Arvan order until the approved staging rollout wires
-    // the adapter into the production worker.
-    throw new WalletError(
-      "provider_provisioning_not_enabled",
-      "ساخت این سرور هنوز برای پرداخت فعال نشده است؛ مبلغی برداشت نشد.",
-    );
-  }
+  assertPublicSaleEnabled({
+    provider: plan.provider,
+    offerSource: plan.offerSource,
+  });
   const pricingConfig = await tx.providerPricingConfig.findUnique({
     where: { provider: plan.provider },
   });
@@ -255,6 +253,21 @@ export async function executePayOrderWithWalletTx(
           quoteId: order.recommendationQuote.id,
           orderId: order.id,
           revision: order.productFlowRevision,
+          expected: {
+            planId: plan.id,
+            catalogItemId: plan.catalogItem!.id,
+            provider: plan.provider,
+            apiVersion: plan.providerApiVersion,
+            regionCode: plan.regionCode,
+            externalPlanId:
+              plan.catalogItem?.externalPlanId ?? plan.sizeCode,
+            externalImageId:
+              order.recommendationQuote.externalImageId!,
+            externalNetworkId:
+              order.recommendationQuote.externalNetworkId!,
+            externalSecurityId:
+              order.recommendationQuote.externalSecurityId!,
+          },
         })
       : null
     : null;
@@ -263,11 +276,17 @@ export async function executePayOrderWithWalletTx(
     (!inventory ||
       inventory.provider !== plan.provider ||
       inventory.apiVersion !== plan.providerApiVersion ||
+      inventory.planId !== plan.id ||
+      inventory.catalogItemId !== plan.catalogItem?.id ||
       inventory.regionCode !== plan.regionCode ||
       inventory.externalPlanId !==
         (plan.catalogItem?.externalPlanId ?? plan.sizeCode) ||
       inventory.externalImageId !==
-        order.recommendationQuote?.externalImageId)
+        order.recommendationQuote?.externalImageId ||
+      inventory.observedNetworkId !==
+        order.recommendationQuote?.externalNetworkId ||
+      inventory.observedSecurityId !==
+        order.recommendationQuote?.externalSecurityId)
   ) {
     throw new WalletError(
       "inventory_snapshot_mismatch",
@@ -406,8 +425,9 @@ export async function executePayOrderWithWalletTx(
       inventoryItemId: inventory.id,
       quoteId: order.recommendationQuote.id,
       orderId: order.id,
+      revision: order.productFlowRevision,
     });
-    await tx.cloudInstance.create({
+    const cloudInstance = await tx.cloudInstance.create({
       data: {
         infrastructureOrderId: infrastructureOrder.id,
         userId,
@@ -427,6 +447,16 @@ export async function executePayOrderWithWalletTx(
         status: CloudInstanceStatus.PENDING,
       },
     });
+    await transferInventoryCredentialToInstanceTx(tx, {
+      inventoryItemId: inventory.id,
+      cloudInstanceId: cloudInstance.id,
+    });
+    if (options?.testInjectFailureAfterCredentialTransfer) {
+      throw new WalletError(
+        "test_inject",
+        "Injected failure after credential transfer",
+      );
+    }
     await transitionProductFlowTx(tx, {
       owner: {
         recommendationSessionId:

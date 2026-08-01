@@ -21,6 +21,7 @@ import {
 } from "@/lib/infrastructure/multi-provider-catalog-service";
 import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
 import { countAvailableInventoryByPlan } from "@/lib/infrastructure/preprovisioned-inventory";
+import { isPublicSaleEnabled } from "@/lib/infrastructure/public-sale-policy";
 import {
   type EffectivePlanPricing,
   catalogItemBaseHourlyPriceRial,
@@ -328,6 +329,14 @@ export async function listActivePlans(
     pricingConfigs(),
   ]);
   return plans.flatMap((plan) => {
+    if (
+      !isPublicSaleEnabled({
+        provider: plan.provider,
+        offerSource: plan.offerSource,
+      })
+    ) {
+      return [];
+    }
     const pricing = resolveConfiguredPlanPricing(
       plan,
       configs,
@@ -492,9 +501,13 @@ export async function listLiveCloudServerOffers() {
           displayNames.get(plan.regionCode) ?? plan.regionCode,
         availableInventory: inventoryCount,
         purchasable:
-          plan.offerSource === "PREPROVISIONED_INVENTORY"
+          isPublicSaleEnabled({
+            provider: plan.provider,
+            offerSource: plan.offerSource,
+          }) &&
+          (plan.offerSource === "PREPROVISIONED_INVENTORY"
             ? inventoryCount > 0
-            : freshness.fresh,
+            : freshness.fresh),
       };
       });
     return {

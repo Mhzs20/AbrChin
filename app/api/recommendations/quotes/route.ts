@@ -4,6 +4,7 @@ import { recommendationQuoteIpLimiter } from "@/lib/rate-limit";
 import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
 import { createRecommendationQuotes } from "@/lib/recommendation/quote-service";
 import { getCurrentUser } from "@/lib/session";
+import { WalletError } from "@/lib/wallet/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,9 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof SyntaxError) return jsonError("درخواست نامعتبر است.", 400);
+    if (error instanceof WalletError) {
+      return jsonError(error.message, 409, { code: error.code });
+    }
     if (
       error instanceof Error &&
       error.message === "parchin_level_below_minimum"

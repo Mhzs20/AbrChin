@@ -10,6 +10,8 @@ const adminCatalogMigrationPath =
   "prisma/migrations/20260801120000_admin_catalog_resilience/migration.sql";
 const preprovisionedInventoryMigrationPath =
   "prisma/migrations/20260801210000_preprovisioned_inventory_safety/migration.sql";
+const inventoryCredentialMigrationPath =
+  "prisma/migrations/20260801230000_arvan_sale_inventory_credentials/migration.sql";
 
 test("catalog pricing migration is additive and preserves financial history", async () => {
   const migration = await readFile(migrationPath, "utf8");
@@ -90,6 +92,25 @@ test("preprovisioned inventory migration is additive and commerce-immutable", as
   assert.match(migration, /ADD COLUMN "preprovisionedInventoryItemId"/);
   assert.doesNotMatch(migration, /RENAME VALUE/);
   assert.match(migration, /CREATE TYPE "InfrastructureOfferSource"/);
+  assert.doesNotMatch(migration, /\bDROP TABLE\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM/i);
+  assert.doesNotMatch(migration, /UPDATE "ServiceOrder"/);
+  assert.doesNotMatch(migration, /UPDATE "RecommendationQuote"/);
+  assert.doesNotMatch(migration, /UPDATE "InfrastructureOrder"/);
+  assert.doesNotMatch(migration, /UPDATE "Wallet"/);
+  assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
+  assert.doesNotMatch(migration, /UPDATE "Payment/);
+});
+
+test("inventory credential migration is additive and commerce-immutable", async () => {
+  const migration = await readFile(inventoryCredentialMigrationPath, "utf8");
+  assert.match(
+    migration,
+    /CREATE TABLE "PreprovisionedInventoryCredential"/,
+  );
+  assert.match(migration, /secretFingerprint_key/);
+  assert.match(migration, /'READY', 'TRANSFERRED', 'REVOKED'/);
   assert.doesNotMatch(migration, /\bDROP TABLE\b/i);
   assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
   assert.doesNotMatch(migration, /DELETE FROM/i);

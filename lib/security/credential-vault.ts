@@ -1,4 +1,9 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+} from "node:crypto";
 
 import { assertCredentialEncryptionKey } from "@/lib/env";
 
@@ -55,4 +60,21 @@ export function decryptCredential(
     decipher.update(Buffer.from(encrypted.ciphertext, "base64")),
     decipher.final(),
   ]).toString("utf8");
+}
+
+/**
+ * A non-reversible, keyed fingerprint used only to prevent credential reuse.
+ * It intentionally reuses the configured credential key and never persists the
+ * plaintext. Encryption remains AES-256-GCM through encryptCredential().
+ */
+export function credentialFingerprint(
+  plaintext: string,
+  encodedKey = assertCredentialEncryptionKey(),
+) {
+  if (!plaintext || plaintext.length > 4_096) {
+    throw new Error("invalid_credential_plaintext");
+  }
+  return createHmac("sha256", decodeKey(encodedKey))
+    .update(plaintext, "utf8")
+    .digest("hex");
 }

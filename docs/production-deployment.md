@@ -38,6 +38,20 @@ Provider and Product Markup, Tax BPS and every Parchin price, and only then
 activate sellable plans. Keep `ARVAN_MUTATIONS_ENABLED=false`; the migration and
 Catalog Sync are read-only and never create Provider resources.
 
+Keep both operational gates disabled until their separate approvals:
+
+```text
+ARVAN_PUBLIC_SALE_ENABLED=false
+ARVAN_MUTATIONS_ENABLED=false
+```
+
+The public-sale gate is checked again before every wallet debit. API-backed
+Arvan plans require both gates and a successful provider revalidation.
+Pre-provisioned inventory requires only the public-sale gate, but each real
+resource must have a fresh observation/health result and a unique encrypted
+`READY` credential registered by an admin. Registering catalog or inventory
+does not turn public sales on.
+
 ## Health endpoints
 
 - `/api/health` is a lightweight web-container liveness check used by Compose.

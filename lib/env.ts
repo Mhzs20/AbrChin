@@ -84,6 +84,12 @@ export function getEnv() {
     arvanRegionCodesCsv: process.env.ARVAN_REGION_CODES ?? "",
     arvanTimeoutMs: readInt("ARVAN_TIMEOUT_MS", 15_000),
     arvanGetAttempts: readInt("ARVAN_GET_ATTEMPTS", 3),
+    // Public checkout is a separate operational decision from provider
+    // connectivity and lifecycle mutation capability. It is fail-closed.
+    arvanPublicSaleEnabled: readBool(
+      "ARVAN_PUBLIC_SALE_ENABLED",
+      false,
+    ),
     // Lifecycle writes stay disabled until a separately approved staging
     // exercise. Merely configuring an API key must never enable mutations.
     arvanMutationsEnabled: readBool("ARVAN_MUTATIONS_ENABLED", false),
@@ -143,11 +149,6 @@ export function validateProviderEnvironment() {
       !["RIAL", "TOMAN"].includes(env.parspackPriceAmountUnit))
   ) {
     throw new Error("ParsPack v1 price contract is not fully configured");
-  }
-  if (env.isProduction && env.arvanMutationsEnabled) {
-    throw new Error(
-      "ARVAN_MUTATIONS_ENABLED requires a separately approved staging rollout",
-    );
   }
   return env;
 }
