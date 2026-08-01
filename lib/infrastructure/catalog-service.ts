@@ -150,6 +150,11 @@ async function materializeReadyServerPlans(
       parchinIncluded: true,
       minimumParchinLevel: ParchinLevel.PARCHIN_START,
       active: sellable,
+      publicationStatus: sellable
+        ? ("PUBLISHED" as const)
+        : ("PAUSED" as const),
+      instantDelivery: true,
+      displayDuringProviderOutage: true,
       sortOrder: readyServerSortOrder(item),
       catalogItemId: item.id,
       catalogMappingStatus: CatalogMappingStatus.MAPPED,

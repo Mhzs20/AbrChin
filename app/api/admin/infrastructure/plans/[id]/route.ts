@@ -1,4 +1,4 @@
-import { DeliveryMode } from "@prisma/client";
+import { DeliveryMode, InfrastructurePlanPublicationStatus } from "@prisma/client";
 
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
@@ -10,6 +10,7 @@ import {
   resolveCatalogItemPricing,
 } from "@/lib/pricing/plan-pricing";
 import { readRequestMeta } from "@/lib/session";
+import { isRegionEnabledForSale } from "@/lib/infrastructure/provider-region-config";
 
 export const dynamic = "force-dynamic";
 
@@ -78,6 +79,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (requestedActive && !pricing) {
       return jsonError("Catalog Item ناموجود یا فاقد قرارداد قیمت معتبر است.", 400);
     }
+    if (
+      requestedActive &&
+      before.provider === "ARVAN" &&
+      !(await isRegionEnabledForSale({
+        provider: before.provider,
+        apiVersion: before.providerApiVersion,
+        regionCode: catalogItem.regionCode,
+      }))
+    ) {
+      return jsonError("Region برای فروش فعال نیست.", 409);
+    }
     Object.assign(data, {
       catalogItemId: catalogItem.id,
       catalogMappingStatus: "MAPPED",
@@ -90,6 +102,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         catalogItem.ramMb == null ? null : Math.ceil(catalogItem.ramMb / 1024),
       storageGb: catalogItem.diskGb,
       active: requestedActive && pricing != null,
+      publicationStatus:
+        requestedActive && pricing != null
+          ? InfrastructurePlanPublicationStatus.PUBLISHED
+          : InfrastructurePlanPublicationStatus.PAUSED,
+      ...(typeof body.instantDelivery === "boolean"
+        ? { instantDelivery: body.instantDelivery }
+        : {}),
+      ...(typeof body.displayDuringProviderOutage === "boolean"
+        ? { displayDuringProviderOutage: body.displayDuringProviderOutage }
+        : {}),
       ...(pricing
         ? {
             salePriceRial: pricing.finalPriceRial,

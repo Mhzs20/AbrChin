@@ -15,6 +15,7 @@ import {
 import { runProvisioningWorkerCycle, touchWorkerHeartbeat } from "@/lib/infrastructure/provisioning-service";
 import { processSubscriptionLifecycle } from "@/lib/subscriptions/service";
 import { getWorkerConfig } from "@/lib/worker/config";
+import { processOperationalAlertOutbox } from "@/lib/operations/alert-worker";
 
 const config = getWorkerConfig();
 validateProviderEnvironment();
@@ -45,6 +46,7 @@ async function main() {
   while (!stopping) {
     try {
       const processed = await runProvisioningWorkerCycle();
+      const alertsProcessed = await processOperationalAlertOutbox();
       if (Date.now() >= nextSubscriptionLifecycleAt) {
         await processSubscriptionLifecycle();
         nextSubscriptionLifecycleAt =
@@ -70,11 +72,13 @@ async function main() {
             promise: refreshProviderCatalogForPricing(),
           });
         }
-        await settleProviderCatalogSyncTasks(syncTasks);
+        await settleProviderCatalogSyncTasks(syncTasks, undefined, {
+          persistIncidents: true,
+        });
         nextCatalogSyncAt = Date.now() + CATALOG_SYNC_INTERVAL_MS;
       }
       await touchWorkerHeartbeat({ cycleOk: true });
-      if (processed) {
+      if (processed || alertsProcessed > 0) {
         idleRounds = 0;
       } else {
         idleRounds += 1;

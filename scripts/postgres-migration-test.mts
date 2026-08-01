@@ -59,6 +59,8 @@ const terminalAndDispatchRecoveryV6 =
   "20260731120000_terminal_and_dispatch_recovery_v6";
 const healthDispatchStarvationRecoveryV7 =
   "20260731200000_health_dispatch_starvation_recovery_v7";
+const adminCatalogResilience =
+  "20260801120000_admin_catalog_resilience";
 
 async function copyThrough(lastName: string) {
   for (const name of migrationNames.filter((entry) => entry <= lastName)) {
@@ -2027,6 +2029,64 @@ try {
   });
   assert.equal(auditAfter, auditBefore);
 
+  const protectedCommerceBefore = {
+    order: await db.serviceOrder.findUniqueOrThrow({
+      where: { id: "order-paid" },
+      select: {
+        status: true,
+        amount: true,
+        paidAt: true,
+        planSnapshot: true,
+      },
+    }),
+    infrastructure: await db.infrastructureOrder.findUniqueOrThrow({
+      where: { serviceOrderId: "order-paid" },
+      select: { providerSelectionSnapshot: true },
+    }),
+    ledger: await db.walletLedgerEntry.findMany({
+      where: { referenceType: "order", referenceId: "order-paid" },
+      orderBy: { id: "asc" },
+      select: {
+        direction: true,
+        type: true,
+        amount: true,
+        status: true,
+        balanceAfter: true,
+        reversedEntryId: true,
+      },
+    }),
+  };
+  await copyThrough(adminCatalogResilience);
+  await deploy();
+  const protectedCommerceAfter = {
+    order: await db.serviceOrder.findUniqueOrThrow({
+      where: { id: "order-paid" },
+      select: {
+        status: true,
+        amount: true,
+        paidAt: true,
+        planSnapshot: true,
+      },
+    }),
+    infrastructure: await db.infrastructureOrder.findUniqueOrThrow({
+      where: { serviceOrderId: "order-paid" },
+      select: { providerSelectionSnapshot: true },
+    }),
+    ledger: await db.walletLedgerEntry.findMany({
+      where: { referenceType: "order", referenceId: "order-paid" },
+      orderBy: { id: "asc" },
+      select: {
+        direction: true,
+        type: true,
+        amount: true,
+        status: true,
+        balanceAfter: true,
+        reversedEntryId: true,
+      },
+    }),
+  };
+  assert.deepEqual(protectedCommerceAfter, protectedCommerceBefore);
+
   await db.recommendationSession.create({
     data: {
       id: "conversation-concurrency",
@@ -2039,6 +2099,51 @@ try {
   });
   process.env.DATABASE_URL = isolatedUrl;
   flowDb = (await import("../lib/db.ts")).prisma;
+  const previousArvanRegions = process.env.ARVAN_REGION_CODES;
+  process.env.ARVAN_REGION_CODES =
+    "ir-thr-si1, ir-thr-si1,eu-west1-a";
+  const {
+    ensureProviderRegionBootstrap,
+    listProviderRegionConfigs,
+  } = await import(
+    "../lib/infrastructure/provider-region-config.ts"
+  );
+  await ensureProviderRegionBootstrap(InfrastructureProvider.ARVAN, "v1");
+  assert.deepEqual(
+    (
+      await listProviderRegionConfigs({
+        provider: InfrastructureProvider.ARVAN,
+        apiVersion: "v1",
+        purpose: "SYNC",
+      })
+    ).map((region) => region.regionCode),
+    ["ir-thr-si1", "eu-west1-a"],
+  );
+  await db.providerRegionConfig.create({
+    data: {
+      provider: InfrastructureProvider.ARVAN,
+      apiVersion: "v1",
+      regionCode: "ir-admin-runtime",
+      displayName: "Region افزوده‌شده از Admin",
+      source: "ADMIN",
+      syncEnabled: true,
+      saleEnabled: true,
+      sortOrder: 99,
+    },
+  });
+  assert.equal(
+    (
+      await listProviderRegionConfigs({
+        provider: InfrastructureProvider.ARVAN,
+        apiVersion: "v1",
+        purpose: "SYNC",
+      })
+    ).some((region) => region.regionCode === "ir-admin-runtime"),
+    true,
+    "runtime Region selection must read the database after bootstrap",
+  );
+  if (previousArvanRegions === undefined) delete process.env.ARVAN_REGION_CODES;
+  else process.env.ARVAN_REGION_CODES = previousArvanRegions;
   const {
     assertProductFlowOwnerStateTx,
     bootstrapCatalogCheckoutFlowTx,
@@ -5628,6 +5733,7 @@ try {
         },
       },
       select: {
+        id: true,
         providerMonthlyPriceIrr: true,
         status: true,
         available: true,
@@ -5636,6 +5742,42 @@ try {
         payloadHash: true,
       },
     });
+  assert.equal(
+    await db.infrastructurePlan.count({
+      where: { catalogItemId: arvanGoodBefore.id },
+    }),
+    0,
+    "provider sync must not auto-publish storefront plans",
+  );
+  const curatedArvanPlan = await db.infrastructurePlan.create({
+    data: {
+      code: "ADMIN_CURATED_RUNTIME_G2",
+      title: "پلن منتخب ادمین",
+      provider: InfrastructureProvider.ARVAN,
+      providerApiVersion: "v1",
+      productKind: InfrastructureProductKind.CLOUD_SERVER,
+      regionCode: arvanRegionGood,
+      sizeCode: "runtime-g2",
+      imageCode: "runtime-ubuntu",
+      deliveryMode: "MANAGED",
+      vcpu: 2,
+      ramGb: 2,
+      storageGb: 40,
+      salePriceRial: 8_000_000n,
+      renewalPriceRial: 8_000_000n,
+      estimatedProviderCostRial: 8_000_000n,
+      deliveryEstimateMinutes: 15,
+      parchinIncluded: true,
+      minimumParchinLevel: "PARCHIN_START",
+      active: true,
+      publicationStatus: "PUBLISHED",
+      displayDuringProviderOutage: true,
+      sortOrder: 7,
+      catalogItemId: arvanGoodBefore.id,
+      catalogMappingStatus: "MAPPED",
+      catalogMappedAt: new Date("2026-08-01T00:00:00.000Z"),
+    },
+  });
   const arvanPartial = new FakeCloudProviderAdapter({
     provider: InfrastructureProvider.ARVAN,
     regions: [arvanRegionGood, arvanRegionOther].map((code) => ({
@@ -5687,6 +5829,7 @@ try {
         },
       },
       select: {
+        id: true,
         providerMonthlyPriceIrr: true,
         status: true,
         available: true,
@@ -5696,6 +5839,26 @@ try {
       },
     }),
     arvanGoodBefore,
+  );
+  assert.deepEqual(
+    await db.infrastructurePlan.findUniqueOrThrow({
+      where: { id: curatedArvanPlan.id },
+      select: {
+        title: true,
+        active: true,
+        publicationStatus: true,
+        displayDuringProviderOutage: true,
+        sortOrder: true,
+      },
+    }),
+    {
+      title: "پلن منتخب ادمین",
+      active: true,
+      publicationStatus: "PUBLISHED",
+      displayDuringProviderOutage: true,
+      sortOrder: 7,
+    },
+    "partial provider sync must not overwrite Admin publication intent",
   );
   assert.equal(
     (
@@ -5949,8 +6112,87 @@ try {
     });
   assert.deepEqual(parsPackAfterFailure, parsPackSnapshotBeforeFailure);
 
+  const {
+    ProviderCatalogSyncError,
+    settleProviderCatalogSyncTasks,
+  } = await import(
+    "../lib/infrastructure/catalog-sync-observability.ts"
+  );
+  const previousSmsProvider = process.env.SMS_PROVIDER;
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.SMS_PROVIDER = "console";
+  process.env.NODE_ENV = "development";
+  try {
+    for (let occurrence = 0; occurrence < 2; occurrence += 1) {
+      await settleProviderCatalogSyncTasks(
+        [{
+          provider: InfrastructureProvider.PARSPACK,
+          apiVersion: "v1",
+          operation: "catalog_sync",
+          promise: Promise.reject(new ProviderCatalogSyncError({
+            provider: InfrastructureProvider.PARSPACK,
+            apiVersion: "v1",
+            operation: "catalog_sync",
+            code: "provider_auth_failed",
+          })),
+        }],
+        () => undefined,
+        { persistIncidents: true },
+      );
+    }
+    const incident = await db.operationalIncident.findFirstOrThrow({
+      where: {
+        provider: InfrastructureProvider.PARSPACK,
+        operation: "catalog_sync",
+        safeCode: "provider_auth_failed",
+        status: "OPEN",
+      },
+    });
+    assert.equal(incident.occurrenceCount, 2);
+    assert.equal(
+      await db.operationalAlertOutbox.count({
+        where: { incidentId: incident.id },
+      }),
+      1,
+      "a repeated critical incident must not spam duplicate SMS rows",
+    );
+    const { processOperationalAlertOutbox } = await import(
+      "../lib/operations/alert-worker.ts"
+    );
+    assert.equal(await processOperationalAlertOutbox(10), 1);
+    assert.equal(
+      await db.operationalAlertOutbox.count({
+        where: { incidentId: incident.id, status: "SENT" },
+      }),
+      1,
+    );
+    await settleProviderCatalogSyncTasks(
+      [{
+        provider: InfrastructureProvider.PARSPACK,
+        apiVersion: "v1",
+        operation: "catalog_sync",
+        promise: Promise.resolve({ status: "SUCCEEDED" }),
+      }],
+      () => undefined,
+      { persistIncidents: true },
+    );
+    assert.equal(
+      (
+        await db.operationalIncident.findUniqueOrThrow({
+          where: { id: incident.id },
+        })
+      ).status,
+      "RESOLVED",
+    );
+  } finally {
+    if (previousSmsProvider === undefined) delete process.env.SMS_PROVIDER;
+    else process.env.SMS_PROVIDER = previousSmsProvider;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+
   console.log(
-    "PostgreSQL integration passed (98 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, durable concurrent health-retry dispatch, poison dispatch isolation, persisted dispatch backoff, dead-letter manual review, three-attempt health retry ceiling, missing-outbox batch progress, concurrent outbox uniqueness, idempotent reconciler replay, Arvan partial-region last-known-good preservation, ParsPack 403 audit persistence without retry, exact TOMAN-to-IRR materialization, and non-sellable invalid-price catalog enforcement",
+    "PostgreSQL integration passed (104 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, durable concurrent health-retry dispatch, poison dispatch isolation, persisted dispatch backoff, dead-letter manual review, three-attempt health retry ceiling, missing-outbox batch progress, concurrent outbox uniqueness, idempotent reconciler replay, forward-only admin catalog migration with immutable commerce snapshots, Admin-curated Arvan publication isolation, Arvan partial-region last-known-good preservation, ParsPack 403 audit persistence without retry, exact TOMAN-to-IRR materialization, non-sellable invalid-price catalog enforcement, critical incident deduplication, durable SMS outbox delivery, and incident recovery",
   );
 } finally {
   await flowDb?.$disconnect();

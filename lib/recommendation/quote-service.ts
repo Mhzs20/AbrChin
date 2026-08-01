@@ -240,7 +240,26 @@ async function lockAndRevalidatePlan(
     name: string;
     fingerprint: string | null;
   } | null = null;
+  const manualCatalog = plan.catalogItem.source === "ADMIN_MANAGED";
+  if (
+    manualCatalog &&
+    ((plan.catalogItem.manualAvailableUnits ?? 0) <= 0 ||
+      !plan.catalogItem.manualLastVerifiedAt ||
+      !plan.catalogItem.manualPriceValidUntil ||
+      plan.catalogItem.manualPriceValidUntil.getTime() <= Date.now())
+  ) {
+    throw new WalletError(
+      "quote_unavailable",
+      "اعتبار قیمت یا ظرفیت دستی تمام شده است.",
+    );
+  }
   if (delivery.accessMethod === "SSH_KEY") {
+    if (manualCatalog) {
+      throw new WalletError(
+        "quote_unavailable",
+        "برای ظرفیت دستی فقط روش دسترسی رمز یک‌بارمصرف قابل قفل‌کردن است.",
+      );
+    }
     const keyName = delivery.sshKeyName?.trim() ?? "";
     if (!/^[a-zA-Z0-9._-]{1,128}$/.test(keyName)) {
       throw new WalletError(
@@ -267,12 +286,14 @@ async function lockAndRevalidatePlan(
       fingerprint: key.fingerprint,
     };
   }
-  const defaults = await resolveProviderSelectionDefaults({
-    provider: plan.provider,
-    providerApiVersion: plan.providerApiVersion,
-    productKind: plan.productKind,
-    region: plan.regionCode,
-  });
+  const defaults = manualCatalog
+    ? await resolveManualSelectionDefaults(plan)
+    : await resolveProviderSelectionDefaults({
+        provider: plan.provider,
+        providerApiVersion: plan.providerApiVersion,
+        productKind: plan.productKind,
+        region: plan.regionCode,
+      });
   const selection = {
     provider: plan.provider,
     providerApiVersion: plan.providerApiVersion,
@@ -283,7 +304,17 @@ async function lockAndRevalidatePlan(
     externalNetworkId: defaults.externalNetworkId,
     externalSecurityId: defaults.externalSecurityId,
   };
-  const current = await revalidateLockedSelection(selection);
+  const current = manualCatalog
+    ? {
+        available: true,
+        monthlyPriceIrr: plan.pricing.providerBasePriceRial,
+        hourlyPriceIrr: plan.catalogItem.providerHourlyPriceIrr,
+        currency: "IRR" as const,
+        checkedAt:
+          plan.catalogItem.manualLastVerifiedAt ??
+          plan.pricing.providerPriceCheckedAt,
+      }
+    : await revalidateLockedSelection(selection);
   if (
     current.monthlyPriceIrr !==
       plan.pricing.providerBasePriceRial ||
@@ -295,13 +326,23 @@ async function lockAndRevalidatePlan(
       "قیمت ارائه‌دهنده تغییر کرده است؛ کاتالوگ در حال به‌روزرسانی است.",
     );
   }
+  const regionConfig = await prisma.providerRegionConfig.findUnique({
+    where: {
+      provider_apiVersion_regionCode: {
+        provider: plan.provider,
+        apiVersion: plan.providerApiVersion,
+        regionCode: plan.regionCode,
+      },
+    },
+    select: { displayName: true },
+  });
   return {
     configuration: {
       provider: plan.provider,
       providerApiVersion: plan.providerApiVersion,
       productKind: plan.productKind,
       region: plan.regionCode,
-      regionLabel: plan.regionCode,
+      regionLabel: regionConfig?.displayName ?? plan.regionCode,
       externalPlanId,
       externalImageId: image.externalId,
       externalNetworkId: defaults.externalNetworkId,
@@ -316,6 +357,35 @@ async function lockAndRevalidatePlan(
       configuredAt: current.checkedAt.toISOString(),
     },
     providerPriceCheckedAt: current.checkedAt,
+  };
+}
+
+async function resolveManualSelectionDefaults(
+  plan: PricedInfrastructurePlan,
+) {
+  const assets = await prisma.providerCatalogAsset.findMany({
+    where: {
+      provider: plan.provider,
+      apiVersion: plan.providerApiVersion,
+      regionCode: plan.regionCode,
+      kind: { in: ["NETWORK", "SECURITY"] },
+      status: "ACTIVE",
+      available: true,
+    },
+    orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+  });
+  const network = assets.find((asset) => asset.kind === "NETWORK");
+  const security = assets.find((asset) => asset.kind === "SECURITY");
+  if (!network || !security) {
+    throw new WalletError(
+      "quote_unavailable",
+      "تنظیمات Network و Security آخرین کاتالوگ سالم کامل نیست.",
+    );
+  }
+  return {
+    externalNetworkId: network.externalId,
+    externalSecurityId: security.externalId,
+    topologyVerificationMode: "STRICT_OBSERVED" as const,
   };
 }
 
@@ -535,7 +605,12 @@ async function createCatalogServerQuote(params: {
   }
   const route = await prisma.infrastructurePlan.findUnique({
     where: { id: params.planId },
-    select: { provider: true, providerApiVersion: true, productKind: true },
+    select: {
+      provider: true,
+      providerApiVersion: true,
+      productKind: true,
+      catalogItem: { select: { source: true } },
+    },
   });
   if (
     !route ||
@@ -553,7 +628,9 @@ async function createCatalogServerQuote(params: {
   } catch {
     throw new WalletError("quote_unavailable", "این انتخاب معتبر نیست.");
   }
-  await requireFreshCatalog(route.provider);
+  if (route.catalogItem?.source !== "ADMIN_MANAGED") {
+    await requireFreshCatalog(route.provider);
+  }
   const plan =
     params.expectedProductKind ===
     InfrastructureProductKind.READY_INSTANT_SERVER
@@ -777,7 +854,9 @@ export async function getCatalogServerDeliveryOptions(params: {
     provider: plan.provider,
     apiVersion: plan.providerApiVersion,
   });
-  await requireFreshCatalog(plan.provider);
+  if (plan.catalogItem.source !== "ADMIN_MANAGED") {
+    await requireFreshCatalog(plan.provider);
+  }
   const compatible = Array.isArray(plan.catalogItem.compatibleImageCodes)
     ? plan.catalogItem.compatibleImageCodes.filter(
         (code): code is string => typeof code === "string",
@@ -810,6 +889,7 @@ export async function getCatalogServerDeliveryOptions(params: {
           : {};
       const linuxMethods = [
         ...(plan.provider === InfrastructureProvider.ARVAN &&
+        plan.catalogItem.source !== "ADMIN_MANAGED" &&
         raw.ssh_key !== false
           ? (["SSH_KEY"] as const)
           : []),

@@ -28,9 +28,11 @@ const accessLabels: Record<AccessMethod, string> = {
 export function ReadyServerQuoteButton({
   planId,
   productPath = "cloud-servers",
+  disabled = false,
 }: {
   planId: string;
   productPath?: "cloud-servers" | "ready-servers";
+  disabled?: boolean;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -211,11 +213,13 @@ export function ReadyServerQuoteButton({
       ) : (
         <button
           className="button button-primary"
-          disabled={loading}
+          disabled={loading || disabled}
           onClick={loadDeliveryOptions}
           type="button"
         >
-          {loading ? (
+          {disabled ? (
+            "در انتظار بازیابی ارتباط Provider"
+          ) : loading ? (
             <>
               <LoaderCircle
                 className="ready-server-spinner"

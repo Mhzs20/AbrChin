@@ -1,4 +1,4 @@
-import { InfrastructureError } from "@/lib/infrastructure/errors";
+import { InfrastructureError } from "../errors.ts";
 
 const REGION_CODE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_REGION_CODE_LENGTH = 64;

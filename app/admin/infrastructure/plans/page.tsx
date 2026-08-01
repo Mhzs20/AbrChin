@@ -12,6 +12,7 @@ import {
   compatibleImageCodes,
 } from "@/lib/pricing/plan-pricing";
 import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
+import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
 
 export const metadata: Metadata = {
   title: "پلن‌های زیرساخت | پنل مدیریت | ابرچین",
@@ -22,13 +23,34 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPlansPage() {
   await guardAdminPage();
-  const [plans, catalogItems, pricingConfig] = await Promise.all([
+  const [plans, catalogItems, pricingConfigs, regions, imageAssets] = await Promise.all([
     listAllPlans(),
     prisma.providerCatalogItem.findMany({
-      where: { provider: "PARSPACK", active: true },
+      where: {
+        provider: "ARVAN",
+        apiVersion: "v1",
+        productKind: "CLOUD_SERVER",
+        source: "PROVIDER_API",
+        active: true,
+      },
       orderBy: [{ regionCode: "asc" }, { sizeCode: "asc" }],
     }),
-    prisma.providerPricingConfig.findUnique({ where: { provider: "PARSPACK" } }),
+    prisma.providerPricingConfig.findMany(),
+    listProviderRegionConfigs({
+      provider: "ARVAN",
+      apiVersion: "v1",
+      purpose: "ALL",
+    }),
+    prisma.providerCatalogAsset.findMany({
+      where: {
+        provider: "ARVAN",
+        apiVersion: "v1",
+        kind: "IMAGE",
+        status: "ACTIVE",
+        available: true,
+      },
+      orderBy: [{ regionCode: "asc" }, { name: "asc" }],
+    }),
   ]);
   const panelPlans = plans.map((plan) => ({
     id: plan.id,
@@ -42,9 +64,36 @@ export default async function AdminPlansPage() {
     deliveryEstimateMinutes: plan.deliveryEstimateMinutes,
     parchinIncluded: plan.parchinIncluded,
     active: plan.active,
+    publicationStatus: plan.publicationStatus,
+    instantDelivery: plan.instantDelivery,
+    displayDuringProviderOutage: plan.displayDuringProviderOutage,
+    provider: plan.provider,
+    catalogSource: plan.catalogItem?.source ?? null,
+    regionCode: plan.regionCode,
+    externalPlanId: plan.catalogItem?.externalPlanId ?? null,
+    manualAvailableUnits: plan.catalogItem?.manualAvailableUnits ?? null,
+    manualPriceValidUntil:
+      plan.catalogItem?.manualPriceValidUntil?.toISOString() ?? null,
+    manualBasePriceRial:
+      plan.catalogItem?.providerMonthlyPriceIrr?.toString() ?? null,
+    vcpu: plan.catalogItem?.vcpu ?? plan.vcpu,
+    ramGb:
+      plan.catalogItem?.ramMb == null
+        ? plan.ramGb
+        : Math.ceil(plan.catalogItem.ramMb / 1024),
+    storageGb: plan.catalogItem?.diskGb ?? plan.storageGb,
+    imageAssetId:
+      imageAssets.find(
+        (image) =>
+          image.regionCode === plan.regionCode &&
+          image.externalId === plan.imageCode,
+      )?.id ?? null,
     sortOrder: plan.sortOrder,
   }));
   const panelCatalogItems = catalogItems.map((item) => {
+    const pricingConfig = pricingConfigs.find(
+      (config) => config.provider === item.provider && config.apiVersion === item.apiVersion,
+    );
     const basePriceRial = catalogItemBasePriceRial(item);
     const finalPriceRial =
       basePriceRial != null && pricingConfig
@@ -55,6 +104,8 @@ export default async function AdminPlansPage() {
         : null;
     return {
       id: item.id,
+      provider: item.provider,
+      source: item.source,
       regionCode: item.regionCode,
       sizeCode: item.sizeCode,
       compatibleImageCodes: compatibleImageCodes(item),
@@ -108,7 +159,23 @@ export default async function AdminPlansPage() {
   return (
     <>
       <PageHeader title="پلن‌های زیرساخت" description="مشخصات محصول روی Catalog Item واقعی؛ منابع و قیمت فقط خواندنی‌اند" />
-      <AdminPlansPanel initialPlans={panelPlans} catalogItems={panelCatalogItems} />
+      <AdminPlansPanel
+        initialPlans={panelPlans}
+        catalogItems={panelCatalogItems}
+        manualOptions={{
+          regions: regions.map((region) => ({
+            code: region.regionCode,
+            label: region.displayName,
+            saleEnabled: region.saleEnabled,
+          })),
+          images: imageAssets.map((image) => ({
+            id: image.id,
+            regionCode: image.regionCode,
+            externalId: image.externalId,
+            label: image.name,
+          })),
+        }}
+      />
       <DataTable columns={columns} rows={rows} emptyMessage="پلنی تعریف نشده است." />
     </>
   );

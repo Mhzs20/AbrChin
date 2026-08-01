@@ -128,6 +128,41 @@ enum ProviderSyncStatus {
   FAILED
 }
 
+enum ProviderRegionConfigSource {
+  ENV_BOOTSTRAP
+  ADMIN
+}
+
+enum ProviderCatalogItemSource {
+  PROVIDER_API
+  ADMIN_MANAGED
+}
+
+enum InfrastructurePlanPublicationStatus {
+  DRAFT
+  PUBLISHED
+  PAUSED
+  ARCHIVED
+}
+
+enum OperationalIncidentSeverity {
+  WARNING
+  CRITICAL
+}
+
+enum OperationalIncidentStatus {
+  OPEN
+  RESOLVED
+}
+
+enum OperationalAlertDeliveryStatus {
+  PENDING
+  SENDING
+  SENT
+  RETRY
+  EXHAUSTED
+}
+
 enum ParchinLevel {
   PARCHIN_START
   PARCHIN_ACTIVE
@@ -235,30 +270,34 @@ enum PaymentGatewayEnvironment {
 }
 
 model User {
-  id                         String                        @id @default(cuid())
-  mobile                     String                        @unique
-  displayName                String?
-  role                       UserRole                      @default(CUSTOMER)
-  mobileVerifiedAt           DateTime?
-  createdAt                  DateTime                      @default(now())
-  updatedAt                  DateTime                      @updatedAt
-  sessions                   Session[]
-  wallet                     Wallet?
-  orders                     ServiceOrder[]
-  gatewayAudits              PaymentGatewayAuditLog[]      @relation("GatewayAuditActor")
-  updatedGateways            PaymentGatewayConfig[]        @relation("GatewayUpdatedBy")
-  walletTopUpSettingsUpdated WalletTopUpSettings[]         @relation("WalletTopUpSettingsUpdatedBy")
-  infrastructureOrders       InfrastructureOrder[]
-  cloudInstances             CloudInstance[]
-  recommendationSessions     RecommendationSession[]
-  credentialsCreated         InstanceCredential[]          @relation("CredentialCreatedBy")
-  subscriptions              ServiceSubscription[]
-  renewalQuotes              ServiceRenewalQuote[]
-  fundingConfirmations       ProviderFundingConfirmation[] @relation("FundingConfirmedBy")
-  auditLogs                  AuditLog[]                    @relation("AuditActor")
-  adminCommandReceipts       AdminCommandReceipt[]         @relation("AdminCommandActor")
-  infrastructurePlansUpdated InfrastructurePlan[]          @relation("PlanUpdatedBy")
-  providerPricingUpdated     ProviderPricingConfig[]       @relation("ProviderPricingUpdatedBy")
+  id                          String                        @id @default(cuid())
+  mobile                      String                        @unique
+  displayName                 String?
+  role                        UserRole                      @default(CUSTOMER)
+  mobileVerifiedAt            DateTime?
+  createdAt                   DateTime                      @default(now())
+  updatedAt                   DateTime                      @updatedAt
+  sessions                    Session[]
+  wallet                      Wallet?
+  orders                      ServiceOrder[]
+  gatewayAudits               PaymentGatewayAuditLog[]      @relation("GatewayAuditActor")
+  updatedGateways             PaymentGatewayConfig[]        @relation("GatewayUpdatedBy")
+  walletTopUpSettingsUpdated  WalletTopUpSettings[]         @relation("WalletTopUpSettingsUpdatedBy")
+  infrastructureOrders        InfrastructureOrder[]
+  cloudInstances              CloudInstance[]
+  recommendationSessions      RecommendationSession[]
+  credentialsCreated          InstanceCredential[]          @relation("CredentialCreatedBy")
+  subscriptions               ServiceSubscription[]
+  renewalQuotes               ServiceRenewalQuote[]
+  fundingConfirmations        ProviderFundingConfirmation[] @relation("FundingConfirmedBy")
+  auditLogs                   AuditLog[]                    @relation("AuditActor")
+  adminCommandReceipts        AdminCommandReceipt[]         @relation("AdminCommandActor")
+  infrastructurePlansUpdated  InfrastructurePlan[]          @relation("PlanUpdatedBy")
+  providerPricingUpdated      ProviderPricingConfig[]       @relation("ProviderPricingUpdatedBy")
+  providerRegionsCreated      ProviderRegionConfig[]        @relation("ProviderRegionCreatedBy")
+  providerRegionsUpdated      ProviderRegionConfig[]        @relation("ProviderRegionUpdatedBy")
+  catalogItemsManuallyUpdated ProviderCatalogItem[]         @relation("CatalogItemManualUpdatedBy")
+  alertSubscription           AdminAlertSubscription?
 }
 
 model OtpChallenge {
@@ -525,43 +564,47 @@ model RecommendationQuote {
 }
 
 model InfrastructurePlan {
-  id                        String                    @id @default(cuid())
-  code                      String                    @unique
-  title                     String
-  description               String?
-  provider                  InfrastructureProvider
-  providerApiVersion        String                    @default("v1")
-  productKind               InfrastructureProductKind @default(READY_INSTANT_SERVER)
-  regionCode                String
-  sizeCode                  String
-  imageCode                 String
-  deliveryMode              DeliveryMode
-  vcpu                      Int?
-  ramGb                     Int?
-  storageGb                 Int?
-  salePriceRial             BigInt
-  renewalPriceRial          BigInt?
-  estimatedProviderCostRial BigInt
-  deliveryEstimateMinutes   Int                       @default(15)
-  parchinIncluded           Boolean                   @default(false)
-  minimumParchinLevel       ParchinLevel?
-  active                    Boolean                   @default(true)
-  sortOrder                 Int                       @default(0)
-  catalogItemId             String?
-  catalogMappingStatus      CatalogMappingStatus      @default(UNMAPPED)
-  catalogMappedAt           DateTime?
-  createdAt                 DateTime                  @default(now())
-  updatedAt                 DateTime                  @updatedAt
-  updatedById               String?
-  updatedBy                 User?                     @relation("PlanUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  catalogItem               ProviderCatalogItem?      @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
-  orders                    ServiceOrder[]
-  recommendationQuotes      RecommendationQuote[]
-  infrastructureOrders      InfrastructureOrder[]
-  subscriptions             ServiceSubscription[]
+  id                          String                              @id @default(cuid())
+  code                        String                              @unique
+  title                       String
+  description                 String?
+  provider                    InfrastructureProvider
+  providerApiVersion          String                              @default("v1")
+  productKind                 InfrastructureProductKind           @default(READY_INSTANT_SERVER)
+  regionCode                  String
+  sizeCode                    String
+  imageCode                   String
+  deliveryMode                DeliveryMode
+  vcpu                        Int?
+  ramGb                       Int?
+  storageGb                   Int?
+  salePriceRial               BigInt
+  renewalPriceRial            BigInt?
+  estimatedProviderCostRial   BigInt
+  deliveryEstimateMinutes     Int                                 @default(15)
+  parchinIncluded             Boolean                             @default(false)
+  minimumParchinLevel         ParchinLevel?
+  active                      Boolean                             @default(true)
+  publicationStatus           InfrastructurePlanPublicationStatus @default(DRAFT)
+  instantDelivery             Boolean                             @default(false)
+  displayDuringProviderOutage Boolean                             @default(true)
+  sortOrder                   Int                                 @default(0)
+  catalogItemId               String?
+  catalogMappingStatus        CatalogMappingStatus                @default(UNMAPPED)
+  catalogMappedAt             DateTime?
+  createdAt                   DateTime                            @default(now())
+  updatedAt                   DateTime                            @updatedAt
+  updatedById                 String?
+  updatedBy                   User?                               @relation("PlanUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  catalogItem                 ProviderCatalogItem?                @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  orders                      ServiceOrder[]
+  recommendationQuotes        RecommendationQuote[]
+  infrastructureOrders        InfrastructureOrder[]
+  subscriptions               ServiceSubscription[]
 
   @@index([active, sortOrder])
   @@index([provider, active])
+  @@index([provider, productKind, publicationStatus, sortOrder])
   @@index([catalogItemId])
   @@index([catalogMappingStatus, active])
 }
@@ -969,6 +1012,7 @@ model ProviderCatalogItem {
   provider                InfrastructureProvider
   apiVersion              String                    @default("v1")
   productKind             InfrastructureProductKind @default(READY_INSTANT_SERVER)
+  source                  ProviderCatalogItemSource @default(PROVIDER_API)
   regionCode              String
   sizeCode                String
   externalPlanId          String?
@@ -996,16 +1040,47 @@ model ProviderCatalogItem {
   payloadHash             String?
   catalogVersion          String?
   unavailableAt           DateTime?
+  manualAvailableUnits    Int?
+  manualPriceValidUntil   DateTime?
+  manualLastVerifiedAt    DateTime?
+  manualUpdatedById       String?
   createdAt               DateTime                  @default(now())
   updatedAt               DateTime                  @updatedAt
   plans                   InfrastructurePlan[]
   recommendationQuotes    RecommendationQuote[]
   renewalQuotes           ServiceRenewalQuote[]
+  manualUpdatedBy         User?                     @relation("CatalogItemManualUpdatedBy", fields: [manualUpdatedById], references: [id], onDelete: SetNull)
 
   @@unique([provider, apiVersion, regionCode, externalPlanId])
   @@index([provider, available, active])
   @@index([provider, apiVersion, productKind, status])
+  @@index([provider, apiVersion, source, status])
   @@index([provider, lastSyncedAt])
+  @@index([manualUpdatedById])
+}
+
+model ProviderRegionConfig {
+  id                 String                     @id @default(cuid())
+  provider           InfrastructureProvider
+  apiVersion         String                     @default("v1")
+  regionCode         String
+  displayName        String
+  source             ProviderRegionConfigSource @default(ADMIN)
+  syncEnabled        Boolean                    @default(true)
+  saleEnabled        Boolean                    @default(true)
+  sortOrder          Int                        @default(0)
+  lastValidatedAt    DateTime?
+  lastValidationCode String?
+  createdById        String?
+  updatedById        String?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  createdBy          User?                      @relation("ProviderRegionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy          User?                      @relation("ProviderRegionUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([provider, apiVersion, regionCode])
+  @@index([provider, apiVersion, syncEnabled, sortOrder])
+  @@index([provider, apiVersion, saleEnabled, sortOrder])
 }
 
 model ProviderPricingConfig {
@@ -1119,6 +1194,63 @@ model ProviderCatalogSyncRun {
 
   @@index([provider, apiVersion, startedAt])
   @@index([status, startedAt])
+}
+
+model OperationalIncident {
+  id              String                      @id @default(cuid())
+  provider        InfrastructureProvider?
+  apiVersion      String?
+  operation       String
+  safeCode        String
+  title           String
+  safeMessage     String
+  severity        OperationalIncidentSeverity
+  status          OperationalIncidentStatus   @default(OPEN)
+  fingerprint     String
+  occurrenceCount Int                         @default(1)
+  firstOccurredAt DateTime                    @default(now())
+  lastOccurredAt  DateTime                    @default(now())
+  resolvedAt      DateTime?
+  resolutionCode  String?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  deliveries      OperationalAlertOutbox[]
+
+  @@index([status, severity, lastOccurredAt])
+  @@index([provider, status, lastOccurredAt])
+  @@index([fingerprint, status])
+}
+
+model OperationalAlertOutbox {
+  id             String                         @id @default(cuid())
+  incidentId     String
+  recipient      String
+  channel        String                         @default("SMS")
+  idempotencyKey String                         @unique
+  status         OperationalAlertDeliveryStatus @default(PENDING)
+  attemptCount   Int                            @default(0)
+  nextAttemptAt  DateTime                       @default(now())
+  lastErrorCode  String?
+  sentAt         DateTime?
+  createdAt      DateTime                       @default(now())
+  updatedAt      DateTime                       @updatedAt
+  incident       OperationalIncident            @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt, createdAt])
+  @@index([incidentId, createdAt])
+}
+
+model AdminAlertSubscription {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  smsEnabled   Boolean  @default(true)
+  criticalOnly Boolean  @default(true)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([active, smsEnabled])
 }
 
 model ProductFlowTransition {

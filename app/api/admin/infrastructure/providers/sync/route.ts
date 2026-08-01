@@ -3,7 +3,10 @@ import { InfrastructureProvider } from "@prisma/client";
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/db";
 import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
-import { safeProviderSyncCode } from "@/lib/infrastructure/catalog-sync-observability";
+import {
+  safeProviderSyncCode,
+  settleProviderCatalogSyncTasks,
+} from "@/lib/infrastructure/catalog-sync-observability";
 import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
 import {
   isCloudProviderConfigured,
@@ -75,18 +78,24 @@ export async function POST(request: Request) {
     const provider = parseProvider(body.provider);
     if (!provider) return jsonError("Provider معتبر نیست.", 400);
 
+    let promise: Promise<unknown>;
     if (provider === InfrastructureProvider.ARVAN) {
       if (!isCloudProviderConfigured(provider)) {
         return jsonError("آروان‌کلاد تنظیم نشده است.", 400);
       }
-      await refreshMultiProviderCatalog(provider);
-      return jsonOk({ state: await publicState(provider) });
+      promise = refreshMultiProviderCatalog(provider);
+    } else {
+      if (!isProviderConfigured()) {
+        return jsonError("پارس‌پک تنظیم نشده است.", 400);
+      }
+      promise = refreshProviderCatalogForPricing();
     }
-
-    if (!isProviderConfigured()) {
-      return jsonError("پارس‌پک تنظیم نشده است.", 400);
-    }
-    await refreshProviderCatalogForPricing();
+    const [result] = await settleProviderCatalogSyncTasks(
+      [{ provider, apiVersion: "v1", operation: "catalog_sync", promise }],
+      undefined,
+      { persistIncidents: true },
+    );
+    if (result?.status === "rejected") throw result.reason;
     return jsonOk({ state: await publicState(provider) });
   } catch (error) {
     const adminError = adminApiError(error);

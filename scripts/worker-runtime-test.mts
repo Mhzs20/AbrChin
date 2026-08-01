@@ -40,7 +40,7 @@ test("successful idle cycles update the healthy heartbeat before branching", () 
   const source = readFileSync("scripts/provisioning-worker-entry.ts", "utf8");
   const cycleIndex = source.indexOf("const processed = await runProvisioningWorkerCycle()");
   const heartbeatIndex = source.indexOf("await touchWorkerHeartbeat({ cycleOk: true })");
-  const branchIndex = source.indexOf("if (processed)");
+  const branchIndex = source.indexOf("if (processed || alertsProcessed > 0)");
 
   assert.ok(cycleIndex >= 0);
   assert.ok(heartbeatIndex > cycleIndex);

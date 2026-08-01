@@ -21,7 +21,7 @@ import type {
   ValidationResult,
 } from "@/lib/infrastructure/cloud-provider-adapter";
 import { InfrastructureError } from "@/lib/infrastructure/errors";
-import { requireArvanRegionCodes } from "@/lib/infrastructure/arvan/regions";
+import { parseArvanRegionCodes } from "@/lib/infrastructure/arvan/regions";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import { normalizeProviderMoney } from "@/lib/pricing/provider-money";
 
@@ -317,7 +317,7 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
 
   constructor(config: ArvanV1AdapterConfig) {
     this.apiKey = config.apiKey.trim();
-    this.regionCodes = requireArvanRegionCodes(config.regionCodes.join(","));
+    this.regionCodes = parseArvanRegionCodes(config.regionCodes.join(","));
     this.baseUrl = normalizeArvanV1BaseUrl(config.baseUrl);
     this.timeoutMs = config.timeoutMs ?? 15_000;
     this.maxGetAttempts = Math.min(Math.max(config.maxGetAttempts ?? 3, 1), 4);
@@ -489,13 +489,19 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
   }
 
   async syncRegions(): Promise<ProviderRegion[]> {
+    if (this.regionCodes.length === 0) {
+      throw new InfrastructureError(
+        "provider_invalid_region_config",
+        "No enabled provider region is configured",
+      );
+    }
     return this.regionCodes.map((code) => ({
       code,
       // Provider identity remains the configured code. Localized names belong
       // to the presentation layer and never change catalog identity.
       name: code,
       available: true,
-      rawPayload: { code, source: "server_configuration" },
+      rawPayload: { code, source: "database_configuration" },
     }));
   }
 

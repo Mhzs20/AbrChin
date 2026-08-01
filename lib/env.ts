@@ -1,4 +1,4 @@
-import { requireArvanRegionCodes } from "@/lib/infrastructure/arvan/regions";
+import { parseArvanRegionCodes } from "./infrastructure/arvan/regions.ts";
 
 function readInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -40,6 +40,7 @@ export function getEnv() {
     smsProvider: (process.env.SMS_PROVIDER ?? "console").toLowerCase(),
     kavenegarApiKey: process.env.KAVENEGAR_API_KEY ?? "",
     kavenegarTemplate: process.env.KAVENEGAR_TEMPLATE ?? "abrchinlogin",
+    kavenegarAlertTemplate: process.env.KAVENEGAR_ALERT_TEMPLATE ?? "",
     kavenegarTimeoutMs: readInt("KAVENEGAR_TIMEOUT_MS", 8000),
     otpTtlSeconds: readInt("OTP_TTL_SECONDS", 120),
     sessionTtlDays: readInt("SESSION_TTL_DAYS", 30),
@@ -123,7 +124,9 @@ export function validateProviderEnvironment() {
     throw new Error("Arvan v1 provider configuration is invalid");
   }
   if (env.arvanEnabled) {
-    requireArvanRegionCodes(env.arvanRegionCodesCsv);
+    // Optional bootstrap only. Runtime region control lives in the database;
+    // when supplied, the CSV is still strictly validated before startup.
+    parseArvanRegionCodes(env.arvanRegionCodesCsv);
   }
   if (env.parspackApiVersion !== "v1") {
     throw new Error("PARSPACK_API_VERSION must be v1");

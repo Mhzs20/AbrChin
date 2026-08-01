@@ -138,6 +138,19 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
       externalNetworkId: true,
       externalSecurityId: true,
       providerMonthlyPriceIrr: true,
+      plan: {
+        select: {
+          catalogItem: {
+            select: {
+              source: true,
+              providerMonthlyPriceIrr: true,
+              manualAvailableUnits: true,
+              manualPriceValidUntil: true,
+              manualLastVerifiedAt: true,
+            },
+          },
+        },
+      },
       session: { select: { userId: true } },
     },
   });
@@ -153,17 +166,32 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
   ) {
     throw new WalletError("invalid_quote", "پیشنهاد انتخاب‌شده پیدا نشد.");
   }
-  const livePrice = await revalidateLockedSelection({
-    provider: preflight.provider,
-    providerApiVersion: preflight.providerApiVersion,
-    productKind: preflight.productKind,
-    region: preflight.providerRegion,
-    externalPlanId: preflight.externalPlanId,
-    externalImageId: preflight.externalImageId,
-    externalNetworkId: preflight.externalNetworkId,
-    externalSecurityId: preflight.externalSecurityId,
-  });
+  const manual = preflight.plan.catalogItem?.source === "ADMIN_MANAGED";
+  const manualContractValid =
+    manual &&
+    (preflight.plan.catalogItem?.manualAvailableUnits ?? 0) > 0 &&
+    preflight.plan.catalogItem?.manualLastVerifiedAt != null &&
+    preflight.plan.catalogItem?.manualPriceValidUntil != null &&
+    preflight.plan.catalogItem.manualPriceValidUntil.getTime() > Date.now() &&
+    preflight.plan.catalogItem.providerMonthlyPriceIrr != null;
+  const livePrice = manualContractValid
+    ? {
+        monthlyPriceIrr: preflight.plan.catalogItem!.providerMonthlyPriceIrr!,
+      }
+    : manual
+      ? null
+      : await revalidateLockedSelection({
+          provider: preflight.provider,
+          providerApiVersion: preflight.providerApiVersion,
+          productKind: preflight.productKind,
+          region: preflight.providerRegion,
+          externalPlanId: preflight.externalPlanId,
+          externalImageId: preflight.externalImageId,
+          externalNetworkId: preflight.externalNetworkId,
+          externalSecurityId: preflight.externalSecurityId,
+        });
   if (
+    !livePrice ||
     preflight.providerMonthlyPriceIrr == null ||
     livePrice.monthlyPriceIrr !== preflight.providerMonthlyPriceIrr
   ) {

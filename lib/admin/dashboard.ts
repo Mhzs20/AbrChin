@@ -7,7 +7,6 @@ import {
 
 import { prisma } from "@/lib/db";
 import {
-  createCloudProviderAdapter,
   isCloudProviderConfigured,
   isProviderConfigured,
 } from "@/lib/infrastructure/provider-factory";
@@ -16,6 +15,7 @@ import { ensureGatewayConfigsSeeded } from "@/lib/payments/gateway-config";
 import { catalogItemBasePriceRial } from "@/lib/pricing/plan-pricing";
 import { calculateQuotePricing } from "@/lib/pricing/quote-line-items";
 import { assessInfrastructureRecoveryActions } from "@/lib/infrastructure/resource-disposition";
+import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
 
 export async function getAdminDashboardStats() {
   const todayStart = new Date();
@@ -108,7 +108,11 @@ export async function getSystemStatuses() {
   let arvanMessage = "تنظیم نشده";
   if (isCloudProviderConfigured("ARVAN")) {
     try {
-      const regions = await createCloudProviderAdapter("ARVAN").syncRegions();
+      const regions = await listProviderRegionConfigs({
+        provider: "ARVAN",
+        apiVersion: "v1",
+        purpose: "SYNC",
+      });
       arvanStatus = regions.length > 0 ? "healthy" : "error";
       arvanMessage =
         regions.length > 0 ? "اتصال برقرار است" : "Region فعالی دریافت نشد";
@@ -233,6 +237,7 @@ export async function getProviderCatalogAdminView() {
       id: item.id,
       provider: item.provider,
       apiVersion: item.apiVersion,
+      source: item.source,
       status: item.status,
       regionCode: item.regionCode,
       sizeCode: item.sizeCode,
@@ -244,6 +249,8 @@ export async function getProviderCatalogAdminView() {
       basePriceRial: basePriceRial?.toString() ?? null,
       finalPriceRial: finalPriceRial?.toString() ?? null,
       lastSyncedAt: item.lastSyncedAt.toISOString(),
+      manualAvailableUnits: item.manualAvailableUnits,
+      manualPriceValidUntil: item.manualPriceValidUntil?.toISOString() ?? null,
     };
   });
 }

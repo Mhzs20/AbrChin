@@ -32,8 +32,8 @@ export default async function CloudServersPage() {
           </span>
           <h1 id="quick-buy-title">همه ظرفیت‌های قابل خرید، با قیمت زنده.</h1>
           <p>
-            موقعیت و منابع را انتخاب کن؛ قیمت و موجودی مستقیماً هنگام بازشدن صفحه
-            بررسی می‌شوند و Quote ده‌دقیقه‌ای قفل می‌شود.
+            موقعیت و منابع را انتخاب کن؛ پلن‌های این صفحه توسط ادمین ابرچین
+            منتشر می‌شوند و پیش از Quote دوباره اعتبارسنجی خواهند شد.
           </p>
         </div>
         <Link className="button button-quiet" href="/compass">
@@ -44,7 +44,9 @@ export default async function CloudServersPage() {
 
       <div className="quick-buy-strip">
         <span>
-          <RefreshCw size={15} aria-hidden="true" /> آخرین بررسی: {checkedAt}
+          <RefreshCw size={15} aria-hidden="true" />
+          {catalog.degraded ? " آخرین اطلاعات سالم: " : " آخرین بررسی: "}
+          {checkedAt}
         </span>
         <span>
           <Zap size={15} aria-hidden="true" /> قیمت قبل از ورود

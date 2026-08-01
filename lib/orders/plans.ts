@@ -19,6 +19,7 @@ import {
   getCatalogFreshness,
   requestCatalogSync,
 } from "@/lib/infrastructure/multi-provider-catalog-service";
+import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
 import {
   type EffectivePlanPricing,
   catalogItemBaseHourlyPriceRial,
@@ -99,6 +100,9 @@ export type PublicPlanOffer = {
   parchinIncluded: boolean;
   checkedAt: string;
   available: true;
+  catalogSource: "PROVIDER_API" | "ADMIN_MANAGED";
+  instantDelivery: boolean;
+  purchasable: boolean;
 };
 
 function withEffectivePricing(
@@ -201,6 +205,9 @@ export function toPublicPlanOffer(plan: PricedInfrastructurePlan): PublicPlanOff
     parchinIncluded: plan.parchinIncluded,
     checkedAt: plan.pricing.providerPriceCheckedAt.toISOString(),
     available: true,
+    catalogSource: plan.catalogItem.source,
+    instantDelivery: plan.instantDelivery,
+    purchasable: true,
   };
 }
 
@@ -257,6 +264,7 @@ export async function getActivePlanByCode(code: string) {
       where: {
         code,
         active: true,
+        publicationStatus: "PUBLISHED",
         deliveryMode: "MANAGED",
         parchinIncluded: true,
       },
@@ -275,6 +283,7 @@ export async function getActivePlanById(id: string) {
       where: {
         id,
         active: true,
+        publicationStatus: "PUBLISHED",
         deliveryMode: "MANAGED",
         parchinIncluded: true,
       },
@@ -294,6 +303,7 @@ export async function listActivePlans(
     prisma.infrastructurePlan.findMany({
       where: {
         active: true,
+        publicationStatus: "PUBLISHED",
         catalogMappingStatus: "MAPPED",
         deliveryMode: "MANAGED",
         parchinIncluded: true,
@@ -336,6 +346,7 @@ export async function listReadyServerPlans(): Promise<PricedInfrastructurePlan[]
         providerApiVersion: "v1",
         productKind: "READY_INSTANT_SERVER",
         active: true,
+        publicationStatus: "PUBLISHED",
         catalogMappingStatus: "MAPPED",
         deliveryMode: "MANAGED",
         parchinIncluded: true,
@@ -352,27 +363,34 @@ export async function listReadyServerPlans(): Promise<PricedInfrastructurePlan[]
 }
 
 export async function listCloudServerPlans(): Promise<PricedInfrastructurePlan[]> {
-  const [plans, configs] = await Promise.all([
-    prisma.infrastructurePlan.findMany({
-      where: {
-        provider: "ARVAN",
-        providerApiVersion: "v1",
-        productKind: "CLOUD_SERVER",
-        active: true,
-        catalogMappingStatus: "MAPPED",
-        deliveryMode: "MANAGED",
-        parchinIncluded: true,
-        catalogItem: {
-          status: "ACTIVE",
-          available: true,
-          providerMonthlyPriceIrr: { gt: 0n },
-        },
-      },
-      include: { catalogItem: true },
-      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+  const [saleRegions, configs] = await Promise.all([
+    listProviderRegionConfigs({
+      provider: "ARVAN",
+      apiVersion: "v1",
+      purpose: "SALE",
     }),
     pricingConfigs(),
   ]);
+  const plans = await prisma.infrastructurePlan.findMany({
+    where: {
+      provider: "ARVAN",
+      providerApiVersion: "v1",
+      productKind: "CLOUD_SERVER",
+      regionCode: { in: saleRegions.map((region) => region.regionCode) },
+      active: true,
+      publicationStatus: "PUBLISHED",
+      catalogMappingStatus: "MAPPED",
+      deliveryMode: "MANAGED",
+      parchinIncluded: true,
+      catalogItem: {
+        status: "ACTIVE",
+        available: true,
+        providerMonthlyPriceIrr: { gt: 0n },
+      },
+    },
+    include: { catalogItem: true },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+  });
   return plans.flatMap((plan) => {
     const pricing = resolveConfiguredPlanPricing(plan, configs);
     return pricing ? [withEffectivePricing(plan, pricing)] : [];
@@ -395,17 +413,23 @@ export async function listLiveReadyServerOffers() {
     const freshness = await getCatalogFreshness("PARSPACK");
     if (!freshness.fresh) {
       await requestCatalogSync("PARSPACK");
-      throw new Error("catalog_stale");
     }
-    const offers = (await listReadyServerPlans()).map(toPublicPlanOffer);
+    const offers = (await listReadyServerPlans())
+      .filter((plan) => freshness.fresh || plan.displayDuringProviderOutage)
+      .map((plan) => ({
+        ...toPublicPlanOffer(plan),
+        purchasable: freshness.fresh,
+      }));
     return {
-      live: true as const,
+      live: freshness.fresh,
+      degraded: !freshness.fresh,
       offers,
-      checkedAt: offers[0]?.checkedAt ?? new Date().toISOString(),
+      checkedAt: offers[0]?.checkedAt ?? freshness.lastSync?.toISOString() ?? null,
     };
   } catch {
     return {
       live: false as const,
+      degraded: false as const,
       offers: [] as PublicPlanOffer[],
       checkedAt: null,
     };
@@ -417,17 +441,40 @@ export async function listLiveCloudServerOffers() {
     const freshness = await getCatalogFreshness("ARVAN");
     if (!freshness.fresh) {
       await requestCatalogSync("ARVAN");
-      throw new Error("catalog_stale");
     }
-    const offers = (await listCloudServerPlans()).map(toPublicPlanOffer);
+    const [plans, saleRegions] = await Promise.all([
+      listCloudServerPlans(),
+      listProviderRegionConfigs({
+        provider: "ARVAN",
+        apiVersion: "v1",
+        purpose: "SALE",
+      }),
+    ]);
+    const displayNames = new Map(
+      saleRegions.map((region) => [region.regionCode, region.displayName]),
+    );
+    const offers = plans
+      .filter(
+        (plan) => freshness.fresh || plan.displayDuringProviderOutage,
+      )
+      .map((plan) => ({
+        ...toPublicPlanOffer(plan),
+        locationLabel:
+          displayNames.get(plan.regionCode) ?? plan.regionCode,
+        purchasable:
+          freshness.fresh || plan.catalogItem.source === "ADMIN_MANAGED",
+      }));
     return {
-      live: true as const,
+      live: freshness.fresh,
+      degraded: !freshness.fresh,
       offers,
-      checkedAt: offers[0]?.checkedAt ?? new Date().toISOString(),
+      checkedAt:
+        offers[0]?.checkedAt ?? freshness.lastSync?.toISOString() ?? null,
     };
   } catch {
     return {
       live: false as const,
+      degraded: false as const,
       offers: [] as PublicPlanOffer[],
       checkedAt: null,
     };
@@ -542,6 +589,7 @@ export async function seedDevelopmentPlans() {
         catalogMappingStatus: "MAPPED",
         catalogMappedAt: syncedAt,
         parchinIncluded: true,
+        publicationStatus: "PUBLISHED",
         active: true,
       },
     });

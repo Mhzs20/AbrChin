@@ -139,7 +139,11 @@ export function ReadyCloudCatalog({
             <ul>
               <li>
                 <Check size={14} aria-hidden="true" />
-                قیمت و موجودی در همین بازدید دریافت شده‌اند
+                {offer.catalogSource === "ADMIN_MANAGED"
+                  ? "قیمت و ظرفیت توسط ادمین ابرچین تأیید شده‌اند"
+                  : offer.purchasable
+                    ? "قیمت و موجودی در همین بازدید تأیید شده‌اند"
+                    : "آخرین اطلاعات سالم نمایش داده شده؛ خرید تا بازیابی ارتباط متوقف است"}
               </li>
               <li>
                 <ShieldCheck size={14} aria-hidden="true" />
@@ -154,6 +158,7 @@ export function ReadyCloudCatalog({
             <ReadyServerQuoteButton
               planId={offer.id}
               productPath={productPath}
+              disabled={!offer.purchasable}
             />
             <small className="quick-plan-validity">
               بعد از انتخاب، قیمت و ظرفیت دوباره بررسی و برای ۱۰ دقیقه قفل می‌شود.

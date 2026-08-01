@@ -44,6 +44,7 @@ export function ProviderPanel({
     id: string;
     provider: "ARVAN" | "PARSPACK";
     apiVersion: string;
+    source: "PROVIDER_API" | "ADMIN_MANAGED";
     status: string;
     regionCode: string;
     sizeCode: string;
@@ -55,6 +56,8 @@ export function ProviderPanel({
     basePriceRial: string | null;
     finalPriceRial: string | null;
     lastSyncedAt: string;
+    manualAvailableUnits: number | null;
+    manualPriceValidUntil: string | null;
   }>;
   syncRuns: Array<{
     id: string;
@@ -246,7 +249,11 @@ export function ProviderPanel({
                 .filter((item) => item.provider === provider)
                 .map((item) => (
                 <tr key={item.id}>
-                  <td className="product-tech">{item.regionCode} / {item.sizeCode}</td>
+                  <td className="product-tech">
+                    {item.regionCode} / {item.sizeCode}
+                    <br />
+                    <small>{item.source === "ADMIN_MANAGED" ? "Admin managed" : "Provider API"}</small>
+                  </td>
                   <td>{item.vcpu ?? "—"} vCPU · {item.ramMb ?? "—"} MB · {item.diskGb ?? "—"} GB</td>
                   <td>{item.basePriceRial ? `${(BigInt(item.basePriceRial) / 10n).toLocaleString("fa-IR")} تومان` : "تأیید نشده"}</td>
                   <td>{item.finalPriceRial ? `${(BigInt(item.finalPriceRial) / 10n).toLocaleString("fa-IR")} تومان` : "—"}</td>

@@ -62,11 +62,19 @@ export function resolveCatalogItemPricing(
   options: PlanPricingOptions = {},
 ): EffectivePlanPricing | null {
   const providerBasePriceRial = catalogItemBasePriceRial(item);
+  const manualContractValid =
+    item.source !== "ADMIN_MANAGED" ||
+    (item.manualAvailableUnits != null &&
+      item.manualAvailableUnits > 0 &&
+      item.manualLastVerifiedAt != null &&
+      item.manualPriceValidUntil != null &&
+      item.manualPriceValidUntil.getTime() > Date.now());
   if (
     !item.active ||
     !item.available ||
     ("status" in item && item.status !== "ACTIVE") ||
-    providerBasePriceRial == null
+    providerBasePriceRial == null ||
+    !manualContractValid
   ) {
     return null;
   }

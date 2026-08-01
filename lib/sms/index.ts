@@ -1,10 +1,10 @@
 import { getEnv } from "@/lib/env";
-import { ConsoleSmsProvider } from "./console-provider";
-import { KavenegarSmsProvider, SmsDeliveryError } from "./kavenegar";
-import type { SmsProvider } from "./types";
+import { ConsoleSmsProvider } from "./console-provider.ts";
+import { KavenegarSmsProvider, SmsDeliveryError } from "./kavenegar.ts";
+import type { SmsProvider } from "./types.ts";
 
-export type { SmsProvider, SendOtpInput } from "./types";
-export { SmsDeliveryError, maskMobile } from "./kavenegar";
+export type { SmsProvider, SendOtpInput, SendOperationalAlertInput } from "./types.ts";
+export { SmsDeliveryError, maskMobile } from "./kavenegar.ts";
 
 export function createSmsProvider(): SmsProvider {
   const env = getEnv();
@@ -24,6 +24,7 @@ export function createSmsProvider(): SmsProvider {
     return new KavenegarSmsProvider({
       apiKey: env.kavenegarApiKey,
       template: env.kavenegarTemplate,
+      alertTemplate: env.kavenegarAlertTemplate,
       timeoutMs: env.kavenegarTimeoutMs,
     });
   }

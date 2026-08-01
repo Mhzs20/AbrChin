@@ -1,9 +1,21 @@
-import { DeliveryMode, InfrastructureProvider } from "@prisma/client";
+import {
+  DeliveryMode,
+  InfrastructurePlanPublicationStatus,
+  InfrastructureProvider,
+  ParchinLevel,
+} from "@prisma/client";
+import { createHash } from "node:crypto";
 
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/db";
-import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
+import {
+  jsonError,
+  jsonOk,
+  readIdempotencyKey,
+  rejectCrossOrigin,
+} from "@/lib/http";
+import { IdempotencyConflictError, stableJson } from "@/lib/idempotency";
 import { assertPositiveIntegerToman } from "@/lib/money";
 import { listAllPlans } from "@/lib/orders/plans";
 import {
@@ -12,6 +24,7 @@ import {
 } from "@/lib/pricing/plan-pricing";
 import { readRequestMeta } from "@/lib/session";
 import { READY_SERVER_PLAN_PREFIX } from "@/lib/cloud-servers/catalog";
+import { isRegionEnabledForSale } from "@/lib/infrastructure/provider-region-config";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +74,8 @@ export async function POST(request: Request) {
 
   try {
     const admin = await requireAdminUser();
+    const idempotencyKey = readIdempotencyKey(request);
+    if (!idempotencyKey) return jsonError("شناسه یکتای درخواست الزامی است.", 400);
     const meta = await readRequestMeta(request);
     const body = (await request.json()) as Record<string, unknown>;
 
@@ -92,11 +107,25 @@ export async function POST(request: Request) {
     const [catalogItem, pricingConfig] = await Promise.all([
       prisma.providerCatalogItem.findUnique({ where: { id: catalogItemId } }),
       prisma.providerPricingConfig.findUnique({
-        where: { provider: InfrastructureProvider.PARSPACK },
+        where: { provider: InfrastructureProvider.ARVAN },
       }),
     ]);
-    if (!catalogItem || catalogItem.provider !== InfrastructureProvider.PARSPACK) {
+    if (
+      !catalogItem ||
+      catalogItem.provider !== InfrastructureProvider.ARVAN ||
+      catalogItem.apiVersion !== "v1" ||
+      catalogItem.productKind !== "CLOUD_SERVER"
+    ) {
       return jsonError("Catalog Item معتبر نیست.", 400);
+    }
+    if (
+      !(await isRegionEnabledForSale({
+        provider: catalogItem.provider,
+        apiVersion: catalogItem.apiVersion,
+        regionCode: catalogItem.regionCode,
+      }))
+    ) {
+      return jsonError("Region برای فروش فعال نیست.", 409);
     }
     if (!compatibleImageCodes(catalogItem).includes(imageCode)) {
       return jsonError("Image با Region و Size انتخاب‌شده سازگار نیست.", 400);
@@ -108,48 +137,103 @@ export async function POST(request: Request) {
       return jsonError("Catalog Item ناموجود یا فاقد قرارداد قیمت معتبر است.", 400);
     }
 
-    const plan = await prisma.infrastructurePlan.create({
-      data: {
-        code,
-        title,
-        description: typeof body.description === "string" ? body.description.trim() : null,
-        provider: InfrastructureProvider.PARSPACK,
-        regionCode: catalogItem.regionCode,
-        sizeCode: catalogItem.sizeCode,
-        imageCode,
-        deliveryMode: DeliveryMode.MANAGED,
-        vcpu: catalogItem.vcpu,
-        ramGb:
-          catalogItem.ramMb == null ? null : Math.ceil(catalogItem.ramMb / 1024),
-        storageGb: catalogItem.diskGb,
-        salePriceRial: pricing?.finalPriceRial ?? 1n,
-        renewalPriceRial: pricing?.finalPriceRial ?? 1n,
-        estimatedProviderCostRial: pricing?.providerBasePriceRial ?? 1n,
-        deliveryEstimateMinutes: assertPositiveIntegerToman(body.deliveryEstimateMinutes),
-        parchinIncluded: true,
-        active: body.active !== false && pricing != null,
-        sortOrder: Number(body.sortOrder ?? 0),
-        catalogItemId: catalogItem.id,
-        catalogMappingStatus: "MAPPED",
-        catalogMappedAt: new Date(),
-        updatedById: admin.id,
-      },
-    });
-
-    await writeAuditLog({
-      actorUserId: admin.id,
-      action: AuditActions.PLAN_CREATE,
-      entityType: "infrastructure_plan",
-      entityId: plan.id,
-      afterData: { code: plan.code, title: plan.title },
-      ip: meta.ip,
-      userAgent: meta.userAgent,
+    const requestFingerprint = createHash("sha256")
+      .update(stableJson({ body, catalogItemId: catalogItem.id, imageCode }))
+      .digest("hex");
+    const plan = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${`admin-plan:${idempotencyKey}`}, 0)
+        )::text AS locked
+      `;
+      const replay = await tx.auditLog.findUnique({ where: { idempotencyKey } });
+      if (replay) {
+        const previous = replay.afterData as Record<string, unknown> | null;
+        if (
+          replay.actorUserId !== admin.id ||
+          replay.action !== AuditActions.PLAN_CREATE ||
+          previous?.requestFingerprint !== requestFingerprint ||
+          !replay.entityId
+        ) {
+          throw new IdempotencyConflictError();
+        }
+        return tx.infrastructurePlan.findUniqueOrThrow({
+          where: { id: replay.entityId },
+        });
+      }
+      const created = await tx.infrastructurePlan.create({
+        data: {
+          code,
+          title,
+          description:
+            typeof body.description === "string"
+              ? body.description.trim()
+              : null,
+          provider: catalogItem.provider,
+          providerApiVersion: catalogItem.apiVersion,
+          productKind: catalogItem.productKind,
+          regionCode: catalogItem.regionCode,
+          sizeCode: catalogItem.sizeCode,
+          imageCode,
+          deliveryMode: DeliveryMode.MANAGED,
+          vcpu: catalogItem.vcpu,
+          ramGb:
+            catalogItem.ramMb == null
+              ? null
+              : Math.ceil(catalogItem.ramMb / 1024),
+          storageGb: catalogItem.diskGb,
+          salePriceRial: pricing?.finalPriceRial ?? 1n,
+          renewalPriceRial: pricing?.finalPriceRial ?? 1n,
+          estimatedProviderCostRial: pricing?.providerBasePriceRial ?? 1n,
+          deliveryEstimateMinutes: assertPositiveIntegerToman(
+            body.deliveryEstimateMinutes,
+          ),
+          parchinIncluded: true,
+          minimumParchinLevel: ParchinLevel.PARCHIN_START,
+          active: body.active !== false && pricing != null,
+          publicationStatus:
+            body.active !== false && pricing != null
+              ? InfrastructurePlanPublicationStatus.PUBLISHED
+              : InfrastructurePlanPublicationStatus.DRAFT,
+          instantDelivery: body.instantDelivery === true,
+          displayDuringProviderOutage:
+            body.displayDuringProviderOutage !== false,
+          sortOrder: Number(body.sortOrder ?? 0),
+          catalogItemId: catalogItem.id,
+          catalogMappingStatus: "MAPPED",
+          catalogMappedAt: new Date(),
+          updatedById: admin.id,
+        },
+      });
+      await writeAuditLog(
+        {
+          actorUserId: admin.id,
+          action: AuditActions.PLAN_CREATE,
+          entityType: "infrastructure_plan",
+          entityId: created.id,
+          afterData: {
+            code: created.code,
+            title: created.title,
+            requestFingerprint,
+          },
+          idempotencyKey,
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        },
+        tx,
+      );
+      return created;
     });
 
     return jsonOk({ plan: { id: plan.id, code: plan.code } });
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);
+    if (error instanceof IdempotencyConflictError) {
+      return jsonError("شناسه یکتا با درخواست قبلی تعارض دارد.", 409, {
+        code: error.code,
+      });
+    }
     console.error("[admin/plans/post]", error instanceof Error ? error.message : "unknown");
     return jsonError("ایجاد پلن ممکن نیست.", 500);
   }

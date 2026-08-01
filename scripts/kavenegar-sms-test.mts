@@ -49,6 +49,31 @@ test("kavenegar VerifyLookup succeeds on HTTP ok and return.status 200", async (
   assert.equal(sawRequest, true);
 });
 
+test("operational alert uses a separate safe Kavenegar template", async () => {
+  const provider = new KavenegarSmsProvider({
+    apiKey: API_KEY,
+    template: TEMPLATE,
+    alertTemplate: "abrchinops",
+    timeoutMs: 8000,
+    fetchImpl: async (_input, init) => {
+      const body = new URLSearchParams(String(init?.body ?? ""));
+      assert.equal(body.get("receptor"), MOBILE);
+      assert.equal(body.get("template"), "abrchinops");
+      assert.equal(body.get("token"), "PARSPACK");
+      assert.equal(body.get("token2"), "provider_auth_failed");
+      assert.equal(body.get("token3"), "CRITICAL");
+      assert.equal(String(init?.body).includes(API_KEY), false);
+      return jsonResponse(200, { return: { status: 200, message: "OK" } });
+    },
+  });
+  await provider.sendOperationalAlert({
+    mobile: MOBILE,
+    provider: "PARSPACK",
+    safeCode: "provider_auth_failed",
+    severity: "CRITICAL",
+  });
+});
+
 test("kavenegar rejects non-200 return.status", async () => {
   const provider = new KavenegarSmsProvider({
     apiKey: API_KEY,

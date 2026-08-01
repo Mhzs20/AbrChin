@@ -16,6 +16,7 @@ export function maskMobile(mobile: string): string {
 export type KavenegarConfig = {
   apiKey: string;
   template: string;
+  alertTemplate?: string;
   timeoutMs: number;
   fetchImpl?: typeof fetch;
 };
@@ -24,6 +25,13 @@ type SendOtpInput = {
   mobile: string;
   code: string;
   purpose: string;
+};
+
+type SendOperationalAlertInput = {
+  mobile: string;
+  safeCode: string;
+  provider: string;
+  severity: "WARNING" | "CRITICAL";
 };
 
 type KavenegarReturn = {
@@ -93,6 +101,36 @@ export class KavenegarSmsProvider {
   }
 
   async sendOtp(input: SendOtpInput): Promise<void> {
+    return this.sendLookup({
+      mobile: input.mobile,
+      template: this.config.template,
+      tokens: { token: input.code },
+    });
+  }
+
+  async sendOperationalAlert(input: SendOperationalAlertInput): Promise<void> {
+    if (!this.config.alertTemplate) {
+      throw new SmsDeliveryError(
+        "misconfigured",
+        "Kavenegar operational alert template is not configured",
+      );
+    }
+    return this.sendLookup({
+      mobile: input.mobile,
+      template: this.config.alertTemplate,
+      tokens: {
+        token: input.provider.slice(0, 32),
+        token2: input.safeCode.slice(0, 64),
+        token3: input.severity,
+      },
+    });
+  }
+
+  private async sendLookup(input: {
+    mobile: string;
+    template: string;
+    tokens: Record<string, string>;
+  }): Promise<void> {
     const fetchImpl = this.config.fetchImpl ?? fetch;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
@@ -101,8 +139,8 @@ export class KavenegarSmsProvider {
     const endpoint = `https://api.kavenegar.com/v1/${this.config.apiKey}/verify/lookup.json`;
     const body = new URLSearchParams({
       receptor: input.mobile,
-      token: input.code,
-      template: this.config.template,
+      ...input.tokens,
+      template: input.template,
       type: "sms",
     });
 

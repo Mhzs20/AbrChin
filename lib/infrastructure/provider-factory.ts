@@ -2,7 +2,7 @@ import { InfrastructureProvider } from "@prisma/client";
 
 import { getEnv } from "@/lib/env";
 import { ArvanV1Adapter } from "@/lib/infrastructure/arvan/v1-adapter";
-import { requireArvanRegionCodes } from "@/lib/infrastructure/arvan/regions";
+import { parseArvanRegionCodes } from "@/lib/infrastructure/arvan/regions";
 import type { CloudProviderAdapter } from "@/lib/infrastructure/cloud-provider-adapter";
 import { InfrastructureError } from "@/lib/infrastructure/errors";
 import { FakeCloudProviderAdapter } from "@/lib/infrastructure/fake-cloud-provider-adapter";
@@ -66,7 +66,7 @@ function createParsPackClient(): ParsPackProvider {
 export function createCloudProviderAdapter(
   provider: InfrastructureProvider,
   apiVersion = "v1",
-  options?: { allowFake?: boolean },
+  options?: { allowFake?: boolean; regionCodes?: string[] },
 ): CloudProviderAdapter {
   const env = getEnv();
   if (apiVersion.trim().toLowerCase() !== "v1") {
@@ -93,7 +93,9 @@ export function createCloudProviderAdapter(
     }
     return new ArvanV1Adapter({
       apiKey: env.arvanApiKey,
-      regionCodes: requireArvanRegionCodes(env.arvanRegionCodesCsv),
+      regionCodes:
+        options?.regionCodes ??
+        parseArvanRegionCodes(env.arvanRegionCodesCsv),
       baseUrl: env.arvanApiBaseUrl,
       timeoutMs: env.arvanTimeoutMs,
       maxGetAttempts: env.arvanGetAttempts,
@@ -119,8 +121,7 @@ export function isCloudProviderConfigured(
       return (
         env.arvanEnabled &&
         Boolean(env.arvanApiKey) &&
-        env.arvanApiVersion === "v1" &&
-        requireArvanRegionCodes(env.arvanRegionCodesCsv).length > 0
+        env.arvanApiVersion === "v1"
       );
     } catch {
       return false;

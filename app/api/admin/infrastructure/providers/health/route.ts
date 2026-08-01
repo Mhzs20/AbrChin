@@ -8,6 +8,7 @@ import {
   isCloudProviderConfigured,
   isProviderConfigured,
 } from "@/lib/infrastructure/provider-factory";
+import { listProviderSyncRegionCodes } from "@/lib/infrastructure/provider-region-config";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +39,12 @@ export async function POST(request: Request) {
     let providerRequestId: string | null = null;
     if (configured) {
       if (provider === InfrastructureProvider.ARVAN) {
-        const regions = await createCloudProviderAdapter(provider).syncRegions();
+        const regionCodes = await listProviderSyncRegionCodes(provider, "v1");
+        const adapter = createCloudProviderAdapter(provider, "v1", {
+          regionCodes,
+        });
+        const regions = await adapter.syncRegions();
+        if (regions[0]) await adapter.syncPlans(regions[0].code);
         ok = regions.length > 0;
         providerRequestId =
           regions.find((region) => region.providerRequestId)

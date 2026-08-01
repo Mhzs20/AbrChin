@@ -17,8 +17,10 @@ Call رد می‌شود.
 
 مسیر `/cloud-servers` فقط Planهای Regionمحور آروان را نمایش می‌دهد. مسیر
 `/ready-servers` فقط سرورهای آمادهٔ ParsPack را با منابع ثابت نشان می‌دهد.
-Plan ناموجود، `STALE`، بدون قیمت یا ناسازگار با Image اصلاً به Customer
-برگردانده نمی‌شود.
+Plan ناموجود، بدون قیمت یا ناسازگار با Image قابل خرید نیست. هنگام اختلال
+Provider، فقط Planهایی که Admin برای حالت Last-known-good مجاز کرده می‌تواند
+با برچسب روشن نمایش داده شود؛ Quote آن تا بازیابی Provider غیرفعال است، مگر
+این‌که منبع آن یک قرارداد دستی معتبر و تاریخ‌دار Admin باشد.
 
 ## Arvan IaaS v1
 
@@ -37,17 +39,21 @@ Authorization: Apikey ${ARVAN_API_KEY}
 Accept: application/json
 ```
 
-کد Region فقط از allowlist صریح Server خوانده می‌شود و هیچ fallback به
-`/details`، Root `/regions` یا فهرست Hardcoded داخل Adapter وجود ندارد:
+Region عملیاتی از جدول `ProviderRegionConfig` خوانده می‌شود و از پنل Admin
+قابل افزودن، اعتبارسنجی، فعال/غیرفعال‌کردن برای Sync و فروش است. متغیر زیر
+فقط Bootstrap اختیاری اولین استقرار است و پس از ساخته‌شدن اولین Row دیگر
+مرجع Runtime نیست:
 
 ```text
 ARVAN_REGION_CODES=ir-thr-si1,ir-thr-fr1,ir-tbz-sh1,ir-thr-ba1,ir-southwest1-a,eu-west1-a
 ```
 
-CSV در Startup Trim، Deduplicate و Validate می‌شود. اگر آروان فعال باشد و
-هیچ Region معتبر تنظیم نشده باشد، Worker و Web به‌صورت Fail-closed شروع
-نمی‌شوند. کد Region هویت Provider است؛ نام‌های سیمین، فروغ، شهریار، بامداد،
-قیصر و گوته فقط در Presentation Layer نگهداری می‌شوند.
+CSV در Startup Trim، Deduplicate و Validate می‌شود. Env خالی مجاز است تا
+Region از Admin ثبت شود، اما Sync بدون Region فعال دیتابیسی Fail-closed است.
+افزودن یا فعال‌کردن Region با GETهای Regionمحور اعتبارسنجی می‌شود؛ هیچ
+fallback به `/details`، Root `/regions` یا فهرست Hardcoded داخل Adapter وجود
+ندارد. کد Region هویت Provider است و نام نمایشی در همین تنظیم دیتابیسی
+نگهداری می‌شود.
 
 Catalog هر Region از این GETها می‌آید:
 
@@ -150,6 +156,19 @@ Sync Upsert و Idempotent است. فقط پس از Sync کامل و موفق ی�
 دیگر یا Last-known-good همان Region را خراب نمی‌کند. هیچ Catalog Itemی Hard
 Delete نمی‌شود و Quote/Orderهای تاریخی تغییر نمی‌کنند.
 
+Sync فقط Catalog خام را مالک است و دیگر `InfrastructurePlan` فروشگاه را
+نمی‌سازد یا منتشر/غیرفعال نمی‌کند. Admin از Catalog آروان، Planهای موردنظر
+`/cloud-servers` را با وضعیت `DRAFT | PUBLISHED | PAUSED | ARCHIVED` انتخاب
+می‌کند. بنابراین اضافه‌شدن صدها Flavor در Provider به معنی نمایش خودکار آن‌ها
+به Customer نیست.
+
+ظرفیت دستی با `source=ADMIN_MANAGED` صریحاً از دادهٔ API جدا است و باید Plan
+ID واقعی آروان، Region فعال، Image آخرین Catalog سالم، منابع، ظرفیت، قیمت IRR،
+زمان آخرین تأیید و تاریخ انقضای قیمت داشته باشد. قیمت یا ظرفیت صفر/منقضی
+Fail-closed است. اگر همان هویت منطقه‌ای بعداً از API مشاهده شود، Catalog به
+منبع Provider ارتقا پیدا می‌کند ولی تصمیم انتشار Admin و Orderهای تاریخی
+تغییر نمی‌کنند.
+
 پاسخ `401/403` ParsPack با کد امن `provider_auth_failed` و بدون Retry ثبت
 می‌شود. شکست Provider، Timeout، ناسازگاری Response Contract و شکست
 Persistence کدهای جدا دارند. هر تلاش ParsPack، حتی در صورت شکست، یک
@@ -161,11 +180,24 @@ Sync دستی از پنل Admin در دسترس است. Worker نیز با
 Provider تنظیم‌شده را اجرا می‌کند؛ شکست یک Provider مانع Sync Provider دیگر
 یا پردازش Provisioning نمی‌شود.
 
-درخواست Customer Full Catalog Sync اجرا نمی‌کند. صفحه فقط Catalog تازهٔ
-دیتابیس را می‌خواند؛ اگر SLA گذشته باشد فروش Fail-closed و `syncRequestedAt`
-برای Worker ثبت می‌شود. Lease دیتابیسی از Sync همزمان جلوگیری می‌کند. فقط
-Selection قفل‌شده پیش از Quote و Payment با GETهای هدفمند Provider دوباره
-اعتبارسنجی می‌شود.
+درخواست Customer Full Catalog Sync اجرا نمی‌کند. صفحه Catalog دیتابیس را
+می‌خواند؛ اگر SLA گذشته باشد `syncRequestedAt` برای Worker ثبت می‌شود. دادهٔ
+Last-known-good بنا بر تنظیم Plan می‌تواند صرفاً برای مشاهده باقی بماند و خرید
+Catalog API تا بازیابی ارتباط Fail-closed است. Lease دیتابیسی از Sync همزمان
+جلوگیری می‌کند. Selection قفل‌شدهٔ Catalog API پیش از Quote و Payment با
+GETهای هدفمند Provider دوباره اعتبارسنجی می‌شود؛ قرارداد دستی از Snapshot
+Audit‌شده و تاریخ اعتبار خودش استفاده می‌کند.
+
+## Incident و SMS عملیاتی
+
+شکست کامل Sync یا خطای Auth یک `OperationalIncident` بحرانی و یکتا می‌سازد؛
+اختلال جزئی Region به‌عنوان Warning ثبت می‌شود. AdminNotification همیشه در
+پنل باقی می‌ماند و برای Incident بحرانی، شماره‌های Admin و `ADMIN_MOBILES`
+یک `OperationalAlertOutbox` دریافت می‌کنند. Worker پیامک را با Template
+مجزای `KAVENEGAR_ALERT_TEMPLATE`، حداکثر سه تلاش و Backoff نمایی می‌فرستد.
+ارسال پیامک داخل Transaction Sync نیست و شکست SMS Catalog سالم را تغییر
+نمی‌دهد. API Key، Authorization، Response خام و Connection String هرگز در
+Incident، Outbox یا متن پیام ذخیره نمی‌شود.
 
 ## پول، Markup، پرچین و مالیات
 

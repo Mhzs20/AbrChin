@@ -1,11 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import {
-  CatalogMappingStatus,
-  DeliveryMode,
   InfrastructureProductKind,
   InfrastructureProvider,
-  ParchinLevel,
   ProviderCatalogAssetKind,
   ProviderCatalogStatus,
   ProviderSyncStatus,
@@ -28,8 +25,8 @@ import {
   catalogExternalKey,
   resolveProviderRoute,
 } from "@/lib/infrastructure/provider-routing";
+import { listProviderSyncRegionCodes } from "@/lib/infrastructure/provider-region-config";
 
-const ARVAN_PLAN_PREFIX = "CLOUD_ARVAN_V1_";
 const CATALOG_SYNC_LEASE_MS = 10 * 60 * 1000;
 
 export function catalogRamMbToPlanRamGb(
@@ -114,29 +111,6 @@ function compatibleImages(
       (image.minRamMb == null ||
         plan.ramMb == null ||
         image.minRamMb <= plan.ramMb),
-  );
-}
-
-function planCode(externalKey: string): string {
-  return `${ARVAN_PLAN_PREFIX}${createHash("sha256")
-    .update(externalKey)
-    .digest("hex")
-    .slice(0, 20)
-    .toUpperCase()}`;
-}
-
-function preferredImage(images: ProviderImage[]): ProviderImage | null {
-  return (
-    [...images].sort((left, right) => {
-      const leftLinux = /linux|ubuntu|debian|almalinux|centos/i.test(
-        `${left.operatingSystem ?? ""} ${left.name}`,
-      );
-      const rightLinux = /linux|ubuntu|debian|almalinux|centos/i.test(
-        `${right.operatingSystem ?? ""} ${right.name}`,
-      );
-      if (leftLinux !== rightLinux) return leftLinux ? -1 : 1;
-      return left.externalId.localeCompare(right.externalId);
-    })[0] ?? null
   );
 }
 
@@ -308,6 +282,14 @@ async function persistSuccessfulRegion(input: {
           },
         },
         update: {
+          // If an Admin entered a provider plan while the API was unavailable,
+          // a later authoritative response promotes the same regional identity
+          // back to provider-owned data without touching its curated Plan.
+          source: "PROVIDER_API",
+          manualAvailableUnits: null,
+          manualPriceValidUntil: null,
+          manualLastVerifiedAt: null,
+          manualUpdatedById: null,
           externalKey: key,
           productKind: input.productKind,
           sizeCode: plan.externalPlanId,
@@ -390,6 +372,7 @@ async function persistSuccessfulRegion(input: {
         provider: input.adapter.provider,
         apiVersion: input.adapter.apiVersion,
         regionCode: input.region.code,
+        source: "PROVIDER_API",
         OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: input.syncedAt } }],
         status: { not: ProviderCatalogStatus.DISABLED },
       },
@@ -418,87 +401,12 @@ async function persistSuccessfulRegion(input: {
         provider: input.adapter.provider,
         apiVersion: input.adapter.apiVersion,
         regionCode: input.region.code,
+        source: "PROVIDER_API",
       },
     });
-    if (input.productKind === InfrastructureProductKind.CLOUD_SERVER) {
-      for (const item of items) {
-        const itemImages = Array.isArray(item.compatibleImageCodes)
-          ? item.compatibleImageCodes.filter(
-              (code): code is string => typeof code === "string",
-            )
-          : [];
-        const image = preferredImage(
-          input.images.filter((candidate) =>
-            itemImages.includes(candidate.externalId),
-          ),
-        );
-        const code = planCode(
-          item.externalKey ??
-            catalogExternalKey({
-              provider: item.provider,
-              apiVersion: item.apiVersion,
-              region: item.regionCode,
-              externalPlanId: item.externalPlanId ?? item.sizeCode,
-            }),
-        );
-        const sellable =
-          item.status === ProviderCatalogStatus.ACTIVE &&
-          item.available &&
-          item.providerMonthlyPriceIrr != null &&
-          item.providerMonthlyPriceIrr > 0n &&
-          image != null;
-        await tx.infrastructurePlan.upsert({
-          where: { code },
-          update: {
-            title: item.sizeName,
-            description: `سرور ابری قابل انتخاب در ${item.regionCode}`,
-            provider: InfrastructureProvider.ARVAN,
-            providerApiVersion: "v1",
-            productKind: InfrastructureProductKind.CLOUD_SERVER,
-            regionCode: item.regionCode,
-            sizeCode: item.externalPlanId ?? item.sizeCode,
-            imageCode: image?.externalId ?? "__unavailable__",
-            deliveryMode: DeliveryMode.MANAGED,
-            vcpu: item.vcpu,
-            ramGb: catalogRamMbToPlanRamGb(item.ramMb),
-            storageGb: item.diskGb,
-            salePriceRial: item.providerMonthlyPriceIrr ?? 1n,
-            renewalPriceRial: item.providerMonthlyPriceIrr ?? 1n,
-            estimatedProviderCostRial: item.providerMonthlyPriceIrr ?? 1n,
-            parchinIncluded: true,
-            minimumParchinLevel: ParchinLevel.PARCHIN_START,
-            active: sellable,
-            catalogItemId: item.id,
-            catalogMappingStatus: CatalogMappingStatus.MAPPED,
-            catalogMappedAt: input.syncedAt,
-          },
-          create: {
-            code,
-            title: item.sizeName,
-            description: `سرور ابری قابل انتخاب در ${item.regionCode}`,
-            provider: InfrastructureProvider.ARVAN,
-            providerApiVersion: "v1",
-            productKind: InfrastructureProductKind.CLOUD_SERVER,
-            regionCode: item.regionCode,
-            sizeCode: item.externalPlanId ?? item.sizeCode,
-            imageCode: image?.externalId ?? "__unavailable__",
-            deliveryMode: DeliveryMode.MANAGED,
-            vcpu: item.vcpu,
-            ramGb: catalogRamMbToPlanRamGb(item.ramMb),
-            storageGb: item.diskGb,
-            salePriceRial: item.providerMonthlyPriceIrr ?? 1n,
-            renewalPriceRial: item.providerMonthlyPriceIrr ?? 1n,
-            estimatedProviderCostRial: item.providerMonthlyPriceIrr ?? 1n,
-            parchinIncluded: true,
-            minimumParchinLevel: ParchinLevel.PARCHIN_START,
-            active: sellable,
-            catalogItemId: item.id,
-            catalogMappingStatus: CatalogMappingStatus.MAPPED,
-            catalogMappedAt: input.syncedAt,
-          },
-        });
-      }
-    }
+    // Provider sync only owns raw catalog data. Public product publication is
+    // an explicit Admin decision and must never be created or overwritten by
+    // a catalog refresh.
     return items.length;
   });
 }
@@ -545,6 +453,7 @@ async function syncMultiProviderCatalogUnlocked(
         where: { provider: adapter.provider },
         update: {
           apiVersion: adapter.apiVersion,
+          lastCatalogSync: now,
           lastSyncStatus: ProviderSyncStatus.FAILED,
           lastSyncDurationMs: Date.now() - startedMs,
           lastError: safe.message,
@@ -553,6 +462,7 @@ async function syncMultiProviderCatalogUnlocked(
           id: `${adapter.provider.toLowerCase()}-${adapter.apiVersion}`,
           provider: adapter.provider,
           apiVersion: adapter.apiVersion,
+          lastCatalogSync: now,
           lastSyncStatus: ProviderSyncStatus.FAILED,
           lastSyncDurationMs: Date.now() - startedMs,
           lastError: safe.message,
@@ -931,5 +841,11 @@ export async function refreshMultiProviderCatalog(
   if (!isCloudProviderConfigured(provider)) {
     throw new Error("provider_not_configured");
   }
-  return syncMultiProviderCatalog(createCloudProviderAdapter(provider));
+  const regionCodes = await listProviderSyncRegionCodes(provider, "v1");
+  if (regionCodes.length === 0) {
+    throw new Error("provider_regions_not_configured");
+  }
+  return syncMultiProviderCatalog(
+    createCloudProviderAdapter(provider, "v1", { regionCodes }),
+  );
 }

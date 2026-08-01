@@ -439,7 +439,7 @@ test("Arvan v1 adapter maps regional catalog and uses price_per_month", async ()
       available: true,
       rawPayload: {
         code: "ir-thr-ba1",
-        source: "server_configuration",
+        source: "database_configuration",
       },
     },
   ]);
@@ -449,7 +449,7 @@ test("Arvan v1 adapter maps regional catalog and uses price_per_month", async ()
   );
 });
 
-test("Arvan regions are strict server configuration with presentation-only labels", () => {
+test("Arvan regions accept validated database input with presentation-only labels", async () => {
   assert.deepEqual(
     parseArvanRegionCodes(
       " ir-thr-si1,ir-thr-fr1,ir-thr-si1, eu-west1-a ",
@@ -458,13 +458,13 @@ test("Arvan regions are strict server configuration with presentation-only label
   );
   assert.throws(() => requireArvanRegionCodes(""));
   assert.throws(() => parseArvanRegionCodes("ir-thr-si1,../unsafe"));
-  assert.throws(
-    () =>
-      new ArvanV1Adapter({
-        apiKey: "test-only",
-        regionCodes: [],
-      }),
-    /region configuration is required/,
+  const emptyAdapter = new ArvanV1Adapter({
+    apiKey: "test-only",
+    regionCodes: [],
+  });
+  await assert.rejects(
+    () => emptyAdapter.syncRegions(),
+    /No enabled provider region is configured/,
   );
   assert.equal(
     arvanRegionPresentation("ir-thr-si1").label,
@@ -476,7 +476,7 @@ test("Arvan regions are strict server configuration with presentation-only label
   );
 });
 
-test("enabled Arvan environment fails closed without a valid region allowlist", () => {
+test("Arvan Env regions are optional bootstrap but invalid CSV still fails closed", () => {
   const names = [
     "ARVAN_ENABLED",
     "ARVAN_API_KEY",
@@ -496,15 +496,13 @@ test("enabled Arvan environment fails closed without a valid region allowlist", 
     process.env.ARVAN_API_VERSION = "v1";
     process.env.PARSPACK_ENABLED = "false";
     process.env.ARVAN_REGION_CODES = "";
-    assert.throws(() => validateProviderEnvironment());
+    assert.equal(validateProviderEnvironment().arvanRegionCodesCsv, "");
     process.env.ARVAN_REGION_CODES = "ir-thr-si1,unsafe/path";
     assert.throws(() => validateProviderEnvironment());
     process.env.ARVAN_REGION_CODES =
       "ir-thr-si1, ir-thr-si1,eu-west1-a";
     assert.deepEqual(
-      requireArvanRegionCodes(
-        validateProviderEnvironment().arvanRegionCodesCsv,
-      ),
+      parseArvanRegionCodes(validateProviderEnvironment().arvanRegionCodesCsv),
       ["ir-thr-si1", "eu-west1-a"],
     );
   } finally {

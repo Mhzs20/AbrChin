@@ -1,4 +1,9 @@
 import { InfrastructureProvider } from "@prisma/client";
+import { OperationalIncidentSeverity, ProviderSyncStatus } from "@prisma/client";
+import {
+  recordOperationalIncident,
+  resolveOperationalIncidents,
+} from "@/lib/operations/incidents";
 
 const SAFE_PROVIDER_SYNC_CODES = new Set([
   "provider_auth_failed",
@@ -87,21 +92,64 @@ export async function settleProviderCatalogSyncTasks(
   tasks: ProviderCatalogSyncTask[],
   logger: (entry: Record<string, unknown>) => void = (entry) =>
     console.info(JSON.stringify(entry)),
+  options: { persistIncidents?: boolean } = {},
 ) {
   const results = await Promise.allSettled(tasks.map((task) => task.promise));
-  results.forEach((result, index) => {
+  await Promise.all(results.map(async (result, index) => {
     const task = tasks[index];
     if (!task) return;
+    const reportedStatus =
+      result.status === "fulfilled" &&
+      result.value &&
+      typeof result.value === "object" &&
+      "status" in result.value &&
+      typeof result.value.status === "string"
+        ? result.value.status
+        : result.status === "fulfilled"
+          ? ProviderSyncStatus.SUCCEEDED
+          : ProviderSyncStatus.FAILED;
+    const safeErrorCode =
+      result.status === "rejected"
+        ? safeProviderSyncCode(result.reason)
+        : reportedStatus === ProviderSyncStatus.SUCCEEDED
+          ? null
+          : "provider_sync_failed";
     logger({
       event: "provider_catalog_sync",
       provider: task.provider,
       apiVersion: task.apiVersion,
       operation: task.operation,
-      syncStatus: result.status === "fulfilled" ? "SUCCEEDED" : "FAILED",
-      ...(result.status === "rejected"
-        ? { safeErrorCode: safeProviderSyncCode(result.reason) }
+      syncStatus: reportedStatus,
+      ...(safeErrorCode
+        ? { safeErrorCode }
         : {}),
     });
-  });
+    if (!options.persistIncidents) return;
+    if (reportedStatus === ProviderSyncStatus.SUCCEEDED) {
+      await resolveOperationalIncidents({
+        provider: task.provider,
+        apiVersion: task.apiVersion,
+        operation: task.operation,
+      });
+      return;
+    }
+    await recordOperationalIncident({
+      provider: task.provider,
+      apiVersion: task.apiVersion,
+      operation: task.operation,
+      safeCode: safeErrorCode ?? "provider_sync_failed",
+      title: `اختلال کاتالوگ ${task.provider}`,
+      safeMessage:
+        safeErrorCode === "provider_auth_failed"
+          ? "احراز هویت Provider ناموفق است و نیاز به بررسی تنظیمات Server دارد."
+          : reportedStatus === ProviderSyncStatus.PARTIAL
+            ? "بخشی از Regionها Sync نشدند؛ دادهٔ سالم قبلی حفظ شده است."
+            : "Sync کاتالوگ ناموفق بود؛ دادهٔ سالم قبلی حفظ شده است.",
+      severity:
+        reportedStatus === ProviderSyncStatus.PARTIAL
+          ? OperationalIncidentSeverity.WARNING
+          : OperationalIncidentSeverity.CRITICAL,
+    });
+  }));
   return results;
 }

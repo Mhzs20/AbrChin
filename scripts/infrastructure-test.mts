@@ -181,6 +181,7 @@ async function seedDevPlan() {
       salePriceRial: tomanToRial(150_000),
       estimatedProviderCostRial: tomanToRial(120_000),
       active: true,
+      publicationStatus: "PUBLISHED",
       parchinIncluded: true,
       minimumParchinLevel: "PARCHIN_START",
       catalogItemId: catalogItem.id,
@@ -209,6 +210,7 @@ async function seedDevPlan() {
       parchinIncluded: true,
       minimumParchinLevel: "PARCHIN_START",
       active: true,
+      publicationStatus: "PUBLISHED",
       sortOrder: 1,
     },
   });
