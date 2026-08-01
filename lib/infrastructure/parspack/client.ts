@@ -35,6 +35,8 @@ type ApiScope = "management" | "public";
 
 const catalogPageSize = 200;
 
+const parspackUserAgent = "AbrChin-ProviderClient/1.0 (+https://abrchin.ir)";
+
 function trimBaseUrl(value: string): string {
   return value.replace(/\/+$/, "");
 }
@@ -111,6 +113,7 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.token}`,
           ...(init?.headers ?? {}),
+          "User-Agent": parspackUserAgent,
         },
       });
       const text = await response.text();
