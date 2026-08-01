@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { FundingConfirmButton } from "@/components/admin/funding-confirm-button";
 import { InfrastructureOrderActions } from "@/components/admin/infrastructure-order-actions";
+import { ManualReadyDeliveryButton } from "@/components/admin/manual-ready-delivery-button";
 import {
   DataTable,
   MoneyDisplay,
@@ -56,7 +57,10 @@ export default async function AdminInfrastructureOrdersPage() {
       region: <TechnicalValue>{order.plan.regionCode}</TechnicalValue>,
       status: <StatusBadge label={infrastructureOrderStatusLabel[order.status]} tone="info" />,
       actions:
-        order.status === "WAITING_ADMIN_FUNDING" ? (
+        order.status === "WAITING_ADMIN_FUNDING" &&
+        order.plan.offerSource === "MANUAL_ADMIN" ? (
+          <ManualReadyDeliveryButton orderId={order.id} />
+        ) : order.status === "WAITING_ADMIN_FUNDING" ? (
           <FundingConfirmButton
             orderId={order.id}
             requiredTomanFa={formatTomanFa(order.requiredFundingRial)}
@@ -85,7 +89,10 @@ export default async function AdminInfrastructureOrdersPage() {
       { label: "فروش", value: <MoneyDisplay amount={formatTomanFa(order.serviceOrder.amount)} /> },
     ],
     actions:
-      order.status === "WAITING_ADMIN_FUNDING" ? (
+      order.status === "WAITING_ADMIN_FUNDING" &&
+      order.plan.offerSource === "MANUAL_ADMIN" ? (
+        <ManualReadyDeliveryButton orderId={order.id} />
+      ) : order.status === "WAITING_ADMIN_FUNDING" ? (
         <FundingConfirmButton
           orderId={order.id}
           requiredTomanFa={formatTomanFa(order.requiredFundingRial)}
@@ -105,7 +112,7 @@ export default async function AdminInfrastructureOrdersPage() {
 
   return (
     <>
-      <PageHeader title="سفارش‌های تأمین" description="مدیریت شارژ دستی پارس‌پک و صف Provisioning" />
+      <PageHeader title="سفارش‌های تأمین" description="مدیریت تأمین Provider، صف Provisioning و تحویل امن سفارش‌های دستی" />
       <DataTable columns={columns} rows={rows} />
       <ResponsiveRowList rows={mobileRows} />
     </>

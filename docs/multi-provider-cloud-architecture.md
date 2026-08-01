@@ -4,19 +4,21 @@
 
 Routing سمت Server اعمال می‌شود و ورودی Client نمی‌تواند آن را عوض کند:
 
-| Product Kind | Provider | API |
+| Product Kind | Source / Provider | API |
 | --- | --- | --- |
 | `READY_INSTANT_SERVER` | ParsPack | `v1` |
+| `READY_INSTANT_SERVER` | ArvanCloud fixed offer | IaaS `v1` |
+| `READY_INSTANT_SERVER` | `MANUAL_ADMIN` / preprovisioned | Admin inventory |
 | `CLOUD_SERVER` | ArvanCloud | IaaS `v1` |
 
-`CLOUD_SERVER + PARSPACK` و `READY_INSTANT_SERVER + ARVAN` رد می‌شوند. Provider
-و API Version پیش از Quote در Snapshot قفل می‌شوند و Order پرداخت‌شده فقط از
-همان Snapshot برای Provisioning استفاده می‌کند. Provider Swap پس از پرداخت
-وجود ندارد. Arvan API v3 غیرفعال است و Base URL حاوی `/v3` پیش از هر Network
-Call رد می‌شود.
+`CLOUD_SERVER + PARSPACK` رد می‌شود. سرور فوری می‌تواند ParsPack، آروان یا
+موجودی Admin باشد، اما Source و Provider انتخاب‌شده پیش از Quote در Snapshot
+قفل می‌شوند و Order پرداخت‌شده فقط از همان Snapshot برای Provisioning یا
+تحویل دستی استفاده می‌کند. Provider Swap پس از پرداخت وجود ندارد. Arvan API
+v3 غیرفعال است و Base URL حاوی `/v3` پیش از هر Network Call رد می‌شود.
 
 مسیر `/cloud-servers` فقط Planهای Regionمحور آروان را نمایش می‌دهد. مسیر
-`/ready-servers` فقط سرورهای آمادهٔ ParsPack را با منابع ثابت نشان می‌دهد.
+`/ready-servers` کاتالوگ واحد پلن‌های ثابت ParsPack، آروان و Admin را نشان می‌دهد.
 Plan ناموجود، بدون قیمت یا ناسازگار با Image قابل خرید نیست. هنگام اختلال
 Provider، فقط Planهایی که Admin برای حالت Last-known-good مجاز کرده می‌تواند
 با برچسب روشن نمایش داده شود؛ Quote آن تا بازیابی Provider غیرفعال است. تعریف
@@ -102,25 +104,30 @@ Create payload شامل `name`، `network_ids`، `flavor_id`، `image_id`،
 نمی‌کند؛ Create، Resource ID را برمی‌گرداند و Inquiry با GET همان Server انجام
 می‌شود. Request ID هدر در Log عملیاتی ذخیره می‌شود.
 
-دو Gate عملیاتی مستقل و Fail-closed وجود دارد:
+Gateهای اتصال، فروش محصول و Mutation مستقل و Fail-closed هستند:
 
 ```text
+ARVAN_ENABLED=false
 ARVAN_PUBLIC_SALE_ENABLED=false
+ARVAN_READY_PUBLIC_SALE_ENABLED=false
+ARVAN_CLOUD_PUBLIC_SALE_ENABLED=false
 ARVAN_MUTATIONS_ENABLED=false
+MANUAL_READY_PUBLIC_SALE_ENABLED=false
 ```
 
-Gate اول تمام مسیر عمومی Listing قابل‌خرید، Delivery Options، Quote،
-Quote-to-Order و Payment آروان را کنترل می‌کند و پیش‌فرض آن همیشه `false` است.
+Gate عمومی آروان همراه با Gate نوع محصول، Listing قابل‌خرید، Delivery Options،
+Quote، Quote-to-Order و Payment آروان را کنترل می‌کند و پیش‌فرض همه `false` است.
 Admin، Catalog Sync، Region Validation و Observation موجودی با خاموش‌بودن آن
-فعال می‌مانند. `API_CATALOG` و `MANUAL_API_BACKED` برای پرداخت هم‌زمان به هر
-دو Gate و Revalidation موفق نیاز دارند. `PREPROVISIONED_INVENTORY` فقط به
-Gate فروش عمومی نیاز دارد و هرگز `createServer` اجرا نمی‌کند. Gate هنگام
+فعال می‌مانند. `API_CATALOG` و `MANUAL_API_BACKED` برای پرداخت به Gate عمومی،
+Gate محصول، Mutation و Revalidation موفق نیاز دارند. `MANUAL_ADMIN` و
+`PREPROVISIONED_INVENTORY` با Gate مستقل Manual کنترل می‌شوند و هرگز
+`createServer` اجرا نمی‌کنند. Gate هنگام
 Payment و پیش از Debit دوباره بررسی می‌شود؛ بنابراین خاموش‌شدن آن Quote یا
 Order در انتظار پرداخت را بدون برداشت وجه متوقف می‌کند.
 
 صرف تنظیم API Key هیچ POST/DELETEای را فعال نمی‌کند. فعال‌سازی Lifecycle فقط
-پس از پذیرش صریح یک سرور Staging ارزان مجاز است؛ در این نسخه هر دو Gate بالا
-`false` باقی می‌مانند.
+پس از تأیید عملیاتی Founder مجاز است؛ در کد و نمونه Environment تمام Gateهای
+فروش و Mutation بالا `false` باقی می‌مانند.
 
 ## ParsPack v1
 
@@ -146,6 +153,11 @@ Size بدون Region قطعی با `__unscoped__` حفظ ولی غیرقابل �
 `PARSPACK_PRICE_CURRENCY=IRR` و `PARSPACK_PRICE_AMOUNT_UNIT=RIAL|TOMAN`
 مطابق Contract رسمی تنظیم شود. بدون آن، مقدار خام Persist ولی فروش Fail-closed
 می‌شود.
+
+سه Gate ParsPack مستقل‌اند: `PARSPACK_ENABLED` فقط اتصال و Sync،
+`PARSPACK_PUBLIC_SALE_ENABLED` فروش عمومی و `PARSPACK_MUTATIONS_ENABLED`
+ساخت Resource را کنترل می‌کند. فروش Provider-based فقط با هر دو Gate فروش و
+Mutation باز است و هر سه مقدار به‌صورت پیش‌فرض `false` هستند.
 
 ## Persist و Sync
 
@@ -181,6 +193,13 @@ Sync فقط Catalog خام را مالک است و دیگر `InfrastructurePlan`
 هر دو برای Quote و Payment به Revalidation موفق Provider نیاز دارند. ظرفیت
 عددی Admin هیچ‌وقت جای Availability واقعی Provider را نمی‌گیرد و هنگام قطعی
 صرفاً Last-known-good قابل مشاهده است، نه قابل خرید.
+
+`MANUAL_ADMIN` SKU، قیمت و تعداد قابل‌تحویل Admin را نگه می‌دارد؛ Sync هیچ
+Providerی آن را تغییر نمی‌دهد. تعداد در همان Transaction پرداخت با شرط
+`manualAvailableUnits > 0` کاهش می‌یابد، بنابراین دو پرداخت هم‌زمان Oversell
+نمی‌کنند. سفارش Paid وارد `WAITING_ADMIN_FUNDING` می‌شود تا Admin همان سفارش
+را با Resource ID، IPv4 و Credential موقت تحویل دهد. این مسیر هیچ Provider
+Mutation یا Provisioning Job ایجاد نمی‌کند.
 
 `PREPROVISIONED_INVENTORY` فقط برای Resource ازپیش‌ساختهٔ واقعی است. هر سرور
 یک Row مستقل با شناسهٔ یکتای `provider + apiVersion + providerResourceId`،
@@ -307,6 +326,15 @@ Network، Security، منابع، قیمت Provider، Markup، پرچین، Add-
 Availability، Image compatibility، Tax، Markup یا پرچین فقط همان Quote
 پرداخت‌نشده را Invalid می‌کند؛ Conversation و Answerها باقی می‌مانند. Order
 پرداخت‌شده هرگز با Sync یا تغییر تنظیمات Reprice نمی‌شود.
+
+همه خریدهای زیرساخت Wallet-based هستند. اگر موجودی کافی نباشد، Server اختلاف
+دقیق `order.amount - wallet.availableBalance` را به IRR محاسبه و یک Top-up
+متصل به همان `ServiceOrder` می‌سازد. Callback فقط پس از Verify رسمی و با Ledger
+Idempotent کیف پول را یک‌بار Credit می‌کند. شارژ، سفارش را خودکار با قیمت
+تغییرکرده Debit نمی‌کند؛ کاربر به همان Checkout برمی‌گردد و Quote، Source،
+قیمت و Availability پیش از Debit کامل دوباره بررسی می‌شوند. Debit، Paid شدن
+Order، Snapshot منبع و ساخت `InfrastructureOrder` در یک Transaction انجام
+می‌شوند.
 
 Renewal Auto-charge ندارد. هر تمدید Quote مستقل ده‌دقیقه‌ای و Snapshot مستقل
 می‌گیرد و پیش از برداشت دوباره Revalidate می‌شود.

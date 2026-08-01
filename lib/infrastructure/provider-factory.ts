@@ -35,6 +35,7 @@ export function createInfrastructureProvider(): InfrastructureProviderAdapter {
       timeoutMs: env.parspackTimeoutMs,
       priceCurrencyCode: env.parspackPriceCurrency,
       priceAmountUnit: env.parspackPriceAmountUnit,
+      mutationsEnabled: env.parspackMutationsEnabled,
     });
   }
 
@@ -60,6 +61,7 @@ function createParsPackClient(): ParsPackProvider {
     timeoutMs: env.parspackTimeoutMs,
     priceCurrencyCode: env.parspackPriceCurrency,
     priceAmountUnit: env.parspackPriceAmountUnit,
+    mutationsEnabled: env.parspackMutationsEnabled,
   });
 }
 

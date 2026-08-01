@@ -54,8 +54,8 @@ export function ReadyCloudCatalog({
         <div>
           <strong>فروش این سرورها موقتاً متوقف است.</strong>
           <p>
-            قیمت یا ظرفیت زنده تأیید نشد؛ هیچ قیمت ذخیره‌شده‌ای به‌جای پاسخ
-            فعلی نمایش داده نمی‌شود.
+            هیچ SKU منتشرشده‌ای با قیمت، موجودی و Sale Gate معتبر در دسترس
+            نیست. آخرین اطلاعات سالم فقط در صورت مجوز Admin نمایش داده می‌شود.
           </p>
         </div>
       </section>
@@ -143,6 +143,8 @@ export function ReadyCloudCatalog({
                   ? offer.purchasable
                     ? "پلن دستی است و موجودی آن همین حالا از Provider تأیید شد"
                     : "پلن دستی قابل مشاهده است؛ خرید تا Revalidation Provider متوقف است"
+                  : offer.catalogSource === "MANUAL_ADMIN"
+                    ? `${offer.availableInventory.toLocaleString("fa-IR")} واحد از موجودی تحویل دستی ابرچین باقی مانده است`
                   : offer.catalogSource === "PREPROVISIONED_INVENTORY"
                     ? `${offer.availableInventory.toLocaleString("fa-IR")} Resource واقعی و سالم آمادهٔ رزرو است`
                   : offer.purchasable

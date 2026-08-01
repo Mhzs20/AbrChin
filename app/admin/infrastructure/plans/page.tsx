@@ -72,6 +72,7 @@ export default async function AdminPlansPage() {
     instantDelivery: plan.instantDelivery,
     displayDuringProviderOutage: plan.displayDuringProviderOutage,
     provider: plan.provider,
+    productKind: plan.productKind,
     catalogSource: plan.offerSource,
     offerPriceValidUntil:
       plan.offerPriceValidUntil?.toISOString() ?? null,

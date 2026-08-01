@@ -8,8 +8,6 @@ import type {
 } from "@prisma/client";
 
 import {
-  READY_SERVER_PLAN_PREFIX,
-  isReadyServerPlanCode,
   readyServerImageLabel,
   readyServerLocation,
 } from "@/lib/cloud-servers/catalog";
@@ -53,7 +51,8 @@ export type PlanSnapshot = {
   offerSource:
     | "API_CATALOG"
     | "MANUAL_API_BACKED"
-    | "PREPROVISIONED_INVENTORY";
+    | "PREPROVISIONED_INVENTORY"
+    | "MANUAL_ADMIN";
   catalogItemId: string;
   regionCode: string;
   sizeCode: string;
@@ -109,7 +108,8 @@ export type PublicPlanOffer = {
   catalogSource:
     | "API_CATALOG"
     | "MANUAL_API_BACKED"
-    | "PREPROVISIONED_INVENTORY";
+    | "PREPROVISIONED_INVENTORY"
+    | "MANUAL_ADMIN";
   availableInventory: number;
   instantDelivery: boolean;
   purchasable: boolean;
@@ -261,9 +261,14 @@ function resolveConfiguredPlanPricing(
   const parchin = configs.parchin.find(
     (config) => config.level === selectedParchinLevel,
   );
-  if (!provider || !product || !minimumParchinLevel || !parchin) return null;
-  return resolvePlanPricing(plan, provider, {
-    productMarkupBasisPoints: product.markupBasisPoints,
+  const manualAdmin = plan.offerSource === "MANUAL_ADMIN";
+  if (
+    (!manualAdmin && (!provider || !product)) ||
+    !minimumParchinLevel ||
+    !parchin
+  ) return null;
+  return resolvePlanPricing(plan, manualAdmin ? null : provider!, {
+    productMarkupBasisPoints: manualAdmin ? 0 : product!.markupBasisPoints,
     taxBasisPoints: configs.commerce?.taxBps ?? 1000,
     parchinLevel: selectedParchinLevel,
     parchinPriceRial: parchin.priceRial,
@@ -322,6 +327,7 @@ export async function listActivePlans(
         provider: "ARVAN",
         providerApiVersion: "v1",
         productKind: "CLOUD_SERVER",
+        offerSource: "API_CATALOG",
       },
       include: { catalogItem: true },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
@@ -332,6 +338,7 @@ export async function listActivePlans(
     if (
       !isPublicSaleEnabled({
         provider: plan.provider,
+        productKind: plan.productKind,
         offerSource: plan.offerSource,
       })
     ) {
@@ -349,8 +356,6 @@ export async function listActivePlans(
 export async function getActiveReadyServerPlanById(id: string) {
   const plan = await getActivePlanById(id);
   return plan &&
-    isReadyServerPlanCode(plan.code) &&
-    plan.provider === "PARSPACK" &&
     plan.providerApiVersion === "v1" &&
     plan.productKind === "READY_INSTANT_SERVER"
     ? plan
@@ -358,19 +363,9 @@ export async function getActiveReadyServerPlanById(id: string) {
 }
 
 export async function listReadyServerPlans(): Promise<PricedInfrastructurePlan[]> {
-  if (
-    !isPublicSaleEnabled({
-      provider: "PARSPACK",
-      offerSource: "API_CATALOG",
-    })
-  ) {
-    return [];
-  }
   const [plans, configs] = await Promise.all([
     prisma.infrastructurePlan.findMany({
       where: {
-        code: { startsWith: READY_SERVER_PLAN_PREFIX },
-        provider: "PARSPACK",
         providerApiVersion: "v1",
         productKind: "READY_INSTANT_SERVER",
         active: true,
@@ -385,6 +380,11 @@ export async function listReadyServerPlans(): Promise<PricedInfrastructurePlan[]
     pricingConfigs(),
   ]);
   return plans.flatMap((plan) => {
+    if (!isPublicSaleEnabled({
+      provider: plan.provider,
+      productKind: plan.productKind,
+      offerSource: plan.offerSource,
+    })) return [];
     const pricing = resolveConfiguredPlanPricing(plan, configs);
     return pricing ? [withEffectivePricing(plan, pricing)] : [];
   });
@@ -404,6 +404,7 @@ export async function listCloudServerPlans(): Promise<PricedInfrastructurePlan[]
       provider: "ARVAN",
       providerApiVersion: "v1",
       productKind: "CLOUD_SERVER",
+      offerSource: "API_CATALOG",
       regionCode: { in: saleRegions.map((region) => region.regionCode) },
       active: true,
       publicationStatus: "PUBLISHED",
@@ -438,34 +439,42 @@ export async function listPublicPlanOffers() {
 
 export async function listLiveReadyServerOffers() {
   try {
-    if (
-      !isPublicSaleEnabled({
-        provider: "PARSPACK",
-        offerSource: "API_CATALOG",
-      })
-    ) {
-      return {
-        live: false as const,
-        degraded: true as const,
-        offers: [] as PublicPlanOffer[],
-        checkedAt: null,
-      };
-    }
-    const freshness = await getCatalogFreshness("PARSPACK");
-    if (!freshness.fresh) {
-      await requestCatalogSync("PARSPACK");
-    }
-    const offers = (await listReadyServerPlans())
-      .filter((plan) => freshness.fresh || plan.displayDuringProviderOutage)
-      .map((plan) => ({
+    const [plans, parsPackResult, arvanResult] = await Promise.all([
+      listReadyServerPlans(),
+      getCatalogFreshness("PARSPACK").catch(() => null),
+      getCatalogFreshness("ARVAN").catch(() => null),
+    ]);
+    if (parsPackResult && !parsPackResult.fresh) void requestCatalogSync("PARSPACK");
+    if (arvanResult && !arvanResult.fresh) void requestCatalogSync("ARVAN");
+    const inventoryCounts = await countAvailableInventoryByPlan(
+      plans.filter((plan) => plan.offerSource === "PREPROVISIONED_INVENTORY")
+        .map((plan) => plan.id),
+    );
+    const offers = plans.flatMap((plan) => {
+      const manual = plan.offerSource === "MANUAL_ADMIN";
+      const preprovisioned = plan.offerSource === "PREPROVISIONED_INVENTORY";
+      const freshness = plan.provider === "PARSPACK" ? parsPackResult : arvanResult;
+      const inventoryCount = inventoryCounts.get(plan.id) ?? 0;
+      const manualUnits = plan.catalogItem.manualAvailableUnits ?? 0;
+      const purchasable = isPublicSaleEnabled({
+        provider: plan.provider,
+        productKind: plan.productKind,
+        offerSource: plan.offerSource,
+      }) && (manual ? manualUnits > 0 : preprovisioned ? inventoryCount > 0 : freshness?.fresh === true);
+      if (!manual && !preprovisioned && !freshness?.fresh && !plan.displayDuringProviderOutage) return [];
+      return [{
         ...toPublicPlanOffer(plan),
-        purchasable: freshness.fresh,
-      }));
+        availableInventory: manual ? manualUnits : inventoryCount,
+        purchasable,
+      }];
+    });
+    const freshStates = [parsPackResult, arvanResult].filter(Boolean);
+    const allFresh = freshStates.length > 0 && freshStates.every((state) => state!.fresh);
     return {
-      live: freshness.fresh,
-      degraded: !freshness.fresh,
+      live: allFresh,
+      degraded: !allFresh,
       offers,
-      checkedAt: offers[0]?.checkedAt ?? freshness.lastSync?.toISOString() ?? null,
+      checkedAt: offers[0]?.checkedAt ?? null,
     };
   } catch {
     return {
@@ -516,6 +525,7 @@ export async function listLiveCloudServerOffers() {
         purchasable:
           isPublicSaleEnabled({
             provider: plan.provider,
+            productKind: plan.productKind,
             offerSource: plan.offerSource,
           }) &&
           (plan.offerSource === "PREPROVISIONED_INVENTORY"

@@ -175,11 +175,13 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
   }
   assertPublicSaleEnabled({
     provider: preflight.provider,
+    productKind: preflight.productKind,
     offerSource: preflight.plan.offerSource,
   });
   const preprovisioned =
     preflight.plan.offerSource === "PREPROVISIONED_INVENTORY";
-  const livePrice = preprovisioned
+  const manualAdmin = preflight.plan.offerSource === "MANUAL_ADMIN";
+  const livePrice = preprovisioned || manualAdmin
     ? {
         monthlyPriceIrr: preflight.providerMonthlyPriceIrr,
       }
@@ -196,6 +198,10 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
   if (
     !livePrice ||
     (preprovisioned && !preflight.preprovisionedInventoryItemId) ||
+    (manualAdmin &&
+      ((preflight.plan.catalogItem?.manualAvailableUnits ?? 0) <= 0 ||
+        !preflight.plan.catalogItem?.manualPriceValidUntil ||
+        preflight.plan.catalogItem.manualPriceValidUntil.getTime() <= Date.now())) ||
     preflight.providerMonthlyPriceIrr == null ||
     livePrice.monthlyPriceIrr !== preflight.providerMonthlyPriceIrr
   ) {
@@ -248,6 +254,7 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
     });
     assertPublicSaleEnabled({
       provider: quote.plan.provider,
+      productKind: quote.plan.productKind,
       offerSource: quote.plan.offerSource,
     });
     if (
@@ -284,12 +291,14 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
         },
       }),
     ]);
+    const manualAdmin = quote.plan.offerSource === "MANUAL_ADMIN";
     const currentPricing =
-      pricingConfig?.enabled &&
-      productPricing?.enabled &&
+      (manualAdmin || (pricingConfig?.enabled && productPricing?.enabled)) &&
       parchin?.active
-        ? resolvePlanPricing(quote.plan, pricingConfig, {
-            productMarkupBasisPoints: productPricing.markupBasisPoints,
+        ? resolvePlanPricing(quote.plan, manualAdmin ? null : pricingConfig, {
+            productMarkupBasisPoints: manualAdmin
+              ? 0
+              : productPricing!.markupBasisPoints,
             taxBasisPoints: commerce?.taxBps ?? 1000,
             parchinLevel: parchin.level,
             parchinPriceRial: parchin.priceRial,
@@ -411,6 +420,7 @@ export async function payOrderWithWallet(
     if (existing?.plan) {
       assertPublicSaleEnabled({
         provider: existing.plan.provider,
+        productKind: existing.plan.productKind,
         offerSource: existing.plan.offerSource,
       });
     }
@@ -423,7 +433,10 @@ export async function payOrderWithWallet(
       quote.externalPlanId &&
       quote.externalImageId
     ) {
-      if (quote.preprovisionedInventoryItemId) {
+      if (
+        quote.preprovisionedInventoryItemId ||
+        existing?.plan?.offerSource === "MANUAL_ADMIN"
+      ) {
         // The exact resource was already observed and atomically reserved.
         // Payment revalidates the reservation inside its debit transaction.
       } else {
@@ -450,7 +463,10 @@ export async function payOrderWithWallet(
           );
         }
       }
-    } else if (existing?.plan?.catalogItem) {
+    } else if (
+      existing?.plan?.catalogItem &&
+      existing.plan.offerSource !== "MANUAL_ADMIN"
+    ) {
       await lockAndRevalidateLegacyOrder(
         existing.plan,
         options?.providerAdapter,

@@ -69,6 +69,7 @@ export async function getConversationDeliveryOptions(input: {
 }) {
   assertPublicSaleEnabled({
     provider: InfrastructureProvider.ARVAN,
+    productKind: "CLOUD_SERVER",
     offerSource: "API_CATALOG",
   });
   const session = await requireConversationAccess(input);
@@ -181,6 +182,7 @@ export async function configureConversationDelivery(input: {
 }) {
   assertPublicSaleEnabled({
     provider: InfrastructureProvider.ARVAN,
+    productKind: "CLOUD_SERVER",
     offerSource: "API_CATALOG",
   });
   const session = await requireConversationAccess(input);

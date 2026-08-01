@@ -2,6 +2,7 @@ import {
   DeliveryMode,
   InfrastructurePlanPublicationStatus,
   InfrastructureOfferSource,
+  InfrastructureProductKind,
   InfrastructureProvider,
   ParchinLevel,
 } from "@prisma/client";
@@ -40,6 +41,8 @@ export async function GET() {
         title: plan.title,
         description: plan.description,
         deliveryMode: plan.deliveryMode,
+        productKind: plan.productKind,
+        offerSource: plan.offerSource,
         regionCode: plan.regionCode,
         sizeCode: plan.sizeCode,
         imageCode: plan.imageCode,
@@ -106,10 +109,19 @@ export async function POST(request: Request) {
       typeof body.catalogItemId === "string" ? body.catalogItemId.trim() : "";
     const imageCode = typeof body.imageCode === "string" ? body.imageCode.trim() : "";
     const offerSource =
-      body.offerSource === "MANUAL_API_BACKED" ||
       body.offerSource === "PREPROVISIONED_INVENTORY"
-        ? body.offerSource
+        ? InfrastructureOfferSource.PREPROVISIONED_INVENTORY
         : InfrastructureOfferSource.API_CATALOG;
+    const productKind =
+      body.productKind === InfrastructureProductKind.READY_INSTANT_SERVER
+        ? InfrastructureProductKind.READY_INSTANT_SERVER
+        : InfrastructureProductKind.CLOUD_SERVER;
+    if (
+      offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY &&
+      productKind !== InfrastructureProductKind.READY_INSTANT_SERVER
+    ) {
+      return jsonError("موجودی ازپیش‌ساخته فقط در مسیر سرور فوری مجاز است.", 400);
+    }
     const offerPriceValidUntil =
       offerSource === InfrastructureOfferSource.API_CATALOG
         ? null
@@ -198,7 +210,7 @@ export async function POST(request: Request) {
               : null,
           provider: catalogItem.provider,
           providerApiVersion: catalogItem.apiVersion,
-          productKind: catalogItem.productKind,
+          productKind,
           regionCode: catalogItem.regionCode,
           sizeCode: catalogItem.sizeCode,
           imageCode,

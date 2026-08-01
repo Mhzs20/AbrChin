@@ -162,21 +162,27 @@ export function resolvePlanPricing(
   config: Pick<ProviderPricingConfig, "markupBasisPoints"> | null,
   options: PlanPricingOptions = {},
 ): EffectivePlanPricing | null {
+  const offerSource = plan.offerSource ?? "API_CATALOG";
+  const manualAdmin = offerSource === "MANUAL_ADMIN";
+  const compatibleProductKind =
+    plan.catalogItem?.productKind === plan.productKind ||
+    (plan.provider === "ARVAN" &&
+      plan.productKind === "READY_INSTANT_SERVER" &&
+      plan.catalogItem?.productKind === "CLOUD_SERVER");
   if (
     !plan.active ||
     plan.catalogMappingStatus !== "MAPPED" ||
     !plan.catalogItem ||
-    !config ||
+    (!config && !manualAdmin) ||
     plan.catalogItem.provider !== plan.provider ||
     plan.catalogItem.apiVersion !== plan.providerApiVersion ||
-    plan.catalogItem.productKind !== plan.productKind ||
+    !compatibleProductKind ||
     plan.catalogItem.regionCode !== plan.regionCode ||
     plan.catalogItem.sizeCode !== plan.sizeCode ||
     !compatibleImageCodes(plan.catalogItem).includes(plan.imageCode)
   ) {
     return null;
   }
-  const offerSource = plan.offerSource ?? "API_CATALOG";
   if (
     offerSource !== "API_CATALOG" &&
     (!plan.offerLastVerifiedAt ||
@@ -195,10 +201,17 @@ export function resolvePlanPricing(
   ) {
     return null;
   }
-  return resolveCatalogItemPricing(plan.catalogItem, config, {
+  return resolveCatalogItemPricing(
+    plan.catalogItem,
+    manualAdmin ? { markupBasisPoints: 0 } : config!,
+    {
     ...options,
+    productMarkupBasisPoints: manualAdmin
+      ? 0
+      : options.productMarkupBasisPoints,
     parchinLevel: options.parchinLevel ?? minimumParchinLevel,
-  });
+    },
+  );
 }
 
 function parchinRank(level: ParchinLevel): number {

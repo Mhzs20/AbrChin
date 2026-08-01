@@ -62,6 +62,10 @@ export function getEnv() {
       "PARSPACK_PUBLIC_SALE_ENABLED",
       false,
     ),
+    parspackMutationsEnabled: readBool(
+      "PARSPACK_MUTATIONS_ENABLED",
+      false,
+    ),
     parspackApiBaseUrl: parspackManagementBase,
     parspackPublicApiBaseUrl: parspackCatalogBase,
     parspackApiToken: process.env.PARSPACK_API_TOKEN ?? "",
@@ -88,6 +92,18 @@ export function getEnv() {
     // connectivity and lifecycle mutation capability. It is fail-closed.
     arvanPublicSaleEnabled: readBool(
       "ARVAN_PUBLIC_SALE_ENABLED",
+      false,
+    ),
+    arvanReadyPublicSaleEnabled: readBool(
+      "ARVAN_READY_PUBLIC_SALE_ENABLED",
+      false,
+    ),
+    arvanCloudPublicSaleEnabled: readBool(
+      "ARVAN_CLOUD_PUBLIC_SALE_ENABLED",
+      false,
+    ),
+    manualReadyPublicSaleEnabled: readBool(
+      "MANUAL_READY_PUBLIC_SALE_ENABLED",
       false,
     ),
     // Lifecycle writes stay disabled until a separately approved staging

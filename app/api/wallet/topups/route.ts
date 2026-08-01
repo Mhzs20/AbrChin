@@ -1,4 +1,4 @@
-import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
+import { jsonError, jsonOk, readIdempotencyKey, rejectCrossOrigin } from "@/lib/http";
 import {
   PaymentError,
   resolveDefaultPaymentGateway,
@@ -6,7 +6,10 @@ import {
 } from "@/lib/payments";
 import { AuthRequiredError, requireCurrentUser } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/ledger";
-import { createTopUpIntent } from "@/lib/wallet/topup";
+import {
+  createPurchaseShortfallTopUpIntent,
+  createTopUpIntent,
+} from "@/lib/wallet/topup";
 import { bigintToString, formatTomanFa, rialToToman } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +46,11 @@ export async function POST(request: Request) {
       typeof body === "object" && body && "amountToman" in body
         ? (body as { amountToman: unknown }).amountToman
         : null;
+    const orderId =
+      typeof body === "object" && body && "orderId" in body &&
+      typeof (body as { orderId?: unknown }).orderId === "string"
+        ? String((body as { orderId: string }).orderId).trim()
+        : "";
 
     try {
       await resolveDefaultPaymentGateway();
@@ -53,7 +61,14 @@ export async function POST(request: Request) {
       throw error;
     }
 
-    const result = await createTopUpIntent(user.id, amountToman);
+    const result = orderId
+      ? await createPurchaseShortfallTopUpIntent({
+          userId: user.id,
+          orderId,
+          idempotencyKey:
+            readIdempotencyKey(request) ?? "",
+        })
+      : await createTopUpIntent(user.id, amountToman);
     return jsonOk({
       topUp: {
         id: result.topUp.id,
@@ -68,7 +83,13 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof AuthRequiredError) return jsonError("برای ادامه وارد شوید.", 401);
-    if (error instanceof WalletError) return jsonError(error.message, 400);
+    if (error instanceof WalletError) {
+      return jsonError(
+        error.message,
+        error.code === "idempotency_conflict" ? 409 : 400,
+        { code: error.code },
+      );
+    }
     if (error instanceof PaymentError) {
       if (error.code === "gateway_unavailable" || error.code === "configuration") {
         return jsonError("درگاه پرداخت موقتاً در دسترس نیست", 503);

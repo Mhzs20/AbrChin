@@ -9,6 +9,7 @@ import {
   MAX_TOPUP_TOMAN,
   MIN_TOPUP_TOMAN,
   TOPUP_TTL_MS,
+  calculateWalletShortfallRial,
 } from "@/lib/wallet/topup-limits";
 import {
   PaymentError,
@@ -22,6 +23,12 @@ import { providerEnumToSlug } from "@/lib/payments/types";
 
 export { MAX_TOPUP_TOMAN, MIN_TOPUP_TOMAN, TOPUP_TTL_MS } from "@/lib/wallet/topup-limits";
 
+type TopUpIntentOptions = {
+  idempotencyKey?: string;
+  purchaseOrderId?: string;
+  requestFingerprint?: string;
+};
+
 function hashCallbackToken(token: string, secret: string) {
   return createHash("sha256").update(`${secret}:${token}`).digest("hex");
 }
@@ -34,22 +41,56 @@ function snapshotEnvironment(snapshot: GatewayConfigSnapshot | null | undefined)
   return snapshot?.environment;
 }
 
-export async function createTopUpIntent(userId: string, amountTomanRaw: unknown) {
-  const amountToman = assertPositiveIntegerToman(amountTomanRaw);
-  if (amountToman < MIN_TOPUP_TOMAN || amountToman > MAX_TOPUP_TOMAN) {
+async function createTopUpIntentRial(
+  userId: string,
+  amountRial: bigint,
+  options: TopUpIntentOptions = {},
+) {
+  if (amountRial <= 0n || amountRial > BigInt(MAX_TOPUP_TOMAN) * 10n) {
     throw new WalletError(
       "amount_out_of_range",
-      `مبلغ شارژ باید بین ${MIN_TOPUP_TOMAN.toLocaleString("fa-IR")} تا ${MAX_TOPUP_TOMAN.toLocaleString("fa-IR")} تومان باشد.`,
+      `مبلغ شارژ باید مثبت و حداکثر ${MAX_TOPUP_TOMAN.toLocaleString("fa-IR")} تومان باشد.`,
     );
   }
 
   const env = assertServerSecrets();
   const resolved = await resolveDefaultPaymentGateway();
   const wallet = await ensureWalletForUser(userId);
-  const amountRial = tomanToRial(amountToman);
+  const amountToman = amountRial / 10n;
   const callbackToken = generateToken();
-  const idempotencyKey = `topup_create_${userId}_${Date.now()}_${randomBytes(6).toString("hex")}`;
+  const idempotencyKey =
+    options.idempotencyKey ??
+    `topup_create_${userId}_${Date.now()}_${randomBytes(6).toString("hex")}`;
   const expiresAt = new Date(Date.now() + TOPUP_TTL_MS);
+
+  const replay = await prisma.walletTopUp.findUnique({
+    where: { idempotencyKey },
+  });
+  if (replay) {
+    if (
+      replay.walletId !== wallet.id ||
+      replay.amount !== amountRial ||
+      replay.purchaseOrderId !== (options.purchaseOrderId ?? null) ||
+      replay.requestFingerprint !== (options.requestFingerprint ?? null)
+    ) {
+      throw new WalletError(
+        "idempotency_conflict",
+        "شناسه یکتا با درخواست شارژ دیگری استفاده شده است.",
+      );
+    }
+    if (!replay.redirectUrl) {
+      throw new WalletError(
+        "request_in_progress",
+        "درخواست شارژ در حال ساخته‌شدن است؛ کمی بعد دوباره تلاش کنید.",
+      );
+    }
+    return {
+      topUp: replay,
+      redirectUrl: replay.redirectUrl,
+      callbackToken: null,
+      gatewayDisplayName: resolved.config.displayName,
+    };
+  }
 
   const topUp = await prisma.walletTopUp.create({
     data: {
@@ -58,6 +99,8 @@ export async function createTopUpIntent(userId: string, amountTomanRaw: unknown)
       gateway: resolved.config.provider,
       status: TopUpStatus.CREATED,
       idempotencyKey,
+      purchaseOrderId: options.purchaseOrderId,
+      requestFingerprint: options.requestFingerprint,
       callbackTokenHash: hashCallbackToken(callbackToken, env.sessionSecret),
       gatewayConfigSnapshot: resolved.snapshot,
       expiresAt,
@@ -76,7 +119,12 @@ export async function createTopUpIntent(userId: string, amountTomanRaw: unknown)
       amountRial,
       description: `شارژ کیف پول ابرچین - ${amountToman} تومان`,
       callbackUrl,
-      metadata: { topUpId: topUp.id },
+      metadata: {
+        topUpId: topUp.id,
+        ...(options.purchaseOrderId
+          ? { purchaseOrderId: options.purchaseOrderId }
+          : {}),
+      },
     });
 
     const pending = await prisma.walletTopUp.update({
@@ -85,6 +133,7 @@ export async function createTopUpIntent(userId: string, amountTomanRaw: unknown)
         status: TopUpStatus.PENDING,
         authority: payment.authority,
         gatewayReference: payment.gatewayReference ?? payment.authority,
+        redirectUrl: payment.redirectUrl,
       },
     });
 
@@ -105,6 +154,71 @@ export async function createTopUpIntent(userId: string, amountTomanRaw: unknown)
     });
     throw error;
   }
+}
+
+export async function createTopUpIntent(userId: string, amountTomanRaw: unknown) {
+  const amountToman = assertPositiveIntegerToman(amountTomanRaw);
+  if (amountToman < MIN_TOPUP_TOMAN || amountToman > MAX_TOPUP_TOMAN) {
+    throw new WalletError(
+      "amount_out_of_range",
+      `مبلغ شارژ باید بین ${MIN_TOPUP_TOMAN.toLocaleString("fa-IR")} تا ${MAX_TOPUP_TOMAN.toLocaleString("fa-IR")} تومان باشد.`,
+    );
+  }
+  return createTopUpIntentRial(userId, tomanToRial(amountToman));
+}
+
+export async function createPurchaseShortfallTopUpIntent(input: {
+  userId: string;
+  orderId: string;
+  idempotencyKey: string;
+}) {
+  if (!/^[A-Za-z0-9._:-]{16,128}$/.test(input.idempotencyKey)) {
+    throw new WalletError(
+      "invalid_idempotency_key",
+      "شناسه یکتای درخواست معتبر نیست.",
+    );
+  }
+  const [order, wallet] = await Promise.all([
+    prisma.serviceOrder.findFirst({
+      where: {
+        id: input.orderId,
+        userId: input.userId,
+        status: "PENDING_PAYMENT",
+      },
+      select: { id: true, amount: true, recommendationQuoteId: true },
+    }),
+    ensureWalletForUser(input.userId),
+  ]);
+  if (!order?.recommendationQuoteId) {
+    throw new WalletError(
+      "invalid_order",
+      "سفارش قابل شارژ پیدا نشد.",
+    );
+  }
+  const shortfallRial = calculateWalletShortfallRial(
+    order.amount,
+    wallet.availableBalance,
+  );
+  if (shortfallRial <= 0n) {
+    throw new WalletError(
+      "topup_not_required",
+      "موجودی کیف پول برای پرداخت این سفارش کافی است.",
+    );
+  }
+  const requestFingerprint = createHash("sha256")
+    .update(
+      JSON.stringify({
+        userId: input.userId,
+        orderId: order.id,
+        amountRial: shortfallRial.toString(),
+      }),
+    )
+    .digest("hex");
+  return createTopUpIntentRial(input.userId, shortfallRial, {
+    idempotencyKey: input.idempotencyKey,
+    purchaseOrderId: order.id,
+    requestFingerprint,
+  });
 }
 
 export async function finalizeTopUpFromCallback(params: {

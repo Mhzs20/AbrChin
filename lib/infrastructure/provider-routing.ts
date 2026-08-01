@@ -10,15 +10,6 @@ export const API_CATALOG_VERSIONS = {
   [InfrastructureProvider.PARSPACK]: "v1",
 } as const;
 
-const providerByProductKind: Record<
-  InfrastructureProductKind,
-  InfrastructureProvider
-> = {
-  [InfrastructureProductKind.CLOUD_SERVER]: InfrastructureProvider.ARVAN,
-  [InfrastructureProductKind.READY_INSTANT_SERVER]:
-    InfrastructureProvider.PARSPACK,
-};
-
 export type LockedProviderRoute = {
   productKind: InfrastructureProductKind;
   provider: InfrastructureProvider;
@@ -27,12 +18,30 @@ export type LockedProviderRoute = {
 
 export function resolveProviderRoute(
   productKind: InfrastructureProductKind,
+  provider?: InfrastructureProvider,
 ): LockedProviderRoute {
-  const provider = providerByProductKind[productKind];
+  const resolvedProvider =
+    productKind === InfrastructureProductKind.CLOUD_SERVER
+      ? InfrastructureProvider.ARVAN
+      : provider ?? InfrastructureProvider.PARSPACK;
+  if (
+    (productKind === InfrastructureProductKind.CLOUD_SERVER &&
+      resolvedProvider !== InfrastructureProvider.ARVAN) ||
+    (productKind === InfrastructureProductKind.READY_INSTANT_SERVER &&
+      ![
+        InfrastructureProvider.PARSPACK,
+        InfrastructureProvider.ARVAN,
+      ].includes(resolvedProvider))
+  ) {
+    throw new InfrastructureError(
+      "provider_route_mismatch",
+      "Provider is not allowed for this product kind",
+    );
+  }
   return {
     productKind,
-    provider,
-    apiVersion: API_CATALOG_VERSIONS[provider],
+    provider: resolvedProvider,
+    apiVersion: API_CATALOG_VERSIONS[resolvedProvider],
   };
 }
 
@@ -41,7 +50,7 @@ export function assertProviderRoute(input: {
   provider: InfrastructureProvider;
   apiVersion: string;
 }): LockedProviderRoute {
-  const route = resolveProviderRoute(input.productKind);
+  const route = resolveProviderRoute(input.productKind, input.provider);
   if (
     input.provider !== route.provider ||
     input.apiVersion.trim().toLowerCase() !== route.apiVersion

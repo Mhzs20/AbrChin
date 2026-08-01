@@ -193,17 +193,30 @@ async function lockAndRevalidatePlan(
     apiVersion: plan.providerApiVersion,
   });
   const externalPlanId = plan.catalogItem.externalPlanId ?? plan.sizeCode;
-  const image = await prisma.providerCatalogAsset.findFirst({
-    where: {
-      id: delivery.imageAssetId,
-      provider: plan.provider,
-      apiVersion: plan.providerApiVersion,
-      regionCode: plan.regionCode,
-      kind: "IMAGE",
-      status: "ACTIVE",
-      available: true,
-    },
-  });
+  const offerSource = plan.offerSource;
+  const preprovisioned = offerSource === "PREPROVISIONED_INVENTORY";
+  const manualAdmin = offerSource === "MANUAL_ADMIN";
+  const manualImageAssetId = `manual:${plan.id}`;
+  const image = manualAdmin
+    ? delivery.imageAssetId === manualImageAssetId
+      ? {
+          id: manualImageAssetId,
+          externalId: plan.imageCode,
+          name: plan.imageCode,
+          rawPayload: { ssh_key: false, ssh_password: true },
+        }
+      : null
+    : await prisma.providerCatalogAsset.findFirst({
+        where: {
+          id: delivery.imageAssetId,
+          provider: plan.provider,
+          apiVersion: plan.providerApiVersion,
+          regionCode: plan.regionCode,
+          kind: "IMAGE",
+          status: "ACTIVE",
+          available: true,
+        },
+      });
   const compatible = Array.isArray(plan.catalogItem.compatibleImageCodes)
     ? plan.catalogItem.compatibleImageCodes.filter(
         (code): code is string => typeof code === "string",
@@ -249,9 +262,6 @@ async function lockAndRevalidatePlan(
     name: string;
     fingerprint: string | null;
   } | null = null;
-  const offerSource = plan.offerSource;
-  const preprovisioned =
-    offerSource === "PREPROVISIONED_INVENTORY";
   if (
     offerSource !== "API_CATALOG" &&
     (!plan.offerLastVerifiedAt ||
@@ -264,10 +274,10 @@ async function lockAndRevalidatePlan(
     );
   }
   if (delivery.accessMethod === "SSH_KEY") {
-    if (preprovisioned) {
+    if (preprovisioned || manualAdmin) {
       throw new WalletError(
         "quote_unavailable",
-        "برای موجودی ازپیش‌ساخته فقط دسترسی رمز یک‌بارمصرف قابل تحویل است.",
+        "برای موجودی آمادهٔ ابرچین فقط دسترسی رمز یک‌بارمصرف قابل تحویل است.",
       );
     }
     const keyName = delivery.sshKeyName?.trim() ?? "";
@@ -319,6 +329,12 @@ async function lockAndRevalidatePlan(
         externalSecurityId: inventoryPreview!.observedSecurityId,
         topologyVerificationMode: "STRICT_OBSERVED" as const,
       }
+    : manualAdmin
+      ? {
+          externalNetworkId: null,
+          externalSecurityId: null,
+          topologyVerificationMode: "PROVIDER_MANAGED" as const,
+        }
     : await resolveProviderSelectionDefaults({
         provider: plan.provider,
         providerApiVersion: plan.providerApiVersion,
@@ -335,9 +351,10 @@ async function lockAndRevalidatePlan(
     externalNetworkId: defaults.externalNetworkId,
     externalSecurityId: defaults.externalSecurityId,
   };
-  const current = preprovisioned
+  const current = preprovisioned || manualAdmin
     ? {
-        available: true,
+        available:
+          !manualAdmin || (plan.catalogItem.manualAvailableUnits ?? 0) > 0,
         monthlyPriceIrr: plan.pricing.providerBasePriceRial,
         hourlyPriceIrr: plan.catalogItem.providerHourlyPriceIrr,
         currency: "IRR" as const,
@@ -346,6 +363,12 @@ async function lockAndRevalidatePlan(
           plan.pricing.providerPriceCheckedAt,
       }
     : await revalidateLockedSelection(selection);
+  if (!current.available) {
+    throw new WalletError(
+      "inventory_unavailable",
+      "موجودی این سرور آماده تمام شده است.",
+    );
+  }
   if (
     current.monthlyPriceIrr !==
       plan.pricing.providerBasePriceRial ||
@@ -774,12 +797,16 @@ async function createCatalogServerQuote(params: {
         score: 100,
         scoreBreakdown: {
           source: profileSource,
-          liveCatalog: plan.offerSource !== "PREPROVISIONED_INVENTORY",
+          liveCatalog:
+            plan.offerSource !== "PREPROVISIONED_INVENTORY" &&
+            plan.offerSource !== "MANUAL_ADMIN",
           inventoryReserved: Boolean(inventory),
         },
         reasons: [
           plan.offerSource === "PREPROVISIONED_INVENTORY"
             ? "یک سرور واقعی، سالم و تازه‌بررسی‌شده برای این Quote رزرو شده است."
+            : plan.offerSource === "MANUAL_ADMIN"
+              ? "قیمت و موجودی دستی این سرور برای Quote بررسی شده است."
             : "قیمت و ظرفیت همین سرور پیش از ساخت Quote دوباره بررسی شده است.",
           "منابع، موقعیت و سیستم‌عامل در Quote ده‌دقیقه‌ای قفل شده‌اند.",
           "پرچین پایه بخشی اجباری از تحویل امن این سرور است.",
@@ -902,10 +929,27 @@ export async function getCatalogServerDeliveryOptions(params: {
   });
   assertPublicSaleEnabled({
     provider: plan.provider,
+    productKind: plan.productKind,
     offerSource: plan.offerSource,
   });
   if (plan.offerSource === "API_CATALOG") {
     await requireFreshCatalog(plan.provider);
+  }
+  if (plan.offerSource === "MANUAL_ADMIN") {
+    const windows = /windows/i.test(plan.imageCode);
+    return {
+      planId: plan.id,
+      region: plan.regionCode,
+      images: [
+        {
+          id: `manual:${plan.id}`,
+          label: plan.imageCode,
+          accessMethods: windows
+            ? (["WINDOWS_PASSWORD"] as const)
+            : (["ONE_TIME_PASSWORD"] as const),
+        },
+      ],
+    };
   }
   const compatible = Array.isArray(plan.catalogItem.compatibleImageCodes)
     ? plan.catalogItem.compatibleImageCodes.filter(
@@ -940,6 +984,7 @@ export async function getCatalogServerDeliveryOptions(params: {
       const linuxMethods = [
         ...(plan.provider === InfrastructureProvider.ARVAN &&
         plan.offerSource !== "PREPROVISIONED_INVENTORY" &&
+        plan.offerSource !== "MANUAL_ADMIN" &&
         raw.ssh_key !== false
           ? (["SSH_KEY"] as const)
           : []),
@@ -968,6 +1013,7 @@ export async function createRecommendationQuotes(params: {
 }) {
   assertPublicSaleEnabled({
     provider: InfrastructureProvider.ARVAN,
+    productKind: "CLOUD_SERVER",
     offerSource: "API_CATALOG",
   });
   if (!params.sessionId) {
@@ -1297,6 +1343,7 @@ export async function getActiveRecommendationQuote(
   if (
     !isPublicSaleEnabled({
       provider: quote.plan.provider,
+      productKind: quote.plan.productKind,
       offerSource: quote.plan.offerSource,
     })
   ) {

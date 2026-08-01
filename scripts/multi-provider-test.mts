@@ -80,6 +80,13 @@ test("product kinds have one immutable server-side provider route", () => {
       .provider,
     InfrastructureProvider.PARSPACK,
   );
+  assert.equal(
+    resolveProviderRoute(
+      InfrastructureProductKind.READY_INSTANT_SERVER,
+      InfrastructureProvider.ARVAN,
+    ).provider,
+    InfrastructureProvider.ARVAN,
+  );
   assert.throws(() =>
     assertProviderRoute({
       productKind: InfrastructureProductKind.CLOUD_SERVER,
@@ -87,7 +94,7 @@ test("product kinds have one immutable server-side provider route", () => {
       apiVersion: "v1",
     }),
   );
-  assert.throws(() =>
+  assert.doesNotThrow(() =>
     assertProviderRoute({
       productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
       provider: InfrastructureProvider.ARVAN,
@@ -196,33 +203,52 @@ test("provider and API version remain locked in quote and paid-order snapshots",
   assert.doesNotMatch(payment, /providerSwap|fallbackProvider/i);
 });
 
-test("Arvan public sale is fail-closed and independent for inventory", () => {
+test("Arvan ready/cloud and manual inventory sale gates are independent", () => {
   const previousSale = process.env.ARVAN_PUBLIC_SALE_ENABLED;
+  const previousReadySale = process.env.ARVAN_READY_PUBLIC_SALE_ENABLED;
+  const previousCloudSale = process.env.ARVAN_CLOUD_PUBLIC_SALE_ENABLED;
+  const previousManualSale = process.env.MANUAL_READY_PUBLIC_SALE_ENABLED;
   const previousMutations = process.env.ARVAN_MUTATIONS_ENABLED;
   try {
     delete process.env.ARVAN_PUBLIC_SALE_ENABLED;
+    delete process.env.ARVAN_READY_PUBLIC_SALE_ENABLED;
+    delete process.env.ARVAN_CLOUD_PUBLIC_SALE_ENABLED;
+    delete process.env.MANUAL_READY_PUBLIC_SALE_ENABLED;
     process.env.ARVAN_MUTATIONS_ENABLED = "true";
     assert.deepEqual(
       getPublicSaleDecision({
         provider: InfrastructureProvider.ARVAN,
         offerSource: "PREPROVISIONED_INVENTORY",
+        productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
       }),
       { allowed: false, code: "provider_sale_disabled" },
     );
 
     process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
+    process.env.ARVAN_CLOUD_PUBLIC_SALE_ENABLED = "true";
     process.env.ARVAN_MUTATIONS_ENABLED = "false";
     assert.deepEqual(
       getPublicSaleDecision({
         provider: InfrastructureProvider.ARVAN,
         offerSource: "API_CATALOG",
+        productKind: InfrastructureProductKind.CLOUD_SERVER,
       }),
       { allowed: false, code: "provider_provisioning_not_enabled" },
     );
+    process.env.MANUAL_READY_PUBLIC_SALE_ENABLED = "true";
     assert.equal(
       getPublicSaleDecision({
         provider: InfrastructureProvider.ARVAN,
         offerSource: "PREPROVISIONED_INVENTORY",
+        productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
+      }).allowed,
+      true,
+    );
+    assert.equal(
+      getPublicSaleDecision({
+        provider: InfrastructureProvider.ARVAN,
+        offerSource: "MANUAL_ADMIN",
+        productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
       }).allowed,
       true,
     );
@@ -231,14 +257,22 @@ test("Arvan public sale is fail-closed and independent for inventory", () => {
     else process.env.ARVAN_PUBLIC_SALE_ENABLED = previousSale;
     if (previousMutations === undefined) delete process.env.ARVAN_MUTATIONS_ENABLED;
     else process.env.ARVAN_MUTATIONS_ENABLED = previousMutations;
+    if (previousReadySale === undefined) delete process.env.ARVAN_READY_PUBLIC_SALE_ENABLED;
+    else process.env.ARVAN_READY_PUBLIC_SALE_ENABLED = previousReadySale;
+    if (previousCloudSale === undefined) delete process.env.ARVAN_CLOUD_PUBLIC_SALE_ENABLED;
+    else process.env.ARVAN_CLOUD_PUBLIC_SALE_ENABLED = previousCloudSale;
+    if (previousManualSale === undefined) delete process.env.MANUAL_READY_PUBLIC_SALE_ENABLED;
+    else process.env.MANUAL_READY_PUBLIC_SALE_ENABLED = previousManualSale;
   }
 });
 
 test("ParsPack public sale is fail-closed and independent from connectivity", () => {
   const previousSale = process.env.PARSPACK_PUBLIC_SALE_ENABLED;
+  const previousMutations = process.env.PARSPACK_MUTATIONS_ENABLED;
   const previousEnabled = process.env.PARSPACK_ENABLED;
   try {
     delete process.env.PARSPACK_PUBLIC_SALE_ENABLED;
+    delete process.env.PARSPACK_MUTATIONS_ENABLED;
     process.env.PARSPACK_ENABLED = "true";
     assert.deepEqual(
       getPublicSaleDecision({
@@ -257,6 +291,7 @@ test("ParsPack public sale is fail-closed and independent from connectivity", ()
     );
 
     process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
+    process.env.PARSPACK_MUTATIONS_ENABLED = "true";
     process.env.PARSPACK_ENABLED = "false";
     assert.deepEqual(
       getPublicSaleDecision({
@@ -273,6 +308,8 @@ test("ParsPack public sale is fail-closed and independent from connectivity", ()
     }
     if (previousEnabled === undefined) delete process.env.PARSPACK_ENABLED;
     else process.env.PARSPACK_ENABLED = previousEnabled;
+    if (previousMutations === undefined) delete process.env.PARSPACK_MUTATIONS_ENABLED;
+    else process.env.PARSPACK_MUTATIONS_ENABLED = previousMutations;
   }
 });
 

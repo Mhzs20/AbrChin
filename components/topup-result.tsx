@@ -9,6 +9,7 @@ function ResultInner() {
   const status = params.get("status") || "failed";
   const topUpId = params.get("topUpId");
   const [detail, setDetail] = useState("");
+  const [resumePath, setResumePath] = useState<string | null>(null);
   const [polling, setPolling] = useState(Boolean(params.get("topUpId")));
 
   useEffect(() => {
@@ -23,6 +24,11 @@ function ResultInner() {
         const data = await response.json();
         if (cancelled) return;
         setDetail(data.topUp?.status || "");
+        setResumePath(
+          typeof data.topUp?.resumePath === "string"
+            ? data.topUp.resumePath
+            : null,
+        );
         if (data.topUp?.status === "SUCCEEDED" || data.topUp?.status === "FAILED" || data.topUp?.status === "CANCELED" || attempts >= 8) {
           window.clearInterval(timer);
           setPolling(false);
@@ -54,6 +60,11 @@ function ResultInner() {
         <p>{polling ? "در حال بررسی وضعیت پرداخت..." : "می‌توانید به کیف پول برگردید یا تراکنش‌ها را ببینید."}</p>
       </div>
       <div className="account-actions">
+        {resumePath && (status === "success" || detail === "SUCCEEDED") ? (
+          <Link className="button button-primary" href={resumePath}>
+            ادامه و پرداخت سفارش
+          </Link>
+        ) : null}
         <Link className="button button-primary" href="/account/wallet">کیف پول</Link>
         <Link className="button button-quiet" href="/account/transactions">تراکنش‌ها</Link>
       </div>

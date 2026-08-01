@@ -44,11 +44,24 @@ export async function PATCH(
       where: { id },
       include: { plans: true },
     });
-    if (!before || before.source !== ProviderCatalogItemSource.MANUAL_API_BACKED) {
+    if (
+      !before ||
+      (before.source !== ProviderCatalogItemSource.MANUAL_API_BACKED &&
+        before.source !== ProviderCatalogItemSource.MANUAL_ADMIN)
+    ) {
       return jsonError("سرور دستی پیدا نشد.", 404);
     }
     const plan = before.plans[0];
     if (!plan) return jsonError("پلن متصل به سرور دستی پیدا نشد.", 409);
+    if (
+      before.source === ProviderCatalogItemSource.MANUAL_API_BACKED &&
+      plan.offerSource !== InfrastructureOfferSource.PREPROVISIONED_INVENTORY
+    ) {
+      return jsonError(
+        "قیمت پایهٔ پلن متکی به API از این مسیر قابل‌ویرایش نیست.",
+        409,
+      );
+    }
     const availableUnits =
       body.availableUnits == null
         ? before.manualAvailableUnits ?? 0
@@ -80,7 +93,8 @@ export async function PATCH(
         : plan.publicationStatus === InfrastructurePlanPublicationStatus.PUBLISHED;
     if (
       publish &&
-      plan.offerSource === InfrastructureOfferSource.MANUAL_API_BACKED &&
+      (plan.offerSource === InfrastructureOfferSource.MANUAL_API_BACKED ||
+        plan.offerSource === InfrastructureOfferSource.MANUAL_ADMIN) &&
       availableUnits === 0
     ) {
       return jsonError("پلن بدون ظرفیت قابل انتشار نیست.", 409);
@@ -147,7 +161,10 @@ export async function PATCH(
       }
       const now = new Date();
       const raw = {
-        source: "manual_api_backed",
+        source:
+          before.source === ProviderCatalogItemSource.MANUAL_ADMIN
+            ? "manual_admin"
+            : "manual_api_backed",
         updatedBy: admin.id,
         availableUnits,
       } satisfies Prisma.InputJsonObject;

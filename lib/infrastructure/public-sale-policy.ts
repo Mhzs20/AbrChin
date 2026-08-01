@@ -1,5 +1,6 @@
 import {
   InfrastructureOfferSource,
+  InfrastructureProductKind,
   InfrastructureProvider,
 } from "@prisma/client";
 
@@ -13,6 +14,7 @@ type SaleRoute = {
     | "API_CATALOG"
     | "MANUAL_API_BACKED"
     | "PREPROVISIONED_INVENTORY";
+  productKind?: InfrastructureProductKind | "READY_INSTANT_SERVER" | "CLOUD_SERVER";
 };
 
 export type PublicSaleDecision = {
@@ -22,20 +24,35 @@ export type PublicSaleDecision = {
 
 export function getPublicSaleDecision(route: SaleRoute): PublicSaleDecision {
   const env = getEnv();
-  if (route.provider === InfrastructureProvider.PARSPACK) {
-    return env.parspackPublicSaleEnabled
+  if (
+    route.offerSource === InfrastructureOfferSource.MANUAL_ADMIN ||
+    route.offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY
+  ) {
+    return route.productKind === InfrastructureProductKind.READY_INSTANT_SERVER &&
+      env.manualReadyPublicSaleEnabled
       ? { allowed: true, code: "sale_enabled" }
       : { allowed: false, code: "provider_sale_disabled" };
+  }
+  if (route.provider === InfrastructureProvider.PARSPACK) {
+    if (!env.parspackPublicSaleEnabled) {
+      return { allowed: false, code: "provider_sale_disabled" };
+    }
+    return env.parspackMutationsEnabled
+      ? { allowed: true, code: "sale_enabled" }
+      : { allowed: false, code: "provider_provisioning_not_enabled" };
   }
   if (route.provider === InfrastructureProvider.ARVAN) {
     if (!env.arvanPublicSaleEnabled) {
       return { allowed: false, code: "provider_sale_disabled" };
     }
-    if (
-      route.offerSource !==
-        InfrastructureOfferSource.PREPROVISIONED_INVENTORY &&
-      !env.arvanMutationsEnabled
-    ) {
+    const productGate =
+      route.productKind === InfrastructureProductKind.READY_INSTANT_SERVER
+        ? env.arvanReadyPublicSaleEnabled
+        : env.arvanCloudPublicSaleEnabled;
+    if (!productGate) {
+      return { allowed: false, code: "provider_sale_disabled" };
+    }
+    if (!env.arvanMutationsEnabled) {
       return {
         allowed: false,
         code: "provider_provisioning_not_enabled",
@@ -58,7 +75,10 @@ export function assertPublicSaleEnabled(route: SaleRoute) {
       decision.code,
       route.provider === InfrastructureProvider.PARSPACK
         ? "فروش عمومی سرورهای فوری موقتاً غیرفعال است؛ مبلغی برداشت نشد."
-        : "فروش عمومی سرورهای ابری موقتاً غیرفعال است؛ مبلغی برداشت نشد.",
+        : route.offerSource === InfrastructureOfferSource.MANUAL_ADMIN ||
+            route.offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY
+          ? "فروش عمومی موجودی آمادهٔ ابرچین موقتاً غیرفعال است؛ مبلغی برداشت نشد."
+          : "فروش عمومی این مسیر آروان موقتاً غیرفعال است؛ مبلغی برداشت نشد.",
     );
   }
   throw new WalletError(

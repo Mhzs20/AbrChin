@@ -18,6 +18,7 @@ type PlanRow = {
   instantDelivery: boolean;
   displayDuringProviderOutage: boolean;
   provider: string;
+  productKind: "CLOUD_SERVER" | "READY_INSTANT_SERVER";
   catalogSource: string | null;
   offerPriceValidUntil: string | null;
   availableInventory: number;
@@ -60,6 +61,7 @@ const emptyForm = {
   displayDuringProviderOutage: true,
   sortOrder: "0",
   offerSource: "API_CATALOG",
+  productKind: "CLOUD_SERVER",
   offerPriceValidUntil: "",
 };
 
@@ -70,6 +72,7 @@ const emptyManualForm = {
   externalPlanId: "",
   regionCode: "",
   imageAssetId: "",
+  imageCode: "Ubuntu Linux",
   vcpu: "2",
   ramGb: "4",
   storageGb: "50",
@@ -80,7 +83,7 @@ const emptyManualForm = {
   instantDelivery: true,
   publish: false,
   sortOrder: "0",
-  offerSource: "MANUAL_API_BACKED",
+  offerSource: "MANUAL_ADMIN",
 };
 
 function toman(value: string | null) {
@@ -148,6 +151,7 @@ export function AdminPlansPanel({
       displayDuringProviderOutage: plan.displayDuringProviderOutage,
       sortOrder: String(plan.sortOrder),
       offerSource: plan.catalogSource ?? "API_CATALOG",
+      productKind: plan.productKind,
       offerPriceValidUntil: plan.offerPriceValidUntil
         ? new Date(plan.offerPriceValidUntil).toISOString().slice(0, 16)
         : "",
@@ -190,38 +194,6 @@ export function AdminPlansPanel({
       const data = await response.json();
       if (!response.ok) {
         setError(typeof data.error === "string" ? data.error : "ذخیره ممکن نشد.");
-        return;
-      }
-      const inventoryId =
-        data?.inventory && typeof data.inventory.id === "string"
-          ? data.inventory.id
-          : "";
-      if (!inventoryId) {
-        setError("شناسه موجودی ثبت‌شده دریافت نشد.");
-        return;
-      }
-      const credentialResponse = await fetch(
-        `/api/admin/infrastructure/preprovisioned-inventory/${inventoryId}/credential`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": crypto.randomUUID(),
-          },
-          body: JSON.stringify({
-            username: inventoryUsername,
-            secret: inventorySecret,
-            reason: inventoryReason,
-          }),
-        },
-      );
-      const credentialData = await credentialResponse.json();
-      if (!credentialResponse.ok) {
-        setError(
-          typeof credentialData.error === "string"
-            ? credentialData.error
-            : "ثبت Credential امن موجودی ممکن نشد.",
-        );
         return;
       }
       window.location.reload();
@@ -300,6 +272,38 @@ export function AdminPlansPanel({
         );
         return;
       }
+      const inventoryId =
+        data?.inventory && typeof data.inventory.id === "string"
+          ? data.inventory.id
+          : "";
+      if (!inventoryId) {
+        setError("شناسه موجودی ثبت‌شده دریافت نشد.");
+        return;
+      }
+      const credentialResponse = await fetch(
+        `/api/admin/infrastructure/preprovisioned-inventory/${inventoryId}/credential`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: JSON.stringify({
+            username: inventoryUsername,
+            secret: inventorySecret,
+            reason: inventoryReason,
+          }),
+        },
+      );
+      const credentialData = await credentialResponse.json();
+      if (!credentialResponse.ok) {
+        setError(
+          typeof credentialData.error === "string"
+            ? credentialData.error
+            : "ثبت Credential امن موجودی ممکن نشد.",
+        );
+        return;
+      }
       window.location.reload();
     } catch {
       setError("ارتباط برقرار نشد.");
@@ -325,7 +329,7 @@ export function AdminPlansPanel({
             const firstRegion = manualOptions.regions.find((region) => region.saleEnabled);
             setManualForm({
               ...emptyManualForm,
-              regionCode: firstRegion?.code ?? "",
+              regionCode: "abrchin",
               imageAssetId:
                 manualOptions.images.find((image) => image.regionCode === firstRegion?.code)?.id ?? "",
             });
@@ -346,6 +350,8 @@ export function AdminPlansPanel({
               {` · ${plan.publicationStatus}`}
               {plan.catalogSource === "MANUAL_API_BACKED"
                 ? " · دستی متکی به API"
+                : plan.catalogSource === "MANUAL_ADMIN"
+                  ? ` · دستی ابرچین: ${(plan.manualAvailableUnits ?? 0).toLocaleString("fa-IR")} واحد`
                 : plan.catalogSource === "PREPROVISIONED_INVENTORY"
                   ? ` · موجودی واقعی: ${plan.availableInventory.toLocaleString("fa-IR")}`
                   : " · API Catalog"}
@@ -371,7 +377,10 @@ export function AdminPlansPanel({
               type="button"
               className="product-btn product-btn--quiet"
               onClick={() => {
-                if (plan.catalogSource === "MANUAL_API_BACKED") {
+                if (
+                  plan.catalogSource === "MANUAL_API_BACKED" ||
+                  plan.catalogSource === "MANUAL_ADMIN"
+                ) {
                   setManualEditing(plan);
                   setManualForm({
                     ...emptyManualForm,
@@ -381,6 +390,7 @@ export function AdminPlansPanel({
                     externalPlanId: plan.externalPlanId ?? "",
                     regionCode: plan.regionCode,
                     imageAssetId: plan.imageAssetId ?? "",
+                    imageCode: plan.imageCode,
                     vcpu: String(plan.vcpu ?? 1),
                     ramGb: String(plan.ramGb ?? 1),
                     storageGb: String(plan.storageGb ?? 1),
@@ -418,6 +428,24 @@ export function AdminPlansPanel({
         onCancel={() => setOpen(false)}
         onConfirm={submit}
       >
+        <FormField id="plan-product-kind" label="مسیر محصول">
+          <select
+            id="plan-product-kind"
+            value={form.productKind}
+            disabled={Boolean(editing)}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                productKind: event.target.value,
+                instantDelivery:
+                  event.target.value === "READY_INSTANT_SERVER",
+              }))
+            }
+          >
+            <option value="CLOUD_SERVER">سرور ابری سفارشی آروان</option>
+            <option value="READY_INSTANT_SERVER">سرور فوری ثابت آروان</option>
+          </select>
+        </FormField>
         <FormField id="plan-code" label="کد">
           <input id="plan-code" value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} disabled={Boolean(editing)} required />
         </FormField>
@@ -466,6 +494,10 @@ export function AdminPlansPanel({
               setForm((current) => ({
                 ...current,
                 offerSource: event.target.value,
+                productKind:
+                  event.target.value === "PREPROVISIONED_INVENTORY"
+                    ? "READY_INSTANT_SERVER"
+                    : current.productKind,
                 active:
                   event.target.value === "PREPROVISIONED_INVENTORY"
                     ? false
@@ -474,7 +506,6 @@ export function AdminPlansPanel({
             }
           >
             <option value="API_CATALOG">API Catalog</option>
-            <option value="MANUAL_API_BACKED">دستی، متکی به API</option>
             <option value="PREPROVISIONED_INVENTORY">موجودی واقعی ازپیش‌ساخته</option>
           </select>
         </FormField>
@@ -513,16 +544,16 @@ export function AdminPlansPanel({
       </ConfirmDialog>
       <ConfirmDialog
         open={manualOpen}
-        title={manualEditing ? "ویرایش ظرفیت دستی" : "افزودن ظرفیت دستی آروان"}
+        title={manualEditing ? "ویرایش ظرفیت دستی" : "افزودن سرور فوری"}
         confirmLabel={manualEditing ? "ذخیره تغییرات" : "ثبت ظرفیت"}
         loading={loading}
         onCancel={() => setManualOpen(false)}
         onConfirm={submitManual}
       >
         <p className="product-tech">
-          منبع «دستی متکی به API» هنگام قطعی فقط نمایش داده می‌شود. فقط
-          «موجودی واقعی» دارای Resource مشاهده‌شده و Health تازه می‌تواند بدون
-          Revalidation خریداری شود.
+          SKU دستی ابرچین با موجودی عددی و تحویل Admin کار می‌کند. موجودی
+          ازپیش‌ساخته فقط با Resource واقعی، Credential رمزگذاری‌شده و Health
+          تازه قابل فروش است.
         </p>
         {!manualEditing ? (
           <FormField id="manual-source" label="نوع منبع">
@@ -533,6 +564,10 @@ export function AdminPlansPanel({
                 setManualForm((current) => ({
                   ...current,
                   offerSource: event.target.value,
+                  regionCode:
+                    event.target.value === "MANUAL_ADMIN"
+                      ? "abrchin"
+                      : current.regionCode,
                   publish:
                     event.target.value === "PREPROVISIONED_INVENTORY"
                       ? false
@@ -540,6 +575,7 @@ export function AdminPlansPanel({
                 }))
               }
             >
+              <option value="MANUAL_ADMIN">SKU دستی و تحویل Admin</option>
               <option value="MANUAL_API_BACKED">دستی، متکی به API</option>
               <option value="PREPROVISIONED_INVENTORY">موجودی واقعی ازپیش‌ساخته</option>
             </select>
@@ -548,6 +584,17 @@ export function AdminPlansPanel({
         <FormField id="manual-code" label="کد داخلی"><input id="manual-code" value={manualForm.code} onChange={(event) => setManualForm((current) => ({ ...current, code: event.target.value }))} disabled={Boolean(manualEditing)} required /></FormField>
         <FormField id="manual-title" label="عنوان"><input id="manual-title" value={manualForm.title} onChange={(event) => setManualForm((current) => ({ ...current, title: event.target.value }))} required /></FormField>
         <FormField id="manual-description" label="توضیحات"><textarea id="manual-description" rows={2} value={manualForm.description} onChange={(event) => setManualForm((current) => ({ ...current, description: event.target.value }))} /></FormField>
+        {manualForm.offerSource === "MANUAL_ADMIN" ? (
+          <>
+            <FormField id="manual-region-code" label="کد موقعیت">
+              <input id="manual-region-code" value={manualForm.regionCode} disabled={Boolean(manualEditing)} onChange={(event) => setManualForm((current) => ({ ...current, regionCode: event.target.value }))} required />
+            </FormField>
+            <FormField id="manual-image-code" label="سیستم‌عامل">
+              <input id="manual-image-code" value={manualForm.imageCode} disabled={Boolean(manualEditing)} onChange={(event) => setManualForm((current) => ({ ...current, imageCode: event.target.value }))} required />
+            </FormField>
+          </>
+        ) : (
+          <>
         <FormField id="manual-external-plan" label="Plan ID واقعی آروان"><input id="manual-external-plan" value={manualForm.externalPlanId} onChange={(event) => setManualForm((current) => ({ ...current, externalPlanId: event.target.value }))} disabled={Boolean(manualEditing)} required /></FormField>
         <FormField id="manual-region" label="Region">
           <select id="manual-region" value={manualForm.regionCode} disabled={Boolean(manualEditing)} onChange={(event) => {
@@ -564,12 +611,15 @@ export function AdminPlansPanel({
             {manualImages.map((image) => <option key={image.id} value={image.id}>{image.label}</option>)}
           </select>
         </FormField>
+          </>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
           <FormField id="manual-vcpu" label="vCPU"><input id="manual-vcpu" type="number" min={1} value={manualForm.vcpu} disabled={Boolean(manualEditing)} onChange={(event) => setManualForm((current) => ({ ...current, vcpu: event.target.value }))} /></FormField>
           <FormField id="manual-ram" label="RAM GB"><input id="manual-ram" type="number" min={1} value={manualForm.ramGb} disabled={Boolean(manualEditing)} onChange={(event) => setManualForm((current) => ({ ...current, ramGb: event.target.value }))} /></FormField>
           <FormField id="manual-storage" label="Storage GB"><input id="manual-storage" type="number" min={1} value={manualForm.storageGb} disabled={Boolean(manualEditing)} onChange={(event) => setManualForm((current) => ({ ...current, storageGb: event.target.value }))} /></FormField>
         </div>
-        {manualForm.offerSource === "MANUAL_API_BACKED" ? (
+        {manualForm.offerSource === "MANUAL_API_BACKED" ||
+        manualForm.offerSource === "MANUAL_ADMIN" ? (
           <FormField id="manual-capacity" label="سقف مدیریتی (مجوز فروش هنگام قطعی نیست)"><input id="manual-capacity" type="number" min={1} value={manualForm.availableUnits} onChange={(event) => setManualForm((current) => ({ ...current, availableUnits: event.target.value }))} /></FormField>
         ) : null}
         <FormField id="manual-price" label="قیمت پایه ماهانه (تومان)"><input id="manual-price" type="number" min={1} value={manualForm.basePriceToman} onChange={(event) => setManualForm((current) => ({ ...current, basePriceToman: event.target.value }))} required /></FormField>

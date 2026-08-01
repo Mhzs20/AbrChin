@@ -151,6 +151,7 @@ test("uses management V1 for create and public V1 for catalog/read operations", 
     fetchImpl,
     priceCurrencyCode: "IRR",
     priceAmountUnit: "TOMAN",
+    mutationsEnabled: true,
   });
 
   const created = await provider.createInstance({
@@ -215,12 +216,42 @@ test("uses management V1 for create and public V1 for catalog/read operations", 
   );
 });
 
+test("ParsPack mutations fail closed before any network request", async () => {
+  let calls = 0;
+  const provider = new ParsPackProvider({
+    managementBaseUrl: "https://my.parspack.com/cserver/api/v1",
+    publicBaseUrl: "https://my.parspack.com/cserver/api/public/v1",
+    token: "contract-test-token",
+    timeoutMs: 1000,
+    mutationsEnabled: false,
+    fetchImpl: async () => {
+      calls += 1;
+      return Response.json({ vm: vmFixture }, { status: 201 });
+    },
+  });
+
+  await assert.rejects(
+    provider.createInstance({
+      name: "abrchin-disabled",
+      region: "tehran11",
+      size: "irLinuxVPS4",
+      image: "ubuntu24-cloudinit-qcow2",
+      deliveryMode: "MANAGED",
+    }),
+    (error: unknown) =>
+      error instanceof InfrastructureError &&
+      error.code === "provider_mutations_disabled",
+  );
+  assert.equal(calls, 0);
+});
+
 test("invalid VM payload becomes a provider_invalid_response error", async () => {
   const provider = new ParsPackProvider({
     managementBaseUrl: "https://my.parspack.com/cserver/api/v1",
     publicBaseUrl: "https://my.parspack.com/cserver/api/public/v1",
     token: "contract-test-token",
     timeoutMs: 1000,
+    mutationsEnabled: true,
     fetchImpl: async () => Response.json({ vm: { status: "new" } }, { status: 201 }),
   });
 

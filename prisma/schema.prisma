@@ -136,12 +136,14 @@ enum ProviderRegionConfigSource {
 enum ProviderCatalogItemSource {
   API_CATALOG       @map("PROVIDER_API")
   MANUAL_API_BACKED @map("ADMIN_MANAGED")
+  MANUAL_ADMIN
 }
 
 enum InfrastructureOfferSource {
   API_CATALOG
   MANUAL_API_BACKED
   PREPROVISIONED_INVENTORY
+  MANUAL_ADMIN
 }
 
 enum PreprovisionedInventoryStatus {
@@ -413,12 +415,17 @@ model WalletTopUp {
   updatedAt             DateTime               @updatedAt
   verifiedAt            DateTime?
   expiresAt             DateTime
+  purchaseOrderId       String?
+  requestFingerprint    String?
+  redirectUrl           String?
   wallet                Wallet                 @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  purchaseOrder         ServiceOrder?          @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
 
   @@index([walletId, createdAt])
   @@index([status, expiresAt])
   @@index([callbackTokenHash])
   @@index([gateway, status])
+  @@index([purchaseOrderId, status])
 }
 
 model WalletTopUpSettings {
@@ -497,6 +504,7 @@ model ServiceOrder {
   adminCommandReceipts   AdminCommandReceipt[]
   reservedInventoryItems PreprovisionedInventoryItem[] @relation("InventoryReservedOrder")
   assignedInventoryItems PreprovisionedInventoryItem[] @relation("InventoryAssignedOrder")
+  purchaseTopUps         WalletTopUp[]
 
   @@index([userId, createdAt])
   @@index([status])

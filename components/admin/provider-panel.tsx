@@ -47,7 +47,8 @@ export function ProviderPanel({
     source:
       | "API_CATALOG"
       | "MANUAL_API_BACKED"
-      | "PREPROVISIONED_INVENTORY";
+      | "PREPROVISIONED_INVENTORY"
+      | "MANUAL_ADMIN";
     status: string;
     regionCode: string;
     sizeCode: string;
@@ -258,6 +259,8 @@ export function ProviderPanel({
                     <small>
                       {item.source === "MANUAL_API_BACKED"
                         ? "Manual API-backed"
+                        : item.source === "MANUAL_ADMIN"
+                          ? "Manual Admin"
                         : item.source === "PREPROVISIONED_INVENTORY"
                           ? "Preprovisioned inventory"
                           : "API catalog"}

@@ -29,6 +29,7 @@ type ParsPackClientConfig = {
   enabled?: boolean;
   priceCurrencyCode?: string;
   priceAmountUnit?: string;
+  mutationsEnabled?: boolean;
 };
 
 type ApiScope = "management" | "public";
@@ -69,6 +70,7 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
   private readonly enabled: boolean;
   private readonly priceCurrencyCode: string;
   private readonly priceAmountUnit: string;
+  private readonly mutationsEnabled: boolean;
 
   constructor(config: ParsPackClientConfig) {
     const managementBaseUrl = trimBaseUrl(
@@ -84,6 +86,7 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
     this.enabled = config.enabled ?? true;
     this.priceCurrencyCode = config.priceCurrencyCode?.trim().toUpperCase() ?? "";
     this.priceAmountUnit = config.priceAmountUnit?.trim().toUpperCase() ?? "";
+    this.mutationsEnabled = config.mutationsEnabled === true;
   }
 
   private ensureEnabled() {
@@ -98,6 +101,13 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
     init?: RequestInit,
   ): Promise<{ data: T; status: number }> {
     this.ensureEnabled();
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (method !== "GET" && !this.mutationsEnabled) {
+      throw new InfrastructureError(
+        "provider_mutations_disabled",
+        "ParsPack lifecycle mutations are disabled",
+      );
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     const baseUrl = scope === "management" ? this.managementBaseUrl : this.publicBaseUrl;

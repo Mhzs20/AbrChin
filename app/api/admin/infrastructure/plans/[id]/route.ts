@@ -83,10 +83,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       typeof body.active === "boolean" ? body.active : before.active;
     const offerSource =
       body.offerSource === "API_CATALOG" ||
-      body.offerSource === "MANUAL_API_BACKED" ||
       body.offerSource === "PREPROVISIONED_INVENTORY"
         ? body.offerSource
         : before.offerSource;
+    if (
+      offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY &&
+      before.productKind !== "READY_INSTANT_SERVER"
+    ) {
+      return jsonError("موجودی ازپیش‌ساخته فقط در مسیر سرور فوری مجاز است.", 400);
+    }
     const offerPriceValidUntil =
       offerSource === InfrastructureOfferSource.API_CATALOG
         ? null

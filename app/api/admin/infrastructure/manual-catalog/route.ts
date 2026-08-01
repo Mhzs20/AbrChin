@@ -65,19 +65,41 @@ export async function POST(request: Request) {
       typeof body.regionCode === "string" ? body.regionCode.trim().toLowerCase() : "";
     const externalPlanId =
       typeof body.externalPlanId === "string" ? body.externalPlanId.trim() : "";
+    const requestedSource =
+      body.offerSource === "MANUAL_ADMIN"
+        ? InfrastructureOfferSource.MANUAL_ADMIN
+        : body.offerSource === "PREPROVISIONED_INVENTORY"
+          ? InfrastructureOfferSource.PREPROVISIONED_INVENTORY
+          : null;
+    if (!requestedSource) {
+      return jsonError(
+        "منبع دستی باید موجودی Admin یا Resource ازپیش‌ساخته باشد.",
+        400,
+      );
+    }
     if (!/^[A-Z0-9_-]{3,64}$/.test(code) || !title || title.length > 120) {
       return jsonError("کد یا عنوان معتبر نیست.", 400);
     }
-    if (!/^[a-zA-Z0-9._-]{1,128}$/.test(externalPlanId)) {
+    if (!/^[a-z0-9._-]{2,64}$/.test(regionCode)) {
+      return jsonError("کد موقعیت معتبر نیست.", 400);
+    }
+    if (
+      requestedSource !== InfrastructureOfferSource.MANUAL_ADMIN &&
+      !/^[a-zA-Z0-9._-]{1,128}$/.test(externalPlanId)
+    ) {
       return jsonError("Plan ID واقعی Provider معتبر نیست.", 400);
     }
+    const effectiveExternalPlanId =
+      requestedSource === InfrastructureOfferSource.MANUAL_ADMIN
+        ? `manual-${code.toLowerCase()}`
+        : externalPlanId;
     const existingProviderItem = await prisma.providerCatalogItem.findUnique({
       where: {
         provider_apiVersion_regionCode_externalPlanId: {
           provider: InfrastructureProvider.ARVAN,
           apiVersion: "v1",
           regionCode,
-          externalPlanId,
+          externalPlanId: effectiveExternalPlanId,
         },
       },
       select: { id: true, source: true },
@@ -90,6 +112,7 @@ export async function POST(request: Request) {
       );
     }
     if (
+      requestedSource !== InfrastructureOfferSource.MANUAL_ADMIN &&
       !(await isRegionEnabledForSale({
         provider: InfrastructureProvider.ARVAN,
         apiVersion: "v1",
@@ -100,7 +123,11 @@ export async function POST(request: Request) {
     }
     const imageAssetId =
       typeof body.imageAssetId === "string" ? body.imageAssetId.trim() : "";
-    const image = await prisma.providerCatalogAsset.findFirst({
+    const manualImageCode =
+      typeof body.imageCode === "string" ? body.imageCode.trim() : "";
+    const image = requestedSource === InfrastructureOfferSource.MANUAL_ADMIN
+      ? null
+      : await prisma.providerCatalogAsset.findFirst({
       where: {
         id: imageAssetId,
         provider: InfrastructureProvider.ARVAN,
@@ -111,15 +138,19 @@ export async function POST(request: Request) {
         available: true,
       },
     });
-    if (!image) return jsonError("Image معتبر این Region پیدا نشد.", 409);
+    if (
+      requestedSource !== InfrastructureOfferSource.MANUAL_ADMIN &&
+      !image
+    ) return jsonError("Image معتبر این Region پیدا نشد.", 409);
+    if (
+      requestedSource === InfrastructureOfferSource.MANUAL_ADMIN &&
+      !/^[a-zA-Z0-9._ -]{2,80}$/.test(manualImageCode)
+    ) return jsonError("نام سیستم‌عامل معتبر نیست.", 400);
 
     const vcpu = positiveInteger(body.vcpu, "vcpu", 256);
     const ramGb = positiveInteger(body.ramGb, "ram_gb", 2048);
     const storageGb = positiveInteger(body.storageGb, "storage_gb", 100_000);
-    const offerSource =
-      body.offerSource === "PREPROVISIONED_INVENTORY"
-        ? InfrastructureOfferSource.PREPROVISIONED_INVENTORY
-        : InfrastructureOfferSource.MANUAL_API_BACKED;
+    const offerSource = requestedSource;
     const availableUnits =
       offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY
         ? null
@@ -148,8 +179,9 @@ export async function POST(request: Request) {
       code,
       title,
       regionCode,
-      externalPlanId,
+      externalPlanId: effectiveExternalPlanId,
       imageAssetId,
+      manualImageCode,
       vcpu,
       ramGb,
       storageGb,
@@ -186,9 +218,18 @@ export async function POST(request: Request) {
         });
       }
       const now = new Date();
-      const externalId = externalPlanId;
+      const externalId = effectiveExternalPlanId;
+      const productKind =
+        offerSource === InfrastructureOfferSource.MANUAL_ADMIN ||
+        offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY
+          ? InfrastructureProductKind.READY_INSTANT_SERVER
+          : InfrastructureProductKind.CLOUD_SERVER;
+      const imageCode = image?.externalId ?? manualImageCode;
       const rawPayload = {
-        source: "manual_api_backed",
+        source:
+          offerSource === InfrastructureOfferSource.MANUAL_ADMIN
+            ? "manual_admin"
+            : "manual_api_backed",
         createdBy: admin.id,
         resourceContract: { vcpu, ramGb, storageGb },
       } satisfies Prisma.InputJsonObject;
@@ -199,14 +240,17 @@ export async function POST(request: Request) {
         data: {
           provider: InfrastructureProvider.ARVAN,
           apiVersion: "v1",
-          productKind: InfrastructureProductKind.CLOUD_SERVER,
-          source: ProviderCatalogItemSource.MANUAL_API_BACKED,
+          productKind,
+          source:
+            offerSource === InfrastructureOfferSource.MANUAL_ADMIN
+              ? ProviderCatalogItemSource.MANUAL_ADMIN
+              : ProviderCatalogItemSource.MANUAL_API_BACKED,
           regionCode,
           sizeCode: externalId,
           externalPlanId: externalId,
           externalKey: `manual:arvan:v1:${regionCode}:${externalId}`,
           sizeName: title,
-          compatibleImageCodes: [image.externalId],
+          compatibleImageCodes: [imageCode],
           vcpu,
           ramMb: ramGb * 1024,
           diskGb: storageGb,
@@ -236,10 +280,10 @@ export async function POST(request: Request) {
           description: optionalDescription(body.description),
           provider: InfrastructureProvider.ARVAN,
           providerApiVersion: "v1",
-          productKind: InfrastructureProductKind.CLOUD_SERVER,
+          productKind,
           regionCode,
           sizeCode: externalId,
-          imageCode: image.externalId,
+          imageCode,
           deliveryMode: DeliveryMode.MANAGED,
           vcpu,
           ramGb,

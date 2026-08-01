@@ -11,6 +11,7 @@ import {
 
 import { confirmProviderFunding } from "../lib/infrastructure/funding.ts";
 import { FakeCloudProviderAdapter } from "../lib/infrastructure/fake-cloud-provider-adapter.ts";
+import { completeManualReadyDelivery } from "../lib/infrastructure/manual-ready-delivery.ts";
 import { retryFailedProvisioning } from "../lib/infrastructure/retry.ts";
 import { payOrderWithWallet, refundOrder } from "../lib/orders/service.ts";
 import { getActivePlanByCode, toPlanSnapshot } from "../lib/orders/plans.ts";
@@ -23,7 +24,13 @@ const previousMode = process.env.INFRASTRUCTURE_PROVIDER_MODE;
 const previousNodeEnv = process.env.NODE_ENV;
 const previousParsPackPublicSale =
   process.env.PARSPACK_PUBLIC_SALE_ENABLED;
+const previousParsPackMutations =
+  process.env.PARSPACK_MUTATIONS_ENABLED;
+const previousManualReadySale =
+  process.env.MANUAL_READY_PUBLIC_SALE_ENABLED;
 process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
+process.env.PARSPACK_MUTATIONS_ENABLED = "true";
+process.env.MANUAL_READY_PUBLIC_SALE_ENABLED = "true";
 
 function createParsPackPricingAdapter() {
   return new FakeCloudProviderAdapter({
@@ -74,6 +81,16 @@ after(async () => {
     delete process.env.PARSPACK_PUBLIC_SALE_ENABLED;
   } else {
     process.env.PARSPACK_PUBLIC_SALE_ENABLED = previousParsPackPublicSale;
+  }
+  if (previousParsPackMutations === undefined) {
+    delete process.env.PARSPACK_MUTATIONS_ENABLED;
+  } else {
+    process.env.PARSPACK_MUTATIONS_ENABLED = previousParsPackMutations;
+  }
+  if (previousManualReadySale === undefined) {
+    delete process.env.MANUAL_READY_PUBLIC_SALE_ENABLED;
+  } else {
+    process.env.MANUAL_READY_PUBLIC_SALE_ENABLED = previousManualReadySale;
   }
   if (prisma) await prisma.$disconnect();
 });
@@ -259,6 +276,156 @@ async function createPaidOrderFixture(mobile: string) {
   return { user, plan, order };
 }
 
+async function seedManualReadyPlan(availableUnits: number) {
+  if (!prisma) return null;
+  const now = new Date();
+  const validUntil = new Date(now.getTime() + 24 * 60 * 60 * 1_000);
+  const catalogItem = await prisma.providerCatalogItem.upsert({
+    where: {
+      provider_apiVersion_regionCode_externalPlanId: {
+        provider: "ARVAN",
+        apiVersion: "v1",
+        regionCode: "abrchin-test",
+        externalPlanId: "manual-infrastructure-test",
+      },
+    },
+    update: {
+      source: "MANUAL_ADMIN",
+      productKind: "READY_INSTANT_SERVER",
+      compatibleImageCodes: ["Ubuntu Linux"],
+      active: true,
+      available: availableUnits > 0,
+      status: availableUnits > 0 ? "ACTIVE" : "UNAVAILABLE",
+      providerMonthlyPriceIrr: 1_200_000n,
+      priceMonthlyAmount: 1_200_000n * 1_000_000n,
+      priceScale: 6,
+      currencyCode: "IRR",
+      amountUnit: "RIAL",
+      manualAvailableUnits: availableUnits,
+      manualPriceValidUntil: validUntil,
+      manualLastVerifiedAt: now,
+      lastSyncedAt: now,
+      lastSeenAt: now,
+    },
+    create: {
+      provider: "ARVAN",
+      apiVersion: "v1",
+      productKind: "READY_INSTANT_SERVER",
+      source: "MANUAL_ADMIN",
+      regionCode: "abrchin-test",
+      sizeCode: "manual-infrastructure-test",
+      externalPlanId: "manual-infrastructure-test",
+      externalKey: "manual:arvan:v1:abrchin-test:manual-infrastructure-test",
+      sizeName: "Manual infrastructure test",
+      compatibleImageCodes: ["Ubuntu Linux"],
+      vcpu: 2,
+      ramMb: 4096,
+      diskGb: 50,
+      active: true,
+      available: availableUnits > 0,
+      status: availableUnits > 0 ? "ACTIVE" : "UNAVAILABLE",
+      providerMonthlyPriceIrr: 1_200_000n,
+      priceMonthlyAmount: 1_200_000n * 1_000_000n,
+      priceScale: 6,
+      currencyCode: "IRR",
+      amountUnit: "RIAL",
+      manualAvailableUnits: availableUnits,
+      manualPriceValidUntil: validUntil,
+      manualLastVerifiedAt: now,
+      lastSyncedAt: now,
+      lastSeenAt: now,
+      rawPayload: { source: "manual_admin_test" },
+      payloadHash: "manual-infrastructure-test",
+      catalogVersion: `manual-test:${now.toISOString()}`,
+    },
+  });
+  return prisma.infrastructurePlan.upsert({
+    where: { code: "MANUAL_INFRASTRUCTURE_TEST" },
+    update: {
+      provider: "ARVAN",
+      providerApiVersion: "v1",
+      productKind: "READY_INSTANT_SERVER",
+      offerSource: "MANUAL_ADMIN",
+      regionCode: catalogItem.regionCode,
+      sizeCode: catalogItem.sizeCode,
+      imageCode: "Ubuntu Linux",
+      deliveryMode: "MANAGED",
+      active: true,
+      publicationStatus: "PUBLISHED",
+      parchinIncluded: true,
+      minimumParchinLevel: "PARCHIN_START",
+      offerPriceValidUntil: validUntil,
+      offerLastVerifiedAt: now,
+      catalogItemId: catalogItem.id,
+      catalogMappingStatus: "MAPPED",
+      catalogMappedAt: now,
+    },
+    create: {
+      code: "MANUAL_INFRASTRUCTURE_TEST",
+      title: "Manual infrastructure test",
+      provider: "ARVAN",
+      providerApiVersion: "v1",
+      productKind: "READY_INSTANT_SERVER",
+      offerSource: "MANUAL_ADMIN",
+      regionCode: catalogItem.regionCode,
+      sizeCode: catalogItem.sizeCode,
+      imageCode: "Ubuntu Linux",
+      deliveryMode: "MANAGED",
+      salePriceRial: 1_200_000n,
+      renewalPriceRial: 1_200_000n,
+      estimatedProviderCostRial: 1_200_000n,
+      deliveryEstimateMinutes: 15,
+      parchinIncluded: true,
+      minimumParchinLevel: "PARCHIN_START",
+      active: true,
+      publicationStatus: "PUBLISHED",
+      instantDelivery: true,
+      displayDuringProviderOutage: true,
+      offerPriceValidUntil: validUntil,
+      offerLastVerifiedAt: now,
+      catalogItemId: catalogItem.id,
+      catalogMappingStatus: "MAPPED",
+      catalogMappedAt: now,
+    },
+  });
+}
+
+async function createManualOrderFixture(mobile: string) {
+  if (!prisma) throw new Error("no prisma");
+  const plan = await seedManualReadyPlan(1);
+  assert.ok(plan);
+  const pricedPlan = await getActivePlanByCode(plan.code);
+  assert.ok(pricedPlan);
+  const createdAt = new Date();
+  const quoteExpiresAt = new Date(createdAt.getTime() + 10 * 60 * 1_000);
+  const user = await prisma.user.create({ data: { mobile } });
+  await prisma.wallet.create({
+    data: {
+      userId: user.id,
+      availableBalance: 10_000_000n,
+      status: WalletStatus.ACTIVE,
+    },
+  });
+  const order = await prisma.serviceOrder.create({
+    data: {
+      userId: user.id,
+      title: plan.title,
+      amount: pricedPlan.pricing.finalPriceRial,
+      status: ServiceOrderStatus.PENDING_PAYMENT,
+      planId: plan.id,
+      planCode: plan.code,
+      planSnapshot: toPlanSnapshot(pricedPlan, { createdAt, expiresAt: quoteExpiresAt }),
+      quoteExpiresAt,
+      provider: "ARVAN",
+      providerApiVersion: "v1",
+      productKind: "READY_INSTANT_SERVER",
+      parchinLevel: pricedPlan.pricing.parchinLevel,
+      productFlowState: "AWAITING_PAYMENT",
+    },
+  });
+  return { user, plan, order };
+}
+
 test("payOrderWithWallet rolls back all writes on injected failure after debit", async (t) => {
   if (!prisma) {
     t.skip("DATABASE_URL not set");
@@ -314,6 +481,142 @@ test("payment is atomic and creates infrastructure order without cloud instance"
   assert.equal(await prisma.cloudInstance.count({ where: { userId: user.id } }), 0);
 
   await cleanupMobile(mobile);
+});
+
+test("manual inventory decrement rolls back with an injected payment failure", async (t) => {
+  if (!prisma) {
+    t.skip("DATABASE_URL not set");
+    return;
+  }
+  const mobile = "09128881011";
+  await cleanupMobile(mobile);
+  const { user, plan, order } = await createManualOrderFixture(mobile);
+  const before = await prisma.providerCatalogItem.findUniqueOrThrow({
+    where: { id: plan.catalogItemId! },
+    select: { manualAvailableUnits: true },
+  });
+  await assert.rejects(
+    payOrderWithWallet(user.id, order.id, {
+      testInjectFailureAfterDebit: true,
+    }),
+    /Injected failure/,
+  );
+  const after = await prisma.providerCatalogItem.findUniqueOrThrow({
+    where: { id: plan.catalogItemId! },
+    select: { manualAvailableUnits: true },
+  });
+  assert.equal(after.manualAvailableUnits, before.manualAvailableUnits);
+  assert.equal(
+    await prisma.walletLedgerEntry.count({ where: { referenceId: order.id } }),
+    0,
+  );
+  await cleanupMobile(mobile);
+});
+
+test("two concurrent manual payments cannot oversell one unit", async (t) => {
+  if (!prisma) {
+    t.skip("DATABASE_URL not set");
+    return;
+  }
+  const firstMobile = "09128881012";
+  const secondMobile = "09128881013";
+  await cleanupMobile(firstMobile);
+  await cleanupMobile(secondMobile);
+  const first = await createManualOrderFixture(firstMobile);
+  const second = await createManualOrderFixture(secondMobile);
+  const results = await Promise.allSettled([
+    payOrderWithWallet(first.user.id, first.order.id),
+    payOrderWithWallet(second.user.id, second.order.id),
+  ]);
+  assert.equal(
+    results.filter((result) => result.status === "fulfilled").length,
+    1,
+  );
+  assert.equal(
+    results.filter((result) => result.status === "rejected").length,
+    1,
+  );
+  const item = await prisma.providerCatalogItem.findUniqueOrThrow({
+    where: { id: first.plan.catalogItemId! },
+  });
+  assert.equal(item.manualAvailableUnits, 0);
+  assert.equal(
+    await prisma.walletLedgerEntry.count({
+      where: {
+        referenceId: { in: [first.order.id, second.order.id] },
+        direction: "DEBIT",
+      },
+    }),
+    1,
+  );
+  await cleanupMobile(firstMobile);
+  await cleanupMobile(secondMobile);
+});
+
+test("manual ready delivery is idempotent and never creates a provider job", async (t) => {
+  if (!prisma) {
+    t.skip("DATABASE_URL not set");
+    return;
+  }
+  const mobile = "09128881014";
+  const adminMobile = "09128881015";
+  await cleanupMobile(mobile);
+  await cleanupMobile(adminMobile);
+  const previousCredentialKey = process.env.CREDENTIAL_ENCRYPTION_KEY;
+  process.env.CREDENTIAL_ENCRYPTION_KEY = Buffer.alloc(32, 11).toString("base64");
+  try {
+    const { user, order } = await createManualOrderFixture(mobile);
+    const paid = await payOrderWithWallet(user.id, order.id);
+    const admin = await prisma.user.create({
+      data: { mobile: adminMobile, role: "ADMIN" },
+    });
+    const input = {
+      infrastructureOrderId: paid.infrastructureOrder!.id,
+      adminUserId: admin.id,
+      providerResourceId: `manual-${order.id}`,
+      ipv4: "203.0.113.15",
+      username: "root",
+      secret: "Founder-Test-Only-123!",
+      reason: "تست تحویل دستی سفارش",
+      idempotencyKey: `manual-delivery-${order.id}`,
+    };
+    const first = await completeManualReadyDelivery(input);
+    const replay = await completeManualReadyDelivery(input);
+    assert.deepEqual(replay, first);
+    const infrastructure = await prisma.infrastructureOrder.findUniqueOrThrow({
+      where: { id: paid.infrastructureOrder!.id },
+      include: {
+        serviceOrder: true,
+        cloudInstance: { include: { credential: true, subscription: true } },
+        provisioningJobs: true,
+        healthChecks: true,
+      },
+    });
+    assert.equal(infrastructure.status, InfrastructureOrderStatus.ACTIVE);
+    assert.equal(infrastructure.productFlowState, "ACTIVE");
+    assert.equal(infrastructure.serviceOrder.productFlowState, "ACTIVE");
+    assert.equal(
+      infrastructure.productFlowRevision,
+      infrastructure.serviceOrder.productFlowRevision,
+    );
+    assert.equal(infrastructure.cloudInstance?.status, "ACTIVE");
+    assert.equal(infrastructure.cloudInstance?.credential?.status, "READY");
+    assert.notEqual(
+      infrastructure.cloudInstance?.credential?.ciphertext,
+      input.secret,
+    );
+    assert.equal(infrastructure.cloudInstance?.subscription?.status, "ACTIVE");
+    assert.equal(infrastructure.provisioningJobs.length, 0);
+    assert.equal(infrastructure.healthChecks.length, 1);
+  } finally {
+    if (previousCredentialKey === undefined) {
+      delete process.env.CREDENTIAL_ENCRYPTION_KEY;
+    } else {
+      process.env.CREDENTIAL_ENCRYPTION_KEY = previousCredentialKey;
+    }
+    await cleanupMobile(mobile);
+    await cleanupMobile(adminMobile);
+  }
 });
 
 test("payment uses the locked order quote when the plan price changes", async (t) => {

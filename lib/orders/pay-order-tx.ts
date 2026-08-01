@@ -150,8 +150,10 @@ export async function executePayOrderWithWalletTx(
   }
   const preprovisioned =
     plan.offerSource === "PREPROVISIONED_INVENTORY";
+  const manualAdmin = plan.offerSource === "MANUAL_ADMIN";
   assertPublicSaleEnabled({
     provider: plan.provider,
+    productKind: plan.productKind,
     offerSource: plan.offerSource,
   });
   const pricingConfig = await tx.providerPricingConfig.findUnique({
@@ -176,11 +178,12 @@ export async function executePayOrderWithWalletTx(
     tx.parchinPricingConfig.findUnique({ where: { level: parchinLevel } }),
   ]);
   const currentPricing =
-    pricingConfig?.enabled &&
-    productPricing?.enabled &&
+    (manualAdmin || (pricingConfig?.enabled && productPricing?.enabled)) &&
     parchin?.active
-      ? resolvePlanPricing(plan, pricingConfig, {
-          productMarkupBasisPoints: productPricing.markupBasisPoints,
+      ? resolvePlanPricing(plan, manualAdmin ? null : pricingConfig, {
+          productMarkupBasisPoints: manualAdmin
+            ? 0
+            : productPricing!.markupBasisPoints,
           taxBasisPoints: commerce?.taxBps ?? 1000,
           parchinLevel,
           parchinPriceRial: parchin.priceRial,
@@ -304,6 +307,45 @@ export async function executePayOrderWithWalletTx(
     return { order: paidOrder, infrastructureOrder: infra };
   }
 
+  if (manualAdmin) {
+    const decremented = await tx.providerCatalogItem.updateMany({
+      where: {
+        id: plan.catalogItem!.id,
+        source: "MANUAL_ADMIN",
+        active: true,
+        available: true,
+        status: "ACTIVE",
+        manualAvailableUnits: { gt: 0 },
+        manualPriceValidUntil: { gt: new Date() },
+      },
+      data: { manualAvailableUnits: { decrement: 1 } },
+    });
+    if (decremented.count !== 1) {
+      throw new WalletError(
+        "inventory_unavailable",
+        "موجودی این سرور آماده تمام شده است؛ مبلغی برداشت نشد.",
+      );
+    }
+    const remaining = await tx.providerCatalogItem.findUniqueOrThrow({
+      where: { id: plan.catalogItem!.id },
+      select: { manualAvailableUnits: true },
+    });
+    if ((remaining.manualAvailableUnits ?? 0) === 0) {
+      await tx.providerCatalogItem.update({
+        where: { id: plan.catalogItem!.id },
+        data: {
+          available: false,
+          status: "UNAVAILABLE",
+          unavailableAt: new Date(),
+        },
+      });
+      await tx.infrastructurePlan.update({
+        where: { id: plan.id },
+        data: { active: false, publicationStatus: "PAUSED" },
+      });
+    }
+  }
+
   const wallet = await ensureWalletForUser(userId, tx);
   if (wallet.status !== WalletStatus.ACTIVE) {
     throw new WalletError("wallet_frozen", "کیف پول فعال نیست.");
@@ -373,6 +415,7 @@ export async function executePayOrderWithWalletTx(
         provider: plan.provider,
         providerApiVersion: plan.providerApiVersion,
         productKind: plan.productKind,
+        offerSource: plan.offerSource,
         catalogItemId: currentPricing.catalogItemId,
         region: plan.regionCode,
         externalPlanId:
@@ -400,7 +443,9 @@ export async function executePayOrderWithWalletTx(
         : InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
       requiredFundingRial: preprovisioned
         ? 0n
-        : currentPricing.providerBasePriceRial,
+        : manualAdmin
+          ? 0n
+          : currentPricing.providerBasePriceRial,
       desiredInstanceName: `abrchin-${order.id.slice(-12)}-1`,
       productFlowState: "AWAITING_PAYMENT",
       productFlowRevision: order.productFlowRevision,

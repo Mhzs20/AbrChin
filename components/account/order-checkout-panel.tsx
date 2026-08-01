@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { useToast } from "@/components/product/toast";
 
@@ -19,6 +19,7 @@ export function OrderCheckoutPanel({
   const router = useRouter();
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
+  const topUpKey = useRef<string | null>(null);
 
   async function handlePurchase() {
     setLoading(true);
@@ -51,6 +52,30 @@ export function OrderCheckoutPanel({
           showToast("قیمت تغییر کرده؛ پیشنهاد تازه نمایش داده شد.");
           router.push(`/account/order/quote/${payBody.replacementQuote.id}`);
           router.refresh();
+          return;
+        }
+        if (
+          payRes.status === 402 &&
+          payBody.code === "insufficient_funds" &&
+          payBody.orderId
+        ) {
+          topUpKey.current ??= crypto.randomUUID();
+          const topUpRes = await fetch("/api/wallet/topups", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": topUpKey.current,
+            },
+            body: JSON.stringify({ orderId: payBody.orderId }),
+          });
+          const topUpBody = await topUpRes.json();
+          if (!topUpRes.ok || !topUpBody.redirectUrl) {
+            throw new Error(
+              topUpBody.error ?? "ایجاد پرداخت کسری کیف پول ممکن نشد.",
+            );
+          }
+          showToast("فقط کسری دقیق کیف پول از درگاه شارژ می‌شود.");
+          window.location.href = topUpBody.redirectUrl;
           return;
         }
         throw new Error(payBody.error ?? "پرداخت ناموفق بود");

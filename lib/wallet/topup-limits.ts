@@ -14,6 +14,14 @@ export const DEFAULT_TOPUP_SUGGESTIONS_TOMAN = [
 
 export const TOPUP_SUGGESTION_COUNT = 4;
 
+export function calculateWalletShortfallRial(
+  orderAmountRial: bigint,
+  availableBalanceRial: bigint,
+) {
+  const shortfall = orderAmountRial - availableBalanceRial;
+  return shortfall > 0n ? shortfall : 0n;
+}
+
 export function normalizeSuggestedAmounts(raw: unknown): number[] {
   if (!Array.isArray(raw) || raw.length !== TOPUP_SUGGESTION_COUNT) {
     throw new WalletError(

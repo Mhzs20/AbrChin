@@ -4,6 +4,7 @@ import { LedgerType, PrismaClient, WalletStatus } from "@prisma/client";
 
 import { assertPositiveIntegerToman, rialToToman, tomanToRial } from "../lib/money.ts";
 import {
+  calculateWalletShortfallRial,
   DEFAULT_TOPUP_SUGGESTIONS_TOMAN,
   normalizeSuggestedAmounts,
 } from "../lib/wallet/topup-limits.ts";
@@ -22,6 +23,12 @@ test("money converts toman/rial with integers only", () => {
   assert.equal(assertPositiveIntegerToman(50_000), 50_000);
   assert.throws(() => assertPositiveIntegerToman(12.5));
   assert.throws(() => assertPositiveIntegerToman(-1));
+});
+
+test("purchase top-up is exactly the wallet shortfall in IRR", () => {
+  assert.equal(calculateWalletShortfallRial(6_250_009n, 1_250_000n), 5_000_009n);
+  assert.equal(calculateWalletShortfallRial(6_250_009n, 6_250_009n), 0n);
+  assert.equal(calculateWalletShortfallRial(6_250_009n, 7_000_000n), 0n);
 });
 
 test("wallet credit debit and negative balance protection", async (t) => {

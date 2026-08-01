@@ -57,9 +57,9 @@ npm run test:all
 
 ## استقرار Production
 
-- تست‌ها روی Pull Request و هر Push به `main` خودکار اجرا می‌شوند.
-- استقرار فقط با اجرای دستی Workflow با نام `Deploy AbrChin production` شروع می‌شود.
-- Image همان Commit با SHA در GHCR ساخته می‌شود و روی سرور جایگزین نسخه‌ی قبلی می‌گردد.
+- تست و انتشار Image به‌صورت دستی و کنترل‌شده از روی SHA تأییدشده انجام می‌شود؛
+  این Repository به GitHub Actions یا Deploy خودکار متکی نیست.
+- Image همان Commit با Tag کوتاه SHA روی سرور ساخته و با Compose جایگزین می‌شود.
 - Compose شامل `web`، `worker` و `db` است؛ Postgres پورت عمومی ندارد.
 - سرویس وب فقط روی `127.0.0.1:3010` در دسترس است و Nginx ترافیک عمومی را عبور می‌دهد.
 - قبل از start، `prisma migrate deploy` در entrypoint اجرا می‌شود.
@@ -74,17 +74,9 @@ npm run test:all
 - `ops/deploy.sh`
 - `ops/nginx/abrchin.conf`
 
-Secrets لازم در GitHub Environment با نام `production`:
-
-- `PROD_SSH_HOST`
-- `PROD_SSH_PORT`
-- `PROD_SSH_USER`
-- `PROD_SSH_PRIVATE_KEY`
-- `PROD_SSH_KNOWN_HOSTS`
-
-متغیر اختیاری `PROD_HEALTHCHECK_URL` می‌تواند روی
-`https://abrchin.ir/api/readiness` تنظیم شود. `/api/health` فقط Liveness کانتینر
-وب است و برای Restart داخلی استفاده می‌شود.
+Runbook فعال‌سازی مرحله‌ای، Deploy با Termius و تست Founder در
+`docs/launch-runbook.md` است. `/api/health` فقط Liveness و `/api/readiness`
+Readiness وب، دیتابیس و Worker است.
 
 ## هویت بصری
 

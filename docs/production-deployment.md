@@ -38,19 +38,24 @@ Provider and Product Markup, Tax BPS and every Parchin price, and only then
 activate sellable plans. Keep `ARVAN_MUTATIONS_ENABLED=false`; the migration and
 Catalog Sync are read-only and never create Provider resources.
 
-Keep both operational gates disabled until their separate approvals:
+Keep every sale and mutation gate disabled until its separate Founder check:
 
 ```text
+PARSPACK_PUBLIC_SALE_ENABLED=false
+PARSPACK_MUTATIONS_ENABLED=false
 ARVAN_PUBLIC_SALE_ENABLED=false
+ARVAN_READY_PUBLIC_SALE_ENABLED=false
+ARVAN_CLOUD_PUBLIC_SALE_ENABLED=false
 ARVAN_MUTATIONS_ENABLED=false
+MANUAL_READY_PUBLIC_SALE_ENABLED=false
 ```
 
-The public-sale gate is checked again before every wallet debit. API-backed
-Arvan plans require both gates and a successful provider revalidation.
-Pre-provisioned inventory requires only the public-sale gate, but each real
-resource must have a fresh observation/health result and a unique encrypted
-`READY` credential registered by an admin. Registering catalog or inventory
-does not turn public sales on.
+Public-sale and product gates are checked again before every wallet debit.
+Provider-backed plans also require the matching Mutation gate and successful
+provider revalidation. Manual and pre-provisioned inventory use the independent
+Manual gate; a pre-provisioned Resource still requires a fresh observation,
+health result and unique encrypted `READY` credential. Registering catalog or
+inventory does not turn public sales on.
 
 ## Health endpoints
 

@@ -5,6 +5,7 @@ import { refreshRecommendationQuote } from "@/lib/recommendation/quote-service";
 import { prisma } from "@/lib/db";
 import { AuthRequiredError, requireCurrentUser } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/ledger";
+import { calculateWalletShortfallRial } from "@/lib/wallet/topup-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +73,35 @@ export async function POST(request: Request, { params }: Params) {
             })
           : null;
         return jsonError(error.message, status, { replacementQuote });
+      }
+      if (
+        error.code === "insufficient_funds" &&
+        authenticatedUserId &&
+        orderId
+      ) {
+        const [order, wallet] = await Promise.all([
+          prisma.serviceOrder.findFirst({
+            where: { id: orderId, userId: authenticatedUserId },
+            select: { amount: true },
+          }),
+          prisma.wallet.findUnique({
+            where: { userId: authenticatedUserId },
+            select: { availableBalance: true },
+          }),
+        ]);
+        const shortfallRial =
+          order && wallet
+            ? calculateWalletShortfallRial(
+                order.amount,
+                wallet.availableBalance,
+              )
+            : 0n;
+        return jsonError(error.message, status, {
+          code: error.code,
+          orderId,
+          shortfallRial: bigintToString(shortfallRial),
+          shortfallToman: bigintToString(rialToToman(shortfallRial)),
+        });
       }
       return jsonError(error.message, status);
     }

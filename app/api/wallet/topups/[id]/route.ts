@@ -15,6 +15,15 @@ export async function GET(_request: Request, { params }: Params) {
     const wallet = await ensureWalletForUser(user.id);
     const topUp = await prisma.walletTopUp.findFirst({
       where: { id, walletId: wallet.id },
+      include: {
+        purchaseOrder: {
+          select: {
+            id: true,
+            recommendationQuoteId: true,
+            productKind: true,
+          },
+        },
+      },
     });
     if (!topUp) return jsonError("درخواست شارژ پیدا نشد.", 404);
 
@@ -29,6 +38,9 @@ export async function GET(_request: Request, { params }: Params) {
         createdAt: topUp.createdAt.toISOString(),
         verifiedAt: topUp.verifiedAt?.toISOString() ?? null,
         expiresAt: topUp.expiresAt.toISOString(),
+        resumePath: topUp.purchaseOrder?.recommendationQuoteId
+          ? `/${topUp.purchaseOrder.productKind === "READY_INSTANT_SERVER" ? "ready-servers" : "cloud-servers"}/quote/${topUp.purchaseOrder.recommendationQuoteId}`
+          : null,
       },
     });
   } catch (error) {

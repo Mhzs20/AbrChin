@@ -85,3 +85,20 @@ test("ready-server pricing never creates a VM or performs a payment", async () =
   assert.match(catalog, /DeliveryMode\.MANAGED/);
   assert.match(catalog, /parchinIncluded: true/);
 });
+
+test("ready catalog supports ParsPack, Arvan fixed offers, and manual Admin delivery", async () => {
+  const [routing, plans, payment, delivery] = await Promise.all([
+    readFile("lib/infrastructure/provider-routing.ts", "utf8"),
+    readFile("lib/orders/plans.ts", "utf8"),
+    readFile("lib/orders/pay-order-tx.ts", "utf8"),
+    readFile("lib/infrastructure/manual-ready-delivery.ts", "utf8"),
+  ]);
+  assert.match(routing, /READY_INSTANT_SERVER/);
+  assert.match(routing, /InfrastructureProvider\.PARSPACK/);
+  assert.match(routing, /InfrastructureProvider\.ARVAN/);
+  assert.match(plans, /offerSource === "MANUAL_ADMIN"/);
+  assert.match(payment, /manualAvailableUnits: \{ decrement: 1 \}/);
+  assert.match(delivery, /MANUAL_ADMIN_DELIVERY/);
+  assert.match(delivery, /ONE_TIME_ENCRYPTED_CREDENTIAL/);
+  assert.doesNotMatch(delivery, /createServer|createInstance/);
+});
