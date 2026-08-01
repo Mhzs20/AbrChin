@@ -19,6 +19,8 @@ type PlanRow = {
   displayDuringProviderOutage: boolean;
   provider: string;
   catalogSource: string | null;
+  offerPriceValidUntil: string | null;
+  availableInventory: number;
   regionCode: string;
   externalPlanId: string | null;
   manualAvailableUnits: number | null;
@@ -57,6 +59,8 @@ const emptyForm = {
   instantDelivery: false,
   displayDuringProviderOutage: true,
   sortOrder: "0",
+  offerSource: "API_CATALOG",
+  offerPriceValidUntil: "",
 };
 
 const emptyManualForm = {
@@ -76,6 +80,7 @@ const emptyManualForm = {
   instantDelivery: true,
   publish: false,
   sortOrder: "0",
+  offerSource: "MANUAL_API_BACKED",
 };
 
 function toman(value: string | null) {
@@ -107,6 +112,9 @@ export function AdminPlansPanel({
   const [manualOpen, setManualOpen] = useState(false);
   const [manualEditing, setManualEditing] = useState<PlanRow | null>(null);
   const [manualForm, setManualForm] = useState(emptyManualForm);
+  const [inventoryPlan, setInventoryPlan] = useState<PlanRow | null>(null);
+  const [inventoryResourceId, setInventoryResourceId] = useState("");
+  const [inventoryReason, setInventoryReason] = useState("");
   const selectedCatalog = useMemo(
     () => catalogItems.find((item) => item.id === form.catalogItemId) ?? null,
     [catalogItems, form.catalogItemId],
@@ -137,6 +145,10 @@ export function AdminPlansPanel({
       instantDelivery: plan.instantDelivery,
       displayDuringProviderOutage: plan.displayDuringProviderOutage,
       sortOrder: String(plan.sortOrder),
+      offerSource: plan.catalogSource ?? "API_CATALOG",
+      offerPriceValidUntil: plan.offerPriceValidUntil
+        ? new Date(plan.offerPriceValidUntil).toISOString().slice(0, 16)
+        : "",
     });
     setError("");
     setOpen(true);
@@ -225,6 +237,43 @@ export function AdminPlansPanel({
     }
   }
 
+  async function registerInventory() {
+    if (!inventoryPlan) return;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(
+        "/api/admin/infrastructure/preprovisioned-inventory",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: JSON.stringify({
+            planId: inventoryPlan.id,
+            providerResourceId: inventoryResourceId,
+            reason: inventoryReason,
+          }),
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : "ثبت موجودی ممکن نشد.",
+        );
+        return;
+      }
+      window.location.reload();
+    } catch {
+      setError("ارتباط برقرار نشد.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const manualImages = manualOptions.images.filter(
     (image) => image.regionCode === manualForm.regionCode,
   );
@@ -261,13 +310,32 @@ export function AdminPlansPanel({
               {plan.title} <span className="product-tech">({plan.code})</span>
               {plan.catalogMappingStatus !== "MAPPED" ? " · بدون Mapping" : ""}
               {` · ${plan.publicationStatus}`}
-              {plan.catalogSource === "ADMIN_MANAGED" ? " · دستی" : ""}
+              {plan.catalogSource === "MANUAL_API_BACKED"
+                ? " · دستی متکی به API"
+                : plan.catalogSource === "PREPROVISIONED_INVENTORY"
+                  ? ` · موجودی واقعی: ${plan.availableInventory.toLocaleString("fa-IR")}`
+                  : " · API Catalog"}
             </span>
+            <span style={{ display: "flex", gap: 8 }}>
+            {plan.catalogSource === "PREPROVISIONED_INVENTORY" ? (
+              <button
+                type="button"
+                className="product-btn product-btn--primary"
+                onClick={() => {
+                  setInventoryPlan(plan);
+                  setInventoryResourceId("");
+                  setInventoryReason("");
+                  setError("");
+                }}
+              >
+                ثبت Resource واقعی
+              </button>
+            ) : null}
             <button
               type="button"
               className="product-btn product-btn--quiet"
               onClick={() => {
-                if (plan.catalogSource === "ADMIN_MANAGED") {
+                if (plan.catalogSource === "MANUAL_API_BACKED") {
                   setManualEditing(plan);
                   setManualForm({
                     ...emptyManualForm,
@@ -290,6 +358,8 @@ export function AdminPlansPanel({
                     instantDelivery: plan.instantDelivery,
                     publish: plan.publicationStatus === "PUBLISHED",
                     sortOrder: String(plan.sortOrder),
+                    offerSource:
+                      plan.catalogSource ?? "MANUAL_API_BACKED",
                   });
                   setError("");
                   setManualOpen(true);
@@ -300,6 +370,7 @@ export function AdminPlansPanel({
             >
               ویرایش
             </button>
+            </span>
           </li>
         ))}
       </ul>
@@ -351,6 +422,42 @@ export function AdminPlansPanel({
         <FormField id="plan-delivery" label="زمان تحویل تقریبی (دقیقه)">
           <input id="plan-delivery" type="number" min={1} value={form.deliveryEstimateMinutes} onChange={(event) => setForm((current) => ({ ...current, deliveryEstimateMinutes: event.target.value }))} required />
         </FormField>
+        <FormField id="plan-source" label="منبع فروش">
+          <select
+            id="plan-source"
+            value={form.offerSource}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                offerSource: event.target.value,
+                active:
+                  event.target.value === "PREPROVISIONED_INVENTORY"
+                    ? false
+                    : current.active,
+              }))
+            }
+          >
+            <option value="API_CATALOG">API Catalog</option>
+            <option value="MANUAL_API_BACKED">دستی، متکی به API</option>
+            <option value="PREPROVISIONED_INVENTORY">موجودی واقعی ازپیش‌ساخته</option>
+          </select>
+        </FormField>
+        {form.offerSource !== "API_CATALOG" ? (
+          <FormField id="plan-offer-expiry" label="اعتبار قیمت تا">
+            <input
+              id="plan-offer-expiry"
+              type="datetime-local"
+              value={form.offerPriceValidUntil}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  offerPriceValidUntil: event.target.value,
+                }))
+              }
+              required
+            />
+          </FormField>
+        ) : null}
         <FormField id="plan-sort" label="ترتیب نمایش">
           <input id="plan-sort" type="number" value={form.sortOrder} onChange={(event) => setForm((current) => ({ ...current, sortOrder: event.target.value }))} />
         </FormField>
@@ -377,8 +484,31 @@ export function AdminPlansPanel({
         onConfirm={submitManual}
       >
         <p className="product-tech">
-          این رکورد منبع API را جعل نمی‌کند؛ شناسه Plan واقعی آروان، قیمت، ظرفیت و تاریخ اعتبار آن با Audit ادمین ثبت می‌شود.
+          منبع «دستی متکی به API» هنگام قطعی فقط نمایش داده می‌شود. فقط
+          «موجودی واقعی» دارای Resource مشاهده‌شده و Health تازه می‌تواند بدون
+          Revalidation خریداری شود.
         </p>
+        {!manualEditing ? (
+          <FormField id="manual-source" label="نوع منبع">
+            <select
+              id="manual-source"
+              value={manualForm.offerSource}
+              onChange={(event) =>
+                setManualForm((current) => ({
+                  ...current,
+                  offerSource: event.target.value,
+                  publish:
+                    event.target.value === "PREPROVISIONED_INVENTORY"
+                      ? false
+                      : current.publish,
+                }))
+              }
+            >
+              <option value="MANUAL_API_BACKED">دستی، متکی به API</option>
+              <option value="PREPROVISIONED_INVENTORY">موجودی واقعی ازپیش‌ساخته</option>
+            </select>
+          </FormField>
+        ) : null}
         <FormField id="manual-code" label="کد داخلی"><input id="manual-code" value={manualForm.code} onChange={(event) => setManualForm((current) => ({ ...current, code: event.target.value }))} disabled={Boolean(manualEditing)} required /></FormField>
         <FormField id="manual-title" label="عنوان"><input id="manual-title" value={manualForm.title} onChange={(event) => setManualForm((current) => ({ ...current, title: event.target.value }))} required /></FormField>
         <FormField id="manual-description" label="توضیحات"><textarea id="manual-description" rows={2} value={manualForm.description} onChange={(event) => setManualForm((current) => ({ ...current, description: event.target.value }))} /></FormField>
@@ -403,12 +533,34 @@ export function AdminPlansPanel({
           <FormField id="manual-ram" label="RAM GB"><input id="manual-ram" type="number" min={1} value={manualForm.ramGb} disabled={Boolean(manualEditing)} onChange={(event) => setManualForm((current) => ({ ...current, ramGb: event.target.value }))} /></FormField>
           <FormField id="manual-storage" label="Storage GB"><input id="manual-storage" type="number" min={1} value={manualForm.storageGb} disabled={Boolean(manualEditing)} onChange={(event) => setManualForm((current) => ({ ...current, storageGb: event.target.value }))} /></FormField>
         </div>
-        <FormField id="manual-capacity" label="ظرفیت قابل فروش"><input id="manual-capacity" type="number" min={1} value={manualForm.availableUnits} onChange={(event) => setManualForm((current) => ({ ...current, availableUnits: event.target.value }))} /></FormField>
+        {manualForm.offerSource === "MANUAL_API_BACKED" ? (
+          <FormField id="manual-capacity" label="سقف مدیریتی (مجوز فروش هنگام قطعی نیست)"><input id="manual-capacity" type="number" min={1} value={manualForm.availableUnits} onChange={(event) => setManualForm((current) => ({ ...current, availableUnits: event.target.value }))} /></FormField>
+        ) : null}
         <FormField id="manual-price" label="قیمت پایه ماهانه (تومان)"><input id="manual-price" type="number" min={1} value={manualForm.basePriceToman} onChange={(event) => setManualForm((current) => ({ ...current, basePriceToman: event.target.value }))} required /></FormField>
         <FormField id="manual-expiry" label="اعتبار قیمت تا"><input id="manual-expiry" type="datetime-local" value={manualForm.priceValidUntil} onChange={(event) => setManualForm((current) => ({ ...current, priceValidUntil: event.target.value }))} required /></FormField>
         <FormField id="manual-delivery" label="زمان تحویل (دقیقه)"><input id="manual-delivery" type="number" min={1} value={manualForm.deliveryEstimateMinutes} onChange={(event) => setManualForm((current) => ({ ...current, deliveryEstimateMinutes: event.target.value }))} /></FormField>
         <label style={{ display: "flex", gap: 8 }}><input type="checkbox" checked={manualForm.instantDelivery} onChange={(event) => setManualForm((current) => ({ ...current, instantDelivery: event.target.checked }))} />تحویل فوری</label>
-        <label style={{ display: "flex", gap: 8 }}><input type="checkbox" checked={manualForm.publish} onChange={(event) => setManualForm((current) => ({ ...current, publish: event.target.checked }))} />همین حالا منتشر شود</label>
+        <label style={{ display: "flex", gap: 8 }}><input type="checkbox" checked={manualForm.publish} disabled={manualForm.offerSource === "PREPROVISIONED_INVENTORY" && !manualEditing} onChange={(event) => setManualForm((current) => ({ ...current, publish: event.target.checked }))} />همین حالا منتشر شود</label>
+        {error ? <p className="product-error">{error}</p> : null}
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={Boolean(inventoryPlan)}
+        title="ثبت و بررسی Resource واقعی"
+        confirmLabel="GET، Health Check و ثبت"
+        loading={loading}
+        onCancel={() => setInventoryPlan(null)}
+        onConfirm={registerInventory}
+      >
+        <p className="product-tech">
+          این عملیات فقط GET و TCP Health Check انجام می‌دهد؛ هیچ Resource جدیدی
+          ساخته نمی‌شود.
+        </p>
+        <FormField id="inventory-resource" label="Provider Resource ID">
+          <input id="inventory-resource" value={inventoryResourceId} onChange={(event) => setInventoryResourceId(event.target.value)} required />
+        </FormField>
+        <FormField id="inventory-reason" label="دلیل ثبت/بازبینی">
+          <textarea id="inventory-reason" value={inventoryReason} onChange={(event) => setInventoryReason(event.target.value)} rows={2} required />
+        </FormField>
         {error ? <p className="product-error">{error}</p> : null}
       </ConfirmDialog>
     </>

@@ -1,6 +1,7 @@
 import {
   DeliveryMode,
   InfrastructurePlanPublicationStatus,
+  InfrastructureOfferSource,
   InfrastructureProvider,
   ParchinLevel,
 } from "@prisma/client";
@@ -104,6 +105,32 @@ export async function POST(request: Request) {
     const catalogItemId =
       typeof body.catalogItemId === "string" ? body.catalogItemId.trim() : "";
     const imageCode = typeof body.imageCode === "string" ? body.imageCode.trim() : "";
+    const offerSource =
+      body.offerSource === "MANUAL_API_BACKED" ||
+      body.offerSource === "PREPROVISIONED_INVENTORY"
+        ? body.offerSource
+        : InfrastructureOfferSource.API_CATALOG;
+    const offerPriceValidUntil =
+      offerSource === InfrastructureOfferSource.API_CATALOG
+        ? null
+        : new Date(String(body.offerPriceValidUntil ?? ""));
+    if (
+      offerSource !== InfrastructureOfferSource.API_CATALOG &&
+      (!offerPriceValidUntil ||
+        Number.isNaN(offerPriceValidUntil.getTime()) ||
+        offerPriceValidUntil.getTime() <= Date.now())
+    ) {
+      return jsonError("اعتبار قیمت برای منبع دستی الزامی است.", 400);
+    }
+    if (
+      offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY &&
+      body.active !== false
+    ) {
+      return jsonError(
+        "ابتدا پلن موجودی واقعی را غیرفعال بسازید، Resource را ثبت کنید و سپس منتشر کنید.",
+        409,
+      );
+    }
     const [catalogItem, pricingConfig] = await Promise.all([
       prisma.providerCatalogItem.findUnique({ where: { id: catalogItemId } }),
       prisma.providerPricingConfig.findUnique({
@@ -198,6 +225,12 @@ export async function POST(request: Request) {
           instantDelivery: body.instantDelivery === true,
           displayDuringProviderOutage:
             body.displayDuringProviderOutage !== false,
+          offerSource,
+          offerPriceValidUntil,
+          offerLastVerifiedAt:
+            offerSource === InfrastructureOfferSource.API_CATALOG
+              ? null
+              : new Date(),
           sortOrder: Number(body.sortOrder ?? 0),
           catalogItemId: catalogItem.id,
           catalogMappingStatus: "MAPPED",

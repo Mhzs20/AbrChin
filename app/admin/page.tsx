@@ -54,6 +54,7 @@ export default async function AdminDashboardPage() {
           <StatCard label="Zibal" value={<StatusBadge label={system.zibal.enabled ? "فعال" : "غیرفعال"} tone={system.zibal.enabled ? "success" : "neutral"} />} />
           <StatCard label="ZarinPal" value={<StatusBadge label={system.zarinpal.enabled ? "فعال" : "غیرفعال"} tone={system.zarinpal.enabled ? "success" : "neutral"} />} />
           <StatCard label="Kavenegar" value={<StatusBadge label={system.kavenegar.configured ? "سالم" : "تنظیم نشده"} tone={system.kavenegar.configured ? "success" : "warning"} />} />
+          <StatCard label="هشدار عملیاتی SMS" value={<StatusBadge label={system.kavenegar.operationalAlerts.status} tone={system.kavenegar.operationalAlerts.status === "READY" ? "success" : "warning"} />} />
           <StatCard label="PostgreSQL" value={<StatusBadge label={system.postgres.configured ? "سالم" : "خطا"} tone={system.postgres.configured ? "success" : "danger"} />} />
           <StatCard label="ParsPack" value={<StatusBadge label={system.parspack.message} tone={system.parspack.status === "healthy" ? "success" : "warning"} />} />
           <StatCard label="Worker Provisioning" value={<StatusBadge label={system.worker.label} tone={system.worker.status === "healthy" ? "success" : system.worker.status === "stale" ? "warning" : "danger"} />} />

@@ -8,6 +8,8 @@ const multiProviderMigrationPath =
   "prisma/migrations/20260730160000_multi_provider_routing/migration.sql";
 const adminCatalogMigrationPath =
   "prisma/migrations/20260801120000_admin_catalog_resilience/migration.sql";
+const preprovisionedInventoryMigrationPath =
+  "prisma/migrations/20260801210000_preprovisioned_inventory_safety/migration.sql";
 
 test("catalog pricing migration is additive and preserves financial history", async () => {
   const migration = await readFile(migrationPath, "utf8");
@@ -73,4 +75,28 @@ test("multi-provider migration preserves paid financial snapshots and adds regio
     /'legacy-parspack-ready', 'PARSPACK', 'v1', 'READY_INSTANT_SERVER',\s*0,\s*"enabled"/,
     "legacy provider markup must not be copied into product markup",
   );
+});
+
+test("preprovisioned inventory migration is additive and commerce-immutable", async () => {
+  const migration = await readFile(
+    preprovisionedInventoryMigrationPath,
+    "utf8",
+  );
+  assert.match(migration, /CREATE TABLE "PreprovisionedInventoryItem"/);
+  assert.match(
+    migration,
+    /provider_apiVersion_providerResourceId_key/,
+  );
+  assert.match(migration, /ADD COLUMN "preprovisionedInventoryItemId"/);
+  assert.doesNotMatch(migration, /RENAME VALUE/);
+  assert.match(migration, /CREATE TYPE "InfrastructureOfferSource"/);
+  assert.doesNotMatch(migration, /\bDROP TABLE\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM/i);
+  assert.doesNotMatch(migration, /UPDATE "ServiceOrder"/);
+  assert.doesNotMatch(migration, /UPDATE "RecommendationQuote"/);
+  assert.doesNotMatch(migration, /UPDATE "InfrastructureOrder"/);
+  assert.doesNotMatch(migration, /UPDATE "Wallet"/);
+  assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
+  assert.doesNotMatch(migration, /UPDATE "Payment/);
 });

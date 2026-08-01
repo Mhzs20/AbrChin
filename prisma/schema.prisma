@@ -134,8 +134,30 @@ enum ProviderRegionConfigSource {
 }
 
 enum ProviderCatalogItemSource {
-  PROVIDER_API
-  ADMIN_MANAGED
+  API_CATALOG       @map("PROVIDER_API")
+  MANUAL_API_BACKED @map("ADMIN_MANAGED")
+}
+
+enum InfrastructureOfferSource {
+  API_CATALOG
+  MANUAL_API_BACKED
+  PREPROVISIONED_INVENTORY
+}
+
+enum PreprovisionedInventoryStatus {
+  AVAILABLE
+  RESERVED
+  ASSIGNED
+  DELIVERED
+  UNHEALTHY
+  STALE
+  DISABLED
+}
+
+enum PreprovisionedHealthStatus {
+  HEALTHY
+  UNHEALTHY
+  UNKNOWN
 }
 
 enum InfrastructurePlanPublicationStatus {
@@ -297,6 +319,8 @@ model User {
   providerRegionsCreated      ProviderRegionConfig[]        @relation("ProviderRegionCreatedBy")
   providerRegionsUpdated      ProviderRegionConfig[]        @relation("ProviderRegionUpdatedBy")
   catalogItemsManuallyUpdated ProviderCatalogItem[]         @relation("CatalogItemManualUpdatedBy")
+  inventoryItemsCreated       PreprovisionedInventoryItem[] @relation("InventoryCreatedBy")
+  inventoryItemsUpdated       PreprovisionedInventoryItem[] @relation("InventoryUpdatedBy")
   alertSubscription           AdminAlertSubscription?
 }
 
@@ -437,33 +461,35 @@ model PaymentGatewayAuditLog {
 }
 
 model ServiceOrder {
-  id                    String                     @id @default(cuid())
-  userId                String
-  title                 String
-  description           String?
-  amount                BigInt
-  currency              String                     @default("IRR")
-  status                ServiceOrderStatus         @default(DRAFT)
-  planCode              String?
-  planId                String?
-  planSnapshot          Json?
-  recommendationQuoteId String?                    @unique
-  quoteExpiresAt        DateTime?
-  provider              InfrastructureProvider?
-  providerApiVersion    String?
-  productKind           InfrastructureProductKind?
-  parchinLevel          ParchinLevel?
-  productFlowState      String?
-  productFlowRevision   Int                        @default(0)
-  paidAt                DateTime?
-  createdAt             DateTime                   @default(now())
-  updatedAt             DateTime                   @updatedAt
-  user                  User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan                  InfrastructurePlan?        @relation(fields: [planId], references: [id], onDelete: SetNull)
-  recommendationQuote   RecommendationQuote?       @relation(fields: [recommendationQuoteId], references: [id], onDelete: SetNull)
-  infrastructureOrder   InfrastructureOrder?
-  subscription          ServiceSubscription?
-  adminCommandReceipts  AdminCommandReceipt[]
+  id                     String                        @id @default(cuid())
+  userId                 String
+  title                  String
+  description            String?
+  amount                 BigInt
+  currency               String                        @default("IRR")
+  status                 ServiceOrderStatus            @default(DRAFT)
+  planCode               String?
+  planId                 String?
+  planSnapshot           Json?
+  recommendationQuoteId  String?                       @unique
+  quoteExpiresAt         DateTime?
+  provider               InfrastructureProvider?
+  providerApiVersion     String?
+  productKind            InfrastructureProductKind?
+  parchinLevel           ParchinLevel?
+  productFlowState       String?
+  productFlowRevision    Int                           @default(0)
+  paidAt                 DateTime?
+  createdAt              DateTime                      @default(now())
+  updatedAt              DateTime                      @updatedAt
+  user                   User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                   InfrastructurePlan?           @relation(fields: [planId], references: [id], onDelete: SetNull)
+  recommendationQuote    RecommendationQuote?          @relation(fields: [recommendationQuoteId], references: [id], onDelete: SetNull)
+  infrastructureOrder    InfrastructureOrder?
+  subscription           ServiceSubscription?
+  adminCommandReceipts   AdminCommandReceipt[]
+  reservedInventoryItems PreprovisionedInventoryItem[] @relation("InventoryReservedOrder")
+  assignedInventoryItems PreprovisionedInventoryItem[] @relation("InventoryAssignedOrder")
 
   @@index([userId, createdAt])
   @@index([status])
@@ -503,11 +529,11 @@ model RecommendationSession {
 }
 
 model RecommendationQuote {
-  id                            String                     @id @default(cuid())
+  id                            String                       @id @default(cuid())
   sessionId                     String
   planId                        String
   role                          RecommendationQuoteRole
-  status                        RecommendationQuoteStatus  @default(ACTIVE)
+  status                        RecommendationQuoteStatus    @default(ACTIVE)
   score                         Float
   scoreBreakdown                Json
   reasons                       Json
@@ -546,65 +572,74 @@ model RecommendationQuote {
   quotedAt                      DateTime?
   catalogVersion                String?
   providerPayloadHash           String?
+  preprovisionedInventoryItemId String?
   expiresAt                     DateTime
   selectedAt                    DateTime?
   convertedAt                   DateTime?
-  createdAt                     DateTime                   @default(now())
-  updatedAt                     DateTime                   @updatedAt
-  session                       RecommendationSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  plan                          InfrastructurePlan         @relation(fields: [planId], references: [id], onDelete: Restrict)
-  catalogItem                   ProviderCatalogItem?       @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  createdAt                     DateTime                     @default(now())
+  updatedAt                     DateTime                     @updatedAt
+  session                       RecommendationSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  plan                          InfrastructurePlan           @relation(fields: [planId], references: [id], onDelete: Restrict)
+  catalogItem                   ProviderCatalogItem?         @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
   serviceOrder                  ServiceOrder?
+  preprovisionedInventoryItem   PreprovisionedInventoryItem? @relation("QuoteInventorySnapshot", fields: [preprovisionedInventoryItemId], references: [id], onDelete: Restrict)
+  reservedInventoryItem         PreprovisionedInventoryItem? @relation("InventoryReservedQuote")
 
   @@index([sessionId, role])
   @@index([sessionId, status])
   @@index([planId, expiresAt])
   @@index([catalogItemId, expiresAt])
   @@index([status, expiresAt])
+  @@index([preprovisionedInventoryItemId])
 }
 
 model InfrastructurePlan {
-  id                          String                              @id @default(cuid())
-  code                        String                              @unique
-  title                       String
-  description                 String?
-  provider                    InfrastructureProvider
-  providerApiVersion          String                              @default("v1")
-  productKind                 InfrastructureProductKind           @default(READY_INSTANT_SERVER)
-  regionCode                  String
-  sizeCode                    String
-  imageCode                   String
-  deliveryMode                DeliveryMode
-  vcpu                        Int?
-  ramGb                       Int?
-  storageGb                   Int?
-  salePriceRial               BigInt
-  renewalPriceRial            BigInt?
-  estimatedProviderCostRial   BigInt
-  deliveryEstimateMinutes     Int                                 @default(15)
-  parchinIncluded             Boolean                             @default(false)
-  minimumParchinLevel         ParchinLevel?
-  active                      Boolean                             @default(true)
-  publicationStatus           InfrastructurePlanPublicationStatus @default(DRAFT)
-  instantDelivery             Boolean                             @default(false)
-  displayDuringProviderOutage Boolean                             @default(true)
-  sortOrder                   Int                                 @default(0)
-  catalogItemId               String?
-  catalogMappingStatus        CatalogMappingStatus                @default(UNMAPPED)
-  catalogMappedAt             DateTime?
-  createdAt                   DateTime                            @default(now())
-  updatedAt                   DateTime                            @updatedAt
-  updatedById                 String?
-  updatedBy                   User?                               @relation("PlanUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  catalogItem                 ProviderCatalogItem?                @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
-  orders                      ServiceOrder[]
-  recommendationQuotes        RecommendationQuote[]
-  infrastructureOrders        InfrastructureOrder[]
-  subscriptions               ServiceSubscription[]
+  id                           String                              @id @default(cuid())
+  code                         String                              @unique
+  title                        String
+  description                  String?
+  provider                     InfrastructureProvider
+  providerApiVersion           String                              @default("v1")
+  productKind                  InfrastructureProductKind           @default(READY_INSTANT_SERVER)
+  regionCode                   String
+  sizeCode                     String
+  imageCode                    String
+  deliveryMode                 DeliveryMode
+  vcpu                         Int?
+  ramGb                        Int?
+  storageGb                    Int?
+  salePriceRial                BigInt
+  renewalPriceRial             BigInt?
+  estimatedProviderCostRial    BigInt
+  deliveryEstimateMinutes      Int                                 @default(15)
+  parchinIncluded              Boolean                             @default(false)
+  minimumParchinLevel          ParchinLevel?
+  active                       Boolean                             @default(true)
+  publicationStatus            InfrastructurePlanPublicationStatus @default(DRAFT)
+  instantDelivery              Boolean                             @default(false)
+  displayDuringProviderOutage  Boolean                             @default(true)
+  offerSource                  InfrastructureOfferSource           @default(API_CATALOG)
+  offerPriceValidUntil         DateTime?
+  offerLastVerifiedAt          DateTime?
+  sortOrder                    Int                                 @default(0)
+  catalogItemId                String?
+  catalogMappingStatus         CatalogMappingStatus                @default(UNMAPPED)
+  catalogMappedAt              DateTime?
+  createdAt                    DateTime                            @default(now())
+  updatedAt                    DateTime                            @updatedAt
+  updatedById                  String?
+  updatedBy                    User?                               @relation("PlanUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  catalogItem                  ProviderCatalogItem?                @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  orders                       ServiceOrder[]
+  recommendationQuotes         RecommendationQuote[]
+  infrastructureOrders         InfrastructureOrder[]
+  subscriptions                ServiceSubscription[]
+  preprovisionedInventoryItems PreprovisionedInventoryItem[]
 
   @@index([active, sortOrder])
   @@index([provider, active])
   @@index([provider, productKind, publicationStatus, sortOrder])
+  @@index([provider, productKind, offerSource, publicationStatus])
   @@index([catalogItemId])
   @@index([catalogMappingStatus, active])
 }
@@ -643,6 +678,8 @@ model InfrastructureOrder {
   adminCommandReceipts                AdminCommandReceipt[]
   notificationOutbox                  ProvisioningNotificationOutbox[]
   healthRetryDispatches               HealthRetryDispatch[]
+  preprovisionedInventoryItemId       String?                          @unique
+  preprovisionedInventoryItem         PreprovisionedInventoryItem?     @relation(fields: [preprovisionedInventoryItemId], references: [id], onDelete: Restrict)
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -1008,48 +1045,49 @@ model ProviderCatalogState {
 }
 
 model ProviderCatalogItem {
-  id                      String                    @id @default(cuid())
-  provider                InfrastructureProvider
-  apiVersion              String                    @default("v1")
-  productKind             InfrastructureProductKind @default(READY_INSTANT_SERVER)
-  source                  ProviderCatalogItemSource @default(PROVIDER_API)
-  regionCode              String
-  sizeCode                String
-  externalPlanId          String?
-  externalKey             String?                   @unique
-  sizeName                String
-  compatibleImageCodes    Json
-  vcpu                    Int?
-  ramMb                   Int?
-  diskGb                  Int?
-  transfer                String?
-  available               Boolean                   @default(false)
-  active                  Boolean                   @default(true)
-  status                  ProviderCatalogStatus     @default(ACTIVE)
-  priceHourlyAmount       BigInt?
-  priceMonthlyAmount      BigInt?
-  priceScale              Int                       @default(6)
-  currencyCode            String?
-  amountUnit              String?
-  providerHourlyPriceIrr  BigInt?
-  providerMonthlyPriceIrr BigInt?
-  lastSyncedAt            DateTime
-  lastSeenAt              DateTime?
-  rawUpdatedAt            DateTime?
-  rawPayload              Json?
-  payloadHash             String?
-  catalogVersion          String?
-  unavailableAt           DateTime?
-  manualAvailableUnits    Int?
-  manualPriceValidUntil   DateTime?
-  manualLastVerifiedAt    DateTime?
-  manualUpdatedById       String?
-  createdAt               DateTime                  @default(now())
-  updatedAt               DateTime                  @updatedAt
-  plans                   InfrastructurePlan[]
-  recommendationQuotes    RecommendationQuote[]
-  renewalQuotes           ServiceRenewalQuote[]
-  manualUpdatedBy         User?                     @relation("CatalogItemManualUpdatedBy", fields: [manualUpdatedById], references: [id], onDelete: SetNull)
+  id                           String                        @id @default(cuid())
+  provider                     InfrastructureProvider
+  apiVersion                   String                        @default("v1")
+  productKind                  InfrastructureProductKind     @default(READY_INSTANT_SERVER)
+  source                       ProviderCatalogItemSource     @default(API_CATALOG)
+  regionCode                   String
+  sizeCode                     String
+  externalPlanId               String?
+  externalKey                  String?                       @unique
+  sizeName                     String
+  compatibleImageCodes         Json
+  vcpu                         Int?
+  ramMb                        Int?
+  diskGb                       Int?
+  transfer                     String?
+  available                    Boolean                       @default(false)
+  active                       Boolean                       @default(true)
+  status                       ProviderCatalogStatus         @default(ACTIVE)
+  priceHourlyAmount            BigInt?
+  priceMonthlyAmount           BigInt?
+  priceScale                   Int                           @default(6)
+  currencyCode                 String?
+  amountUnit                   String?
+  providerHourlyPriceIrr       BigInt?
+  providerMonthlyPriceIrr      BigInt?
+  lastSyncedAt                 DateTime
+  lastSeenAt                   DateTime?
+  rawUpdatedAt                 DateTime?
+  rawPayload                   Json?
+  payloadHash                  String?
+  catalogVersion               String?
+  unavailableAt                DateTime?
+  manualAvailableUnits         Int?
+  manualPriceValidUntil        DateTime?
+  manualLastVerifiedAt         DateTime?
+  manualUpdatedById            String?
+  createdAt                    DateTime                      @default(now())
+  updatedAt                    DateTime                      @updatedAt
+  plans                        InfrastructurePlan[]
+  recommendationQuotes         RecommendationQuote[]
+  renewalQuotes                ServiceRenewalQuote[]
+  manualUpdatedBy              User?                         @relation("CatalogItemManualUpdatedBy", fields: [manualUpdatedById], references: [id], onDelete: SetNull)
+  preprovisionedInventoryItems PreprovisionedInventoryItem[]
 
   @@unique([provider, apiVersion, regionCode, externalPlanId])
   @@index([provider, available, active])
@@ -1057,6 +1095,55 @@ model ProviderCatalogItem {
   @@index([provider, apiVersion, source, status])
   @@index([provider, lastSyncedAt])
   @@index([manualUpdatedById])
+}
+
+model PreprovisionedInventoryItem {
+  id                   String                        @id @default(cuid())
+  catalogItemId        String
+  planId               String
+  provider             InfrastructureProvider
+  apiVersion           String                        @default("v1")
+  providerResourceId   String
+  regionCode           String
+  externalPlanId       String
+  externalImageId      String
+  observedState        String
+  observedIpv4         String?
+  observedNetworkId    String?
+  observedSecurityId   String?
+  lastObservedAt       DateTime
+  lastHealthCheckedAt  DateTime?
+  healthStatus         PreprovisionedHealthStatus    @default(UNKNOWN)
+  inventoryStatus      PreprovisionedInventoryStatus @default(STALE)
+  reservedByQuoteId    String?                       @unique
+  reservedByOrderId    String?                       @unique
+  reservedRevision     Int?
+  reservedAt           DateTime?
+  reservationExpiresAt DateTime?
+  assignedOrderId      String?                       @unique
+  assignedAt           DateTime?
+  deliveredAt          DateTime?
+  disabledAt           DateTime?
+  adminAudit           Json?
+  createdById          String?
+  updatedById          String?
+  createdAt            DateTime                      @default(now())
+  updatedAt            DateTime                      @updatedAt
+  catalogItem          ProviderCatalogItem           @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  plan                 InfrastructurePlan            @relation(fields: [planId], references: [id], onDelete: Restrict)
+  reservedByQuote      RecommendationQuote?          @relation("InventoryReservedQuote", fields: [reservedByQuoteId], references: [id], onDelete: SetNull)
+  reservedByOrder      ServiceOrder?                 @relation("InventoryReservedOrder", fields: [reservedByOrderId], references: [id], onDelete: SetNull)
+  assignedOrder        ServiceOrder?                 @relation("InventoryAssignedOrder", fields: [assignedOrderId], references: [id], onDelete: Restrict)
+  infrastructureOrder  InfrastructureOrder?
+  quotedBy             RecommendationQuote[]         @relation("QuoteInventorySnapshot")
+  createdBy            User?                         @relation("InventoryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy            User?                         @relation("InventoryUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([provider, apiVersion, providerResourceId])
+  @@index([planId, inventoryStatus, healthStatus])
+  @@index([catalogItemId, inventoryStatus])
+  @@index([reservationExpiresAt])
+  @@index([assignedOrderId])
 }
 
 model ProviderRegionConfig {

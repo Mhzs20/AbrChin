@@ -10,6 +10,8 @@ import {
   RecommendationQuoteStatus,
   ServiceOrderStatus,
   WalletStatus,
+  CloudInstanceStatus,
+  ProvisioningJobStatus,
   type Prisma,
 } from "@prisma/client";
 
@@ -25,6 +27,10 @@ import {
   assertProductFlowOwnerStateTx,
   transitionProductFlowTx,
 } from "@/lib/product-flow/service";
+import {
+  assignReservedInventoryTx,
+  lockReservedInventoryForPaymentTx,
+} from "@/lib/infrastructure/preprovisioned-inventory";
 
 export type PayOrderTxOptions = {
   /** Test-only: throw after debit ledger to verify full rollback. */
@@ -138,7 +144,9 @@ export async function executePayOrderWithWalletTx(
       "ارائه‌دهندهٔ قفل‌شدهٔ سفارش تغییر کرده است.",
     );
   }
-  if (plan.provider === "ARVAN") {
+  const preprovisioned =
+    plan.offerSource === "PREPROVISIONED_INVENTORY";
+  if (plan.provider === "ARVAN" && !preprovisioned) {
     // The v1 lifecycle contract and fake orchestrator are implemented, but
     // real mutations are intentionally outside this task. Never debit a
     // customer for an Arvan order until the approved staging rollout wires
@@ -239,6 +247,34 @@ export async function executePayOrderWithWalletTx(
     );
   }
 
+  const inventory = preprovisioned
+    ? order.recommendationQuote?.preprovisionedInventoryItemId
+      ? await lockReservedInventoryForPaymentTx(tx, {
+          inventoryItemId:
+            order.recommendationQuote.preprovisionedInventoryItemId,
+          quoteId: order.recommendationQuote.id,
+          orderId: order.id,
+          revision: order.productFlowRevision,
+        })
+      : null
+    : null;
+  if (
+    preprovisioned &&
+    (!inventory ||
+      inventory.provider !== plan.provider ||
+      inventory.apiVersion !== plan.providerApiVersion ||
+      inventory.regionCode !== plan.regionCode ||
+      inventory.externalPlanId !==
+        (plan.catalogItem?.externalPlanId ?? plan.sizeCode) ||
+      inventory.externalImageId !==
+        order.recommendationQuote?.externalImageId)
+  ) {
+    throw new WalletError(
+      "inventory_snapshot_mismatch",
+      "موجودی رزروشده با Snapshot سفارش یکسان نیست؛ مبلغی برداشت نشد.",
+    );
+  }
+
   const amountRial = order.amount;
   const idempotencyKey = `order_pay_${order.id}`;
 
@@ -336,13 +372,20 @@ export async function executePayOrderWithWalletTx(
           order.recommendationQuote?.deliveryConfigurationSnapshot ??
           null,
         parchinLevel: currentPricing.parchinLevel,
+        preprovisionedInventoryItemId: inventory?.id ?? null,
+        providerResourceId: inventory?.providerResourceId ?? null,
       },
       deliveryMode: plan.deliveryMode,
-      status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
-      requiredFundingRial: currentPricing.providerBasePriceRial,
+      status: preprovisioned
+        ? InfrastructureOrderStatus.QUEUED
+        : InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
+      requiredFundingRial: preprovisioned
+        ? 0n
+        : currentPricing.providerBasePriceRial,
       desiredInstanceName: `abrchin-${order.id.slice(-12)}-1`,
       productFlowState: "AWAITING_PAYMENT",
       productFlowRevision: order.productFlowRevision,
+      preprovisionedInventoryItemId: inventory?.id ?? null,
     },
   });
   await transitionProductFlowTx(tx, {
@@ -358,15 +401,70 @@ export async function executePayOrderWithWalletTx(
     idempotencyKey: `order-paid:${order.id}`,
     actorUserId: userId,
   });
-  await tx.adminNotification.create({
-    data: {
-      type: AdminNotificationType.ORDER_WAITING_PROVIDER_FUNDING,
-      infrastructureOrderId: infrastructureOrder.id,
-      title: "سفارش منتظر تأمین زیرساخت",
-      message: `سفارش ${order.title} پرداخت شد و منتظر تأمین زیرساخت است.`,
-      status: AdminNotificationStatus.UNREAD,
-    },
-  });
+  if (inventory && order.recommendationQuote) {
+    await assignReservedInventoryTx(tx, {
+      inventoryItemId: inventory.id,
+      quoteId: order.recommendationQuote.id,
+      orderId: order.id,
+    });
+    await tx.cloudInstance.create({
+      data: {
+        infrastructureOrderId: infrastructureOrder.id,
+        userId,
+        provider: plan.provider,
+        providerApiVersion: plan.providerApiVersion,
+        providerInstanceId: inventory.providerResourceId,
+        name: `abrchin-inventory-${inventory.id.slice(-10)}`,
+        region: inventory.regionCode,
+        size: inventory.externalPlanId,
+        image: inventory.externalImageId,
+        deliveryMode: plan.deliveryMode,
+        ipv4: inventory.observedIpv4,
+        providerState: inventory.observedState,
+        networkId: inventory.observedNetworkId,
+        securityId: inventory.observedSecurityId,
+        providerObservedAt: inventory.lastObservedAt,
+        status: CloudInstanceStatus.PENDING,
+      },
+    });
+    await transitionProductFlowTx(tx, {
+      owner: {
+        recommendationSessionId:
+          order.recommendationQuote.sessionId,
+        serviceOrderId: order.id,
+        infrastructureOrderId: infrastructureOrder.id,
+      },
+      from: "PAID",
+      to: "PROVISIONING_SUBMITTED",
+      reason: "preprovisioned_inventory_assigned",
+      idempotencyKey: `preprovisioned-submitted:${order.id}`,
+      actorUserId: userId,
+    });
+    await tx.provisioningJob.create({
+      data: {
+        infrastructureOrderId: infrastructureOrder.id,
+        operation: "adopt_preprovisioned_inventory",
+        status: ProvisioningJobStatus.QUEUED,
+        idempotencyKey: `preprovisioned-adopt:${inventory.id}:${order.id}`,
+        phase: "PROVIDER_RESULT_PERSISTED",
+        providerResourceId: inventory.providerResourceId,
+        jobMetadata: {
+          preprovisionedInventoryItemId: inventory.id,
+          createAllowed: false,
+        },
+      },
+    });
+  } else {
+    await tx.adminNotification.create({
+      data: {
+        type: AdminNotificationType.ORDER_WAITING_PROVIDER_FUNDING,
+        infrastructureOrderId: infrastructureOrder.id,
+        title: "سفارش منتظر تأمین زیرساخت",
+        message: `سفارش ${order.title} پرداخت شد و منتظر تأمین زیرساخت است.`,
+        status: AdminNotificationStatus.UNREAD,
+      },
+    });
+  }
 
   if (order.recommendationQuote) {
     await tx.recommendationQuote.update({

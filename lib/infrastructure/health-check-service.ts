@@ -289,6 +289,20 @@ async function activateDeliveredServiceTx(
     where: { id: order.id },
     data: { status: InfrastructureOrderStatus.ACTIVE },
   });
+  if (order.preprovisionedInventoryItemId) {
+    await tx.preprovisionedInventoryItem.updateMany({
+      where: {
+        id: order.preprovisionedInventoryItemId,
+        assignedOrderId: order.serviceOrderId,
+      },
+      data: {
+        inventoryStatus: "DELIVERED",
+        healthStatus: "HEALTHY",
+        lastHealthCheckedAt: deliveredAt,
+        deliveredAt,
+      },
+    });
+  }
   await tx.provisioningNotificationOutbox.upsert({
     where: { idempotencyKey: `instance-active:${order.id}` },
     update: {},
@@ -685,6 +699,19 @@ export async function runInfrastructureHealthCheck(input: {
       },
     });
     if (!reachable) {
+      if (order.preprovisionedInventoryItemId) {
+        await tx.preprovisionedInventoryItem.updateMany({
+          where: {
+            id: order.preprovisionedInventoryItemId,
+            assignedOrderId: order.serviceOrderId,
+          },
+          data: {
+            inventoryStatus: "UNHEALTHY",
+            healthStatus: "UNHEALTHY",
+            lastHealthCheckedAt: new Date(),
+          },
+        });
+      }
       await transitionProductFlowTx(tx, {
         owner: owner(order),
         from: "HEALTH_CHECKING",
@@ -730,6 +757,19 @@ export async function runInfrastructureHealthCheck(input: {
       where: { id: instance.id },
       data: { healthCheckedAt: new Date() },
     });
+    if (order.preprovisionedInventoryItemId) {
+      await tx.preprovisionedInventoryItem.updateMany({
+        where: {
+          id: order.preprovisionedInventoryItemId,
+          assignedOrderId: order.serviceOrderId,
+        },
+        data: {
+          inventoryStatus: "ASSIGNED",
+          healthStatus: "HEALTHY",
+          lastHealthCheckedAt: new Date(),
+        },
+      });
+    }
     await transitionProductFlowTx(tx, {
       owner: owner(order),
       from: "HEALTH_CHECKING",

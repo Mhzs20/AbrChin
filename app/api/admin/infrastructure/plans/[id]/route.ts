@@ -1,4 +1,8 @@
-import { DeliveryMode, InfrastructurePlanPublicationStatus } from "@prisma/client";
+import {
+  DeliveryMode,
+  InfrastructurePlanPublicationStatus,
+  InfrastructureOfferSource,
+} from "@prisma/client";
 
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
@@ -11,6 +15,7 @@ import {
 } from "@/lib/pricing/plan-pricing";
 import { readRequestMeta } from "@/lib/session";
 import { isRegionEnabledForSale } from "@/lib/infrastructure/provider-region-config";
+import { countAvailableInventoryByPlan } from "@/lib/infrastructure/preprovisioned-inventory";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +81,26 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       : null;
     const requestedActive =
       typeof body.active === "boolean" ? body.active : before.active;
+    const offerSource =
+      body.offerSource === "API_CATALOG" ||
+      body.offerSource === "MANUAL_API_BACKED" ||
+      body.offerSource === "PREPROVISIONED_INVENTORY"
+        ? body.offerSource
+        : before.offerSource;
+    const offerPriceValidUntil =
+      offerSource === InfrastructureOfferSource.API_CATALOG
+        ? null
+        : body.offerPriceValidUntil == null
+          ? before.offerPriceValidUntil
+          : new Date(String(body.offerPriceValidUntil));
+    if (
+      offerSource !== InfrastructureOfferSource.API_CATALOG &&
+      (!offerPriceValidUntil ||
+        Number.isNaN(offerPriceValidUntil.getTime()) ||
+        offerPriceValidUntil.getTime() <= Date.now())
+    ) {
+      return jsonError("اعتبار قیمت برای منبع دستی الزامی است.", 400);
+    }
     if (requestedActive && !pricing) {
       return jsonError("Catalog Item ناموجود یا فاقد قرارداد قیمت معتبر است.", 400);
     }
@@ -89,6 +114,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       }))
     ) {
       return jsonError("Region برای فروش فعال نیست.", 409);
+    }
+    if (
+      requestedActive &&
+      offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY
+    ) {
+      const inventoryCount =
+        (await countAvailableInventoryByPlan([before.id])).get(before.id) ??
+        0;
+      if (inventoryCount === 0) {
+        return jsonError(
+          "بدون Inventory Row سالم و واقعی، انتشار این پلن مجاز نیست.",
+          409,
+        );
+      }
     }
     Object.assign(data, {
       catalogItemId: catalogItem.id,
@@ -106,6 +145,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         requestedActive && pricing != null
           ? InfrastructurePlanPublicationStatus.PUBLISHED
           : InfrastructurePlanPublicationStatus.PAUSED,
+      offerSource,
+      offerPriceValidUntil,
+      offerLastVerifiedAt:
+        offerSource === InfrastructureOfferSource.API_CATALOG
+          ? null
+          : new Date(),
       ...(typeof body.instantDelivery === "boolean"
         ? { instantDelivery: body.instantDelivery }
         : {}),

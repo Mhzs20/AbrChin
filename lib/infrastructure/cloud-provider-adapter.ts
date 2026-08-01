@@ -168,6 +168,8 @@ export type ProviderResource = {
   id: string;
   name: string;
   region: string;
+  externalPlanId: string | null;
+  externalImageId: string | null;
   state: string;
   ipv4: string | null;
   networkIds: string[] | null;

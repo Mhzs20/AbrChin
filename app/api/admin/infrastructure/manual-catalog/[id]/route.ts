@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import {
   InfrastructurePlanPublicationStatus,
+  InfrastructureOfferSource,
   ProviderCatalogItemSource,
   ProviderCatalogStatus,
   type Prisma,
@@ -19,6 +20,7 @@ import {
 import { IdempotencyConflictError, stableJson } from "@/lib/idempotency";
 import { assertPositiveIntegerToman, tomanToRial } from "@/lib/money";
 import { readRequestMeta } from "@/lib/session";
+import { countAvailableInventoryByPlan } from "@/lib/infrastructure/preprovisioned-inventory";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +44,7 @@ export async function PATCH(
       where: { id },
       include: { plans: true },
     });
-    if (!before || before.source !== ProviderCatalogItemSource.ADMIN_MANAGED) {
+    if (!before || before.source !== ProviderCatalogItemSource.MANUAL_API_BACKED) {
       return jsonError("سرور دستی پیدا نشد.", 404);
     }
     const plan = before.plans[0];
@@ -76,8 +78,24 @@ export async function PATCH(
       typeof body.publish === "boolean"
         ? body.publish
         : plan.publicationStatus === InfrastructurePlanPublicationStatus.PUBLISHED;
-    if (publish && availableUnits === 0) {
+    if (
+      publish &&
+      plan.offerSource === InfrastructureOfferSource.MANUAL_API_BACKED &&
+      availableUnits === 0
+    ) {
       return jsonError("پلن بدون ظرفیت قابل انتشار نیست.", 409);
+    }
+    if (
+      publish &&
+      plan.offerSource ===
+        InfrastructureOfferSource.PREPROVISIONED_INVENTORY &&
+      ((await countAvailableInventoryByPlan([plan.id])).get(plan.id) ?? 0) ===
+        0
+    ) {
+      return jsonError(
+        "بدون Inventory Row سالم و واقعی، انتشار مجاز نیست.",
+        409,
+      );
     }
     const deliveryEstimateMinutes =
       body.deliveryEstimateMinutes == null
@@ -129,7 +147,7 @@ export async function PATCH(
       }
       const now = new Date();
       const raw = {
-        source: "admin_managed",
+        source: "manual_api_backed",
         updatedBy: admin.id,
         availableUnits,
       } satisfies Prisma.InputJsonObject;
@@ -176,7 +194,11 @@ export async function PATCH(
           salePriceRial: basePriceRial,
           renewalPriceRial: basePriceRial,
           estimatedProviderCostRial: basePriceRial,
-          active: publish && availableUnits > 0,
+          active:
+            publish &&
+            (plan.offerSource ===
+              InfrastructureOfferSource.PREPROVISIONED_INVENTORY ||
+              availableUnits > 0),
           publicationStatus: publish
             ? InfrastructurePlanPublicationStatus.PUBLISHED
             : InfrastructurePlanPublicationStatus.PAUSED,
@@ -187,6 +209,8 @@ export async function PATCH(
             ? { sortOrder: body.sortOrder }
             : {}),
           deliveryEstimateMinutes,
+          offerPriceValidUntil: priceValidUntil,
+          offerLastVerifiedAt: now,
           updatedById: admin.id,
         },
       });

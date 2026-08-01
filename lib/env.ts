@@ -58,6 +58,10 @@ export function getEnv() {
       .map((item) => item.trim())
       .filter(Boolean),
     parspackEnabled: readBool("PARSPACK_ENABLED", false),
+    parspackPublicSaleEnabled: readBool(
+      "PARSPACK_PUBLIC_SALE_ENABLED",
+      false,
+    ),
     parspackApiBaseUrl: parspackManagementBase,
     parspackPublicApiBaseUrl: parspackCatalogBase,
     parspackApiToken: process.env.PARSPACK_API_TOKEN ?? "",

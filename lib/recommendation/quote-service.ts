@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import {
   InfrastructureProductKind,
@@ -11,6 +11,7 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
+import { getEnv } from "@/lib/env";
 import {
   getActivePlanById,
   getActiveReadyServerPlanById,
@@ -24,6 +25,11 @@ import {
 } from "@/lib/infrastructure/multi-provider-catalog-service";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
+import {
+  findFreshAvailableInventory,
+  lockAvailableInventoryTx,
+  reserveLockedInventoryForQuoteTx,
+} from "@/lib/infrastructure/preprovisioned-inventory";
 import {
   resolveProviderSelectionDefaults,
   revalidateLockedSelection,
@@ -240,24 +246,25 @@ async function lockAndRevalidatePlan(
     name: string;
     fingerprint: string | null;
   } | null = null;
-  const manualCatalog = plan.catalogItem.source === "ADMIN_MANAGED";
+  const offerSource = plan.offerSource;
+  const preprovisioned =
+    offerSource === "PREPROVISIONED_INVENTORY";
   if (
-    manualCatalog &&
-    ((plan.catalogItem.manualAvailableUnits ?? 0) <= 0 ||
-      !plan.catalogItem.manualLastVerifiedAt ||
-      !plan.catalogItem.manualPriceValidUntil ||
-      plan.catalogItem.manualPriceValidUntil.getTime() <= Date.now())
+    offerSource !== "API_CATALOG" &&
+    (!plan.offerLastVerifiedAt ||
+      !plan.offerPriceValidUntil ||
+      plan.offerPriceValidUntil.getTime() <= Date.now())
   ) {
     throw new WalletError(
       "quote_unavailable",
-      "اعتبار قیمت یا ظرفیت دستی تمام شده است.",
+      "اعتبار قیمت این پیشنهاد تمام شده است.",
     );
   }
   if (delivery.accessMethod === "SSH_KEY") {
-    if (manualCatalog) {
+    if (preprovisioned) {
       throw new WalletError(
         "quote_unavailable",
-        "برای ظرفیت دستی فقط روش دسترسی رمز یک‌بارمصرف قابل قفل‌کردن است.",
+        "برای موجودی ازپیش‌ساخته فقط دسترسی رمز یک‌بارمصرف قابل تحویل است.",
       );
     }
     const keyName = delivery.sshKeyName?.trim() ?? "";
@@ -286,8 +293,25 @@ async function lockAndRevalidatePlan(
       fingerprint: key.fingerprint,
     };
   }
-  const defaults = manualCatalog
-    ? await resolveManualSelectionDefaults(plan)
+  const inventoryPreview = preprovisioned
+    ? await findFreshAvailableInventory({
+        planId: plan.id,
+        catalogItemId: plan.catalogItem.id,
+        externalImageId: image.externalId,
+      })
+    : null;
+  if (preprovisioned && !inventoryPreview) {
+    throw new WalletError(
+      "inventory_unavailable",
+      "سرور آمادهٔ سالم و تازه‌ای برای این انتخاب موجود نیست.",
+    );
+  }
+  const defaults = preprovisioned
+    ? {
+        externalNetworkId: inventoryPreview!.observedNetworkId,
+        externalSecurityId: inventoryPreview!.observedSecurityId,
+        topologyVerificationMode: "STRICT_OBSERVED" as const,
+      }
     : await resolveProviderSelectionDefaults({
         provider: plan.provider,
         providerApiVersion: plan.providerApiVersion,
@@ -304,14 +328,14 @@ async function lockAndRevalidatePlan(
     externalNetworkId: defaults.externalNetworkId,
     externalSecurityId: defaults.externalSecurityId,
   };
-  const current = manualCatalog
+  const current = preprovisioned
     ? {
         available: true,
         monthlyPriceIrr: plan.pricing.providerBasePriceRial,
         hourlyPriceIrr: plan.catalogItem.providerHourlyPriceIrr,
         currency: "IRR" as const,
         checkedAt:
-          plan.catalogItem.manualLastVerifiedAt ??
+          plan.offerLastVerifiedAt ??
           plan.pricing.providerPriceCheckedAt,
       }
     : await revalidateLockedSelection(selection);
@@ -357,35 +381,6 @@ async function lockAndRevalidatePlan(
       configuredAt: current.checkedAt.toISOString(),
     },
     providerPriceCheckedAt: current.checkedAt,
-  };
-}
-
-async function resolveManualSelectionDefaults(
-  plan: PricedInfrastructurePlan,
-) {
-  const assets = await prisma.providerCatalogAsset.findMany({
-    where: {
-      provider: plan.provider,
-      apiVersion: plan.providerApiVersion,
-      regionCode: plan.regionCode,
-      kind: { in: ["NETWORK", "SECURITY"] },
-      status: "ACTIVE",
-      available: true,
-    },
-    orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
-  });
-  const network = assets.find((asset) => asset.kind === "NETWORK");
-  const security = assets.find((asset) => asset.kind === "SECURITY");
-  if (!network || !security) {
-    throw new WalletError(
-      "quote_unavailable",
-      "تنظیمات Network و Security آخرین کاتالوگ سالم کامل نیست.",
-    );
-  }
-  return {
-    externalNetworkId: network.externalId,
-    externalSecurityId: security.externalId,
-    topologyVerificationMode: "STRICT_OBSERVED" as const,
   };
 }
 
@@ -609,7 +604,7 @@ async function createCatalogServerQuote(params: {
       provider: true,
       providerApiVersion: true,
       productKind: true,
-      catalogItem: { select: { source: true } },
+      offerSource: true,
     },
   });
   if (
@@ -628,7 +623,7 @@ async function createCatalogServerQuote(params: {
   } catch {
     throw new WalletError("quote_unavailable", "این انتخاب معتبر نیست.");
   }
-  if (route.catalogItem?.source !== "ADMIN_MANAGED") {
+  if (route.offerSource === "API_CATALOG") {
     await requireFreshCatalog(route.provider);
   }
   const plan =
@@ -665,7 +660,7 @@ async function createCatalogServerQuote(params: {
     await tx.$queryRaw`
       SELECT pg_advisory_xact_lock(
         hashtextextended(${`catalog:${params.idempotencyKey}`}, 0)
-      )
+      )::text AS locked
     `;
     const repeated = await tx.recommendationSession.findUnique({
       where: {
@@ -692,6 +687,23 @@ async function createCatalogServerQuote(params: {
       if (!quote) throw new Error("catalog_quote_not_created");
       return { session: repeated, quote };
     }
+    const inventory =
+      plan.offerSource === "PREPROVISIONED_INVENTORY"
+        ? await lockAvailableInventoryTx(tx, {
+            planId: plan.id,
+            catalogItemId: plan.catalogItem.id,
+            externalImageId: locked.configuration.externalImageId,
+            now,
+          })
+        : null;
+    const effectiveConfiguration = inventory
+      ? {
+          ...locked.configuration,
+          externalNetworkId: inventory.observedNetworkId,
+          externalSecurityId: inventory.observedSecurityId,
+          configuredAt: inventory.lastObservedAt.toISOString(),
+        }
+      : locked.configuration;
     const created = await tx.recommendationSession.create({
       data: {
         userId: params.userId ?? null,
@@ -710,7 +722,7 @@ async function createCatalogServerQuote(params: {
         architectureEscalation: false,
         selectedParchinLevel: plan.pricing.parchinLevel,
         deliveryConfiguration:
-          locked.configuration as unknown as Prisma.InputJsonValue,
+          effectiveConfiguration as unknown as Prisma.InputJsonValue,
         expiresAt,
       },
     });
@@ -724,16 +736,22 @@ async function createCatalogServerQuote(params: {
         region: plan.regionCode,
         externalPlanId:
           plan.catalogItem.externalPlanId ?? plan.sizeCode,
-        externalImageId: locked.configuration.externalImageId,
-        externalNetworkId: locked.configuration.externalNetworkId,
-        externalSecurityId: locked.configuration.externalSecurityId,
+        externalImageId: effectiveConfiguration.externalImageId,
+        externalNetworkId: effectiveConfiguration.externalNetworkId,
+        externalSecurityId: effectiveConfiguration.externalSecurityId,
         topologyVerificationMode:
-          locked.configuration.topologyVerificationMode,
-        accessMethod: locked.configuration.accessMethod,
+          effectiveConfiguration.topologyVerificationMode,
+        accessMethod: effectiveConfiguration.accessMethod,
       },
     });
+    const bootstrapped = await tx.recommendationSession.findUniqueOrThrow({
+      where: { id: created.id },
+      select: { productFlowRevision: true },
+    });
+    const quoteId = randomUUID();
     const quote = await tx.recommendationQuote.create({
       data: {
+        id: quoteId,
         sessionId: created.id,
         role: RecommendationQuoteRole.RECOMMENDED,
         status: RecommendationQuoteStatus.ACTIVE,
@@ -741,10 +759,13 @@ async function createCatalogServerQuote(params: {
         score: 100,
         scoreBreakdown: {
           source: profileSource,
-          liveCatalog: true,
+          liveCatalog: plan.offerSource !== "PREPROVISIONED_INVENTORY",
+          inventoryReserved: Boolean(inventory),
         },
         reasons: [
-          "قیمت و ظرفیت همین سرور پیش از ساخت Quote دوباره بررسی شده است.",
+          plan.offerSource === "PREPROVISIONED_INVENTORY"
+            ? "یک سرور واقعی، سالم و تازه‌بررسی‌شده برای این Quote رزرو شده است."
+            : "قیمت و ظرفیت همین سرور پیش از ساخت Quote دوباره بررسی شده است.",
           "منابع، موقعیت و سیستم‌عامل در Quote ده‌دقیقه‌ای قفل شده‌اند.",
           "پرچین پایه بخشی اجباری از تحویل امن این سرور است.",
         ],
@@ -768,9 +789,9 @@ async function createCatalogServerQuote(params: {
         providerRegion: plan.regionCode,
         externalPlanId:
           plan.catalogItem.externalPlanId ?? plan.sizeCode,
-        externalImageId: locked.configuration.externalImageId,
-        externalNetworkId: locked.configuration.externalNetworkId,
-        externalSecurityId: locked.configuration.externalSecurityId,
+        externalImageId: effectiveConfiguration.externalImageId,
+        externalNetworkId: effectiveConfiguration.externalNetworkId,
+        externalSecurityId: effectiveConfiguration.externalSecurityId,
         vcpuSnapshot: plan.pricing.vcpu,
         ramMbSnapshot:
           plan.pricing.ramGb == null
@@ -787,7 +808,7 @@ async function createCatalogServerQuote(params: {
         parchinPriceIrr: plan.pricing.parchinPriceRial,
         providerAddonsSnapshot: [],
         deliveryConfigurationSnapshot:
-          locked.configuration as unknown as Prisma.InputJsonValue,
+          effectiveConfiguration as unknown as Prisma.InputJsonValue,
         taxBasisPointsSnapshot: plan.pricing.taxBasisPoints,
         taxAmountIrr: plan.pricing.taxAmountRial,
         lineItemsSnapshot: serializeQuoteLineItems(
@@ -796,9 +817,19 @@ async function createCatalogServerQuote(params: {
         quotedAt: now,
         catalogVersion: plan.catalogItem.catalogVersion,
         providerPayloadHash: plan.catalogItem.payloadHash,
+        preprovisionedInventoryItemId: inventory?.id ?? null,
         expiresAt,
       },
     });
+    if (inventory) {
+      await reserveLockedInventoryForQuoteTx(tx, {
+        inventoryItemId: inventory.id,
+        quoteId: quote.id,
+        revision: bootstrapped.productFlowRevision,
+        expiresAt,
+        now,
+      });
+    }
     return { session: created, quote };
   });
 
@@ -817,6 +848,12 @@ export async function createReadyServerQuote(params: {
   userId?: string | null;
   now?: Date;
 }) {
+  if (!getEnv().parspackPublicSaleEnabled) {
+    throw new WalletError(
+      "provider_sale_disabled",
+      "فروش عمومی سرورهای فوری موقتاً غیرفعال است.",
+    );
+  }
   return createCatalogServerQuote({
     ...params,
     expectedProductKind:
@@ -841,6 +878,16 @@ export async function getCatalogServerDeliveryOptions(params: {
   planId: string;
   expectedProductKind: InfrastructureProductKind;
 }) {
+  if (
+    params.expectedProductKind ===
+      InfrastructureProductKind.READY_INSTANT_SERVER &&
+    !getEnv().parspackPublicSaleEnabled
+  ) {
+    throw new WalletError(
+      "provider_sale_disabled",
+      "فروش عمومی سرورهای فوری موقتاً غیرفعال است.",
+    );
+  }
   const plan =
     params.expectedProductKind ===
     InfrastructureProductKind.READY_INSTANT_SERVER
@@ -854,7 +901,7 @@ export async function getCatalogServerDeliveryOptions(params: {
     provider: plan.provider,
     apiVersion: plan.providerApiVersion,
   });
-  if (plan.catalogItem.source !== "ADMIN_MANAGED") {
+  if (plan.offerSource === "API_CATALOG") {
     await requireFreshCatalog(plan.provider);
   }
   const compatible = Array.isArray(plan.catalogItem.compatibleImageCodes)
@@ -889,7 +936,7 @@ export async function getCatalogServerDeliveryOptions(params: {
           : {};
       const linuxMethods = [
         ...(plan.provider === InfrastructureProvider.ARVAN &&
-        plan.catalogItem.source !== "ADMIN_MANAGED" &&
+        plan.offerSource !== "PREPROVISIONED_INVENTORY" &&
         raw.ssh_key !== false
           ? (["SSH_KEY"] as const)
           : []),

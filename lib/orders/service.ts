@@ -26,6 +26,10 @@ import {
 } from "@/lib/infrastructure/selection-revalidation";
 import type { CloudProviderAdapter } from "@/lib/infrastructure/cloud-provider-adapter";
 import {
+  bindInventoryReservationToOrderTx,
+  releaseInventoryReservationForOrder,
+} from "@/lib/infrastructure/preprovisioned-inventory";
+import {
   absenceAuditMatchesAttempt,
   assessRefundResourceSafety,
   loadInfrastructureRecoveryAssessmentTx,
@@ -138,8 +142,10 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
       externalNetworkId: true,
       externalSecurityId: true,
       providerMonthlyPriceIrr: true,
+      preprovisionedInventoryItemId: true,
       plan: {
         select: {
+          offerSource: true,
           catalogItem: {
             select: {
               source: true,
@@ -166,21 +172,13 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
   ) {
     throw new WalletError("invalid_quote", "پیشنهاد انتخاب‌شده پیدا نشد.");
   }
-  const manual = preflight.plan.catalogItem?.source === "ADMIN_MANAGED";
-  const manualContractValid =
-    manual &&
-    (preflight.plan.catalogItem?.manualAvailableUnits ?? 0) > 0 &&
-    preflight.plan.catalogItem?.manualLastVerifiedAt != null &&
-    preflight.plan.catalogItem?.manualPriceValidUntil != null &&
-    preflight.plan.catalogItem.manualPriceValidUntil.getTime() > Date.now() &&
-    preflight.plan.catalogItem.providerMonthlyPriceIrr != null;
-  const livePrice = manualContractValid
+  const preprovisioned =
+    preflight.plan.offerSource === "PREPROVISIONED_INVENTORY";
+  const livePrice = preprovisioned
     ? {
-        monthlyPriceIrr: preflight.plan.catalogItem!.providerMonthlyPriceIrr!,
+        monthlyPriceIrr: preflight.providerMonthlyPriceIrr,
       }
-    : manual
-      ? null
-      : await revalidateLockedSelection({
+    : await revalidateLockedSelection({
           provider: preflight.provider,
           providerApiVersion: preflight.providerApiVersion,
           productKind: preflight.productKind,
@@ -192,6 +190,7 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
         });
   if (
     !livePrice ||
+    (preprovisioned && !preflight.preprovisionedInventoryItemId) ||
     preflight.providerMonthlyPriceIrr == null ||
     livePrice.monthlyPriceIrr !== preflight.providerMonthlyPriceIrr
   ) {
@@ -355,7 +354,20 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
       actorUserId: userId,
     });
 
-    return order;
+    if (quote.preprovisionedInventoryItemId) {
+      const transitioned = await tx.serviceOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        select: { productFlowRevision: true },
+      });
+      await bindInventoryReservationToOrderTx(tx, {
+        inventoryItemId: quote.preprovisionedInventoryItemId,
+        quoteId: quote.id,
+        orderId: order.id,
+        revision: transitioned.productFlowRevision,
+      });
+    }
+
+    return tx.serviceOrder.findUniqueOrThrow({ where: { id: order.id } });
   });
 }
 
@@ -384,6 +396,10 @@ export async function payOrderWithWallet(
       quote.externalPlanId &&
       quote.externalImageId
     ) {
+      if (quote.preprovisionedInventoryItemId) {
+        // The exact resource was already observed and atomically reserved.
+        // Payment revalidates the reservation inside its debit transaction.
+      } else {
       const current = await revalidateLockedSelection(
         {
           provider: quote.provider,
@@ -406,6 +422,7 @@ export async function payOrderWithWallet(
           "قیمت این پیشنهاد تغییر کرده؛ پیشنهاد تازه را دریافت کنید.",
         );
       }
+      }
     } else if (existing?.plan?.catalogItem) {
       await lockAndRevalidateLegacyOrder(
         existing.plan,
@@ -413,7 +430,17 @@ export async function payOrderWithWallet(
       );
     }
   }
-  return prisma.$transaction(async (tx) => executePayOrderWithWalletTx(tx, userId, orderId, options));
+  try {
+    return await prisma.$transaction(async (tx) =>
+      executePayOrderWithWalletTx(tx, userId, orderId, options),
+    );
+  } catch (error) {
+    await releaseInventoryReservationForOrder(
+      orderId,
+      error instanceof WalletError ? error.code : "payment_failed",
+    );
+    throw error;
+  }
 }
 
 export async function refundOrder(params: {

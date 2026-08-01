@@ -284,10 +284,21 @@ function parseResource(raw: UnknownRecord, region: string): ProviderResource {
         )
         .filter(Boolean)
     : null;
+  const flavor = isRecord(raw.flavor) ? raw.flavor : null;
+  const image = isRecord(raw.image) ? raw.image : null;
   return {
     id,
     name: asString(raw.name),
     region,
+    externalPlanId:
+      asString(raw.flavor_id) ||
+      asString(raw.plan_id) ||
+      (flavor ? asString(flavor.id) : "") ||
+      null,
+    externalImageId:
+      asString(raw.image_id) ||
+      (image ? asString(image.id) : "") ||
+      null,
     state: asString(raw.status) || "unknown",
     ipv4: ipv4FromServer(raw),
     networkIds,

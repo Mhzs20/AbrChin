@@ -753,6 +753,91 @@ export async function processProvisioningJob(
     );
   }
 
+  if (job.operation === "adopt_preprovisioned_inventory") {
+    const inventory = order.preprovisionedInventoryItemId
+      ? await prisma.preprovisionedInventoryItem.findUnique({
+          where: { id: order.preprovisionedInventoryItemId },
+        })
+      : null;
+    if (
+      !inventory ||
+      inventory.assignedOrderId !== order.serviceOrderId ||
+      inventory.provider !== order.provider ||
+      inventory.apiVersion !== order.providerApiVersion ||
+      inventory.providerResourceId !==
+        order.cloudInstance?.providerInstanceId ||
+      job.providerResourceId !== inventory.providerResourceId ||
+      job.createSentAt != null
+    ) {
+      throw new InfrastructureError(
+        "provider_lock_incomplete",
+        "Preprovisioned inventory assignment is incomplete",
+      );
+    }
+    let healthResult = parseDurableHealthResult(
+      job.healthResultSnapshot,
+    );
+    if (!healthResult) {
+      const result = await runInfrastructureHealthCheck({
+        infrastructureOrderId: order.id,
+        probe: options.healthProbe,
+        workerFence,
+        durableJob: { jobId: job.id, workerFence },
+        afterTransition: options.afterHealthTransition,
+      });
+      const durable = await prisma.provisioningJob.findUniqueOrThrow({
+        where: { id: job.id },
+        select: { healthResultSnapshot: true },
+      });
+      healthResult =
+        parseDurableHealthResult(durable.healthResultSnapshot) ?? {
+          healthCheckId: `inventory:${job.id}`,
+          healthy: result.healthy,
+          delivered: result.delivered,
+          resultCode: result.healthy
+            ? "service_active"
+            : "health_check_failed",
+        };
+    }
+    try {
+      await finalizeCreateJob(workerFence, options.beforeFinalizeJob);
+    } catch (error) {
+      if (isWorkerLeaseLostError(error)) return null;
+      return { ...healthResult, finalizePending: true as const };
+    }
+    if (!healthResult.healthy) {
+      const { processPendingHealthRetryDispatches } = await import(
+        "@/lib/infrastructure/health-retry-service"
+      );
+      await processPendingHealthRetryDispatches(1, {
+        beforeSchedule: options.beforeHealthRetrySchedule
+          ? async () => options.beforeHealthRetrySchedule?.()
+          : undefined,
+      });
+    }
+    if (healthResult.delivered) {
+      const notification = await queueProvisioningNotification({
+        idempotencyKey: `instance-active:${order.id}`,
+        type: AdminNotificationType.INSTANCE_ACTIVE,
+        infrastructureOrderId: order.id,
+        title: "سرور فعال شد",
+        message: `سرور سفارش ${order.serviceOrder.title} آماده است.`,
+      });
+      try {
+        await deliverProvisioningNotification(
+          notification.id,
+          options.beforeNotificationDelivery,
+        );
+      } catch {
+        console.error(
+          "[provisioning-notification]",
+          "notification_pending",
+        );
+      }
+    }
+    return healthResult;
+  }
+
   const persistedHealth = parseDurableHealthResult(
     job.healthResultSnapshot,
   );
@@ -1360,6 +1445,10 @@ export async function runProvisioningWorkerCycle(
   providerOverride?: CloudProviderAdapter,
   workerId?: string,
 ) {
+  const { releaseExpiredInventoryReservations } = await import(
+    "@/lib/infrastructure/preprovisioned-inventory"
+  );
+  await releaseExpiredInventoryReservations();
   await reconcileProvisioningDispatches();
   await processPendingProvisioningNotifications();
   const job = await claimNextProvisioningJob(workerId);

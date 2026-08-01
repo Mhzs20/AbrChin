@@ -20,6 +20,7 @@ import {
   requestCatalogSync,
 } from "@/lib/infrastructure/multi-provider-catalog-service";
 import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
+import { countAvailableInventoryByPlan } from "@/lib/infrastructure/preprovisioned-inventory";
 import {
   type EffectivePlanPricing,
   catalogItemBaseHourlyPriceRial,
@@ -48,6 +49,10 @@ export type PlanSnapshot = {
   provider: InfrastructureProvider;
   providerApiVersion: string;
   productKind: InfrastructureProductKind;
+  offerSource:
+    | "API_CATALOG"
+    | "MANUAL_API_BACKED"
+    | "PREPROVISIONED_INVENTORY";
   catalogItemId: string;
   regionCode: string;
   sizeCode: string;
@@ -100,7 +105,11 @@ export type PublicPlanOffer = {
   parchinIncluded: boolean;
   checkedAt: string;
   available: true;
-  catalogSource: "PROVIDER_API" | "ADMIN_MANAGED";
+  catalogSource:
+    | "API_CATALOG"
+    | "MANUAL_API_BACKED"
+    | "PREPROVISIONED_INVENTORY";
+  availableInventory: number;
   instantDelivery: boolean;
   purchasable: boolean;
 };
@@ -138,6 +147,7 @@ export function toPlanSnapshot(
     providerApiVersion: plan.providerApiVersion ?? "v1",
     productKind:
       plan.productKind ?? "READY_INSTANT_SERVER",
+    offerSource: plan.offerSource,
     catalogItemId: plan.pricing.catalogItemId,
     regionCode: plan.regionCode,
     sizeCode: plan.sizeCode,
@@ -205,7 +215,8 @@ export function toPublicPlanOffer(plan: PricedInfrastructurePlan): PublicPlanOff
     parchinIncluded: plan.parchinIncluded,
     checkedAt: plan.pricing.providerPriceCheckedAt.toISOString(),
     available: true,
-    catalogSource: plan.catalogItem.source,
+    catalogSource: plan.offerSource,
+    availableInventory: 0,
     instantDelivery: plan.instantDelivery,
     purchasable: true,
   };
@@ -410,6 +421,14 @@ export async function listPublicPlanOffers() {
 
 export async function listLiveReadyServerOffers() {
   try {
+    if (!getEnv().parspackPublicSaleEnabled) {
+      return {
+        live: false as const,
+        degraded: true as const,
+        offers: [] as PublicPlanOffer[],
+        checkedAt: null,
+      };
+    }
     const freshness = await getCatalogFreshness("PARSPACK");
     if (!freshness.fresh) {
       await requestCatalogSync("PARSPACK");
@@ -453,17 +472,31 @@ export async function listLiveCloudServerOffers() {
     const displayNames = new Map(
       saleRegions.map((region) => [region.regionCode, region.displayName]),
     );
+    const inventoryCounts = await countAvailableInventoryByPlan(
+      plans
+        .filter(
+          (plan) =>
+            plan.offerSource === "PREPROVISIONED_INVENTORY",
+        )
+        .map((plan) => plan.id),
+    );
     const offers = plans
       .filter(
         (plan) => freshness.fresh || plan.displayDuringProviderOutage,
       )
-      .map((plan) => ({
+      .map((plan) => {
+        const inventoryCount = inventoryCounts.get(plan.id) ?? 0;
+        return {
         ...toPublicPlanOffer(plan),
         locationLabel:
           displayNames.get(plan.regionCode) ?? plan.regionCode,
+        availableInventory: inventoryCount,
         purchasable:
-          freshness.fresh || plan.catalogItem.source === "ADMIN_MANAGED",
-      }));
+          plan.offerSource === "PREPROVISIONED_INVENTORY"
+            ? inventoryCount > 0
+            : freshness.fresh,
+      };
+      });
     return {
       live: freshness.fresh,
       degraded: !freshness.fresh,

@@ -13,6 +13,7 @@ import {
 } from "@/lib/pricing/plan-pricing";
 import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
 import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
+import { countAvailableInventoryByPlan } from "@/lib/infrastructure/preprovisioned-inventory";
 
 export const metadata: Metadata = {
   title: "پلن‌های زیرساخت | پنل مدیریت | ابرچین",
@@ -30,7 +31,7 @@ export default async function AdminPlansPage() {
         provider: "ARVAN",
         apiVersion: "v1",
         productKind: "CLOUD_SERVER",
-        source: "PROVIDER_API",
+        source: "API_CATALOG",
         active: true,
       },
       orderBy: [{ regionCode: "asc" }, { sizeCode: "asc" }],
@@ -52,6 +53,9 @@ export default async function AdminPlansPage() {
       orderBy: [{ regionCode: "asc" }, { name: "asc" }],
     }),
   ]);
+  const inventoryCounts = await countAvailableInventoryByPlan(
+    plans.map((plan) => plan.id),
+  );
   const panelPlans = plans.map((plan) => ({
     id: plan.id,
     code: plan.code,
@@ -68,7 +72,10 @@ export default async function AdminPlansPage() {
     instantDelivery: plan.instantDelivery,
     displayDuringProviderOutage: plan.displayDuringProviderOutage,
     provider: plan.provider,
-    catalogSource: plan.catalogItem?.source ?? null,
+    catalogSource: plan.offerSource,
+    offerPriceValidUntil:
+      plan.offerPriceValidUntil?.toISOString() ?? null,
+    availableInventory: inventoryCounts.get(plan.id) ?? 0,
     regionCode: plan.regionCode,
     externalPlanId: plan.catalogItem?.externalPlanId ?? null,
     manualAvailableUnits: plan.catalogItem?.manualAvailableUnits ?? null,

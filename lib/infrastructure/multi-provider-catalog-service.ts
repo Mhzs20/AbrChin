@@ -285,7 +285,7 @@ async function persistSuccessfulRegion(input: {
           // If an Admin entered a provider plan while the API was unavailable,
           // a later authoritative response promotes the same regional identity
           // back to provider-owned data without touching its curated Plan.
-          source: "PROVIDER_API",
+          source: "API_CATALOG",
           manualAvailableUnits: null,
           manualPriceValidUntil: null,
           manualLastVerifiedAt: null,
@@ -372,7 +372,7 @@ async function persistSuccessfulRegion(input: {
         provider: input.adapter.provider,
         apiVersion: input.adapter.apiVersion,
         regionCode: input.region.code,
-        source: "PROVIDER_API",
+        source: "API_CATALOG",
         OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: input.syncedAt } }],
         status: { not: ProviderCatalogStatus.DISABLED },
       },
@@ -401,7 +401,7 @@ async function persistSuccessfulRegion(input: {
         provider: input.adapter.provider,
         apiVersion: input.adapter.apiVersion,
         regionCode: input.region.code,
-        source: "PROVIDER_API",
+        source: "API_CATALOG",
       },
     });
     // Provider sync only owns raw catalog data. Public product publication is

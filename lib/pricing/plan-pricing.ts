@@ -62,11 +62,10 @@ export function resolveCatalogItemPricing(
   options: PlanPricingOptions = {},
 ): EffectivePlanPricing | null {
   const providerBasePriceRial = catalogItemBasePriceRial(item);
+  const itemSource = item.source ?? "API_CATALOG";
   const manualContractValid =
-    item.source !== "ADMIN_MANAGED" ||
-    (item.manualAvailableUnits != null &&
-      item.manualAvailableUnits > 0 &&
-      item.manualLastVerifiedAt != null &&
+    itemSource === "API_CATALOG" ||
+    (item.manualLastVerifiedAt != null &&
       item.manualPriceValidUntil != null &&
       item.manualPriceValidUntil.getTime() > Date.now());
   if (
@@ -177,6 +176,15 @@ export function resolvePlanPricing(
   ) {
     return null;
   }
+  const offerSource = plan.offerSource ?? "API_CATALOG";
+  if (
+    offerSource !== "API_CATALOG" &&
+    (!plan.offerLastVerifiedAt ||
+      !plan.offerPriceValidUntil ||
+      plan.offerPriceValidUntil.getTime() <= Date.now())
+  ) {
+    return null;
+  }
   const minimumParchinLevel =
     plan.minimumParchinLevel ??
     (plan.parchinIncluded ? "PARCHIN_START" : null);
@@ -236,6 +244,7 @@ export function samePlanConfigurationSnapshot(
     | "provider"
     | "providerApiVersion"
     | "productKind"
+    | "offerSource"
     | "regionCode"
     | "sizeCode"
     | "imageCode"
@@ -255,6 +264,7 @@ export function samePlanConfigurationSnapshot(
   const value = snapshot as Record<string, unknown>;
   return (
     value.provider === plan.provider &&
+    value.offerSource === plan.offerSource &&
     value.catalogItemId === current.catalogItemId &&
     value.regionCode === plan.regionCode &&
     value.sizeCode === plan.sizeCode &&

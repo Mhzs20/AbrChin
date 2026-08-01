@@ -44,6 +44,8 @@ export type FakeCloudProviderFixtures = {
     ipv4?: string | null;
     networkIds?: string[] | null;
     securityIds?: string[] | null;
+    externalPlanId?: string | null;
+    externalImageId?: string | null;
   };
 };
 
@@ -225,6 +227,8 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
       id,
       name: input.name,
       region: input.region,
+      externalPlanId: input.externalPlanId,
+      externalImageId: input.externalImageId,
       state: "build",
       ipv4: null,
       networkIds: input.externalNetworkId
@@ -267,6 +271,10 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
     };
   }
 
+  seedObservedResource(resource: ProviderResource) {
+    this.resources.set(resource.id, { ...resource });
+  }
+
   async getTaskStatus(
     input: ProviderTaskLookup,
   ): Promise<ProviderTaskStatus> {
@@ -293,6 +301,14 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
       this.fixtures.observedResource?.securityIds === undefined
         ? resource.securityIds
         : this.fixtures.observedResource.securityIds;
+    resource.externalPlanId =
+      this.fixtures.observedResource?.externalPlanId === undefined
+        ? resource.externalPlanId
+        : this.fixtures.observedResource.externalPlanId;
+    resource.externalImageId =
+      this.fixtures.observedResource?.externalImageId === undefined
+        ? resource.externalImageId
+        : this.fixtures.observedResource.externalImageId;
     resource.observedAt = new Date();
     return {
       taskId: input.taskId ?? `task-${resource.id}`,

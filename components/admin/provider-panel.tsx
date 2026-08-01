@@ -44,7 +44,10 @@ export function ProviderPanel({
     id: string;
     provider: "ARVAN" | "PARSPACK";
     apiVersion: string;
-    source: "PROVIDER_API" | "ADMIN_MANAGED";
+    source:
+      | "API_CATALOG"
+      | "MANUAL_API_BACKED"
+      | "PREPROVISIONED_INVENTORY";
     status: string;
     regionCode: string;
     sizeCode: string;
@@ -252,7 +255,13 @@ export function ProviderPanel({
                   <td className="product-tech">
                     {item.regionCode} / {item.sizeCode}
                     <br />
-                    <small>{item.source === "ADMIN_MANAGED" ? "Admin managed" : "Provider API"}</small>
+                    <small>
+                      {item.source === "MANUAL_API_BACKED"
+                        ? "Manual API-backed"
+                        : item.source === "PREPROVISIONED_INVENTORY"
+                          ? "Preprovisioned inventory"
+                          : "API catalog"}
+                    </small>
                   </td>
                   <td>{item.vcpu ?? "—"} vCPU · {item.ramMb ?? "—"} MB · {item.diskGb ?? "—"} GB</td>
                   <td>{item.basePriceRial ? `${(BigInt(item.basePriceRial) / 10n).toLocaleString("fa-IR")} تومان` : "تأیید نشده"}</td>

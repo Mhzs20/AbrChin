@@ -120,6 +120,8 @@ export const AuditActions = {
   PROVIDER_REGION_UPDATE: "provider_region_update",
   MANUAL_CATALOG_CREATE: "manual_catalog_create",
   MANUAL_CATALOG_UPDATE: "manual_catalog_update",
+  PREPROVISIONED_INVENTORY_OBSERVE:
+    "preprovisioned_inventory_observe",
   NOTIFICATION_RESOLVE: "notification_resolve",
   CREDENTIAL_READY: "credential_ready",
   CREDENTIAL_REVEALED: "credential_revealed",

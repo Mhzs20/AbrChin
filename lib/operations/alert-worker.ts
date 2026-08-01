@@ -6,6 +6,7 @@ import {
 
 import { prisma } from "@/lib/db";
 import { createSmsProvider, SmsDeliveryError } from "@/lib/sms/index";
+import { getOperationalAlertConfigurationStatus } from "@/lib/operations/alert-configuration";
 
 const MAX_ALERT_ATTEMPTS = 3;
 const STALE_SENDING_MS = 5 * 60 * 1000;
@@ -50,6 +51,12 @@ async function claimAlert(now: Date): Promise<ClaimedAlert | null> {
 }
 
 export async function processOperationalAlertOutbox(limit = 10) {
+  if (
+    getOperationalAlertConfigurationStatus().status ===
+    "CONFIG_REQUIRED"
+  ) {
+    return 0;
+  }
   const now = new Date();
   await prisma.operationalAlertOutbox.updateMany({
     where: {

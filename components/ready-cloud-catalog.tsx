@@ -139,8 +139,12 @@ export function ReadyCloudCatalog({
             <ul>
               <li>
                 <Check size={14} aria-hidden="true" />
-                {offer.catalogSource === "ADMIN_MANAGED"
-                  ? "قیمت و ظرفیت توسط ادمین ابرچین تأیید شده‌اند"
+                {offer.catalogSource === "MANUAL_API_BACKED"
+                  ? offer.purchasable
+                    ? "پلن دستی است و موجودی آن همین حالا از Provider تأیید شد"
+                    : "پلن دستی قابل مشاهده است؛ خرید تا Revalidation Provider متوقف است"
+                  : offer.catalogSource === "PREPROVISIONED_INVENTORY"
+                    ? `${offer.availableInventory.toLocaleString("fa-IR")} Resource واقعی و سالم آمادهٔ رزرو است`
                   : offer.purchasable
                     ? "قیمت و موجودی در همین بازدید تأیید شده‌اند"
                     : "آخرین اطلاعات سالم نمایش داده شده؛ خرید تا بازیابی ارتباط متوقف است"}

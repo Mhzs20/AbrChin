@@ -162,12 +162,24 @@ Sync فقط Catalog خام را مالک است و دیگر `InfrastructurePlan`
 می‌کند. بنابراین اضافه‌شدن صدها Flavor در Provider به معنی نمایش خودکار آن‌ها
 به Customer نیست.
 
-ظرفیت دستی با `source=ADMIN_MANAGED` صریحاً از دادهٔ API جدا است و باید Plan
-ID واقعی آروان، Region فعال، Image آخرین Catalog سالم، منابع، ظرفیت، قیمت IRR،
-زمان آخرین تأیید و تاریخ انقضای قیمت داشته باشد. قیمت یا ظرفیت صفر/منقضی
-Fail-closed است. اگر همان هویت منطقه‌ای بعداً از API مشاهده شود، Catalog به
-منبع Provider ارتقا پیدا می‌کند ولی تصمیم انتشار Admin و Orderهای تاریخی
-تغییر نمی‌کنند.
+منشأ Catalog و قرارداد فروش دو مفهوم جدا هستند. `API_CATALOG` از Sync آروان
+می‌آید و `MANUAL_API_BACKED` فقط اجازه می‌دهد Admin Plan و قیمت را تعریف کند؛
+هر دو برای Quote و Payment به Revalidation موفق Provider نیاز دارند. ظرفیت
+عددی Admin هیچ‌وقت جای Availability واقعی Provider را نمی‌گیرد و هنگام قطعی
+صرفاً Last-known-good قابل مشاهده است، نه قابل خرید.
+
+`PREPROVISIONED_INVENTORY` فقط برای Resource ازپیش‌ساختهٔ واقعی است. هر سرور
+یک Row مستقل با شناسهٔ یکتای `provider + apiVersion + providerResourceId`،
+Region/Plan/Image، IP، Observation و Health تازه دارد. State موجودی از
+`AVAILABLE | RESERVED | ASSIGNED | DELIVERED | UNHEALTHY | STALE | DISABLED`
+است. ثبت موجودی فقط پس از GET خواندنی آروان، تطبیق کامل Snapshot و Probe واقعی
+SSH/RDP انجام می‌شود؛ شناسهٔ Resource فقط در Snapshot داخلی می‌ماند.
+
+Quote داخل Transaction و با `FOR UPDATE SKIP LOCKED` دقیقاً یک Row سالم را تا
+انقضای Quote رزرو می‌کند. انقضای Quote یا شکست Payment رزرو را Idempotent آزاد
+می‌کند. Debit موفق همان Row را به همان Order Assign می‌کند؛ Retry دوباره Debit
+یا Assignment نمی‌سازد و Worker فقط Health/Delivery همان Resource را ادامه
+می‌دهد، بدون `createServer`، Provider fallback یا Swap.
 
 پاسخ `401/403` ParsPack با کد امن `provider_auth_failed` و بدون Retry ثبت
 می‌شود. شکست Provider، Timeout، ناسازگاری Response Contract و شکست
@@ -185,8 +197,9 @@ Provider تنظیم‌شده را اجرا می‌کند؛ شکست یک Provide
 Last-known-good بنا بر تنظیم Plan می‌تواند صرفاً برای مشاهده باقی بماند و خرید
 Catalog API تا بازیابی ارتباط Fail-closed است. Lease دیتابیسی از Sync همزمان
 جلوگیری می‌کند. Selection قفل‌شدهٔ Catalog API پیش از Quote و Payment با
-GETهای هدفمند Provider دوباره اعتبارسنجی می‌شود؛ قرارداد دستی از Snapshot
-Audit‌شده و تاریخ اعتبار خودش استفاده می‌کند.
+GETهای هدفمند Provider دوباره اعتبارسنجی می‌شود؛ قرارداد دستی API-backed نیز
+همین Revalidation را دور نمی‌زند. فقط موجودی ازپیش‌ساختهٔ سالم و تازه که اتمیک
+رزرو شده باشد می‌تواند در قطعی موقت Catalog خریداری شود.
 
 ## Incident و SMS عملیاتی
 
@@ -198,6 +211,12 @@ Audit‌شده و تاریخ اعتبار خودش استفاده می‌کند.
 ارسال پیامک داخل Transaction Sync نیست و شکست SMS Catalog سالم را تغییر
 نمی‌دهد. API Key، Authorization، Response خام و Connection String هرگز در
 Incident، Outbox یا متن پیام ذخیره نمی‌شود.
+
+اگر Provider پیامک Kavenegar، Template هشدار یا شمارهٔ Admin تنظیم نشده باشد،
+Web و Worker Crash نمی‌کنند. وضعیت عملیاتی `CONFIG_REQUIRED` در Admin نمایش
+داده می‌شود و Alertهای Pending تا تکمیل تنظیمات بدون Claim اشتباه حفظ می‌شوند.
+فروش عمومی ParsPack نیز با `PARSPACK_PUBLIC_SALE_ENABLED=false` مستقل از Sync
+غیرفعال می‌ماند؛ Catalog و Route قطعی ParsPack حذف یا به آروان منتقل نمی‌شوند.
 
 ## پول، Markup، پرچین و مالیات
 

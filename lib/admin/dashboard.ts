@@ -16,6 +16,7 @@ import { catalogItemBasePriceRial } from "@/lib/pricing/plan-pricing";
 import { calculateQuotePricing } from "@/lib/pricing/quote-line-items";
 import { assessInfrastructureRecoveryActions } from "@/lib/infrastructure/resource-disposition";
 import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
+import { getOperationalAlertConfigurationStatus } from "@/lib/operations/alert-configuration";
 
 export async function getAdminDashboardStats() {
   const todayStart = new Date();
@@ -164,7 +165,10 @@ export async function getSystemStatuses() {
   return {
     zibal: { enabled: zibal?.enabled ?? false, default: zibal?.isDefault ?? false },
     zarinpal: { enabled: zarinpal?.enabled ?? false, default: zarinpal?.isDefault ?? false },
-    kavenegar: { configured: Boolean(process.env.KAVENEGAR_API_KEY) },
+    kavenegar: {
+      configured: Boolean(process.env.KAVENEGAR_API_KEY),
+      operationalAlerts: getOperationalAlertConfigurationStatus(),
+    },
     postgres: { configured: Boolean(process.env.DATABASE_URL) },
     parspack: {
       ...providerState(

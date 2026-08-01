@@ -4,6 +4,7 @@ import {
   CatalogMappingStatus,
   DeliveryMode,
   InfrastructurePlanPublicationStatus,
+  InfrastructureOfferSource,
   InfrastructureProductKind,
   InfrastructureProvider,
   ParchinLevel,
@@ -115,7 +116,18 @@ export async function POST(request: Request) {
     const vcpu = positiveInteger(body.vcpu, "vcpu", 256);
     const ramGb = positiveInteger(body.ramGb, "ram_gb", 2048);
     const storageGb = positiveInteger(body.storageGb, "storage_gb", 100_000);
-    const availableUnits = positiveInteger(body.availableUnits, "available_units", 100_000);
+    const offerSource =
+      body.offerSource === "PREPROVISIONED_INVENTORY"
+        ? InfrastructureOfferSource.PREPROVISIONED_INVENTORY
+        : InfrastructureOfferSource.MANUAL_API_BACKED;
+    const availableUnits =
+      offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY
+        ? null
+        : positiveInteger(
+            body.availableUnits,
+            "available_units",
+            100_000,
+          );
     const basePriceRial = tomanToRial(assertPositiveIntegerToman(body.basePriceToman));
     const deliveryEstimateMinutes = positiveInteger(
       body.deliveryEstimateMinutes ?? 15,
@@ -129,7 +141,9 @@ export async function POST(request: Request) {
     ) {
       return jsonError("تاریخ اعتبار قیمت باید در آینده باشد.", 400);
     }
-    const publish = body.publish === true;
+    const publish =
+      body.publish === true &&
+      offerSource !== InfrastructureOfferSource.PREPROVISIONED_INVENTORY;
     const requestFingerprint = manualRequestFingerprint({
       code,
       title,
@@ -144,6 +158,7 @@ export async function POST(request: Request) {
       deliveryEstimateMinutes,
       priceValidUntil: priceValidUntil.toISOString(),
       publish,
+      offerSource,
       instantDelivery: body.instantDelivery === true,
       description: optionalDescription(body.description),
     });
@@ -173,7 +188,7 @@ export async function POST(request: Request) {
       const now = new Date();
       const externalId = externalPlanId;
       const rawPayload = {
-        source: "admin_managed",
+        source: "manual_api_backed",
         createdBy: admin.id,
         resourceContract: { vcpu, ramGb, storageGb },
       } satisfies Prisma.InputJsonObject;
@@ -185,7 +200,7 @@ export async function POST(request: Request) {
           provider: InfrastructureProvider.ARVAN,
           apiVersion: "v1",
           productKind: InfrastructureProductKind.CLOUD_SERVER,
-          source: ProviderCatalogItemSource.ADMIN_MANAGED,
+          source: ProviderCatalogItemSource.MANUAL_API_BACKED,
           regionCode,
           sizeCode: externalId,
           externalPlanId: externalId,
@@ -241,6 +256,9 @@ export async function POST(request: Request) {
             : InfrastructurePlanPublicationStatus.DRAFT,
           instantDelivery: body.instantDelivery === true,
           displayDuringProviderOutage: true,
+          offerSource,
+          offerPriceValidUntil: priceValidUntil,
+          offerLastVerifiedAt: now,
           sortOrder:
             typeof body.sortOrder === "number" && Number.isSafeInteger(body.sortOrder)
               ? body.sortOrder
@@ -261,7 +279,7 @@ export async function POST(request: Request) {
           afterData: {
             requestFingerprint,
             catalogItemId: catalogItem.id,
-            source: "ADMIN_MANAGED",
+            source: offerSource,
             provider: "ARVAN",
             regionCode,
             publicationStatus: plan.publicationStatus,

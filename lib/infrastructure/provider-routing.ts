@@ -5,7 +5,7 @@ import {
 
 import { InfrastructureError } from "@/lib/infrastructure/errors";
 
-export const PROVIDER_API_VERSIONS = {
+export const API_CATALOG_VERSIONS = {
   [InfrastructureProvider.ARVAN]: "v1",
   [InfrastructureProvider.PARSPACK]: "v1",
 } as const;
@@ -32,7 +32,7 @@ export function resolveProviderRoute(
   return {
     productKind,
     provider,
-    apiVersion: PROVIDER_API_VERSIONS[provider],
+    apiVersion: API_CATALOG_VERSIONS[provider],
   };
 }
 

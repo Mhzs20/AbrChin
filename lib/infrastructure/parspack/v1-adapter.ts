@@ -305,6 +305,8 @@ export class ParsPackV1Adapter implements CloudProviderAdapter {
       id: instance.id,
       name: instance.name,
       region: instance.region,
+      externalPlanId: null,
+      externalImageId: null,
       state: instance.status,
       ipv4: instance.ipv4,
       networkIds: null,
