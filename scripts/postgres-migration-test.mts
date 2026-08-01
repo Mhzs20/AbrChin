@@ -5525,8 +5525,432 @@ try {
     /idempotency_conflict/,
   );
 
+  const { InfrastructureError } = await import(
+    "../lib/infrastructure/errors.ts"
+  );
+  const { syncMultiProviderCatalog } = await import(
+    "../lib/infrastructure/multi-provider-catalog-service.ts"
+  );
+  const { syncParsPackCatalog } = await import(
+    "../lib/infrastructure/catalog-service.ts"
+  );
+  const { ParsPackProvider } = await import(
+    "../lib/infrastructure/parspack/client.ts"
+  );
+
+  const arvanRegionGood = "ir-runtime-good";
+  const arvanRegionOther = "ir-runtime-other";
+  const regionalPlan = (region: string, monthlyPrice: bigint) => ({
+    externalPlanId: "runtime-g2",
+    region,
+    name: `Runtime ${region}`,
+    vcpu: 2,
+    ramMb: 2048,
+    diskGb: 40,
+    resourceContractValid: true,
+    resourceContractError: null,
+    available: true,
+    priceHourlyIrr: 1_000n,
+    priceMonthlyIrr: monthlyPrice,
+    sourceMoneyUnit: "IRR",
+    rawUpdatedAt: null,
+    rawPayload: { id: "runtime-g2", region },
+  });
+  const regionalImage = (region: string) => ({
+    externalId: "runtime-ubuntu",
+    region,
+    name: "Runtime Ubuntu",
+    operatingSystem: "Ubuntu",
+    minDiskGb: 20,
+    minRamMb: 1024,
+    available: true,
+    sshKeySupported: true,
+    sshPasswordSupported: true,
+    rawUpdatedAt: null,
+    rawPayload: { id: "runtime-ubuntu", region },
+  });
+  const regionalNetwork = (region: string) => ({
+    externalId: `runtime-network-${region}`,
+    region,
+    name: "Runtime Network",
+    isDefault: true,
+    available: true,
+    rawUpdatedAt: null,
+    rawPayload: { id: `runtime-network-${region}` },
+  });
+  const regionalSecurity = (region: string) => ({
+    externalId: `runtime-security-${region}`,
+    region,
+    name: "Runtime Security",
+    isDefault: true,
+    available: true,
+    rawUpdatedAt: null,
+    rawPayload: { id: `runtime-security-${region}` },
+  });
+  const arvanInitial = new FakeCloudProviderAdapter({
+    provider: InfrastructureProvider.ARVAN,
+    regions: [arvanRegionGood, arvanRegionOther].map((code) => ({
+      code,
+      name: code,
+      available: true,
+      rawPayload: { code, source: "test_configuration" },
+    })),
+    plansByRegion: {
+      [arvanRegionGood]: [regionalPlan(arvanRegionGood, 8_000_000n)],
+      [arvanRegionOther]: [regionalPlan(arvanRegionOther, 9_000_000n)],
+    },
+    imagesByRegion: {
+      [arvanRegionGood]: [regionalImage(arvanRegionGood)],
+      [arvanRegionOther]: [regionalImage(arvanRegionOther)],
+    },
+    networksByRegion: {
+      [arvanRegionGood]: [regionalNetwork(arvanRegionGood)],
+      [arvanRegionOther]: [regionalNetwork(arvanRegionOther)],
+    },
+    securityByRegion: {
+      [arvanRegionGood]: [regionalSecurity(arvanRegionGood)],
+      [arvanRegionOther]: [regionalSecurity(arvanRegionOther)],
+    },
+  });
+  const arvanInitialResult = await syncMultiProviderCatalog(
+    arvanInitial,
+    new Date("2026-08-01T00:00:00.000Z"),
+  );
+  assert.equal(arvanInitialResult.status, "SUCCEEDED");
+  const arvanGoodBefore =
+    await db.providerCatalogItem.findUniqueOrThrow({
+      where: {
+        provider_apiVersion_regionCode_externalPlanId: {
+          provider: InfrastructureProvider.ARVAN,
+          apiVersion: "v1",
+          regionCode: arvanRegionGood,
+          externalPlanId: "runtime-g2",
+        },
+      },
+      select: {
+        providerMonthlyPriceIrr: true,
+        status: true,
+        available: true,
+        lastSeenAt: true,
+        catalogVersion: true,
+        payloadHash: true,
+      },
+    });
+  const arvanPartial = new FakeCloudProviderAdapter({
+    provider: InfrastructureProvider.ARVAN,
+    regions: [arvanRegionGood, arvanRegionOther].map((code) => ({
+      code,
+      name: code,
+      available: true,
+      rawPayload: { code, source: "test_configuration" },
+    })),
+    plansByRegion: {
+      [arvanRegionOther]: [regionalPlan(arvanRegionOther, 9_500_000n)],
+    },
+    imagesByRegion: {
+      [arvanRegionGood]: [regionalImage(arvanRegionGood)],
+      [arvanRegionOther]: [regionalImage(arvanRegionOther)],
+    },
+    networksByRegion: {
+      [arvanRegionGood]: [regionalNetwork(arvanRegionGood)],
+      [arvanRegionOther]: [regionalNetwork(arvanRegionOther)],
+    },
+    securityByRegion: {
+      [arvanRegionGood]: [regionalSecurity(arvanRegionGood)],
+      [arvanRegionOther]: [regionalSecurity(arvanRegionOther)],
+    },
+  });
+  arvanPartial.syncPlans = async (region: string) => {
+    if (region === arvanRegionGood) {
+      throw new InfrastructureError(
+        "provider_timeout",
+        "unsafe-provider-detail-must-not-persist",
+      );
+    }
+    return [regionalPlan(arvanRegionOther, 9_500_000n)];
+  };
+  const arvanPartialResult = await syncMultiProviderCatalog(
+    arvanPartial,
+    new Date("2026-08-01T00:05:00.000Z"),
+  );
+  assert.equal(arvanPartialResult.status, "PARTIAL");
+  assert.equal(arvanPartialResult.successfulRegions, 1);
+  assert.equal(arvanPartialResult.failedRegions, 1);
+  assert.deepEqual(
+    await db.providerCatalogItem.findUniqueOrThrow({
+      where: {
+        provider_apiVersion_regionCode_externalPlanId: {
+          provider: InfrastructureProvider.ARVAN,
+          apiVersion: "v1",
+          regionCode: arvanRegionGood,
+          externalPlanId: "runtime-g2",
+        },
+      },
+      select: {
+        providerMonthlyPriceIrr: true,
+        status: true,
+        available: true,
+        lastSeenAt: true,
+        catalogVersion: true,
+        payloadHash: true,
+      },
+    }),
+    arvanGoodBefore,
+  );
+  assert.equal(
+    (
+      await db.providerCatalogItem.findUniqueOrThrow({
+        where: {
+          provider_apiVersion_regionCode_externalPlanId: {
+            provider: InfrastructureProvider.ARVAN,
+            apiVersion: "v1",
+            regionCode: arvanRegionOther,
+            externalPlanId: "runtime-g2",
+          },
+        },
+      })
+    ).providerMonthlyPriceIrr,
+    9_500_000n,
+  );
+  const arvanPartialRun =
+    await db.providerCatalogSyncRun.findFirstOrThrow({
+      where: {
+        provider: InfrastructureProvider.ARVAN,
+        status: "PARTIAL",
+      },
+      orderBy: { startedAt: "desc" },
+    });
+  assert.equal(
+    JSON.stringify(arvanPartialRun.report).includes(
+      "unsafe-provider-detail-must-not-persist",
+    ),
+    false,
+  );
+
+  const parsPackSuccessCalls: string[] = [];
+  const parsPackCatalogProvider = new ParsPackProvider({
+    managementBaseUrl: "https://my.parspack.com/cserver/api/v1",
+    publicBaseUrl: "https://my.parspack.com/cserver/api/public/v1",
+    token: "postgres-contract-token",
+    timeoutMs: 1000,
+    priceCurrencyCode: "IRR",
+    priceAmountUnit: "TOMAN",
+    fetchImpl: async (input) => {
+      const url = String(input);
+      parsPackSuccessCalls.push(url);
+      if (url.includes("/regions?")) {
+        return Response.json({
+          regions: [
+            {
+              slug: "runtime-tehran",
+              name: "Runtime Tehran",
+              available: true,
+            },
+          ],
+        });
+      }
+      if (url.includes("/sizes?")) {
+        return Response.json({
+          sizes: [
+            {
+              slug: "runtime-priced",
+              description: "Runtime Priced",
+              regions: ["runtime-tehran"],
+              available: true,
+              vcpus: 2,
+              memory: 2048,
+              disk: 40,
+              price_hourly: "1200",
+              price_monthly: "829440",
+            },
+            {
+              slug: "runtime-no-price",
+              description: "Runtime Missing Price",
+              regions: ["runtime-tehran"],
+              available: true,
+              vcpus: 1,
+              memory: 1024,
+              disk: 25,
+            },
+          ],
+        });
+      }
+      if (url.includes("/images?")) {
+        return Response.json({
+          images: [
+            {
+              slug: "ubuntu24-cloudinit-qcow2",
+              name: "Ubuntu 24.04",
+              regions: ["runtime-tehran"],
+              min_disk_size: 20,
+              status: "available",
+            },
+          ],
+        });
+      }
+      return Response.json({ message: "not found" }, { status: 404 });
+    },
+  });
+  const parsPackSuccessResult = await syncParsPackCatalog(
+    parsPackCatalogProvider,
+    new Date("2026-08-01T00:10:00.000Z"),
+  );
+  assert.equal(parsPackSuccessCalls.length, 3);
+  assert.equal(parsPackSuccessResult.readyPlanCount, 1);
+  const parsPackPriced =
+    await db.providerCatalogItem.findUniqueOrThrow({
+      where: {
+        provider_apiVersion_regionCode_externalPlanId: {
+          provider: InfrastructureProvider.PARSPACK,
+          apiVersion: "v1",
+          regionCode: "runtime-tehran",
+          externalPlanId: "runtime-priced",
+        },
+      },
+    });
+  assert.equal(parsPackPriced.providerMonthlyPriceIrr, 8_294_400n);
+  assert.equal(parsPackPriced.available, true);
+  assert.equal(parsPackPriced.status, "ACTIVE");
+  const parsPackNoPrice =
+    await db.providerCatalogItem.findUniqueOrThrow({
+      where: {
+        provider_apiVersion_regionCode_externalPlanId: {
+          provider: InfrastructureProvider.PARSPACK,
+          apiVersion: "v1",
+          regionCode: "runtime-tehran",
+          externalPlanId: "runtime-no-price",
+        },
+      },
+    });
+  assert.equal(parsPackNoPrice.available, false);
+  assert.equal(parsPackNoPrice.status, "INVALID_PRICE");
+  const parsPackReadyPlans = await db.infrastructurePlan.findMany({
+    where: {
+      provider: InfrastructureProvider.PARSPACK,
+      regionCode: "runtime-tehran",
+      code: { startsWith: "READY_PARSPACK_" },
+    },
+    orderBy: { sizeCode: "asc" },
+  });
+  assert.equal(
+    parsPackReadyPlans.find((plan) => plan.sizeCode === "runtime-priced")
+      ?.active,
+    true,
+  );
+  assert.equal(
+    parsPackReadyPlans.find((plan) => plan.sizeCode === "runtime-no-price")
+      ?.active,
+    false,
+  );
+  assert.equal(
+    parsPackReadyPlans.every(
+      (plan) => plan.parchinIncluded && plan.deliveryMode === "MANAGED",
+    ),
+    true,
+  );
+  const parsPackSnapshotBeforeFailure = {
+    available: parsPackPriced.available,
+    active: parsPackPriced.active,
+    status: parsPackPriced.status,
+    providerMonthlyPriceIrr: parsPackPriced.providerMonthlyPriceIrr,
+    priceMonthlyAmount: parsPackPriced.priceMonthlyAmount,
+    catalogVersion: parsPackPriced.catalogVersion,
+    payloadHash: parsPackPriced.payloadHash,
+    lastSeenAt: parsPackPriced.lastSeenAt,
+  };
+  const parsPackFailureCalls: string[] = [];
+  const parsPackFailure = new ParsPackProvider({
+    managementBaseUrl: "https://my.parspack.com/cserver/api/v1",
+    publicBaseUrl: "https://my.parspack.com/cserver/api/public/v1",
+    token: "postgres-secret-token-must-not-persist",
+    timeoutMs: 1000,
+    priceCurrencyCode: "IRR",
+    priceAmountUnit: "TOMAN",
+    fetchImpl: async (input) => {
+      parsPackFailureCalls.push(String(input));
+      return Response.json(
+        {
+          message: "forbidden",
+          authorization: "Bearer postgres-secret-token-must-not-persist",
+          token: "raw-response-secret-must-not-persist",
+        },
+        { status: 403 },
+      );
+    },
+  });
+  await assert.rejects(
+    syncParsPackCatalog(
+      parsPackFailure,
+      new Date("2026-08-01T00:15:00.000Z"),
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "provider_auth_failed",
+  );
+  assert.equal(parsPackFailureCalls.length, 3);
+  const parsPackFailedState =
+    await db.providerCatalogState.findUniqueOrThrow({
+      where: { provider: InfrastructureProvider.PARSPACK },
+    });
+  assert.equal(parsPackFailedState.lastSyncStatus, "FAILED");
+  assert.ok(parsPackFailedState.lastCatalogSync);
+  assert.ok(parsPackFailedState.lastSyncDurationMs != null);
+  assert.match(parsPackFailedState.lastError ?? "", /احراز هویت/);
+  const parsPackFailedRun =
+    await db.providerCatalogSyncRun.findFirstOrThrow({
+      where: {
+        provider: InfrastructureProvider.PARSPACK,
+        status: "FAILED",
+      },
+      orderBy: { startedAt: "desc" },
+    });
+  assert.ok(parsPackFailedRun.finishedAt);
+  assert.ok(parsPackFailedRun.durationMs != null);
+  assert.match(
+    JSON.stringify(parsPackFailedRun.report),
+    /provider_auth_failed/,
+  );
+  const persistedFailureEvidence = JSON.stringify({
+    stateError: parsPackFailedState.lastError,
+    stateRegions: parsPackFailedState.regionErrors,
+    runReport: parsPackFailedRun.report,
+  });
+  assert.equal(
+    persistedFailureEvidence.includes(
+      "postgres-secret-token-must-not-persist",
+    ),
+    false,
+  );
+  assert.equal(
+    persistedFailureEvidence.includes("raw-response-secret-must-not-persist"),
+    false,
+  );
+  const parsPackAfterFailure =
+    await db.providerCatalogItem.findUniqueOrThrow({
+      where: {
+        provider_apiVersion_regionCode_externalPlanId: {
+          provider: InfrastructureProvider.PARSPACK,
+          apiVersion: "v1",
+          regionCode: "runtime-tehran",
+          externalPlanId: "runtime-priced",
+        },
+      },
+      select: {
+        available: true,
+        active: true,
+        status: true,
+        providerMonthlyPriceIrr: true,
+        priceMonthlyAmount: true,
+        catalogVersion: true,
+        payloadHash: true,
+        lastSeenAt: true,
+      },
+    });
+  assert.deepEqual(parsPackAfterFailure, parsPackSnapshotBeforeFailure);
+
   console.log(
-    "PostgreSQL integration passed (94 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, durable concurrent health-retry dispatch, poison dispatch isolation, persisted dispatch backoff, dead-letter manual review, three-attempt health retry ceiling, missing-outbox batch progress, concurrent outbox uniqueness, and idempotent reconciler replay",
+    "PostgreSQL integration passed (98 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, durable concurrent health-retry dispatch, poison dispatch isolation, persisted dispatch backoff, dead-letter manual review, three-attempt health retry ceiling, missing-outbox batch progress, concurrent outbox uniqueness, idempotent reconciler replay, Arvan partial-region last-known-good preservation, ParsPack 403 audit persistence without retry, exact TOMAN-to-IRR materialization, and non-sellable invalid-price catalog enforcement",
   );
 } finally {
   await flowDb?.$disconnect();

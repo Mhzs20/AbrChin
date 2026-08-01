@@ -219,6 +219,7 @@ test("Arvan SSH key validation uses the official read-only v1 endpoint", async (
   const requests: Array<{ url: string; method: string }> = [];
   const adapter = new ArvanV1Adapter({
     apiKey: "test-only",
+    regionCodes: ["ir-thr-ba1"],
     maxGetAttempts: 1,
     fetchImpl: async (input, init) => {
       requests.push({

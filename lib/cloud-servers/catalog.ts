@@ -1,3 +1,5 @@
+import { arvanRegionPresentation } from "@/lib/infrastructure/arvan/regions";
+
 export const READY_SERVER_PLAN_PREFIX = "READY_PARSPACK_";
 
 const regionPresentation: Record<
@@ -108,10 +110,7 @@ export function selectReadyServerImage(imageCodes: string[]) {
 export function readyServerLocation(regionCode: string) {
   return (
     regionPresentation[regionCode] ?? {
-      label: "موقعیت ابری",
-      shortLabel: "موقعیت ابری",
-      country: "—",
-      sortOrder: 90,
+      ...arvanRegionPresentation(regionCode),
     }
   );
 }

@@ -2,6 +2,7 @@ import { InfrastructureProvider } from "@prisma/client";
 
 import { getEnv } from "@/lib/env";
 import { ArvanV1Adapter } from "@/lib/infrastructure/arvan/v1-adapter";
+import { requireArvanRegionCodes } from "@/lib/infrastructure/arvan/regions";
 import type { CloudProviderAdapter } from "@/lib/infrastructure/cloud-provider-adapter";
 import { InfrastructureError } from "@/lib/infrastructure/errors";
 import { FakeCloudProviderAdapter } from "@/lib/infrastructure/fake-cloud-provider-adapter";
@@ -92,6 +93,7 @@ export function createCloudProviderAdapter(
     }
     return new ArvanV1Adapter({
       apiKey: env.arvanApiKey,
+      regionCodes: requireArvanRegionCodes(env.arvanRegionCodesCsv),
       baseUrl: env.arvanApiBaseUrl,
       timeoutMs: env.arvanTimeoutMs,
       maxGetAttempts: env.arvanGetAttempts,
@@ -113,11 +115,16 @@ export function isCloudProviderConfigured(
 ): boolean {
   const env = getEnv();
   if (provider === InfrastructureProvider.ARVAN) {
-    return (
-      env.arvanEnabled &&
-      Boolean(env.arvanApiKey) &&
-      env.arvanApiVersion === "v1"
-    );
+    try {
+      return (
+        env.arvanEnabled &&
+        Boolean(env.arvanApiKey) &&
+        env.arvanApiVersion === "v1" &&
+        requireArvanRegionCodes(env.arvanRegionCodesCsv).length > 0
+      );
+    } catch {
+      return false;
+    }
   }
   if (provider === InfrastructureProvider.PARSPACK) {
     return (

@@ -9,7 +9,7 @@ import {
   type ProviderCatalogItem,
   type Prisma,
 } from "@prisma/client";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import {
   READY_SERVER_PLAN_PREFIX,
@@ -35,6 +35,13 @@ import {
 } from "@/lib/infrastructure/provider-factory";
 import { WalletError } from "@/lib/wallet/errors";
 import { catalogExternalKey } from "@/lib/infrastructure/provider-routing";
+import type { InfrastructureProviderAdapter } from "@/lib/infrastructure/types";
+import {
+  ProviderCatalogSyncError,
+  safeProviderSyncCode,
+  safeProviderSyncMessage,
+  type SafeProviderSyncCode,
+} from "@/lib/infrastructure/catalog-sync-observability";
 
 export const UNSCOPED_REGION_CODE = "__unscoped__";
 
@@ -491,6 +498,188 @@ export async function persistProviderCatalog(
   };
 }
 
+async function recordParsPackSyncFailure(input: {
+  syncRunId: string;
+  attemptedAt: Date;
+  startedMs: number;
+  code: SafeProviderSyncCode;
+}) {
+  const finishedAt = new Date();
+  const durationMs = Math.max(Date.now() - input.startedMs, 0);
+  const message = safeProviderSyncMessage(input.code);
+  await prisma.$transaction([
+    prisma.providerCatalogSyncRun.update({
+      where: { id: input.syncRunId },
+      data: {
+        status: ProviderSyncStatus.FAILED,
+        failedRegions: 1,
+        report: {
+          error: { code: input.code, message },
+        },
+        finishedAt,
+        durationMs,
+      },
+    }),
+    prisma.providerCatalogState.upsert({
+      where: { provider: InfrastructureProvider.PARSPACK },
+      update: {
+        apiVersion: "v1",
+        lastCatalogSync: input.attemptedAt,
+        lastSyncDurationMs: durationMs,
+        lastSyncStatus: ProviderSyncStatus.FAILED,
+        syncRequestedAt: null,
+        lastError: message,
+        regionErrors: [{ code: input.code, message }],
+      },
+      create: {
+        id: "parspack-v1",
+        provider: InfrastructureProvider.PARSPACK,
+        apiVersion: "v1",
+        lastCatalogSync: input.attemptedAt,
+        lastSyncDurationMs: durationMs,
+        lastSyncStatus: ProviderSyncStatus.FAILED,
+        lastError: message,
+        regionErrors: [{ code: input.code, message }],
+      },
+    }),
+  ]);
+}
+
+export async function syncParsPackCatalog(
+  provider: InfrastructureProviderAdapter,
+  now = new Date(),
+) {
+  if (provider.provider !== InfrastructureProvider.PARSPACK) {
+    throw new Error("provider_route_mismatch");
+  }
+  return withCatalogSyncLease(
+    InfrastructureProvider.PARSPACK,
+    "v1",
+    async () => {
+      const startedMs = Date.now();
+      const catalogVersion = `parspack:v1:${now.toISOString()}`;
+      const syncRun = await prisma.providerCatalogSyncRun.create({
+        data: {
+          id: randomUUID(),
+          provider: InfrastructureProvider.PARSPACK,
+          apiVersion: "v1",
+          status: ProviderSyncStatus.RUNNING,
+          catalogVersion,
+        },
+      });
+
+      let catalog: ProviderCatalog;
+      try {
+        catalog = await provider.syncCatalog();
+      } catch (error) {
+        const code = safeProviderSyncCode(error);
+        try {
+          await recordParsPackSyncFailure({
+            syncRunId: syncRun.id,
+            attemptedAt: now,
+            startedMs,
+            code,
+          });
+        } catch {
+          throw new ProviderCatalogSyncError({
+            provider: InfrastructureProvider.PARSPACK,
+            apiVersion: "v1",
+            operation: "catalog_sync",
+            code: "provider_persistence_failed",
+          });
+        }
+        throw new ProviderCatalogSyncError({
+          provider: InfrastructureProvider.PARSPACK,
+          apiVersion: "v1",
+          operation: "catalog_sync",
+          code,
+        });
+      }
+
+      try {
+        return await prisma.$transaction(async (tx) => {
+          const persisted = await persistProviderCatalog(tx, catalog, now);
+          const durationMs = Math.max(Date.now() - startedMs, 0);
+          const priceWarning = persisted.priceContractConfirmed
+            ? null
+            : "واحد و ارز قیمت Provider هنوز با قرارداد رسمی تأیید نشده است.";
+          await tx.providerCatalogState.upsert({
+            where: { provider: InfrastructureProvider.PARSPACK },
+            update: {
+              apiVersion: "v1",
+              lastCatalogSync: now,
+              syncRequestedAt: null,
+              lastSyncStatus: ProviderSyncStatus.SUCCEEDED,
+              lastSyncDurationMs: durationMs,
+              catalogVersion,
+              regionCount: catalog.regions.length,
+              sizeCount: catalog.sizes.length,
+              imageCount: catalog.images.length,
+              catalogItemCount: persisted.catalogItemCount,
+              pricedItemCount: persisted.pricedItemCount,
+              unavailableItemCount: persisted.unavailableItemCount,
+              regionErrors: [],
+              lastError: priceWarning,
+            },
+            create: {
+              id: "parspack-v1",
+              provider: InfrastructureProvider.PARSPACK,
+              apiVersion: "v1",
+              lastCatalogSync: now,
+              lastSyncStatus: ProviderSyncStatus.SUCCEEDED,
+              lastSyncDurationMs: durationMs,
+              catalogVersion,
+              regionCount: catalog.regions.length,
+              sizeCount: catalog.sizes.length,
+              imageCount: catalog.images.length,
+              catalogItemCount: persisted.catalogItemCount,
+              pricedItemCount: persisted.pricedItemCount,
+              unavailableItemCount: persisted.unavailableItemCount,
+              regionErrors: [],
+              lastError: priceWarning,
+            },
+          });
+          await tx.providerCatalogSyncRun.update({
+            where: { id: syncRun.id },
+            data: {
+              status: ProviderSyncStatus.SUCCEEDED,
+              regionCount: catalog.regions.length,
+              successfulRegions: catalog.regions.length,
+              planCount: catalog.sizes.length,
+              imageCount: catalog.images.length,
+              report: {
+                priceContractConfirmed: persisted.priceContractConfirmed,
+                readyPlanCount: persisted.readyPlanCount,
+              },
+              finishedAt: new Date(),
+              durationMs,
+            },
+          });
+          return persisted;
+        });
+      } catch {
+        try {
+          await recordParsPackSyncFailure({
+            syncRunId: syncRun.id,
+            attemptedAt: now,
+            startedMs,
+            code: "provider_persistence_failed",
+          });
+        } catch {
+          // The safe persistence error below is still the only information
+          // allowed to cross the catalog boundary.
+        }
+        throw new ProviderCatalogSyncError({
+          provider: InfrastructureProvider.PARSPACK,
+          apiVersion: "v1",
+          operation: "catalog_sync",
+          code: "provider_persistence_failed",
+        });
+      }
+    },
+  );
+}
+
 export async function refreshProviderCatalogForPricing(now = new Date()) {
   if (!isProviderConfigured()) {
     throw new WalletError(
@@ -498,57 +687,5 @@ export async function refreshProviderCatalogForPricing(now = new Date()) {
       "بررسی قیمت و ظرفیت فعلی ممکن نیست.",
     );
   }
-  try {
-    return await withCatalogSyncLease(
-      InfrastructureProvider.PARSPACK,
-      "v1",
-      async () => {
-        const provider = createInfrastructureProvider();
-        const catalog = await provider.syncCatalog();
-        return prisma.$transaction(async (tx) => {
-          const persisted = await persistProviderCatalog(tx, catalog, now);
-          await tx.providerCatalogState.upsert({
-        where: { provider: InfrastructureProvider.PARSPACK },
-        update: {
-          lastCatalogSync: now,
-          syncRequestedAt: null,
-          lastSyncStatus: ProviderSyncStatus.SUCCEEDED,
-          regionCount: catalog.regions.length,
-          sizeCount: catalog.sizes.length,
-          imageCount: catalog.images.length,
-          catalogItemCount: persisted.catalogItemCount,
-          pricedItemCount: persisted.pricedItemCount,
-          unavailableItemCount: persisted.unavailableItemCount,
-          lastError: persisted.priceContractConfirmed
-            ? null
-            : "واحد و ارز قیمت Provider هنوز با قرارداد رسمی تأیید نشده است.",
-        },
-        create: {
-          id: "parspack",
-          provider: InfrastructureProvider.PARSPACK,
-          lastCatalogSync: now,
-          syncRequestedAt: null,
-          lastSyncStatus: ProviderSyncStatus.SUCCEEDED,
-          regionCount: catalog.regions.length,
-          sizeCount: catalog.sizes.length,
-          imageCount: catalog.images.length,
-          catalogItemCount: persisted.catalogItemCount,
-          pricedItemCount: persisted.pricedItemCount,
-          unavailableItemCount: persisted.unavailableItemCount,
-          lastError: persisted.priceContractConfirmed
-            ? null
-            : "واحد و ارز قیمت Provider هنوز با قرارداد رسمی تأیید نشده است.",
-        },
-          });
-          return persisted;
-        });
-      },
-    );
-  } catch (error) {
-    if (error instanceof WalletError) throw error;
-    throw new WalletError(
-      "quote_revalidation_failed",
-      "بررسی قیمت و ظرفیت فعلی ممکن نیست.",
-    );
-  }
+  return syncParsPackCatalog(createInfrastructureProvider(), now);
 }

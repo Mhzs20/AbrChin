@@ -1,3 +1,5 @@
+import { requireArvanRegionCodes } from "@/lib/infrastructure/arvan/regions";
+
 function readInt(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -74,6 +76,7 @@ export function getEnv() {
     arvanApiVersion: (process.env.ARVAN_API_VERSION ?? "v1")
       .trim()
       .toLowerCase(),
+    arvanRegionCodesCsv: process.env.ARVAN_REGION_CODES ?? "",
     arvanTimeoutMs: readInt("ARVAN_TIMEOUT_MS", 15_000),
     arvanGetAttempts: readInt("ARVAN_GET_ATTEMPTS", 3),
     // Lifecycle writes stay disabled until a separately approved staging
@@ -118,6 +121,9 @@ export function validateProviderEnvironment() {
       !/\/ecc\/v1(?:\/regions)?\/?$/i.test(env.arvanApiBaseUrl))
   ) {
     throw new Error("Arvan v1 provider configuration is invalid");
+  }
+  if (env.arvanEnabled) {
+    requireArvanRegionCodes(env.arvanRegionCodesCsv);
   }
   if (env.parspackApiVersion !== "v1") {
     throw new Error("PARSPACK_API_VERSION must be v1");

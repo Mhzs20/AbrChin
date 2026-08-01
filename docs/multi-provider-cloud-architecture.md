@@ -37,10 +37,21 @@ Authorization: Apikey ${ARVAN_API_KEY}
 Accept: application/json
 ```
 
-Catalog از این GETها می‌آید:
+کد Region فقط از allowlist صریح Server خوانده می‌شود و هیچ fallback به
+`/details`، Root `/regions` یا فهرست Hardcoded داخل Adapter وجود ندارد:
 
 ```text
-GET /details
+ARVAN_REGION_CODES=ir-thr-si1,ir-thr-fr1,ir-tbz-sh1,ir-thr-ba1,ir-southwest1-a,eu-west1-a
+```
+
+CSV در Startup Trim، Deduplicate و Validate می‌شود. اگر آروان فعال باشد و
+هیچ Region معتبر تنظیم نشده باشد، Worker و Web به‌صورت Fail-closed شروع
+نمی‌شوند. کد Region هویت Provider است؛ نام‌های سیمین، فروغ، شهریار، بامداد،
+قیصر و گوته فقط در Presentation Layer نگهداری می‌شوند.
+
+Catalog هر Region از این GETها می‌آید:
+
+```text
 GET /regions/{region}/sizes
 GET /regions/{region}/images?type=distributions
 GET /regions/{region}/networks
@@ -138,6 +149,12 @@ Sync Upsert و Idempotent است. فقط پس از Sync کامل و موفق ی�
 دیده‌نشدهٔ همان Region `STALE` می‌شوند. خطای یک Region دادهٔ سالم Regionهای
 دیگر یا Last-known-good همان Region را خراب نمی‌کند. هیچ Catalog Itemی Hard
 Delete نمی‌شود و Quote/Orderهای تاریخی تغییر نمی‌کنند.
+
+پاسخ `401/403` ParsPack با کد امن `provider_auth_failed` و بدون Retry ثبت
+می‌شود. شکست Provider، Timeout، ناسازگاری Response Contract و شکست
+Persistence کدهای جدا دارند. هر تلاش ParsPack، حتی در صورت شکست، یک
+`ProviderCatalogSyncRun` و نتیجهٔ Sanitized در `ProviderCatalogState` دارد؛
+Token، Header احراز هویت و Response خام در Log، Audit یا Admin ذخیره نمی‌شود.
 
 Sync دستی از پنل Admin در دسترس است. Worker نیز با
 `CATALOG_SYNC_INTERVAL_MS` (پیش‌فرض پنج دقیقه) Sync امن و Read-only هر

@@ -21,6 +21,7 @@ import type {
   ValidationResult,
 } from "@/lib/infrastructure/cloud-provider-adapter";
 import { InfrastructureError } from "@/lib/infrastructure/errors";
+import { requireArvanRegionCodes } from "@/lib/infrastructure/arvan/regions";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import { normalizeProviderMoney } from "@/lib/pricing/provider-money";
 
@@ -28,6 +29,7 @@ type UnknownRecord = Record<string, unknown>;
 
 type ArvanV1AdapterConfig = {
   apiKey: string;
+  regionCodes: string[];
   baseUrl?: string;
   timeoutMs?: number;
   maxGetAttempts?: number;
@@ -309,11 +311,13 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
   private readonly mutationsEnabled: boolean;
   private readonly fetchImpl: typeof fetch;
   private readonly logger: (entry: Record<string, unknown>) => void;
+  private readonly regionCodes: string[];
   private consecutiveFailures = 0;
   private circuitOpenedAt: number | null = null;
 
   constructor(config: ArvanV1AdapterConfig) {
     this.apiKey = config.apiKey.trim();
+    this.regionCodes = requireArvanRegionCodes(config.regionCodes.join(","));
     this.baseUrl = normalizeArvanV1BaseUrl(config.baseUrl);
     this.timeoutMs = config.timeoutMs ?? 15_000;
     this.maxGetAttempts = Math.min(Math.max(config.maxGetAttempts ?? 3, 1), 4);
@@ -485,27 +489,14 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
   }
 
   async syncRegions(): Promise<ProviderRegion[]> {
-    const response = await this.request("GET", "/details");
-    return unwrapCollection(response.body, ["regions", "details"])
-      .filter(isRecord)
-      .map((raw) => {
-        const code = asString(raw.code) || asString(raw.region);
-        return {
-          code,
-          name:
-            [asString(raw.country), asString(raw.dc)].filter(Boolean).join(" - ") ||
-            code,
-          available:
-            asBoolean(raw.create, true) &&
-            !asBoolean(raw.soon, false) &&
-            asBoolean(raw.visible, true),
-          rawPayload: redactProviderData(raw) as UnknownRecord,
-          ...(response.requestId
-            ? { providerRequestId: response.requestId }
-            : {}),
-        };
-      })
-      .filter((region) => region.code.length > 0);
+    return this.regionCodes.map((code) => ({
+      code,
+      // Provider identity remains the configured code. Localized names belong
+      // to the presentation layer and never change catalog identity.
+      name: code,
+      available: true,
+      rawPayload: { code, source: "server_configuration" },
+    }));
   }
 
   async syncPlans(region: string): Promise<ProviderPlan[]> {

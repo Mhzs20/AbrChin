@@ -9,13 +9,24 @@ import {
   type ProviderCatalogItem,
 } from "@prisma/client";
 
+import { validateProviderEnvironment } from "../lib/env.ts";
+
 import {
   ArvanV1Adapter,
   normalizeArvanV1BaseUrl,
   normalizeArvanPlanResources,
   redactProviderData,
 } from "../lib/infrastructure/arvan/v1-adapter.ts";
+import {
+  arvanRegionPresentation,
+  parseArvanRegionCodes,
+  requireArvanRegionCodes,
+} from "../lib/infrastructure/arvan/regions.ts";
 import { FakeCloudProviderAdapter } from "../lib/infrastructure/fake-cloud-provider-adapter.ts";
+import {
+  ProviderCatalogSyncError,
+  settleProviderCatalogSyncTasks,
+} from "../lib/infrastructure/catalog-sync-observability.ts";
 import { submitProvisioningOnce } from "../lib/infrastructure/provisioning-orchestrator.ts";
 import { catalogRamMbToPlanRamGb } from "../lib/infrastructure/multi-provider-catalog-service.ts";
 import {
@@ -79,6 +90,60 @@ test("product kinds have one immutable server-side provider route", () => {
       apiVersion: "v1",
     }),
   );
+});
+
+test("worker catalog task results retain provider metadata and only log safe codes", async () => {
+  const entries: Array<Record<string, unknown>> = [];
+  const secret = "must-never-be-logged";
+  const results = await settleProviderCatalogSyncTasks(
+    [
+      {
+        provider: InfrastructureProvider.ARVAN,
+        apiVersion: "v1",
+        operation: "catalog_sync",
+        promise: Promise.resolve({ ok: true }),
+      },
+      {
+        provider: InfrastructureProvider.PARSPACK,
+        apiVersion: "v1",
+        operation: "catalog_sync",
+        promise: Promise.reject(
+          Object.assign(
+            new ProviderCatalogSyncError({
+              provider: InfrastructureProvider.PARSPACK,
+              apiVersion: "v1",
+              operation: "catalog_sync",
+              code: "provider_auth_failed",
+            }),
+            { unsafeResponse: secret },
+          ),
+        ),
+      },
+    ],
+    (entry) => entries.push(entry),
+  );
+  assert.deepEqual(results.map((result) => result.status), [
+    "fulfilled",
+    "rejected",
+  ]);
+  assert.deepEqual(entries, [
+    {
+      event: "provider_catalog_sync",
+      provider: InfrastructureProvider.ARVAN,
+      apiVersion: "v1",
+      operation: "catalog_sync",
+      syncStatus: "SUCCEEDED",
+    },
+    {
+      event: "provider_catalog_sync",
+      provider: InfrastructureProvider.PARSPACK,
+      apiVersion: "v1",
+      operation: "catalog_sync",
+      syncStatus: "FAILED",
+      safeErrorCode: "provider_auth_failed",
+    },
+  ]);
+  assert.equal(JSON.stringify(entries).includes(secret), false);
 });
 
 test("Arvan catalog identity includes API version and Region", () => {
@@ -289,17 +354,7 @@ test("Arvan v1 adapter maps regional catalog and uses price_per_month", async ()
     urls.push(url);
     methods.push(init?.method ?? "GET");
     let body: unknown;
-    if (url.endsWith("/details")) {
-      body = [
-        {
-          code: "ir-thr-ba1",
-          country: "IR",
-          dc: "BA1",
-          create: true,
-          visible: true,
-        },
-      ];
-    } else if (url.endsWith("/sizes")) {
+    if (url.endsWith("/sizes")) {
       body = [
         {
           id: "same-plan",
@@ -344,6 +399,7 @@ test("Arvan v1 adapter maps regional catalog and uses price_per_month", async ()
   };
   const adapter = new ArvanV1Adapter({
     apiKey: "test-only-secret",
+    regionCodes: ["ir-thr-ba1"],
     baseUrl: "https://napi.arvancloud.ir/ecc/v1/regions",
     fetchImpl: fakeFetch,
   });
@@ -369,9 +425,95 @@ test("Arvan v1 adapter maps regional catalog and uses price_per_month", async ()
   assert.equal(methods.every((method) => method === "GET"), true);
   assert.equal(urls.some((url) => url.includes("/v3")), false);
   assert.equal(
-    urls.some((url) => url.endsWith("/ecc/v1/details")),
+    urls.some(
+      (url) =>
+        url.endsWith("/ecc/v1/details") ||
+        url.endsWith("/ecc/v1/regions"),
+    ),
+    false,
+  );
+  assert.deepEqual(regions, [
+    {
+      code: "ir-thr-ba1",
+      name: "ir-thr-ba1",
+      available: true,
+      rawPayload: {
+        code: "ir-thr-ba1",
+        source: "server_configuration",
+      },
+    },
+  ]);
+  assert.equal(
+    urls.some((url) => url.endsWith("/servers/options")),
     true,
   );
+});
+
+test("Arvan regions are strict server configuration with presentation-only labels", () => {
+  assert.deepEqual(
+    parseArvanRegionCodes(
+      " ir-thr-si1,ir-thr-fr1,ir-thr-si1, eu-west1-a ",
+    ),
+    ["ir-thr-si1", "ir-thr-fr1", "eu-west1-a"],
+  );
+  assert.throws(() => requireArvanRegionCodes(""));
+  assert.throws(() => parseArvanRegionCodes("ir-thr-si1,../unsafe"));
+  assert.throws(
+    () =>
+      new ArvanV1Adapter({
+        apiKey: "test-only",
+        regionCodes: [],
+      }),
+    /region configuration is required/,
+  );
+  assert.equal(
+    arvanRegionPresentation("ir-thr-si1").label,
+    "سیمین، غرب تهران",
+  );
+  assert.equal(
+    arvanRegionPresentation("eu-west1-a").label,
+    "گوته، آلمان",
+  );
+});
+
+test("enabled Arvan environment fails closed without a valid region allowlist", () => {
+  const names = [
+    "ARVAN_ENABLED",
+    "ARVAN_API_KEY",
+    "ARVAN_API_BASE_URL",
+    "ARVAN_API_VERSION",
+    "ARVAN_REGION_CODES",
+    "PARSPACK_ENABLED",
+  ] as const;
+  const previous = Object.fromEntries(
+    names.map((name) => [name, process.env[name]]),
+  );
+  try {
+    process.env.ARVAN_ENABLED = "true";
+    process.env.ARVAN_API_KEY = "test-only";
+    process.env.ARVAN_API_BASE_URL =
+      "https://napi.arvancloud.ir/ecc/v1";
+    process.env.ARVAN_API_VERSION = "v1";
+    process.env.PARSPACK_ENABLED = "false";
+    process.env.ARVAN_REGION_CODES = "";
+    assert.throws(() => validateProviderEnvironment());
+    process.env.ARVAN_REGION_CODES = "ir-thr-si1,unsafe/path";
+    assert.throws(() => validateProviderEnvironment());
+    process.env.ARVAN_REGION_CODES =
+      "ir-thr-si1, ir-thr-si1,eu-west1-a";
+    assert.deepEqual(
+      requireArvanRegionCodes(
+        validateProviderEnvironment().arvanRegionCodesCsv,
+      ),
+      ["ir-thr-si1", "eu-west1-a"],
+    );
+  } finally {
+    for (const name of names) {
+      const value = previous[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
 });
 
 test("Arvan RAM and disk contracts normalize real GB fixtures and fail closed on disagreement", () => {
@@ -417,12 +559,14 @@ test("Arvan v3 is rejected before any network call and mutations default disable
     () =>
       new ArvanV1Adapter({
         apiKey: "secret",
+        regionCodes: ["ir-thr-ba1"],
         baseUrl: "https://napi.arvancloud.ir/ecc/v3",
         fetchImpl: fakeFetch,
       }),
   );
   const adapter = new ArvanV1Adapter({
     apiKey: "secret",
+    regionCodes: ["ir-thr-ba1"],
     fetchImpl: fakeFetch,
   });
   await assert.rejects(() =>

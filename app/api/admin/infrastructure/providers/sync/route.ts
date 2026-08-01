@@ -2,10 +2,10 @@ import { InfrastructureProvider } from "@prisma/client";
 
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/db";
-import { persistProviderCatalog } from "@/lib/infrastructure/catalog-service";
+import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
+import { safeProviderSyncCode } from "@/lib/infrastructure/catalog-sync-observability";
 import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
 import {
-  createInfrastructureProvider,
   isCloudProviderConfigured,
   isProviderConfigured,
 } from "@/lib/infrastructure/provider-factory";
@@ -86,52 +86,18 @@ export async function POST(request: Request) {
     if (!isProviderConfigured()) {
       return jsonError("پارس‌پک تنظیم نشده است.", 400);
     }
-    const adapter = createInfrastructureProvider();
-    const syncedAt = new Date();
-    const catalog = await adapter.syncCatalog();
-    await prisma.$transaction(async (tx) => {
-      const persisted = await persistProviderCatalog(tx, catalog, syncedAt);
-      await tx.providerCatalogState.upsert({
-        where: { provider },
-        update: {
-          apiVersion: "v1",
-          lastCatalogSync: syncedAt,
-          regionCount: catalog.regions.length,
-          sizeCount: catalog.sizes.length,
-          imageCount: catalog.images.length,
-          catalogItemCount: persisted.catalogItemCount,
-          pricedItemCount: persisted.pricedItemCount,
-          unavailableItemCount: persisted.unavailableItemCount,
-          lastSyncStatus: "SUCCEEDED",
-          lastError: persisted.priceContractConfirmed
-            ? null
-            : "واحد پول Provider تأیید نشده است.",
-        },
-        create: {
-          id: "parspack-v1",
-          provider,
-          apiVersion: "v1",
-          lastCatalogSync: syncedAt,
-          regionCount: catalog.regions.length,
-          sizeCount: catalog.sizes.length,
-          imageCount: catalog.images.length,
-          catalogItemCount: persisted.catalogItemCount,
-          pricedItemCount: persisted.pricedItemCount,
-          unavailableItemCount: persisted.unavailableItemCount,
-          lastSyncStatus: "SUCCEEDED",
-          lastError: persisted.priceContractConfirmed
-            ? null
-            : "واحد پول Provider تأیید نشده است.",
-        },
-      });
-    });
+    await refreshProviderCatalogForPricing();
     return jsonOk({ state: await publicState(provider) });
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);
     console.error(
-      "[admin/providers/sync]",
-      error instanceof Error ? error.message : "unknown",
+      JSON.stringify({
+        event: "admin_provider_catalog_sync",
+        operation: "catalog_sync",
+        safeErrorCode: safeProviderSyncCode(error),
+        syncStatus: "FAILED",
+      }),
     );
     return jsonError("همگام‌سازی کاتالوگ ممکن نیست.", 500);
   }

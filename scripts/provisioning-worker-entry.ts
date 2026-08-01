@@ -3,6 +3,10 @@ import { InfrastructureProvider } from "@prisma/client";
 
 import { validateProviderEnvironment } from "@/lib/env";
 import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
+import {
+  settleProviderCatalogSyncTasks,
+  type ProviderCatalogSyncTask,
+} from "@/lib/infrastructure/catalog-sync-observability";
 import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
 import {
   isCloudProviderConfigured,
@@ -47,28 +51,26 @@ async function main() {
           Date.now() + SUBSCRIPTION_LIFECYCLE_INTERVAL_MS;
       }
       if (Date.now() >= nextCatalogSyncAt) {
-        const syncResults = await Promise.allSettled([
-          ...(isCloudProviderConfigured(InfrastructureProvider.ARVAN)
-            ? [
-                refreshMultiProviderCatalog(
-                  InfrastructureProvider.ARVAN,
-                ),
-              ]
-            : []),
-          ...(isProviderConfigured()
-            ? [refreshProviderCatalogForPricing()]
-            : []),
-        ]);
-        for (const result of syncResults) {
-          if (result.status === "rejected") {
-            console.error(
-              "[abrchin-worker] catalog_sync_failed",
-              result.reason instanceof Error
-                ? result.reason.message
-                : "unknown",
-            );
-          }
+        const syncTasks: ProviderCatalogSyncTask[] = [];
+        if (isCloudProviderConfigured(InfrastructureProvider.ARVAN)) {
+          syncTasks.push({
+            provider: InfrastructureProvider.ARVAN,
+            apiVersion: "v1",
+            operation: "catalog_sync",
+            promise: refreshMultiProviderCatalog(
+              InfrastructureProvider.ARVAN,
+            ),
+          });
         }
+        if (isProviderConfigured()) {
+          syncTasks.push({
+            provider: InfrastructureProvider.PARSPACK,
+            apiVersion: "v1",
+            operation: "catalog_sync",
+            promise: refreshProviderCatalogForPricing(),
+          });
+        }
+        await settleProviderCatalogSyncTasks(syncTasks);
         nextCatalogSyncAt = Date.now() + CATALOG_SYNC_INTERVAL_MS;
       }
       await touchWorkerHeartbeat({ cycleOk: true });

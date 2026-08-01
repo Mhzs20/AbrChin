@@ -240,6 +240,47 @@ test("maps provider http errors without treating every 403 as balance", () => {
   assert.equal(mapProviderHttpError(503), "provider_unavailable");
 });
 
+test("ParsPack 403 is provider_auth_failed and each catalog endpoint is attempted once", async () => {
+  const calls: string[] = [];
+  const provider = new ParsPackProvider({
+    managementBaseUrl: "https://my.parspack.com/cserver/api/v1",
+    publicBaseUrl: "https://my.parspack.com/cserver/api/public/v1",
+    token: "contract-test-token-not-for-logs",
+    timeoutMs: 1000,
+    priceCurrencyCode: "IRR",
+    priceAmountUnit: "TOMAN",
+    fetchImpl: async (input) => {
+      calls.push(String(input));
+      return Response.json(
+        {
+          message: "forbidden",
+          token: "response-secret-must-not-escape",
+        },
+        { status: 403 },
+      );
+    },
+  });
+
+  await assert.rejects(
+    provider.syncCatalog(),
+    (error: unknown) => {
+      assert.ok(error instanceof InfrastructureError);
+      assert.equal(error.code, "provider_auth_failed");
+      assert.equal(error.message, "ParsPack request failed");
+      assert.equal(
+        JSON.stringify({ name: error.name, code: error.code, message: error.message })
+          .includes("response-secret-must-not-escape"),
+        false,
+      );
+      return true;
+    },
+  );
+  assert.equal(calls.length, 3);
+  assert.equal(calls.filter((url) => url.includes("/regions?")).length, 1);
+  assert.equal(calls.filter((url) => url.includes("/sizes?")).length, 1);
+  assert.equal(calls.filter((url) => url.includes("/images?")).length, 1);
+});
+
 test("sanitized provider response excludes secrets", () => {
   const safe = sanitizeProviderResponse({
     vm: {
