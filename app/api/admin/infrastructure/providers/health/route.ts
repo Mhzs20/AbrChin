@@ -1,6 +1,7 @@
 import { InfrastructureProvider } from "@prisma/client";
 
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
+import { toSafeConnectionFailure } from "@/lib/admin/service-connection-safety";
 import { prisma } from "@/lib/db";
 import {
   createCloudProviderAdapter,
@@ -108,9 +109,12 @@ export async function POST(request: Request) {
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);
+    const safe = toSafeConnectionFailure(error);
     console.error(
-      "[admin/providers/health]",
-      error instanceof Error ? error.message : "unknown",
+      JSON.stringify({
+        event: "admin_provider_health_check_failed",
+        safeErrorCode: safe.code,
+      }),
     );
     return jsonError("بررسی اتصال ممکن نیست.", 500);
   }

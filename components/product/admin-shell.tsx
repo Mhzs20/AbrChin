@@ -27,7 +27,7 @@ import type { PublicUser } from "@/lib/session";
 
 const mainNav: NavItem[] = [
   { href: "/admin", label: "مرکز عملیات", icon: LayoutDashboard, shortLabel: "عملیات" },
-  { href: "/admin/infrastructure/providers", label: "اتصال سرویس‌ها", icon: Building2, shortLabel: "اتصال" },
+  { href: "/admin/connections", label: "اتصال سرویس‌ها", icon: Building2, shortLabel: "اتصال" },
   { href: "/admin/infrastructure/providers#catalog", label: "کاتالوگ Providerها", icon: Server, shortLabel: "کاتالوگ" },
   { href: "/admin/infrastructure/plans", label: "SKUهای ابرچین", icon: Server, shortLabel: "SKU" },
   { href: "/admin/infrastructure/orders", label: "سفارش‌ها و تحویل", icon: FileText, shortLabel: "سفارش" },

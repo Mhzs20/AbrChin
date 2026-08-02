@@ -2,20 +2,18 @@ import {
   AdminNotificationStatus,
   InfrastructureOrderStatus,
   LedgerType,
+  PaymentGatewayProvider,
   ProvisioningJobStatus,
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
-import {
-  isCloudProviderConfigured,
-  isProviderConfigured,
-} from "@/lib/infrastructure/provider-factory";
+import { isCloudProviderConfigured } from "@/lib/infrastructure/provider-factory";
 import { getWorkerHealthStatus } from "@/lib/infrastructure/provisioning-service";
 import { ensureGatewayConfigsSeeded } from "@/lib/payments/gateway-config";
+import { hasServerCredentials } from "@/lib/payments/provider-factory";
 import { catalogItemBasePriceRial } from "@/lib/pricing/plan-pricing";
 import { calculateQuotePricing } from "@/lib/pricing/quote-line-items";
 import { assessInfrastructureRecoveryActions } from "@/lib/infrastructure/resource-disposition";
-import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
 import { getOperationalAlertConfigurationStatus } from "@/lib/operations/alert-configuration";
 import { classifyAdminOperationQueue } from "@/lib/admin/operations";
 
@@ -88,41 +86,35 @@ export async function getSystemStatuses() {
   const catalog = catalogStates.find((item) => item.provider === "PARSPACK");
   const pricing = pricingConfigs.find((item) => item.provider === "PARSPACK");
 
-  let parspackStatus: "healthy" | "unconfigured" | "disabled" | "error" = "unconfigured";
-  let parspackMessage = "تنظیم نشده";
-  if (isProviderConfigured()) {
-    try {
-      const { createInfrastructureProvider } = await import("@/lib/infrastructure/provider-factory");
-      const provider = createInfrastructureProvider();
-      const health = await provider.checkConnection();
-      parspackStatus = health.ok ? "healthy" : "error";
-      parspackMessage = health.message;
-    } catch {
-      parspackStatus = "disabled";
-      parspackMessage = "غیرفعال";
-    }
-  }
-
   const arvanCatalog = catalogStates.find((item) => item.provider === "ARVAN");
   const arvanPricing = pricingConfigs.find((item) => item.provider === "ARVAN");
-  let arvanStatus: "healthy" | "unconfigured" | "disabled" | "error" =
-    "unconfigured";
-  let arvanMessage = "تنظیم نشده";
-  if (isCloudProviderConfigured("ARVAN")) {
-    try {
-      const regions = await listProviderRegionConfigs({
-        provider: "ARVAN",
-        apiVersion: "v1",
-        purpose: "SYNC",
-      });
-      arvanStatus = regions.length > 0 ? "healthy" : "error";
-      arvanMessage =
-        regions.length > 0 ? "اتصال برقرار است" : "Region فعالی دریافت نشد";
-    } catch {
-      arvanStatus = "error";
-      arvanMessage = "خطای اتصال";
-    }
-  }
+  const persistedConnection = (
+    configured: boolean,
+    state: (typeof catalogStates)[number] | undefined,
+  ) => ({
+    status: !configured
+      ? "unconfigured" as const
+      : state?.lastError
+        ? "error" as const
+        : state?.lastHealthCheck
+          ? "healthy" as const
+          : "disabled" as const,
+    message: !configured
+      ? "تنظیم نشده"
+      : state?.lastError
+        ? "آخرین بررسی ناموفق بود"
+        : state?.lastHealthCheck
+          ? "آخرین بررسی موفق بود"
+          : "بررسی اتصال اجرا نشده است",
+  });
+  const parspackConnection = persistedConnection(
+    isCloudProviderConfigured("PARSPACK"),
+    catalog,
+  );
+  const arvanConnection = persistedConnection(
+    isCloudProviderConfigured("ARVAN"),
+    arvanCatalog,
+  );
 
   const providerState = (
     state: (typeof catalogStates)[number] | undefined,
@@ -164,8 +156,16 @@ export async function getSystemStatuses() {
   const zarinpal = gateways.find((g) => g.provider === "ZARINPAL");
 
   return {
-    zibal: { enabled: zibal?.enabled ?? false, default: zibal?.isDefault ?? false },
-    zarinpal: { enabled: zarinpal?.enabled ?? false, default: zarinpal?.isDefault ?? false },
+    zibal: {
+      enabled: zibal?.enabled ?? false,
+      default: zibal?.isDefault ?? false,
+      configured: hasServerCredentials(PaymentGatewayProvider.ZIBAL),
+    },
+    zarinpal: {
+      enabled: zarinpal?.enabled ?? false,
+      default: zarinpal?.isDefault ?? false,
+      configured: hasServerCredentials(PaymentGatewayProvider.ZARINPAL),
+    },
     kavenegar: {
       configured: Boolean(process.env.KAVENEGAR_API_KEY),
       operationalAlerts: getOperationalAlertConfigurationStatus(),
@@ -175,15 +175,15 @@ export async function getSystemStatuses() {
       ...providerState(
         catalog,
         pricing,
-        parspackStatus,
-        parspackMessage,
+        parspackConnection.status,
+        parspackConnection.message,
       ),
     },
     arvan: providerState(
       arvanCatalog,
       arvanPricing,
-      arvanStatus,
-      arvanMessage,
+      arvanConnection.status,
+      arvanConnection.message,
     ),
     worker: {
       status: worker.status,
@@ -378,7 +378,9 @@ export async function getAdminOperationsCenter() {
       plan.priced,
   ).length;
 
-  const paymentConfigured = system.zibal.enabled || system.zarinpal.enabled;
+  const paymentConfigured =
+    (system.zibal.enabled && system.zibal.configured) ||
+    (system.zarinpal.enabled && system.zarinpal.configured);
   return {
     publishedSellableSkuCount,
     connections: [
@@ -387,28 +389,28 @@ export async function getAdminOperationsCenter() {
         label: "آروان",
         status: system.arvan.status,
         message: system.arvan.message,
-        href: "/admin/infrastructure/providers",
+        href: "/admin/connections",
       },
       {
         key: "parspack",
         label: "پارس‌پک",
         status: system.parspack.status,
         message: system.parspack.message,
-        href: "/admin/infrastructure/providers",
+        href: "/admin/connections",
       },
       {
         key: "otp",
         label: "OTP کاوه‌نگار",
         status: system.kavenegar.configured ? "healthy" : "unconfigured",
         message: system.kavenegar.configured ? "تنظیم شده" : "تنظیم نشده",
-        href: "/admin/settings",
+        href: "/admin/connections",
       },
       {
         key: "payment",
         label: "درگاه پرداخت",
         status: paymentConfigured ? "healthy" : "unconfigured",
         message: paymentConfigured ? "درگاه فعال است" : "درگاه فعال تنظیم نشده است",
-        href: "/admin/payment-gateways",
+        href: "/admin/connections",
       },
     ],
     queues,

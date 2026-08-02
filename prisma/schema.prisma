@@ -175,6 +175,20 @@ enum InfrastructurePlanPublicationStatus {
   ARCHIVED
 }
 
+enum ServiceConnectionName {
+  ARVAN
+  PARSPACK
+  KAVENEGAR
+  PAYMENT_GATEWAY
+}
+
+enum ServiceConnectionCheckStatus {
+  HEALTHY
+  UNCONFIGURED
+  UNVERIFIED
+  ERROR
+}
+
 enum OperationalIncidentSeverity {
   WARNING
   CRITICAL
@@ -1057,6 +1071,17 @@ model ProviderCatalogState {
   lastProviderRequestId String?
   lastError             String?
   updatedAt             DateTime               @updatedAt
+}
+
+model ServiceConnectionCheck {
+  service      ServiceConnectionName        @id
+  configured   Boolean                      @default(false)
+  status       ServiceConnectionCheckStatus @default(UNCONFIGURED)
+  capabilities Json
+  errorCode    String?
+  message      String?
+  checkedAt    DateTime                     @default(now())
+  updatedAt    DateTime                     @updatedAt
 }
 
 model ProviderCatalogItem {
