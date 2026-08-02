@@ -144,12 +144,26 @@ export function SectionCard({
   );
 }
 
-export function StatCard({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
+export function StatCard({
+  label,
+  value,
+  hint,
+  action,
+  children,
+}: {
+  label: string;
+  value: ReactNode;
+  hint?: string;
+  action?: ReactNode;
+  children?: ReactNode;
+}) {
   return (
     <div className="product-stat-card">
       <div className="product-stat-card-label">{label}</div>
       <div className="product-stat-card-value">{value}</div>
       {hint ? <div style={{ fontSize: 12, color: "var(--product-muted)", marginTop: 4 }}>{hint}</div> : null}
+      {children ? <div style={{ marginTop: 8 }}>{children}</div> : null}
+      {action ? <div style={{ marginTop: 10, fontSize: 13 }}>{action}</div> : null}
     </div>
   );
 }

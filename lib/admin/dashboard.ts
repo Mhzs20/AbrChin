@@ -17,6 +17,7 @@ import { calculateQuotePricing } from "@/lib/pricing/quote-line-items";
 import { assessInfrastructureRecoveryActions } from "@/lib/infrastructure/resource-disposition";
 import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
 import { getOperationalAlertConfigurationStatus } from "@/lib/operations/alert-configuration";
+import { classifyAdminOperationQueue } from "@/lib/admin/operations";
 
 export async function getAdminDashboardStats() {
   const todayStart = new Date();
@@ -328,6 +329,122 @@ export async function getRecentAdminOperations() {
   ]);
 
   return { waitingOrders, failedJobs, recentTransactions, recentNotifications };
+}
+
+export async function getAdminOperationsCenter() {
+  const [system, plans, orders] = await Promise.all([
+    getSystemStatuses(),
+    listAllAdminPlansForOperationsCenter(),
+    prisma.infrastructureOrder.findMany({
+      where: {
+        OR: [
+          { status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING },
+          { productFlowState: { in: ["WAITING_ADMIN_DELIVERY_APPROVAL", "DELIVERED"] } },
+          {
+            status: {
+              in: [
+                InfrastructureOrderStatus.BLOCKED_PROVIDER_BALANCE,
+                InfrastructureOrderStatus.NEEDS_RECONCILIATION,
+                InfrastructureOrderStatus.MANUAL_REVIEW,
+                InfrastructureOrderStatus.FAILED,
+              ],
+            },
+          },
+        ],
+      },
+      orderBy: { updatedAt: "asc" },
+      take: 30,
+      include: { user: true, plan: true, serviceOrder: true },
+    }),
+  ]);
+
+  const queues = {
+    provision: [] as typeof orders,
+    delivery: [] as typeof orders,
+    attention: [] as typeof orders,
+  };
+  for (const order of orders) {
+    const queue = classifyAdminOperationQueue(order);
+    if (queue) queues[queue].push(order);
+  }
+
+  const publishedSellableSkuCount = plans.filter(
+    (plan) =>
+      plan.active &&
+      plan.publicationStatus === "PUBLISHED" &&
+      plan.catalogMappingStatus === "MAPPED" &&
+      plan.catalogItem?.status === "ACTIVE" &&
+      plan.catalogItem.available &&
+      plan.priced,
+  ).length;
+
+  const paymentConfigured = system.zibal.enabled || system.zarinpal.enabled;
+  return {
+    publishedSellableSkuCount,
+    connections: [
+      {
+        key: "arvan",
+        label: "آروان",
+        status: system.arvan.status,
+        message: system.arvan.message,
+        href: "/admin/infrastructure/providers",
+      },
+      {
+        key: "parspack",
+        label: "پارس‌پک",
+        status: system.parspack.status,
+        message: system.parspack.message,
+        href: "/admin/infrastructure/providers",
+      },
+      {
+        key: "otp",
+        label: "OTP کاوه‌نگار",
+        status: system.kavenegar.configured ? "healthy" : "unconfigured",
+        message: system.kavenegar.configured ? "تنظیم شده" : "تنظیم نشده",
+        href: "/admin/settings",
+      },
+      {
+        key: "payment",
+        label: "درگاه پرداخت",
+        status: paymentConfigured ? "healthy" : "unconfigured",
+        message: paymentConfigured ? "درگاه فعال است" : "درگاه فعال تنظیم نشده است",
+        href: "/admin/payment-gateways",
+      },
+    ],
+    queues,
+  };
+}
+
+async function listAllAdminPlansForOperationsCenter() {
+  const [items, pricing, productPricing, commerce, parchinStart] =
+    await Promise.all([
+      prisma.providerCatalogItem.findMany({ where: { active: true } }),
+      prisma.providerPricingConfig.findMany(),
+      prisma.productPricingConfig.findMany(),
+      prisma.commercePricingConfig.findUnique({ where: { id: "default" } }),
+      prisma.parchinPricingConfig.findUnique({ where: { level: "PARCHIN_START" } }),
+    ]);
+  const plans = await prisma.infrastructurePlan.findMany({
+    include: { catalogItem: true },
+  });
+  return plans.map((plan) => {
+    const catalogItem = plan.catalogItem ?? items.find((item) => item.id === plan.catalogItemId) ?? null;
+    const config = pricing.find((item) => item.provider === plan.provider);
+    const product = productPricing.find(
+      (item) =>
+        item.provider === plan.provider &&
+        item.apiVersion === plan.providerApiVersion &&
+        item.productKind === plan.productKind &&
+        item.enabled,
+    );
+    const basePrice = catalogItem ? catalogItemBasePriceRial(catalogItem) : null;
+    const priced =
+      basePrice != null &&
+      (plan.offerSource === "MANUAL_ADMIN" ||
+        (Boolean(config?.enabled) && Boolean(product) && Boolean(parchinStart?.active))) &&
+      commerce != null;
+    return { ...plan, catalogItem, priced };
+  });
 }
 
 export async function listAdminUsers(search?: string) {

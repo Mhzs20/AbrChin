@@ -9,8 +9,6 @@ import {
   Server,
   Settings,
   Shield,
-  Users,
-  Wallet,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -28,35 +26,27 @@ import {
 import type { PublicUser } from "@/lib/session";
 
 const mainNav: NavItem[] = [
-  { href: "/admin", label: "داشبورد", icon: LayoutDashboard, shortLabel: "داشبورد" },
-  { href: "/admin/infrastructure/orders", label: "سفارش‌های تأمین", icon: Building2, shortLabel: "تأمین" },
-  { href: "/admin/instances", label: "سرورها", icon: Server, shortLabel: "سرور" },
-  { href: "/admin/users", label: "کاربران", icon: Users, shortLabel: "کاربر" },
-  { href: "/admin/notifications", label: "اعلان‌ها", icon: Bell, shortLabel: "اعلان" },
-];
-
-const infraNav: NavItem[] = [
-  { href: "/admin/infrastructure/plans", label: "پلن‌های زیرساخت", icon: Server },
-  { href: "/admin/infrastructure/providers", label: "تأمین‌کننده‌ها", icon: Building2 },
-];
-
-const financeNav: NavItem[] = [
-  { href: "/admin/wallets", label: "کیف پول‌ها", icon: Wallet },
-  { href: "/admin/transactions", label: "تراکنش‌ها", icon: CreditCard },
-  { href: "/admin/payment-gateways", label: "درگاه‌های پرداخت", icon: CreditCard },
-  { href: "/admin/wallet-topup-settings", label: "تنظیمات شارژ", icon: Settings },
-];
-
-const systemNav: NavItem[] = [
-  { href: "/admin/audit", label: "گزارش عملیات", icon: FileText },
-  { href: "/admin/settings", label: "تنظیمات", icon: Settings },
+  { href: "/admin", label: "مرکز عملیات", icon: LayoutDashboard, shortLabel: "عملیات" },
+  { href: "/admin/infrastructure/providers", label: "اتصال سرویس‌ها", icon: Building2, shortLabel: "اتصال" },
+  { href: "/admin/infrastructure/providers#catalog", label: "کاتالوگ Providerها", icon: Server, shortLabel: "کاتالوگ" },
+  { href: "/admin/infrastructure/plans", label: "SKUهای ابرچین", icon: Server, shortLabel: "SKU" },
+  { href: "/admin/infrastructure/orders", label: "سفارش‌ها و تحویل", icon: FileText, shortLabel: "سفارش" },
+  { href: "/admin/transactions", label: "پرداخت‌ها و مشتریان", icon: CreditCard, shortLabel: "پرداخت" },
+  { href: "/admin/settings", label: "تنظیمات پیشرفته", icon: Settings, shortLabel: "تنظیمات" },
 ];
 
 const drawerGroups = [
-  { title: "اصلی", items: mainNav },
-  { title: "زیرساخت", items: infraNav },
-  { title: "مالی", items: financeNav },
-  { title: "سیستم", items: systemNav },
+  { title: "عملیات فروش", items: mainNav },
+  {
+    title: "ابزارهای پیشرفته",
+    items: [
+      { href: "/admin/instances", label: "سرورها", icon: Server },
+      { href: "/admin/users", label: "کاربران", icon: FileText },
+      { href: "/admin/wallets", label: "کیف پول‌ها", icon: CreditCard },
+      { href: "/admin/payment-gateways", label: "درگاه‌های پرداخت", icon: CreditCard },
+      { href: "/admin/audit", label: "گزارش عملیات", icon: FileText },
+    ],
+  },
 ];
 
 export function AdminShell({
@@ -81,21 +71,6 @@ export function AdminShell({
           </Link>
           <SidebarGroup>
             {mainNav.map((item) => (
-              <SidebarLink key={item.href} href={item.href} label={item.label} icon={item.icon} active={isNavActive(pathname, item.href)} />
-            ))}
-          </SidebarGroup>
-          <SidebarGroup title="زیرساخت">
-            {infraNav.map((item) => (
-              <SidebarLink key={item.href} href={item.href} label={item.label} icon={item.icon} active={isNavActive(pathname, item.href)} />
-            ))}
-          </SidebarGroup>
-          <SidebarGroup title="مالی">
-            {financeNav.map((item) => (
-              <SidebarLink key={item.href} href={item.href} label={item.label} icon={item.icon} active={isNavActive(pathname, item.href)} />
-            ))}
-          </SidebarGroup>
-          <SidebarGroup title="سیستم">
-            {systemNav.map((item) => (
               <SidebarLink key={item.href} href={item.href} label={item.label} icon={item.icon} active={isNavActive(pathname, item.href)} />
             ))}
           </SidebarGroup>
