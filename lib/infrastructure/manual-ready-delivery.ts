@@ -1,17 +1,13 @@
 import { isIPv4 } from "node:net";
 
 import {
-  AdminNotificationStatus,
-  AdminNotificationType,
   CloudInstanceStatus,
   InfrastructureHealthCheckStatus,
+  InfrastructureOfferSource,
   InfrastructureOrderStatus,
-  InfrastructureProductKind,
-  InfrastructureProvider,
   InstanceCredentialStatus,
   SecureDeliveryStatus,
   ServiceOrderStatus,
-  SubscriptionStatus,
   type Prisma,
 } from "@prisma/client";
 
@@ -23,50 +19,38 @@ import {
   replayAdminCommandTx,
 } from "@/lib/admin/command-receipt";
 import { prisma } from "@/lib/db";
+import { parseLockedProvisioningSelection } from "@/lib/infrastructure/provisioning-service";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
 import {
   credentialFingerprint,
   encryptCredential,
 } from "@/lib/security/credential-vault";
-import { addBillingMonth, addGracePeriod } from "@/lib/subscriptions/period";
 import { WalletError } from "@/lib/wallet/errors";
 
 const USERNAME_PATTERN = /^[a-z_][a-z0-9_-]{0,31}$/i;
 const RESOURCE_ID_PATTERN = /^[A-Za-z0-9._:-]{3,160}$/;
 
-type ManualDeliveryResult = {
+type ManualProvisionResult = {
   infrastructureOrderId: string;
   serviceOrderId: string;
   cloudInstanceId: string;
-  status: "ACTIVE";
+  productFlowState: "WAITING_ADMIN_DELIVERY_APPROVAL";
+  containsSecret: false;
 };
 
-function lockedSelection(value: Prisma.JsonValue | null) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const row = value as Record<string, unknown>;
-  if (
-    row.provider !== "ARVAN" ||
-    row.providerApiVersion !== "v1" ||
-    row.productKind !== "READY_INSTANT_SERVER" ||
-    row.offerSource !== "MANUAL_ADMIN" ||
-    typeof row.region !== "string" ||
-    typeof row.externalPlanId !== "string" ||
-    typeof row.externalImageId !== "string"
-  ) {
-    return null;
-  }
-  return {
-    region: row.region,
-    externalPlanId: row.externalPlanId,
-    externalImageId: row.externalImageId,
-  };
-}
-
+/**
+ * Records an Admin-verified Resource for a command that already passed the
+ * first approval. Despite its historical export name, this function never
+ * delivers or activates a service; Phase 1.8 owns the second approval.
+ */
 export async function completeManualReadyDelivery(params: {
   infrastructureOrderId: string;
   adminUserId: string;
   providerResourceId: string;
   ipv4: string;
+  region: string;
+  externalPlanId: string;
+  externalImageId: string;
   username: string;
   secret: string;
   reason: string;
@@ -76,6 +60,9 @@ export async function completeManualReadyDelivery(params: {
 }) {
   const providerResourceId = params.providerResourceId.trim();
   const ipv4 = params.ipv4.trim();
+  const region = params.region.trim();
+  const externalPlanId = params.externalPlanId.trim();
+  const externalImageId = params.externalImageId.trim();
   const username = params.username.trim();
   if (!RESOURCE_ID_PATTERN.test(providerResourceId)) {
     throw new WalletError("invalid_resource_id", "شناسه Resource معتبر نیست.");
@@ -84,15 +71,18 @@ export async function completeManualReadyDelivery(params: {
     throw new WalletError("invalid_ipv4", "IPv4 معتبر نیست.");
   }
   if (
+    !region ||
+    !externalPlanId ||
+    !externalImageId ||
     !USERNAME_PATTERN.test(username) ||
     params.secret.length < 8 ||
     params.secret.length > 4_096
   ) {
-    throw new WalletError("invalid_credential", "اطلاعات دسترسی معتبر نیست.");
+    throw new WalletError("invalid_credential", "اطلاعات Provision دستی معتبر نیست.");
   }
   const secretFingerprint = credentialFingerprint(params.secret);
   const command = normalizeAdminCommand({
-    operation: "manual_ready_delivery",
+    operation: "MANUAL_PROVISION",
     idempotencyKey: params.idempotencyKey,
     actorUserId: params.adminUserId,
     infrastructureOrderId: params.infrastructureOrderId,
@@ -100,6 +90,9 @@ export async function completeManualReadyDelivery(params: {
     payload: {
       providerResourceId,
       ipv4,
+      region,
+      externalPlanId,
+      externalImageId,
       username,
       secretFingerprint,
     },
@@ -112,51 +105,62 @@ export async function completeManualReadyDelivery(params: {
     `;
     await assertAdminActorTx(tx, params.adminUserId);
     const replay = await replayAdminCommandTx(tx, command);
-    if (replay) return replay as unknown as ManualDeliveryResult;
+    if (replay) return replay as unknown as ManualProvisionResult;
 
     const order = await tx.infrastructureOrder.findUnique({
       where: { id: params.infrastructureOrderId },
       include: {
         serviceOrder: { include: { recommendationQuote: true } },
-        plan: { include: { catalogItem: true } },
+        plan: true,
         cloudInstance: true,
         provisioningJobs: true,
       },
     });
-    const selection = order
-      ? lockedSelection(order.providerSelectionSnapshot)
-      : null;
     if (!order) throw new WalletError("not_found", "سفارش زیرساخت پیدا نشد.");
-    if (
-      order.provider !== InfrastructureProvider.ARVAN ||
-      order.providerApiVersion !== "v1" ||
-      order.productKind !== InfrastructureProductKind.READY_INSTANT_SERVER ||
-      order.plan.offerSource !== "MANUAL_ADMIN" ||
-      order.plan.catalogItem?.source !== "MANUAL_ADMIN" ||
-      order.serviceOrder.status !== ServiceOrderStatus.PAID ||
-      order.status !== InfrastructureOrderStatus.WAITING_ADMIN_FUNDING ||
-      order.productFlowState !== "PROVISION_APPROVED" ||
-      order.requiredFundingRial !== 0n ||
-      order.cloudInstance ||
-      order.provisioningJobs.length > 0 ||
-      !selection
-    ) {
+    const approval = await tx.adminCommandReceipt.findFirst({
+      where: {
+        infrastructureOrderId: order.id,
+        operation: "APPROVE_PROVISION",
+      },
+      orderBy: { createdAt: "desc" },
+      select: { resultSnapshot: true },
+    });
+    const approvalResult =
+      approval?.resultSnapshot &&
+      typeof approval.resultSnapshot === "object" &&
+      !Array.isArray(approval.resultSnapshot)
+        ? (approval.resultSnapshot as Record<string, unknown>)
+        : null;
+    if (approvalResult?.approved !== true) {
       throw new WalletError(
         "invalid_status",
-        "این سفارش در مسیر تحویل دستی معتبر نیست.",
+        "Fulfillment فقط پس از ثبت تأیید اول Admin مجاز است.",
       );
     }
+    const selection = parseLockedProvisioningSelection({
+      snapshot: order.providerSelectionSnapshot,
+      provider: order.provider,
+      providerApiVersion: order.providerApiVersion,
+      productKind: order.productKind,
+    });
     if (
-      selection.region !== order.plan.regionCode ||
-      selection.externalPlanId !==
-        (order.plan.catalogItem?.externalPlanId ?? order.plan.sizeCode) ||
-      selection.externalImageId !==
-        (order.serviceOrder.recommendationQuote?.externalImageId ??
-          order.plan.imageCode)
+      order.plan.offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY ||
+      order.serviceOrder.status !== ServiceOrderStatus.PAID ||
+      order.status !== InfrastructureOrderStatus.FUNDING_CONFIRMED ||
+      order.productFlowState !== "PROVISION_APPROVED" ||
+      order.cloudInstance ||
+      order.provisioningJobs.length > 0
+    ) {
+      throw new WalletError("invalid_status", "این سفارش در مسیر Fulfillment دستی معتبر نیست.");
+    }
+    if (
+      region !== selection.region ||
+      externalPlanId !== selection.externalPlanId ||
+      externalImageId !== selection.externalImageId
     ) {
       throw new WalletError(
         "provider_snapshot_mismatch",
-        "Snapshot قفل‌شده سفارش با تحویل دستی یکسان نیست.",
+        "Region، Plan یا Image ثبت‌شده با Snapshot پرداخت یکسان نیست.",
       );
     }
     const duplicateResource = await tx.cloudInstance.findUnique({
@@ -171,8 +175,6 @@ export async function completeManualReadyDelivery(params: {
     }
 
     const now = new Date();
-    const encrypted = encryptCredential(params.secret);
-    const credentialExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1_000);
     const instance = await tx.cloudInstance.create({
       data: {
         infrastructureOrderId: order.id,
@@ -187,16 +189,27 @@ export async function completeManualReadyDelivery(params: {
         deliveryMode: order.deliveryMode,
         ipv4,
         providerState: "active",
+        networkId: selection.externalNetworkId,
+        securityId: selection.externalSecurityId,
         providerObservedAt: now,
-        status: CloudInstanceStatus.ACTIVE,
+        status: CloudInstanceStatus.PENDING,
         provisionedAt: now,
         healthCheckedAt: now,
-        deliveredAt: now,
+      },
+    });
+    const encrypted = encryptCredential(params.secret);
+    const credential = await tx.instanceCredential.create({
+      data: {
+        cloudInstanceId: instance.id,
+        createdById: params.adminUserId,
+        username,
+        ...encrypted,
+        status: InstanceCredentialStatus.READY,
+        expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1_000),
       },
     });
     const owner = {
-      recommendationSessionId:
-        order.serviceOrder.recommendationQuote?.sessionId ?? null,
+      recommendationSessionId: order.serviceOrder.recommendationQuote?.sessionId ?? null,
       serviceOrderId: order.serviceOrderId,
       infrastructureOrderId: order.id,
     };
@@ -204,8 +217,8 @@ export async function completeManualReadyDelivery(params: {
       owner,
       from: "PROVISION_APPROVED",
       to: "PROVISIONING_SUBMITTED",
-      reason: "manual_ready_delivery_started",
-      idempotencyKey: `manual-delivery-submitted:${order.id}`,
+      reason: "manual_provision_started",
+      idempotencyKey: `manual-provision-submitted:${order.id}`,
       actorUserId: params.adminUserId,
     });
     await transitionProductFlowTx(tx, {
@@ -213,7 +226,7 @@ export async function completeManualReadyDelivery(params: {
       from: "PROVISIONING_SUBMITTED",
       to: "PROVISIONING",
       reason: "manual_resource_recorded",
-      idempotencyKey: `manual-delivery-provisioning:${order.id}`,
+      idempotencyKey: `manual-provision-recorded:${order.id}`,
       actorUserId: params.adminUserId,
     });
     await transitionProductFlowTx(tx, {
@@ -221,7 +234,7 @@ export async function completeManualReadyDelivery(params: {
       from: "PROVISIONING",
       to: "HEALTH_CHECKING",
       reason: "manual_resource_verified_by_admin",
-      idempotencyKey: `manual-delivery-health:${order.id}`,
+      idempotencyKey: `manual-provision-health:${order.id}`,
       actorUserId: params.adminUserId,
     });
     await tx.infrastructureHealthCheck.create({
@@ -233,125 +246,69 @@ export async function completeManualReadyDelivery(params: {
         providerState: "active",
         expectedIpv4: ipv4,
         observedIpv4: ipv4,
-        topologyVerificationMode: "PROVIDER_MANAGED",
+        expectedNetworkId: selection.externalNetworkId,
+        observedNetworkId: selection.externalNetworkId,
+        expectedSecurityId: selection.externalSecurityId,
+        observedSecurityId: selection.externalSecurityId,
+        topologyVerificationMode: selection.topologyVerificationMode,
         providerObservedAt: now,
         connectivityProtocol: "ADMIN_CONFIRMED",
-        resultCode: "manual_delivery_confirmed",
+        resultCode: "manual_resource_confirmed",
         checkedAt: now,
         finishedAt: now,
-        metadata: {
-          mode: "MANUAL_ADMIN_DELIVERY",
-          containsSecret: false,
-        },
+        metadata: { containsSecret: false, source: "manual_fulfillment" },
       },
     });
     await transitionProductFlowTx(tx, {
       owner,
       from: "HEALTH_CHECKING",
-      to: "DELIVERED",
-      reason: "manual_delivery_health_confirmed",
-      idempotencyKey: `manual-delivery-delivered:${order.id}`,
+      to: "WAITING_ADMIN_DELIVERY_APPROVAL",
+      reason: "manual_provision_ready_for_delivery_approval",
+      idempotencyKey: `manual-provision-waiting-delivery:${order.id}`,
       actorUserId: params.adminUserId,
     });
-    const credential = await tx.instanceCredential.create({
-      data: {
-        cloudInstanceId: instance.id,
-        createdById: params.adminUserId,
-        username,
-        ...encrypted,
-        status: InstanceCredentialStatus.READY,
-        expiresAt: credentialExpiresAt,
-      },
+    await tx.infrastructureOrder.update({
+      where: { id: order.id },
+      data: { status: InfrastructureOrderStatus.PROVISIONING },
     });
     await tx.secureDeliveryEvent.create({
       data: {
         infrastructureOrderId: order.id,
         cloudInstanceId: instance.id,
-        status: SecureDeliveryStatus.DELIVERED,
+        status: SecureDeliveryStatus.PENDING,
         method: "ONE_TIME_ENCRYPTED_CREDENTIAL",
-        resultCode: "credential_ready",
-        deliveredAt: now,
-        metadata: {
-          credentialId: credential.id,
-          containsSecret: false,
-          source: "manual_admin_delivery",
-        },
-      },
-    });
-    await transitionProductFlowTx(tx, {
-      owner,
-      from: "DELIVERED",
-      to: "ACTIVE",
-      reason: "manual_secure_delivery_completed",
-      idempotencyKey: `manual-delivery-active:${order.id}`,
-      actorUserId: params.adminUserId,
-    });
-    await tx.infrastructureOrder.update({
-      where: { id: order.id },
-      data: { status: InfrastructureOrderStatus.ACTIVE },
-    });
-    const periodEnd = addBillingMonth(now);
-    await tx.serviceSubscription.create({
-      data: {
-        cloudInstanceId: instance.id,
-        sourceOrderId: order.serviceOrderId,
-        userId: order.userId,
-        planId: order.planId,
-        status: SubscriptionStatus.ACTIVE,
-        parchinLevel: order.parchinLevel,
-        renewalPriceRial:
-          order.serviceOrder.recommendationQuote?.renewalAmountRial ??
-          order.serviceOrder.amount,
-        currentPeriodStart: now,
-        currentPeriodEnd: periodEnd,
-        nextRenewalAt: periodEnd,
-        graceEndsAt: addGracePeriod(periodEnd),
-      },
-    });
-    await tx.adminNotification.updateMany({
-      where: {
-        infrastructureOrderId: order.id,
-        type: AdminNotificationType.ORDER_WAITING_PROVIDER_FUNDING,
-        status: { in: [AdminNotificationStatus.UNREAD, AdminNotificationStatus.READ] },
-      },
-      data: { status: AdminNotificationStatus.RESOLVED, resolvedAt: now },
-    });
-    await tx.provisioningNotificationOutbox.upsert({
-      where: { idempotencyKey: `instance-active:${order.id}` },
-      update: {},
-      create: {
-        idempotencyKey: `instance-active:${order.id}`,
-        infrastructureOrderId: order.id,
-        type: AdminNotificationType.INSTANCE_ACTIVE,
-        title: "سرور فعال شد",
-        message: `سرور سفارش ${order.serviceOrder.title} با تحویل دستی آماده است.`,
+        resultCode: "waiting_admin_delivery_approval",
+        metadata: { credentialId: credential.id, containsSecret: false },
       },
     });
     await writeAuditLog(
       {
         actorUserId: params.adminUserId,
-        action: AuditActions.MANUAL_READY_DELIVERY,
+        action: AuditActions.MANUAL_PROVISION,
         entityType: "infrastructure_order",
         entityId: order.id,
         afterData: {
           providerResourceId,
           ipv4,
+          region,
+          externalPlanId,
+          externalImageId,
           cloudInstanceId: instance.id,
           credentialId: credential.id,
           containsSecret: false,
-          reason: command.reason,
         },
         ip: params.ip,
         userAgent: params.userAgent,
-        idempotencyKey: `audit:manual-delivery:${params.idempotencyKey}`,
+        idempotencyKey: `audit:${command.receiptKey}`,
       },
       tx,
     );
-    const result: ManualDeliveryResult = {
+    const result: ManualProvisionResult = {
       infrastructureOrderId: order.id,
       serviceOrderId: order.serviceOrderId,
       cloudInstanceId: instance.id,
-      status: "ACTIVE",
+      productFlowState: "WAITING_ADMIN_DELIVERY_APPROVAL",
+      containsSecret: false,
     };
     await persistAdminCommandReceiptTx(
       tx,

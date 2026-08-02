@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { InfrastructureOrderActions } from "@/components/admin/infrastructure-order-actions";
+import { ManualProvisionButton } from "@/components/admin/manual-ready-delivery-button";
 import { ProvisionApprovalActions } from "@/components/admin/provision-approval-actions";
 import {
   DataTable,
@@ -74,6 +75,12 @@ export default async function AdminInfrastructureOrdersPage() {
       );
     }
     if (order.status === "FUNDING_CONFIRMED") {
+      if (
+        order.productFlowState === "PROVISION_APPROVED" &&
+        order.plan.offerSource !== "PREPROVISIONED_INVENTORY"
+      ) {
+        return <ManualProvisionButton orderId={order.id} />;
+      }
       return <span className="product-tech">فرمان تأیید ثبت شد؛ اجرای کنترل‌شده در صف بعدی است.</span>;
     }
     return (

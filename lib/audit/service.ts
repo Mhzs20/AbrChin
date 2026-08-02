@@ -111,6 +111,8 @@ export const AuditActions = {
   PROVISION_APPROVED: "provision_approved",
   PROVISION_APPROVAL_BLOCKED: "provision_approval_blocked",
   PROVISION_HELD: "provision_held",
+  PROVISION_DISPATCHED: "provision_dispatched",
+  MANUAL_PROVISION: "manual_provision",
   PROVISIONING_RETRY: "provisioning_retry",
   HEALTH_CHECK_RETRY: "health_check_retry",
   HEALTH_CHECK_MANUAL_OBSERVE: "health_check_manual_observe",

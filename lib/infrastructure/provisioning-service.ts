@@ -385,11 +385,23 @@ export async function claimNextProvisioningJob(workerId?: string) {
 
   return prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<ClaimedJobRow[]>`
-      SELECT id
-      FROM "ProvisioningJob"
-      WHERE status = 'QUEUED'
-        AND "availableAt" <= CURRENT_TIMESTAMP
-      ORDER BY "createdAt" ASC
+      SELECT job.id
+      FROM "ProvisioningJob" job
+      JOIN "InfrastructureOrder" infrastructure_order
+        ON infrastructure_order.id = job."infrastructureOrderId"
+      WHERE job.status = 'QUEUED'
+        AND job."availableAt" <= CURRENT_TIMESTAMP
+        AND infrastructure_order."productFlowState" IN (
+          'PROVISIONING_SUBMITTED',
+          'PROVISIONING'
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM "AdminCommandReceipt" approval
+          WHERE approval."infrastructureOrderId" = infrastructure_order.id
+            AND approval.operation = 'APPROVE_PROVISION'
+        )
+      ORDER BY job."createdAt" ASC
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     `;
@@ -736,6 +748,26 @@ export async function processProvisioningJob(
   }
 
   const order = job.infrastructureOrder;
+  const provisionApproval = await prisma.adminCommandReceipt.findFirst({
+    where: {
+      infrastructureOrderId: order.id,
+      operation: "APPROVE_PROVISION",
+    },
+    orderBy: { createdAt: "desc" },
+    select: { resultSnapshot: true },
+  });
+  const approvalResult =
+    provisionApproval?.resultSnapshot &&
+    typeof provisionApproval.resultSnapshot === "object" &&
+    !Array.isArray(provisionApproval.resultSnapshot)
+      ? (provisionApproval.resultSnapshot as Record<string, unknown>)
+      : null;
+  if (approvalResult?.approved !== true) {
+    throw new InfrastructureError(
+      "provider_lock_incomplete",
+      "Provisioning requires a recorded Admin approval",
+    );
+  }
   assertProviderRoute({
     productKind: order.productKind,
     provider: order.provider,
@@ -815,26 +847,6 @@ export async function processProvisioningJob(
           : undefined,
       });
     }
-    if (healthResult.delivered) {
-      const notification = await queueProvisioningNotification({
-        idempotencyKey: `instance-active:${order.id}`,
-        type: AdminNotificationType.INSTANCE_ACTIVE,
-        infrastructureOrderId: order.id,
-        title: "سرور فعال شد",
-        message: `سرور سفارش ${order.serviceOrder.title} آماده است.`,
-      });
-      try {
-        await deliverProvisioningNotification(
-          notification.id,
-          options.beforeNotificationDelivery,
-        );
-      } catch {
-        console.error(
-          "[provisioning-notification]",
-          "notification_pending",
-        );
-      }
-    }
     return healthResult;
   }
 
@@ -874,29 +886,6 @@ export async function processProvisioningJob(
         console.error(
           "[health-retry-schedule]",
           "schedule_pending",
-        );
-      }
-    }
-    if (
-      persistedHealth?.delivered ||
-      order.cloudInstance?.status === CloudInstanceStatus.ACTIVE
-    ) {
-      const notification = await queueProvisioningNotification({
-        idempotencyKey: `instance-active:${order.id}`,
-        type: AdminNotificationType.INSTANCE_ACTIVE,
-        infrastructureOrderId: order.id,
-        title: "سرور فعال شد",
-        message: `سرور سفارش ${order.serviceOrder.title} آماده است.`,
-      });
-      try {
-        await deliverProvisioningNotification(
-          notification.id,
-          options.beforeNotificationDelivery,
-        );
-      } catch {
-        console.error(
-          "[provisioning-notification]",
-          "notification_pending",
         );
       }
     }
@@ -1418,26 +1407,6 @@ export async function processProvisioningJob(
       console.error("[health-retry-schedule]", "schedule_pending");
     }
   }
-  if (healthResult.delivered) {
-    const notification = await queueProvisioningNotification({
-      idempotencyKey: `instance-active:${order.id}`,
-      type: AdminNotificationType.INSTANCE_ACTIVE,
-      infrastructureOrderId: order.id,
-      title: "سرور فعال شد",
-      message: `سرور سفارش ${order.serviceOrder.title} آماده است.`,
-    });
-    try {
-      await deliverProvisioningNotification(
-        notification.id,
-        options.beforeNotificationDelivery,
-      );
-    } catch {
-      console.error(
-        "[provisioning-notification]",
-        "notification_pending",
-      );
-    }
-  }
   return healthResult;
 }
 
@@ -1445,14 +1414,18 @@ export async function runProvisioningWorkerCycle(
   providerOverride?: CloudProviderAdapter,
   workerId?: string,
 ) {
+  const { dispatchApprovedProvisionCommands } = await import(
+    "@/lib/infrastructure/provision-dispatch"
+  );
   const { releaseExpiredInventoryReservations } = await import(
     "@/lib/infrastructure/preprovisioned-inventory"
   );
   await releaseExpiredInventoryReservations();
+  const dispatched = await dispatchApprovedProvisionCommands(1);
   await reconcileProvisioningDispatches();
   await processPendingProvisioningNotifications();
   const job = await claimNextProvisioningJob(workerId);
-  if (!job) return false;
+  if (!job) return dispatched > 0;
   if (!job.claimToken) return false;
   await processProvisioningJob(job.id, providerOverride, {
     claimToken: job.claimToken,

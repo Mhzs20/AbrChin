@@ -4,7 +4,6 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
-import { completeSecureDelivery } from "@/lib/infrastructure/health-check-service";
 import {
   decryptCredential,
   encryptCredential,
@@ -83,9 +82,6 @@ export async function storeInstanceCredential(params: {
       expiresAt,
     },
   });
-  if (instance.status !== CloudInstanceStatus.ACTIVE) {
-    await completeSecureDelivery(instance.infrastructureOrderId);
-  }
   return credential;
 }
 

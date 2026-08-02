@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -17,6 +18,17 @@ import {
   approveProvision,
   getProvisionApprovalReview,
 } from "../lib/infrastructure/provision-approval.ts";
+import { completeManualReadyDelivery } from "../lib/infrastructure/manual-ready-delivery.ts";
+import { dispatchApprovedProvision } from "../lib/infrastructure/provision-dispatch.ts";
+import {
+  claimNextProvisioningJob,
+  processProvisioningJob,
+} from "../lib/infrastructure/provisioning-service.ts";
+import { FakeCloudProviderAdapter } from "../lib/infrastructure/fake-cloud-provider-adapter.ts";
+import {
+  credentialFingerprint,
+  encryptCredential,
+} from "../lib/security/credential-vault.ts";
 import { getActivePlanByCode, toPlanSnapshot } from "../lib/orders/plans.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -41,6 +53,7 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
     callbackBase: process.env.PAYMENT_CALLBACK_BASE_URL,
     publicSale: process.env.PARSPACK_PUBLIC_SALE_ENABLED,
     mutations: process.env.PARSPACK_MUTATIONS_ENABLED,
+    credentialEncryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY,
   };
 
   process.env.NODE_ENV = "development";
@@ -48,6 +61,9 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
   process.env.PAYMENT_CALLBACK_BASE_URL = "http://localhost:3010";
   process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
   process.env.PARSPACK_MUTATIONS_ENABLED = "true";
+  if (!process.env.CREDENTIAL_ENCRYPTION_KEY) {
+    process.env.CREDENTIAL_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+  }
 
   await prisma.paymentGatewayConfig.updateMany({ data: { isDefault: false } });
   await prisma.paymentGatewayConfig.update({
@@ -60,6 +76,13 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
   let catalogItemId = "";
   let orderId = "";
   let adminUserId = "";
+  let manualPlanId = "";
+  let inventoryCatalogItemId = "";
+  let inventoryPlanId = "";
+  let inventoryItemId = "";
+  let inventoryInfrastructureOrderId = "";
+  let inventoryQuoteId = "";
+  let inventorySessionId = "";
   try {
     const catalog = await prisma.providerCatalogItem.create({
       data: {
@@ -335,11 +358,406 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
       }),
       1,
     );
+
+    const manualPlan = await prisma.infrastructurePlan.create({
+      data: {
+        code: `MANUAL_FULFILLMENT_${suffix}`,
+        title: "Manual fulfillment test",
+        provider: "ARVAN",
+        providerApiVersion: "v1",
+        productKind: "CLOUD_SERVER",
+        regionCode: `manual-${suffix}`,
+        sizeCode: "manual-plan",
+        imageCode: "manual-image",
+        deliveryMode: "MANAGED",
+        salePriceRial: 1_000_000n,
+        renewalPriceRial: 1_000_000n,
+        estimatedProviderCostRial: 1_000_000n,
+        offerSource: "MANUAL_ADMIN",
+        offerLastVerifiedAt: now,
+        offerPriceValidUntil: validUntil,
+        active: true,
+        publicationStatus: "PUBLISHED",
+      },
+    });
+    manualPlanId = manualPlan.id;
+    const manualOrder = await prisma.serviceOrder.create({
+      data: {
+        userId,
+        title: manualPlan.title,
+        amount: manualPlan.salePriceRial,
+        status: ServiceOrderStatus.PAID,
+        planId: manualPlan.id,
+        planCode: manualPlan.code,
+        planSnapshot: {},
+        provider: "ARVAN",
+        providerApiVersion: "v1",
+        productKind: "CLOUD_SERVER",
+        productFlowState: "PROVISION_APPROVED",
+        paidAt: now,
+      },
+    });
+    const manualInfrastructureOrder = await prisma.infrastructureOrder.create({
+      data: {
+        serviceOrderId: manualOrder.id,
+        userId,
+        planId: manualPlan.id,
+        provider: "ARVAN",
+        providerApiVersion: "v1",
+        productKind: "CLOUD_SERVER",
+        providerSelectionSnapshot: {
+          provider: "ARVAN",
+          providerApiVersion: "v1",
+          productKind: "CLOUD_SERVER",
+          offerSource: "MANUAL_ADMIN",
+          region: manualPlan.regionCode,
+          externalPlanId: manualPlan.sizeCode,
+          externalImageId: manualPlan.imageCode,
+          externalNetworkId: "manual-network",
+          externalSecurityId: "manual-security",
+          topologyVerificationMode: "STRICT_OBSERVED",
+          deliveryConfiguration: {
+            provider: "ARVAN",
+            providerApiVersion: "v1",
+            productKind: "CLOUD_SERVER",
+            region: manualPlan.regionCode,
+            externalPlanId: manualPlan.sizeCode,
+            externalImageId: manualPlan.imageCode,
+            externalNetworkId: "manual-network",
+            externalSecurityId: "manual-security",
+            topologyVerificationMode: "STRICT_OBSERVED",
+            accessMethod: "ONE_TIME_PASSWORD",
+          },
+        },
+        deliveryMode: "MANAGED",
+        status: InfrastructureOrderStatus.FUNDING_CONFIRMED,
+        requiredFundingRial: 0n,
+        productFlowState: "PROVISION_APPROVED",
+      },
+    });
+    await prisma.adminCommandReceipt.create({
+      data: {
+        operation: "APPROVE_PROVISION",
+        idempotencyKey: `admin-command:provision-approve:${manualInfrastructureOrder.id}`,
+        requestFingerprint: `fixture-approval-${suffix}`,
+        actorUserId: adminUserId,
+        infrastructureOrderId: manualInfrastructureOrder.id,
+        resultSnapshot: { approved: true, containsSecret: false },
+      },
+    });
+    const manualSecret = `fixture-${suffix}-credential`;
+    const manualInput = {
+      infrastructureOrderId: manualInfrastructureOrder.id,
+      adminUserId,
+      providerResourceId: `manual-resource-${suffix}`,
+      ipv4: "198.51.100.8",
+      region: manualPlan.regionCode,
+      externalPlanId: manualPlan.sizeCode,
+      externalImageId: manualPlan.imageCode,
+      username: "root",
+      secret: manualSecret,
+      reason: "ثبت کنترل‌شده Fulfillment دستی",
+      idempotencyKey: `manual-provision:${manualInfrastructureOrder.id}`,
+    };
+    const manualFirst = await completeManualReadyDelivery(manualInput);
+    const manualReplay = await completeManualReadyDelivery(manualInput);
+    assert.deepEqual(manualReplay, manualFirst);
+    const manualInstance = await prisma.cloudInstance.findUniqueOrThrow({
+      where: { id: manualFirst.cloudInstanceId },
+      include: { credential: true },
+    });
+    assert.equal(manualInstance.status, "PENDING");
+    assert.ok(manualInstance.credential?.ciphertext);
+    assert.notEqual(manualInstance.credential?.ciphertext, manualSecret);
+    assert.equal(
+      await prisma.serviceSubscription.count({ where: { cloudInstanceId: manualInstance.id } }),
+      0,
+    );
+    assert.deepEqual(
+      await prisma.infrastructureOrder.findUniqueOrThrow({
+        where: { id: manualInfrastructureOrder.id },
+        select: { status: true, productFlowState: true },
+      }),
+      {
+        status: InfrastructureOrderStatus.PROVISIONING,
+        productFlowState: "WAITING_ADMIN_DELIVERY_APPROVAL",
+      },
+    );
+    assert.equal(
+      await prisma.secureDeliveryEvent.count({
+        where: {
+          infrastructureOrderId: manualInfrastructureOrder.id,
+          status: "PENDING",
+        },
+      }),
+      1,
+    );
+    const manualAudit = await prisma.auditLog.findFirstOrThrow({
+      where: {
+        actorUserId: adminUserId,
+        action: "manual_provision",
+        entityId: manualInfrastructureOrder.id,
+      },
+    });
+    assert.equal(JSON.stringify(manualAudit.afterData).includes(manualSecret), false);
+
+    const inventoryCatalog = await prisma.providerCatalogItem.create({
+      data: {
+        provider: "ARVAN",
+        apiVersion: "v1",
+        productKind: "CLOUD_SERVER",
+        regionCode: `inventory-${suffix}`,
+        sizeCode: "inventory-plan",
+        externalPlanId: "inventory-plan",
+        externalKey: `arvan:v1:inventory-${suffix}:inventory-plan`,
+        sizeName: "Inventory test server",
+        compatibleImageCodes: ["inventory-image"],
+        vcpu: 2,
+        ramMb: 2048,
+        diskGb: 40,
+        available: true,
+        active: true,
+        status: "ACTIVE",
+        priceMonthlyAmount: 1_000_000n,
+        priceScale: 0,
+        currencyCode: "IRR",
+        amountUnit: "RIAL",
+        providerMonthlyPriceIrr: 1_000_000n,
+        lastSyncedAt: now,
+        lastSeenAt: now,
+        rawPayload: {},
+        payloadHash: `inventory-${suffix}`,
+        catalogVersion: `inventory-${suffix}`,
+      },
+    });
+    inventoryCatalogItemId = inventoryCatalog.id;
+    const inventoryPlan = await prisma.infrastructurePlan.create({
+      data: {
+        code: `PREPROVISIONED_${suffix}`,
+        title: "Preprovisioned inventory test",
+        provider: "ARVAN",
+        providerApiVersion: "v1",
+        productKind: "CLOUD_SERVER",
+        regionCode: inventoryCatalog.regionCode,
+        sizeCode: inventoryCatalog.sizeCode,
+        imageCode: "inventory-image",
+        deliveryMode: "MANAGED",
+        salePriceRial: 1_000_000n,
+        renewalPriceRial: 1_000_000n,
+        estimatedProviderCostRial: 1_000_000n,
+        offerSource: "PREPROVISIONED_INVENTORY",
+        offerLastVerifiedAt: now,
+        offerPriceValidUntil: validUntil,
+        catalogItemId: inventoryCatalog.id,
+        catalogMappingStatus: "MAPPED",
+        catalogMappedAt: now,
+        active: true,
+        publicationStatus: "PUBLISHED",
+      },
+    });
+    inventoryPlanId = inventoryPlan.id;
+    const inventorySession = await prisma.recommendationSession.create({
+      data: {
+        userId,
+        status: "CONVERTED",
+        answers: {},
+        answerSources: {},
+        productFlowState: "PROVISION_APPROVED",
+        expiresAt: validUntil,
+      },
+    });
+    inventorySessionId = inventorySession.id;
+    const inventoryQuote = await prisma.recommendationQuote.create({
+      data: {
+        sessionId: inventorySession.id,
+        planId: inventoryPlan.id,
+        role: "RECOMMENDED",
+        status: "CONVERTED",
+        score: 1,
+        scoreBreakdown: {},
+        reasons: [],
+        profileSnapshot: {},
+        planSnapshot: {},
+        amountRial: inventoryPlan.salePriceRial,
+        renewalAmountRial: inventoryPlan.renewalPriceRial!,
+        expiresAt: validUntil,
+      },
+    });
+    inventoryQuoteId = inventoryQuote.id;
+    const inventoryOrder = await prisma.serviceOrder.create({
+      data: {
+        userId,
+        title: inventoryPlan.title,
+        amount: inventoryPlan.salePriceRial,
+        status: ServiceOrderStatus.PAID,
+        planId: inventoryPlan.id,
+        planCode: inventoryPlan.code,
+        planSnapshot: {},
+        recommendationQuoteId: inventoryQuote.id,
+        provider: "ARVAN",
+        providerApiVersion: "v1",
+        productKind: "CLOUD_SERVER",
+        productFlowState: "PROVISION_APPROVED",
+        paidAt: now,
+      },
+    });
+    const inventoryItem = await prisma.preprovisionedInventoryItem.create({
+      data: {
+        catalogItemId: inventoryCatalog.id,
+        planId: inventoryPlan.id,
+        provider: "ARVAN",
+        apiVersion: "v1",
+        providerResourceId: `inventory-resource-${suffix}`,
+        regionCode: inventoryPlan.regionCode,
+        externalPlanId: inventoryPlan.sizeCode,
+        externalImageId: inventoryPlan.imageCode,
+        observedState: "active",
+        observedIpv4: "198.51.100.9",
+        observedNetworkId: "inventory-network",
+        observedSecurityId: "inventory-security",
+        lastObservedAt: now,
+        lastHealthCheckedAt: now,
+        healthStatus: "HEALTHY",
+        inventoryStatus: "RESERVED",
+        reservedByQuoteId: inventoryQuote.id,
+        reservedByOrderId: inventoryOrder.id,
+        reservedRevision: 0,
+        reservedAt: now,
+        reservationExpiresAt: validUntil,
+        createdById: adminUserId,
+        updatedById: adminUserId,
+      },
+    });
+    inventoryItemId = inventoryItem.id;
+    const inventorySecret = `fixture-${suffix}-inventory-credential`;
+    await prisma.preprovisionedInventoryCredential.create({
+      data: {
+        inventoryItemId: inventoryItem.id,
+        username: "root",
+        ...encryptCredential(inventorySecret),
+        secretFingerprint: credentialFingerprint(inventorySecret),
+        status: "READY",
+        createdById: adminUserId,
+      },
+    });
+    const inventoryInfrastructureOrder = await prisma.infrastructureOrder.create({
+      data: {
+        serviceOrderId: inventoryOrder.id,
+        userId,
+        planId: inventoryPlan.id,
+        provider: "ARVAN",
+        providerApiVersion: "v1",
+        productKind: "CLOUD_SERVER",
+        providerSelectionSnapshot: {
+          provider: "ARVAN",
+          providerApiVersion: "v1",
+          productKind: "CLOUD_SERVER",
+          offerSource: "PREPROVISIONED_INVENTORY",
+          catalogItemId: inventoryCatalog.id,
+          region: inventoryPlan.regionCode,
+          externalPlanId: inventoryPlan.sizeCode,
+          externalImageId: inventoryPlan.imageCode,
+          externalNetworkId: "inventory-network",
+          externalSecurityId: "inventory-security",
+          topologyVerificationMode: "STRICT_OBSERVED",
+          deliveryConfiguration: {
+            provider: "ARVAN",
+            providerApiVersion: "v1",
+            productKind: "CLOUD_SERVER",
+            region: inventoryPlan.regionCode,
+            externalPlanId: inventoryPlan.sizeCode,
+            externalImageId: inventoryPlan.imageCode,
+            externalNetworkId: "inventory-network",
+            externalSecurityId: "inventory-security",
+            topologyVerificationMode: "STRICT_OBSERVED",
+            accessMethod: "ONE_TIME_PASSWORD",
+          },
+        },
+        deliveryMode: "MANAGED",
+        status: InfrastructureOrderStatus.FUNDING_CONFIRMED,
+        requiredFundingRial: 0n,
+        productFlowState: "PROVISION_APPROVED",
+        preprovisionedInventoryItemId: inventoryItem.id,
+      },
+    });
+    inventoryInfrastructureOrderId = inventoryInfrastructureOrder.id;
+    await prisma.adminCommandReceipt.create({
+      data: {
+        operation: "APPROVE_PROVISION",
+        idempotencyKey: `admin-command:provision-approve:${inventoryInfrastructureOrder.id}`,
+        requestFingerprint: `fixture-inventory-approval-${suffix}`,
+        actorUserId: adminUserId,
+        infrastructureOrderId: inventoryInfrastructureOrder.id,
+        resultSnapshot: { approved: true, containsSecret: false },
+      },
+    });
+    const [inventoryDispatchA, inventoryDispatchB] = await Promise.all([
+      dispatchApprovedProvision(inventoryInfrastructureOrder.id),
+      dispatchApprovedProvision(inventoryInfrastructureOrder.id),
+    ]);
+    assert.equal(
+      [inventoryDispatchA, inventoryDispatchB].filter((result) => result.state === "DISPATCHED").length,
+      1,
+    );
+    assert.equal(
+      [inventoryDispatchA, inventoryDispatchB].filter((result) => result.state === "ALREADY_DISPATCHED").length,
+      1,
+    );
+    const assignedInventory = await prisma.preprovisionedInventoryItem.findUniqueOrThrow({
+      where: { id: inventoryItem.id },
+      include: { credential: true },
+    });
+    assert.equal(assignedInventory.inventoryStatus, "ASSIGNED");
+    assert.equal(assignedInventory.assignedOrderId, inventoryOrder.id);
+    assert.equal(assignedInventory.credential?.status, "TRANSFERRED");
+    const claimedInventoryJob = await claimNextProvisioningJob("p17-inventory-worker");
+    assert.ok(claimedInventoryJob?.claimToken);
+    const inventoryProvider = new FakeCloudProviderAdapter({ provider: "ARVAN" });
+    await processProvisioningJob(claimedInventoryJob!.id, inventoryProvider, {
+      claimToken: claimedInventoryJob!.claimToken!,
+      healthProbe: async () => true,
+    });
+    const inventoryFinal = await prisma.infrastructureOrder.findUniqueOrThrow({
+      where: { id: inventoryInfrastructureOrder.id },
+      include: {
+        cloudInstance: { include: { credential: true } },
+        provisioningJobs: true,
+      },
+    });
+    assert.equal(inventoryFinal.productFlowState, "WAITING_ADMIN_DELIVERY_APPROVAL");
+    assert.equal(inventoryFinal.cloudInstance?.status, "PENDING");
+    assert.equal(inventoryFinal.cloudInstance?.credential?.ciphertext === inventorySecret, false);
+    assert.equal(inventoryFinal.provisioningJobs.length, 1);
+    assert.equal(inventoryProvider.createCalls.length, 0);
+    assert.equal(
+      await prisma.serviceSubscription.count({
+        where: { sourceOrderId: inventoryOrder.id },
+      }),
+      0,
+    );
   } finally {
+    if (inventoryInfrastructureOrderId) {
+      await prisma.infrastructureOrder.deleteMany({
+        where: { id: inventoryInfrastructureOrderId },
+      });
+    }
+    if (inventoryItemId) {
+      await prisma.preprovisionedInventoryCredential.deleteMany({
+        where: { inventoryItemId },
+      });
+      await prisma.preprovisionedInventoryItem.deleteMany({ where: { id: inventoryItemId } });
+    }
+    if (inventoryQuoteId) {
+      await prisma.recommendationQuote.deleteMany({ where: { id: inventoryQuoteId } });
+    }
+    if (inventorySessionId) {
+      await prisma.recommendationSession.deleteMany({ where: { id: inventorySessionId } });
+    }
     if (orderId) await prisma.serviceOrder.deleteMany({ where: { id: orderId } });
     if (adminUserId) {
       await prisma.auditLog.deleteMany({ where: { actorUserId: adminUserId } });
       await prisma.adminCommandReceipt.deleteMany({ where: { actorUserId: adminUserId } });
+      await prisma.instanceCredential.deleteMany({ where: { createdById: adminUserId } });
       await prisma.user.deleteMany({ where: { id: adminUserId } });
     }
     if (userId) {
@@ -348,12 +766,20 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
       await prisma.user.deleteMany({ where: { id: userId } });
     }
     if (planId) await prisma.infrastructurePlan.deleteMany({ where: { id: planId } });
+    if (manualPlanId) await prisma.infrastructurePlan.deleteMany({ where: { id: manualPlanId } });
+    if (inventoryPlanId) await prisma.infrastructurePlan.deleteMany({ where: { id: inventoryPlanId } });
     if (catalogItemId) await prisma.providerCatalogItem.deleteMany({ where: { id: catalogItemId } });
+    if (inventoryCatalogItemId) await prisma.providerCatalogItem.deleteMany({ where: { id: inventoryCatalogItemId } });
     process.env.NODE_ENV = previous.nodeEnv;
     process.env.PAYMENT_BOOTSTRAP_DEFAULT_PROVIDER = previous.defaultGateway;
     process.env.PAYMENT_CALLBACK_BASE_URL = previous.callbackBase;
     process.env.PARSPACK_PUBLIC_SALE_ENABLED = previous.publicSale;
     process.env.PARSPACK_MUTATIONS_ENABLED = previous.mutations;
+    if (previous.credentialEncryptionKey === undefined) {
+      delete process.env.CREDENTIAL_ENCRYPTION_KEY;
+    } else {
+      process.env.CREDENTIAL_ENCRYPTION_KEY = previous.credentialEncryptionKey;
+    }
     await prisma.$disconnect();
   }
 });

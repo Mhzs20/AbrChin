@@ -4,13 +4,16 @@ import { useRef, useState } from "react";
 
 import { ConfirmDialog, FormField } from "@/components/product";
 
-export function ManualReadyDeliveryButton({ orderId }: { orderId: string }) {
+export function ManualProvisionButton({ orderId }: { orderId: string }) {
   const [open, setOpen] = useState(false);
   const [providerResourceId, setProviderResourceId] = useState("");
   const [ipv4, setIpv4] = useState("");
   const [username, setUsername] = useState("root");
   const [secret, setSecret] = useState("");
-  const [reason, setReason] = useState("تحویل دستی سفارش پرداخت‌شده");
+  const [region, setRegion] = useState("");
+  const [externalPlanId, setExternalPlanId] = useState("");
+  const [externalImageId, setExternalImageId] = useState("");
+  const [reason, setReason] = useState("Fulfillment دستی پس از تأیید ساخت");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const idempotencyKey = useRef(crypto.randomUUID());
@@ -20,7 +23,7 @@ export function ManualReadyDeliveryButton({ orderId }: { orderId: string }) {
     setError("");
     try {
       const response = await fetch(
-        `/api/admin/infrastructure/orders/${orderId}/manual-delivery`,
+        `/api/admin/infrastructure/orders/${orderId}/fulfill-manually`,
         {
           method: "POST",
           headers: {
@@ -30,6 +33,9 @@ export function ManualReadyDeliveryButton({ orderId }: { orderId: string }) {
           body: JSON.stringify({
             providerResourceId,
             ipv4,
+            region,
+            externalPlanId,
+            externalImageId,
             username,
             secret,
             reason,
@@ -38,7 +44,7 @@ export function ManualReadyDeliveryButton({ orderId }: { orderId: string }) {
       );
       const data = await response.json();
       if (!response.ok) {
-        setError(data.error || "ثبت تحویل ممکن نشد.");
+        setError(data.error || "ثبت Fulfillment ممکن نشد.");
         return;
       }
       window.location.reload();
@@ -60,18 +66,18 @@ export function ManualReadyDeliveryButton({ orderId }: { orderId: string }) {
           setOpen(true);
         }}
       >
-        ثبت و تحویل دستی
+        ثبت Fulfillment دستی
       </button>
       <ConfirmDialog
         open={open}
-        title="تحویل دستی سرور آماده"
-        confirmLabel="ثبت نهایی و فعال‌سازی"
+        title="Fulfillment دستی پس از تأیید ساخت"
+        confirmLabel="ثبت Resource برای تأیید تحویل"
         loading={loading}
         onCancel={() => setOpen(false)}
         onConfirm={submit}
       >
         <p>
-          این عملیات هیچ درخواستی برای ساخت سرور نمی‌فرستد. فقط Resource تهیه‌شده را به همین سفارش قفل و اطلاعات دسترسی را رمزنگاری می‌کند.
+          این عملیات هیچ درخواستی برای ساخت سرور نمی‌فرستد. فقط Resource تهیه‌شده را با Snapshot پرداخت تطبیق می‌دهد و Credential را رمزنگاری می‌کند؛ Customer هنوز هیچ اطلاعاتی دریافت نمی‌کند.
         </p>
         <FormField id={`resource-${orderId}`} label="Provider Resource ID">
           <input
@@ -89,6 +95,30 @@ export function ManualReadyDeliveryButton({ orderId }: { orderId: string }) {
             onChange={(event) => setIpv4(event.target.value)}
           />
         </FormField>
+        <FormField id={`region-${orderId}`} label="Region ثبت‌شده در Provider">
+          <input
+            id={`region-${orderId}`}
+            dir="ltr"
+            value={region}
+            onChange={(event) => setRegion(event.target.value)}
+          />
+        </FormField>
+        <FormField id={`plan-${orderId}`} label="Provider Plan / Flavor ID">
+          <input
+            id={`plan-${orderId}`}
+            dir="ltr"
+            value={externalPlanId}
+            onChange={(event) => setExternalPlanId(event.target.value)}
+          />
+        </FormField>
+        <FormField id={`image-${orderId}`} label="Provider Image / OS ID">
+          <input
+            id={`image-${orderId}`}
+            dir="ltr"
+            value={externalImageId}
+            onChange={(event) => setExternalImageId(event.target.value)}
+          />
+        </FormField>
         <FormField id={`username-${orderId}`} label="نام کاربری">
           <input
             id={`username-${orderId}`}
@@ -97,7 +127,7 @@ export function ManualReadyDeliveryButton({ orderId }: { orderId: string }) {
             onChange={(event) => setUsername(event.target.value)}
           />
         </FormField>
-        <FormField id={`secret-${orderId}`} label="رمز یک‌بارمصرف تحویل">
+        <FormField id={`secret-${orderId}`} label="Credential ثبت‌شده برای تأیید تحویل">
           <input
             id={`secret-${orderId}`}
             type="password"

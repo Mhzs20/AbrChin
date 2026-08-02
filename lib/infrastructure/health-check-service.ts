@@ -773,68 +773,39 @@ export async function runInfrastructureHealthCheck(input: {
     await transitionProductFlowTx(tx, {
       owner: owner(order),
       from: "HEALTH_CHECKING",
-      to: "DELIVERED",
+      to: "WAITING_ADMIN_DELIVERY_APPROVAL",
       reason: "health_check_succeeded",
       idempotencyKey: `health-succeeded:${prepared.check.id}`,
     });
     const accessMethod = deliveryAccessMethod(
       order.providerSelectionSnapshot,
     );
-    if (
-      accessMethod === "SSH_KEY" ||
-      instance.credential?.status === "READY"
-    ) {
-      await activateDeliveredServiceTx(tx, order.id);
-      if (input.durableJob) {
-        const result: DurableHealthResult = {
-          healthCheckId: prepared.check.id,
-          healthy: true,
-          delivered: true,
-          resultCode: "service_active",
-        };
-        const persisted = await tx.provisioningJob.updateMany({
-          where: {
-            id: input.durableJob.jobId,
-            status: "RUNNING",
-            claimToken: input.durableJob.workerFence.claimToken,
-            leaseExpiresAt: { gt: new Date() },
-          },
-          data: {
-            phase: "HEALTH_RESULT_PERSISTED",
-            healthResultSnapshot:
-              result as unknown as Prisma.InputJsonValue,
-            healthResultPersistedAt: new Date(),
-          },
-        });
-        if (persisted.count !== 1) {
-          throw new WorkerLeaseLostError();
-        }
-      }
-      return { healthy: true as const, delivered: true as const };
-    }
     await tx.secureDeliveryEvent.create({
       data: {
         infrastructureOrderId: order.id,
         cloudInstanceId: instance.id,
         status: SecureDeliveryStatus.PENDING,
-        method: "ONE_TIME_ENCRYPTED_CREDENTIAL",
-        resultCode: "password_credential_required",
-        metadata: { containsSecret: false },
+        method:
+          accessMethod === "SSH_KEY"
+            ? "SSH_KEY_NON_SECRET"
+            : "ONE_TIME_ENCRYPTED_CREDENTIAL",
+        resultCode:
+          accessMethod === "SSH_KEY" || instance.credential?.status === "READY"
+            ? "waiting_admin_delivery_approval"
+            : "password_credential_required",
+        metadata: {
+          accessMethod,
+          credentialReady: instance.credential?.status === "READY",
+          containsSecret: false,
+        },
       },
-    });
-    await transitionProductFlowTx(tx, {
-      owner: owner(order),
-      from: "DELIVERED",
-      to: "DELIVERY_RETRYABLE",
-      reason: "secure_delivery_pending",
-      idempotencyKey: `delivery-pending:${prepared.check.id}`,
     });
     if (input.durableJob) {
       const result: DurableHealthResult = {
         healthCheckId: prepared.check.id,
         healthy: true,
         delivered: false,
-        resultCode: "secure_delivery_pending",
+        resultCode: "waiting_admin_delivery_approval",
       };
       const persisted = await tx.provisioningJob.updateMany({
         where: {
