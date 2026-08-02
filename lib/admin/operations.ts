@@ -5,6 +5,23 @@ export function classifyAdminOperationQueue(input: {
   productFlowState: string | null;
 }): AdminOperationQueue {
   if (
+    [
+      "BLOCKED_PROVIDER_BALANCE",
+      "NEEDS_RECONCILIATION",
+      "MANUAL_REVIEW",
+      "FAILED",
+    ].includes(input.status) ||
+    [
+      "PROVISIONING_RETRYABLE",
+      "PROVISIONING_RECONCILING",
+      "PROVISIONING_MANUAL_REVIEW",
+      "HEALTH_CHECK_FAILED",
+      "DELIVERY_RETRYABLE",
+    ].includes(input.productFlowState ?? "")
+  ) {
+    return "attention";
+  }
+  if (
     input.status === "WAITING_ADMIN_FUNDING" ||
     input.status === "FUNDING_CONFIRMED"
   ) {
@@ -15,16 +32,6 @@ export function classifyAdminOperationQueue(input: {
     input.productFlowState === "DELIVERED"
   ) {
     return "delivery";
-  }
-  if (
-    [
-      "BLOCKED_PROVIDER_BALANCE",
-      "NEEDS_RECONCILIATION",
-      "MANUAL_REVIEW",
-      "FAILED",
-    ].includes(input.status)
-  ) {
-    return "attention";
   }
   return null;
 }

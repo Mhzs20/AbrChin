@@ -17,6 +17,7 @@ import { listInfrastructureOrders } from "@/lib/admin/dashboard";
 import { getAdminPageAccess } from "@/lib/auth/guards";
 import { getProvisionApprovalReview } from "@/lib/infrastructure/provision-approval";
 import { getDeliveryApprovalReview } from "@/lib/infrastructure/delivery-approval";
+import { getInfrastructureAttention } from "@/lib/infrastructure/attention";
 import {
   deliveryModeLabel,
   infrastructureOrderStatusLabel,
@@ -65,7 +66,7 @@ export default async function AdminInfrastructureOrdersPage() {
     { key: "sale", header: "فروش" },
     { key: "providerCost", header: "هزینه Provider" },
     { key: "payment", header: "پرداخت" },
-    { key: "review", header: "بازبینی ساخت / تحویل" },
+    { key: "review", header: "بازبینی ساخت / تحویل / توجه" },
     { key: "region", header: "Region" },
     { key: "status", header: "وضعیت" },
     { key: "actions", header: "عملیات" },
@@ -139,7 +140,36 @@ export default async function AdminInfrastructureOrdersPage() {
       );
     }
     const review = reviewByOrderId.get(order.id);
-    if (!review) return "—";
+    if (!review) {
+      const attention = getInfrastructureAttention({
+        status: order.status,
+        productFlowState: order.productFlowState,
+        updatedAt: order.updatedAt,
+        hasResource: Boolean(order.cloudInstance),
+        attempts: order.provisioningJobs.map((job) => ({
+          operation: job.operation,
+          attempt: job.attempt,
+          status: job.status,
+          lastErrorCode: job.lastErrorCode,
+          updatedAt: job.updatedAt,
+        })),
+        allowedActions: order.recovery.allowedActions,
+      });
+      if (!attention) return "—";
+      return (
+        <div style={{ display: "grid", gap: 4 }}>
+          <strong>{attention.title}</strong>
+          <span>{attention.detail}</span>
+          <span>زمان: {new Date(attention.occurredAt).toLocaleString("fa-IR")}</span>
+          <span>
+            آخرین تلاش: {attention.lastAttempt
+              ? `${attention.lastAttempt.operation} #${attention.lastAttempt.attempt} (${attention.lastAttempt.status})`
+              : "—"}
+          </span>
+          <span>اقدام بعدی: {attention.nextActions.join("، ") || "بررسی دستی"}</span>
+        </div>
+      );
+    }
     const cost = (value: string | null) =>
       value == null ? "—" : formatTomanFa(BigInt(value));
     return (

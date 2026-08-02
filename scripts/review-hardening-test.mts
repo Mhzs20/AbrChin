@@ -312,7 +312,7 @@ test("refund and provisioning retry fail closed on provider attempt evidence", a
 
 test("idempotency compares stable request payloads", async () => {
   const audit = await source("lib/audit/service.ts");
-  const funding = await source("lib/infrastructure/funding.ts");
+  const adminCommand = await source("lib/admin/command-receipt.ts");
   const retry = await source(
     "lib/infrastructure/health-retry-service.ts",
   );
@@ -323,10 +323,10 @@ test("idempotency compares stable request payloads", async () => {
   assert.match(audit, /IdempotencyConflictError/);
   assert.match(audit, /pg_advisory_xact_lock/);
   assert.match(audit, /createMany/);
-  assert.match(
-    funding,
-    /existingConfirmation\.fundedAmountRial !== fundedAmountRial/,
-  );
+  assert.match(adminCommand, /idempotencyFingerprint/);
+  assert.match(adminCommand, /requestFingerprint/);
+  assert.match(adminCommand, /replayAdminCommandTx/);
+  assert.match(adminCommand, /IdempotencyConflictError/);
   assert.match(retry, /requestFingerprint/);
   assert.match(retry, /assertHealthOperationReplay/);
   assert.match(retry, /persistAdminCommandReceiptTx/);

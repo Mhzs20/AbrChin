@@ -27,6 +27,20 @@ test("operations center assigns real order states to exactly one actionable queu
   );
   assert.equal(
     classifyAdminOperationQueue({
+      status: "PROVISIONING",
+      productFlowState: "HEALTH_CHECK_FAILED",
+    }),
+    "attention",
+  );
+  assert.equal(
+    classifyAdminOperationQueue({
+      status: "WAITING_ADMIN_FUNDING",
+      productFlowState: "PROVISIONING_MANUAL_REVIEW",
+    }),
+    "attention",
+  );
+  assert.equal(
+    classifyAdminOperationQueue({
       status: "ACTIVE",
       productFlowState: "ACTIVE",
     }),

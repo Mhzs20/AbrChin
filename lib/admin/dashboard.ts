@@ -342,6 +342,17 @@ export async function getAdminOperationsCenter() {
           { status: InfrastructureOrderStatus.FUNDING_CONFIRMED },
           { productFlowState: { in: ["WAITING_ADMIN_DELIVERY_APPROVAL", "DELIVERED"] } },
           {
+            productFlowState: {
+              in: [
+                "PROVISIONING_RETRYABLE",
+                "PROVISIONING_RECONCILING",
+                "PROVISIONING_MANUAL_REVIEW",
+                "HEALTH_CHECK_FAILED",
+                "DELIVERY_RETRYABLE",
+              ],
+            },
+          },
+          {
             status: {
               in: [
                 InfrastructureOrderStatus.BLOCKED_PROVIDER_BALANCE,

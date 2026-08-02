@@ -206,6 +206,19 @@ export function assessInfrastructureRecoveryActions(input: {
     disposition.safe
   ) {
     actions.push("retry", "refund");
+  } else if (
+    input.status === "WAITING_ADMIN_FUNDING" &&
+    !hasCloudInstance &&
+    input.productFlowState === "PROVISIONING_MANUAL_REVIEW"
+  ) {
+    // A Provider balance error happens before a create is accepted. Once the
+    // Admin has corrected it, the original approved order can safely retry;
+    // a risky prior create still has to be reconciled first.
+    if (disposition.safe) {
+      actions.push("retry", "refund");
+    } else {
+      actions.push("reconcile", "confirm-no-resource");
+    }
   }
 
   if (

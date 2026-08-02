@@ -552,6 +552,10 @@ export async function runInfrastructureHealthCheck(input: {
           idempotencyKey:
             `health-execution-failed:${prepared.check.id}`,
         });
+        await tx.infrastructureOrder.update({
+          where: { id: order.id },
+          data: { status: InfrastructureOrderStatus.MANUAL_REVIEW },
+        });
       }
       if (input.durableJob) {
         const result: DurableHealthResult = {
@@ -621,6 +625,10 @@ export async function runInfrastructureHealthCheck(input: {
         to: "HEALTH_CHECK_FAILED",
         reason: prepared.providerObservationCode,
         idempotencyKey: `health-observation-failed:${prepared.check.id}`,
+      });
+      await tx.infrastructureOrder.update({
+        where: { id: order.id },
+        data: { status: InfrastructureOrderStatus.MANUAL_REVIEW },
       });
       const result: DurableHealthResult = {
         healthCheckId: prepared.check.id,
@@ -724,6 +732,10 @@ export async function runInfrastructureHealthCheck(input: {
         reason: "connectivity_check_failed",
         idempotencyKey: `health-failed:${prepared.check.id}`,
       });
+      await tx.infrastructureOrder.update({
+        where: { id: order.id },
+        data: { status: InfrastructureOrderStatus.MANUAL_REVIEW },
+      });
       const result: DurableHealthResult = {
         healthCheckId: prepared.check.id,
         healthy: false,
@@ -781,6 +793,10 @@ export async function runInfrastructureHealthCheck(input: {
       to: "WAITING_ADMIN_DELIVERY_APPROVAL",
       reason: "health_check_succeeded",
       idempotencyKey: `health-succeeded:${prepared.check.id}`,
+    });
+    await tx.infrastructureOrder.update({
+      where: { id: order.id },
+      data: { status: InfrastructureOrderStatus.PROVISIONING },
     });
     const accessMethod = deliveryAccessMethod(
       order.providerSelectionSnapshot,

@@ -51,10 +51,10 @@ const actionConfig: Record<
     confirmLabel: "ثبت Recovery سلامت",
   },
   refund: {
-    label: "لغو و بازگشت وجه",
-    title: "بستن پرونده و بازگشت وجه",
+    label: "لغو و بازگشت به کیف پول",
+    title: "بستن پرونده و بازگشت داخلی به کیف پول",
     endpoint: (id) => `/api/admin/orders/${id}/refund`,
-    confirmLabel: "تأیید بازگشت وجه",
+    confirmLabel: "تأیید بازگشت به کیف پول",
   },
   "confirm-no-resource": {
     label: "منبع ساخته نشده",
@@ -153,6 +153,9 @@ export function InfrastructureOrderActions({
           onCancel={() => setKind(null)}
           onConfirm={submit}
         >
+          {kind === "refund" ? (
+            <p>این عملیات فقط Ledger داخلی را برمی‌گرداند؛ بازگشت بانکی خودکار انجام نمی‌شود.</p>
+          ) : null}
           <FormField id={`reason-${orderId}`} label="دلیل (الزامی)">
             <textarea
               id={`reason-${orderId}`}
