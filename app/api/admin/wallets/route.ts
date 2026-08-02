@@ -1,24 +1,16 @@
 import { LedgerType } from "@prisma/client";
 
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
+import { panelApiError, requireAdmin } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 import { assertPositiveIntegerToman, bigintToString, formatTomanFa, rialToToman, tomanToRial } from "@/lib/money";
 import { normalizeIranMobile } from "@/lib/mobile";
-import { AuthRequiredError, requireCurrentUser } from "@/lib/session";
 import { creditWallet, debitWallet, WalletError } from "@/lib/wallet/ledger";
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 import { readRequestMeta } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
-
-async function requireAdmin() {
-  const user = await requireCurrentUser();
-  if (user.role !== "ADMIN") {
-    throw new WalletError("forbidden", "دسترسی مجاز نیست.");
-  }
-  return user;
-}
 
 export async function GET(request: Request) {
   try {
@@ -63,8 +55,8 @@ export async function GET(request: Request) {
       })),
     });
   } catch (error) {
-    if (error instanceof AuthRequiredError) return jsonError("برای ادامه وارد شوید.", 401);
-    if (error instanceof WalletError && error.code === "forbidden") return jsonError(error.message, 403);
+    const accessError = panelApiError(error);
+    if (accessError) return jsonError(accessError.message, accessError.status);
     console.error("[admin/wallets]", error instanceof Error ? error.message : "unknown");
     return jsonError("عملیات ادمین ممکن نیست.", 500);
   }
@@ -167,7 +159,8 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
-    if (error instanceof AuthRequiredError) return jsonError("برای ادامه وارد شوید.", 401);
+    const accessError = panelApiError(error);
+    if (accessError) return jsonError(accessError.message, accessError.status);
     if (error instanceof WalletError) {
       const status = error.code === "forbidden" ? 403 : error.code === "insufficient_funds" ? 402 : 400;
       return jsonError(error.message, status);

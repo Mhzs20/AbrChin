@@ -10,13 +10,13 @@ import {
   TechnicalValue,
 } from "@/components/product";
 import { getUserOrders } from "@/lib/account/queries";
+import { requireCustomerPage } from "@/lib/auth/guards";
 import {
   getInfrastructureStage,
   infrastructureOrderStatusLabel,
   serviceOrderStatusLabel,
 } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
-import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "سفارش‌های من | حساب من | ابرچین",
@@ -33,8 +33,7 @@ function orderTone(status: string): "success" | "warning" | "danger" | "info" | 
 }
 
 export default async function AccountOrdersPage() {
-  const user = await getCurrentUser();
-  if (!user) return null;
+  const user = await requireCustomerPage();
 
   const orders = await getUserOrders(user.id);
   const columns = [

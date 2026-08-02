@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { AdminPlansPanel } from "@/components/admin/plans-panel";
 import { DataTable, MoneyDisplay, PageHeader, StatusBadge, TechnicalValue } from "@/components/product";
-import { guardAdminPage } from "@/lib/admin/auth";
+import { getAdminPageAccess } from "@/lib/auth/guards";
 import { listAllPlans } from "@/lib/orders/plans";
 import { deliveryModeLabel } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
@@ -23,7 +23,8 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminPlansPage() {
-  await guardAdminPage();
+  const access = await getAdminPageAccess();
+  if (!access.allowed) return null;
   const [plans, catalogItems, pricingConfigs, regions, imageAssets] = await Promise.all([
     listAllPlans(),
     prisma.providerCatalogItem.findMany({

@@ -46,6 +46,51 @@
   --product-sidebar-width: 288px;
 }
 
+.panel-access-denied {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 12% 14%, rgba(79, 128, 255, 0.14), transparent 34%),
+    var(--product-bg);
+}
+
+.panel-access-denied-card {
+  width: min(100%, 640px);
+  display: grid;
+  gap: 20px;
+  padding: clamp(28px, 5vw, 48px);
+  border: 1px solid var(--product-border);
+  border-radius: 28px;
+  background: var(--product-surface);
+  box-shadow: 0 24px 70px rgba(17, 42, 84, 0.14);
+  color: var(--product-navy);
+}
+
+.panel-access-denied-card h1 {
+  margin: 6px 0 10px;
+  font-size: clamp(24px, 4vw, 34px);
+}
+
+.panel-access-denied-card p {
+  margin: 0;
+  color: var(--product-muted);
+  line-height: 1.9;
+}
+
+.panel-access-denied-kicker {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--product-primary) !important;
+}
+
+.panel-access-denied-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .product-sidebar {
   grid-area: sidebar;
   position: sticky;

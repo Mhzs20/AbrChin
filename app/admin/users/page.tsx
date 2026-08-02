@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { DataTable, MoneyDisplay, PageHeader, StatusBadge } from "@/components/product";
 import { listAdminUsers } from "@/lib/admin/dashboard";
+import { getAdminPageAccess } from "@/lib/auth/guards";
 import { formatTomanFa } from "@/lib/money";
 
 export const metadata: Metadata = {
@@ -12,6 +13,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminUsersPage() {
+  const access = await getAdminPageAccess();
+  if (!access.allowed) return null;
+
   const users = await listAdminUsers();
   const columns = [
     { key: "mobile", header: "موبایل" },

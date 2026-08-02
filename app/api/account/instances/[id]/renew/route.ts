@@ -1,10 +1,10 @@
+import { panelApiError, requireCustomer } from "@/lib/auth/guards";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 import {
   createRenewalQuote,
   payRenewalQuote,
   toPublicRenewalQuote,
 } from "@/lib/subscriptions/service";
-import { AuthRequiredError, requireCurrentUser } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/errors";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireCurrentUser();
+    const user = await requireCustomer();
     const { id } = await params;
     const quote = await createRenewalQuote({
       instanceId: id,
@@ -35,7 +35,8 @@ export async function GET(
     });
     return jsonOk({ quote: toPublicRenewalQuote(quote) });
   } catch (error) {
-    if (error instanceof AuthRequiredError) return jsonError("برای ادامه وارد شوید.", 401);
+    const accessError = panelApiError(error);
+    if (accessError) return jsonError(accessError.message, accessError.status);
     if (error instanceof WalletError) return walletErrorResponse(error);
     console.error("[subscription:quote]", error instanceof Error ? error.message : "unknown");
     return jsonError("دریافت قیمت تمدید ممکن نیست.", 500);
@@ -50,7 +51,7 @@ export async function POST(
   if (rejected) return rejected;
 
   try {
-    const user = await requireCurrentUser();
+    const user = await requireCustomer();
     const { id } = await params;
     const body = (await request.json()) as { renewalQuoteId?: unknown };
     if (typeof body.renewalQuoteId !== "string" || !body.renewalQuoteId) {
@@ -69,7 +70,8 @@ export async function POST(
       },
     });
   } catch (error) {
-    if (error instanceof AuthRequiredError) return jsonError("برای ادامه وارد شوید.", 401);
+    const accessError = panelApiError(error);
+    if (accessError) return jsonError(accessError.message, accessError.status);
     if (error instanceof WalletError) return walletErrorResponse(error);
     console.error("[subscription:renew]", error instanceof Error ? error.message : "unknown");
     return jsonError("تمدید سرور ممکن نیست.", 500);

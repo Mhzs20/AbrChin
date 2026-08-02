@@ -4,13 +4,13 @@ import { notFound } from "next/navigation";
 import { MoneyDisplay, PageHeader, SectionCard, StatusBadge, Timeline } from "@/components/product";
 import { CredentialRevealPanel } from "@/components/account/credential-reveal-panel";
 import { SubscriptionPanel } from "@/components/account/subscription-panel";
+import { requireCustomerPage } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import {
   getInfrastructureStage,
   serviceOrderStatusLabel,
 } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
-import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "جزئیات سفارش | حساب من | ابرچین",
@@ -20,8 +20,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AccountOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const user = await getCurrentUser();
-  if (!user) return null;
+  const user = await requireCustomerPage();
 
   const { id } = await params;
   const order = await prisma.serviceOrder.findFirst({

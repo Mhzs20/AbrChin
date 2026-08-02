@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/login-form";
+import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "ورود | ابرچین",
@@ -8,24 +10,13 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-function safeNextPath(value: string | string[] | undefined) {
-  const candidate = Array.isArray(value) ? value[0] : value;
-  if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//")) {
-    return "/account";
-  }
-  return candidate;
-}
-
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const params = await searchParams;
+export default async function LoginPage() {
+  const user = await getCurrentUser();
+  if (user) redirect(user.role === "ADMIN" ? "/admin" : "/account");
 
   return (
     <section className="auth-page page-view" aria-label="ورود">
-      <LoginForm nextPath={safeNextPath(params.next)} />
+      <LoginForm />
     </section>
   );
 }

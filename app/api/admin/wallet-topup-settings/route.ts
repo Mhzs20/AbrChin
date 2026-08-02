@@ -1,17 +1,9 @@
+import { panelApiError, requireAdmin } from "@/lib/auth/guards";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
-import { AuthRequiredError, requireCurrentUser } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/ledger";
 import { getTopUpSettingsView, updateTopUpSuggestedAmounts } from "@/lib/wallet/topup-settings";
 
 export const dynamic = "force-dynamic";
-
-async function requireAdmin() {
-  const user = await requireCurrentUser();
-  if (user.role !== "ADMIN") {
-    throw new WalletError("forbidden", "دسترسی مجاز نیست.");
-  }
-  return user;
-}
 
 export async function GET() {
   try {
@@ -19,8 +11,8 @@ export async function GET() {
     const settings = await getTopUpSettingsView();
     return jsonOk({ settings });
   } catch (error) {
-    if (error instanceof AuthRequiredError) return jsonError("برای ادامه وارد شوید.", 401);
-    if (error instanceof WalletError && error.code === "forbidden") return jsonError(error.message, 403);
+    const accessError = panelApiError(error);
+    if (accessError) return jsonError(accessError.message, accessError.status);
     console.error("[admin/wallet-topup-settings]", error instanceof Error ? error.message : "unknown");
     return jsonError("دریافت تنظیمات شارژ ممکن نیست.", 500);
   }
@@ -50,7 +42,8 @@ export async function PATCH(request: Request) {
     const settings = await getTopUpSettingsView();
     return jsonOk({ settings, message: "مبالغ پیشنهادی شارژ ذخیره شد." });
   } catch (error) {
-    if (error instanceof AuthRequiredError) return jsonError("برای ادامه وارد شوید.", 401);
+    const accessError = panelApiError(error);
+    if (accessError) return jsonError(accessError.message, accessError.status);
     if (error instanceof WalletError) {
       const status = error.code === "forbidden" ? 403 : 400;
       return jsonError(error.message, status);

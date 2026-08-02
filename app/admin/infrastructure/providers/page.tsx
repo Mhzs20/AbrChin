@@ -9,6 +9,7 @@ import {
   getProviderSyncRunsAdminView,
   getSystemStatuses,
 } from "@/lib/admin/dashboard";
+import { getAdminPageAccess } from "@/lib/auth/guards";
 import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
 
 export const metadata: Metadata = {
@@ -19,6 +20,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminProvidersPage() {
+  const access = await getAdminPageAccess();
+  if (!access.allowed) return null;
+
   const [system, catalogItems, pricing, syncRuns, regions] = await Promise.all([
     getSystemStatuses(),
     getProviderCatalogAdminView(),

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { PageHeader, SectionCard, StatusBadge, type BadgeTone } from "@/components/product";
+import { getAdminPageAccess } from "@/lib/auth/guards";
 import { getEnv } from "@/lib/env";
 import { isProviderConfigured } from "@/lib/infrastructure/provider-factory";
 
@@ -11,7 +12,10 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function AdminSettingsPage() {
+export default async function AdminSettingsPage() {
+  const access = await getAdminPageAccess();
+  if (!access.allowed) return null;
+
   const env = getEnv();
 
   const items: { label: string; status: string; tone: BadgeTone }[] = [

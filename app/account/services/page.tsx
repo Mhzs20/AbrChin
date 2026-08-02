@@ -10,12 +10,12 @@ import {
   Timeline,
 } from "@/components/product";
 import { getUserServices } from "@/lib/account/queries";
+import { requireCustomerPage } from "@/lib/auth/guards";
 import {
   cloudInstanceStatusLabel,
   deliveryModeLabel,
   getInfrastructureStage,
 } from "@/lib/labels/infrastructure";
-import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "سرویس‌های من | حساب من | ابرچین",
@@ -25,8 +25,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AccountServicesPage() {
-  const user = await getCurrentUser();
-  if (!user) return null;
+  const user = await requireCustomerPage();
 
   const services = await getUserServices(user.id);
   const columns = [

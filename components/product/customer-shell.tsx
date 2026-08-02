@@ -46,7 +46,7 @@ const drawerGroups = [
   { title: "حساب", items: secondaryNav },
 ];
 
-export function AccountShell({
+export function CustomerShell({
   user,
   pathname,
   walletBalanceRial,
@@ -57,7 +57,7 @@ export function AccountShell({
   walletBalanceRial?: string;
   children: ReactNode;
 }) {
-  const displayName = user.displayName || "کاربر ابرچین";
+  const displayName = user.displayName || "مشتری ابرچین";
 
   return (
     <ProductShell
@@ -66,7 +66,7 @@ export function AccountShell({
         <>
           <Link href="/account" className="product-sidebar-brand">
             <Image src="/assets/abrchin-symbol.svg" alt="" width={32} height={28} />
-            <span>پنل کاربری</span>
+            <span>پنل مشتری</span>
           </Link>
           <SidebarGroup>
             {mainNav.map((item) => (
@@ -110,7 +110,7 @@ export function AccountShell({
         </div>
       }
       mobileHeader={
-        <MobileHeader title="پنل کاربری" userName={displayName} groups={drawerGroups} pathname={pathname} />
+        <MobileHeader title="پنل مشتری" userName={displayName} groups={drawerGroups} pathname={pathname} />
       }
       mobileNav={<MobileNavigation items={mainNav} pathname={pathname} extraIcon={LayoutGrid} extraHref="/account/profile" extraLabel="بیشتر" />}
     >

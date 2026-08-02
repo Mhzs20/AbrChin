@@ -1,14 +1,11 @@
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
+import { panelApiError, requireCustomer } from "@/lib/auth/guards";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 import {
   InstanceCredentialError,
   revealInstanceCredential,
 } from "@/lib/security/instance-credentials";
-import {
-  AuthRequiredError,
-  readRequestMeta,
-  requireCurrentUser,
-} from "@/lib/session";
+import { readRequestMeta } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +17,7 @@ export async function POST(
   if (rejected) return rejected;
 
   try {
-    const user = await requireCurrentUser();
+    const user = await requireCustomer();
     const { id } = await params;
     const credential = await revealInstanceCredential({
       instanceId: id,
@@ -39,9 +36,8 @@ export async function POST(
 
     return jsonOk({ credential });
   } catch (error) {
-    if (error instanceof AuthRequiredError) {
-      return jsonError("برای ادامه وارد شوید.", 401);
-    }
+    const accessError = panelApiError(error);
+    if (accessError) return jsonError(accessError.message, accessError.status);
     if (error instanceof InstanceCredentialError) {
       const status = error.code === "not_found" ? 404 : 409;
       return jsonError(error.message, status, { code: error.code });

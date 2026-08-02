@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { DataTable, MoneyDisplay, PageHeader } from "@/components/product";
+import { getAdminPageAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import { ledgerDirectionLabel, ledgerTypeLabel } from "@/lib/labels/ledger";
 import { formatTomanFa } from "@/lib/money";
@@ -13,6 +14,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminTransactionsPage() {
+  const access = await getAdminPageAccess();
+  if (!access.allowed) return null;
+
   const entries = await prisma.walletLedgerEntry.findMany({
     orderBy: { createdAt: "desc" },
     take: 100,

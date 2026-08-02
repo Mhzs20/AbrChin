@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { OrderCheckoutPanel } from "@/components/account/order-checkout-panel";
 import { QuoteCountdown } from "@/components/quote-countdown";
 import { PageHeader, SectionCard, StatusBadge } from "@/components/product";
+import { requireCustomerPage } from "@/lib/auth/guards";
 import { deliveryModeLabel } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
 import { parchinPlanLabel, parchinPlanSummary } from "@/lib/parchin/catalog";
@@ -12,7 +13,6 @@ import {
   getActiveRecommendationQuote,
   toPublicRecommendationQuote,
 } from "@/lib/recommendation/quote-service";
-import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "تکمیل پیشنهاد | حساب من | ابرچین",
@@ -26,9 +26,8 @@ export default async function RecommendationQuoteCheckoutPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const user = await requireCustomerPage();
   const { id } = await params;
-  const user = await getCurrentUser();
-  if (!user) redirect(`/login?next=${encodeURIComponent(`/account/order/quote/${id}`)}`);
 
   const quoteRecord = await getActiveRecommendationQuote(id, user.id);
   if (!quoteRecord) redirect("/compass?resume=1");
