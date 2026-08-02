@@ -28,8 +28,11 @@ enum LedgerDirection {
 
 enum LedgerType {
   TOP_UP
+  TOP_UP_REFUND
   SERVICE_PURCHASE
   SERVICE_RENEWAL
+  USAGE_SETTLEMENT
+  BILLING_ADJUSTMENT
   REFUND
   ADMIN_ADJUSTMENT
 }
@@ -60,12 +63,183 @@ enum OrderPaymentStatus {
   EXPIRED
 }
 
+enum PaymentAttemptStatus {
+  CREATED
+  PENDING
+  SUCCEEDED
+  REVIEW
+  FAILED
+  CANCELED
+  EXPIRED
+}
+
+enum PaymentReviewStatus {
+  OPEN
+  RECONCILING
+  RESOLVED
+  DEFINITIVELY_FAILED
+  REFUND_REVIEW
+}
+
+enum ControlledRefundStatus {
+  REQUESTED
+  REVIEW_REQUIRED
+  APPROVED
+  COMPLETED
+  REJECTED
+}
+
 enum ServiceOrderStatus {
   DRAFT
   PENDING_PAYMENT
   PAID
   CANCELED
   REFUNDED
+}
+
+enum ProductBillingModel {
+  PAYG_WALLET
+  PREPAID_TERM
+}
+
+enum BillingAvailability {
+  HOURLY_ONLY
+  DAILY_ONLY
+  HOURLY_AND_DAILY
+}
+
+enum BillingCadence {
+  HOURLY
+  DAILY
+}
+
+enum BillingPriceDisplayMode {
+  HOURLY
+  DAILY
+  BOTH
+}
+
+enum BillingPolicyScope {
+  GLOBAL
+  PLAN
+}
+
+enum BillingCalculationUnit {
+  SECOND
+  MINUTE
+  HOUR
+  DAY
+}
+
+enum BillingRoundingPolicy {
+  EXACT
+  CEIL_UNIT
+  FLOOR_UNIT
+  NEAREST_UNIT
+}
+
+enum ActivationRequestStatus {
+  CREDIT_REQUIRED
+  WAITING_ADMIN_APPROVAL
+  APPROVED
+  PROVISIONING
+  PROVIDER_CONFIRMED
+  WAITING_DELIVERY_APPROVAL
+  ACTIVE
+  HELD
+  CANCELED
+}
+
+enum ResourceChangeStatus {
+  REQUESTED
+  CREDIT_REQUIRED
+  WAITING_ADMIN_APPROVAL
+  APPROVED
+  PROVIDER_MUTATION_PENDING
+  PROVIDER_CONFIRMED
+  APPLIED
+  REVIEW
+  CANCELED
+}
+
+enum ResourceVersionState {
+  ACTIVE
+  STOPPED
+  TERMINATED
+}
+
+enum UsageIntervalStatus {
+  OPEN
+  COMPLETE
+  INCOMPLETE
+  REVIEW
+}
+
+enum BillingRunStatus {
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+enum BillingInvoiceStatus {
+  CALCULATING
+  PAID
+  PARTIALLY_PAID
+  UNPAID
+  UNDER_REVIEW
+  VOID
+}
+
+enum BillingComponentType {
+  COMPUTE
+  DISK
+  IP
+  BACKUP
+  TRAFFIC
+  SNAPSHOT
+  ADDON
+  ONE_TIME
+  ADJUSTMENT
+}
+
+enum OutstandingBalanceStatus {
+  OPEN
+  PARTIALLY_PAID
+  PAID
+  WAIVED
+}
+
+enum BillingReconciliationKind {
+  RATE_CARD
+  RESOURCE_STATE
+  PROVIDER_USAGE
+  PROVIDER_INVOICE
+  PROVIDER_ACCOUNT_BALANCE
+  ADJUSTMENT
+}
+
+enum BillingReconciliationStatus {
+  PENDING
+  MATCHED
+  MISMATCH
+  REVIEW
+  ADJUSTED
+  UNSUPPORTED
+}
+
+enum DunningCaseType {
+  LOW_BALANCE
+  OUTSTANDING_INVOICE
+  SUSPENSION_REVIEW
+}
+
+enum DunningCaseStatus {
+  OPEN
+  NOTIFIED
+  GRACE
+  ADMIN_REVIEW
+  RESOLVED
 }
 
 enum RecommendationFlowStatus {
@@ -261,6 +435,16 @@ enum ProvisioningJobStatus {
 
 enum AdminNotificationType {
   ORDER_WAITING_PROVIDER_FUNDING
+  ACTIVATION_WAITING_APPROVAL
+  RESOURCE_CHANGE_WAITING_APPROVAL
+  WALLET_PAYMENT_REVIEW
+  WALLET_CREDIT_RECONCILIATION
+  CONTROLLED_REFUND_REVIEW
+  LOW_BALANCE
+  OUTSTANDING_INVOICE
+  SUSPENSION_REVIEW
+  PROVIDER_BILLING_RECONCILIATION
+  CONNECTION_CHECK_FAILED
   PROVIDER_BALANCE_BLOCKED
   PROVISIONING_FAILED
   NEEDS_RECONCILIATION
@@ -355,6 +539,16 @@ model User {
   inventoryItemsUpdated       PreprovisionedInventoryItem[]       @relation("InventoryUpdatedBy")
   inventoryCredentialsCreated PreprovisionedInventoryCredential[] @relation("InventoryCredentialCreatedBy")
   alertSubscription           AdminAlertSubscription?
+  paymentRecoveryActions      PaymentRecoveryAction[]             @relation("PaymentRecoveryActor")
+  topUpRefundsRequested       WalletTopUpRefund[]                 @relation("TopUpRefundRequestedBy")
+  topUpRefundsReviewed        WalletTopUpRefund[]                 @relation("TopUpRefundReviewedBy")
+  billingPoliciesCreated      BillingPolicyVersion[]              @relation("BillingPolicyCreatedBy")
+  activationRequests          ActivationRequest[]
+  activationApprovals         ActivationRequest[]                 @relation("ActivationApprovedBy")
+  resourceChangeRequests      ResourceChangeRequest[]             @relation("ResourceChangeRequestedBy")
+  resourceChangeApprovals     ResourceChangeRequest[]             @relation("ResourceChangeApprovedBy")
+  billingInvoices             BillingInvoice[]
+  outstandingBalances         OutstandingBalance[]
 }
 
 model OtpChallenge {
@@ -397,6 +591,7 @@ model Wallet {
   user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   ledgerEntries    WalletLedgerEntry[]
   topUps           WalletTopUp[]
+  billingInvoices  BillingInvoice[]
 }
 
 model WalletLedgerEntry {
@@ -444,6 +639,9 @@ model WalletTopUp {
   redirectUrl           String?
   wallet                Wallet                 @relation(fields: [walletId], references: [id], onDelete: Cascade)
   purchaseOrder         ServiceOrder?          @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  paymentAttempts       PaymentAttempt[]
+  recoveryCases         PaymentRecoveryCase[]
+  controlledRefunds     WalletTopUpRefund[]
 
   @@index([walletId, createdAt])
   @@index([status, expiresAt])
@@ -530,6 +728,7 @@ model ServiceOrder {
   assignedInventoryItems PreprovisionedInventoryItem[] @relation("InventoryAssignedOrder")
   purchaseTopUps         WalletTopUp[]
   orderPayment           OrderPayment?
+  activationRequest      ActivationRequest?
 
   @@index([userId, createdAt])
   @@index([status])
@@ -559,6 +758,104 @@ model OrderPayment {
   @@index([status, expiresAt])
   @@index([callbackTokenHash])
   @@index([gateway, status])
+}
+
+model PaymentAttempt {
+  id                    String                  @id @default(cuid())
+  walletTopUpId         String
+  attemptNumber         Int
+  amount                BigInt
+  currency              String                  @default("IRR")
+  gateway               PaymentGatewayProvider
+  status                PaymentAttemptStatus    @default(CREATED)
+  authority             String?                 @unique
+  gatewayReference      String?                 @unique
+  gatewayConfigSnapshot Json?
+  callbackTokenHash     String
+  expiresAt             DateTime                @db.Timestamptz(3)
+  verifiedAt            DateTime?               @db.Timestamptz(3)
+  nextReconcileAt       DateTime?               @db.Timestamptz(3)
+  verificationAttempts  Int                     @default(0)
+  failureCode           String?
+  failureMessage        String?
+  idempotencyKey        String                  @unique
+  redirectUrl           String?
+  createdAt             DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                @updatedAt @db.Timestamptz(3)
+  walletTopUp           WalletTopUp             @relation(fields: [walletTopUpId], references: [id], onDelete: Cascade)
+  recoveryCase          PaymentRecoveryCase?
+  recoveryActions       PaymentRecoveryAction[]
+
+  @@unique([walletTopUpId, attemptNumber])
+  @@index([walletTopUpId, createdAt])
+  @@index([status, nextReconcileAt])
+  @@index([gateway, status])
+}
+
+model PaymentRecoveryCase {
+  id               String                  @id @default(cuid())
+  walletTopUpId    String
+  attemptId        String                  @unique
+  status           PaymentReviewStatus     @default(OPEN)
+  reasonCode       String
+  safeMessage      String
+  expectedAmount   BigInt
+  observedAmount   BigInt?
+  expectedCurrency String                  @default("IRR")
+  observedCurrency String?
+  nextAttemptAt    DateTime?               @db.Timestamptz(3)
+  attemptCount     Int                     @default(0)
+  resolvedAt       DateTime?               @db.Timestamptz(3)
+  createdAt        DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime                @updatedAt @db.Timestamptz(3)
+  walletTopUp      WalletTopUp             @relation(fields: [walletTopUpId], references: [id], onDelete: Cascade)
+  attempt          PaymentAttempt          @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  actions          PaymentRecoveryAction[]
+
+  @@index([status, nextAttemptAt, createdAt])
+  @@index([walletTopUpId, createdAt])
+}
+
+model PaymentRecoveryAction {
+  id               String              @id @default(cuid())
+  recoveryCaseId   String
+  paymentAttemptId String
+  actorUserId      String
+  action           String
+  resultCode       String
+  idempotencyKey   String              @unique
+  metadata         Json?
+  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
+  recoveryCase     PaymentRecoveryCase @relation(fields: [recoveryCaseId], references: [id], onDelete: Cascade)
+  paymentAttempt   PaymentAttempt      @relation(fields: [paymentAttemptId], references: [id], onDelete: Cascade)
+  actor            User                @relation("PaymentRecoveryActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([recoveryCaseId, createdAt])
+  @@index([paymentAttemptId, createdAt])
+  @@index([actorUserId, createdAt])
+}
+
+model WalletTopUpRefund {
+  id             String                 @id @default(cuid())
+  walletTopUpId  String
+  requestedById  String
+  reviewedById   String?
+  amount         BigInt
+  currency       String                 @default("IRR")
+  status         ControlledRefundStatus @default(REQUESTED)
+  reason         String
+  reviewReason   String?
+  ledgerEntryId  String?                @unique
+  idempotencyKey String                 @unique
+  requestedAt    DateTime               @default(now()) @db.Timestamptz(3)
+  reviewedAt     DateTime?              @db.Timestamptz(3)
+  completedAt    DateTime?              @db.Timestamptz(3)
+  walletTopUp    WalletTopUp            @relation(fields: [walletTopUpId], references: [id], onDelete: Restrict)
+  requestedBy    User                   @relation("TopUpRefundRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  reviewedBy     User?                  @relation("TopUpRefundReviewedBy", fields: [reviewedById], references: [id], onDelete: Restrict)
+
+  @@index([status, requestedAt])
+  @@index([walletTopUpId, requestedAt])
 }
 
 model RecommendationSession {
@@ -687,6 +984,8 @@ model InfrastructurePlan {
   offerSource                  InfrastructureOfferSource           @default(API_CATALOG)
   offerPriceValidUntil         DateTime?
   offerLastVerifiedAt          DateTime?
+  billingModel                 ProductBillingModel                 @default(PREPAID_TERM)
+  billingPolicyVersionId       String?
   sortOrder                    Int                                 @default(0)
   catalogItemId                String?
   catalogMappingStatus         CatalogMappingStatus                @default(UNMAPPED)
@@ -701,6 +1000,11 @@ model InfrastructurePlan {
   infrastructureOrders         InfrastructureOrder[]
   subscriptions                ServiceSubscription[]
   preprovisionedInventoryItems PreprovisionedInventoryItem[]
+  billingPolicyVersion         BillingPolicyVersion?               @relation("CurrentPlanBillingPolicy", fields: [billingPolicyVersionId], references: [id], onDelete: Restrict)
+  billingPolicyVersions        BillingPolicyVersion[]              @relation("PlanBillingPolicies")
+  activationRequests           ActivationRequest[]
+  resourceChangeRequests       ResourceChangeRequest[]
+  rateCardVersions             RateCardVersion[]
 
   @@index([active, sortOrder])
   @@index([provider, active])
@@ -708,6 +1012,8 @@ model InfrastructurePlan {
   @@index([provider, productKind, offerSource, publicationStatus])
   @@index([catalogItemId])
   @@index([catalogMappingStatus, active])
+  @@index([billingModel, publicationStatus])
+  @@index([billingPolicyVersionId])
 }
 
 model InfrastructureOrder {
@@ -746,6 +1052,7 @@ model InfrastructureOrder {
   healthRetryDispatches               HealthRetryDispatch[]
   preprovisionedInventoryItemId       String?                          @unique
   preprovisionedInventoryItem         PreprovisionedInventoryItem?     @relation(fields: [preprovisionedInventoryItemId], references: [id], onDelete: Restrict)
+  activationRequest                   ActivationRequest?
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -815,6 +1122,7 @@ model ProvisioningJob {
   @@index([status, availableAt, createdAt])
   @@index([id, claimToken, leaseExpiresAt])
   @@index([healthCheckId])
+  @@index([reconciliationKey])
 }
 
 model ProvisioningNotificationOutbox {
@@ -837,35 +1145,42 @@ model ProvisioningNotificationOutbox {
 }
 
 model CloudInstance {
-  id                    String                      @id @default(cuid())
-  infrastructureOrderId String                      @unique
-  userId                String
-  provider              InfrastructureProvider
-  providerApiVersion    String                      @default("v1")
-  providerInstanceId    String                      @unique
-  name                  String
-  region                String
-  size                  String
-  image                 String
-  deliveryMode          DeliveryMode
-  ipv4                  String?
-  providerState         String?
-  networkId             String?
-  securityId            String?
-  providerObservedAt    DateTime?
-  status                CloudInstanceStatus         @default(PENDING)
-  provisionedAt         DateTime?
-  healthCheckedAt       DateTime?
-  deliveredAt           DateTime?
-  terminatedAt          DateTime?
-  createdAt             DateTime                    @default(now())
-  updatedAt             DateTime                    @updatedAt
-  infrastructureOrder   InfrastructureOrder         @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
-  user                  User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  credential            InstanceCredential?
-  subscription          ServiceSubscription?
-  healthChecks          InfrastructureHealthCheck[]
-  secureDeliveryEvents  SecureDeliveryEvent[]
+  id                     String                         @id @default(cuid())
+  infrastructureOrderId  String                         @unique
+  userId                 String
+  provider               InfrastructureProvider
+  providerApiVersion     String                         @default("v1")
+  providerInstanceId     String                         @unique
+  name                   String
+  region                 String
+  size                   String
+  image                  String
+  deliveryMode           DeliveryMode
+  ipv4                   String?
+  providerState          String?
+  networkId              String?
+  securityId             String?
+  providerObservedAt     DateTime?
+  status                 CloudInstanceStatus            @default(PENDING)
+  provisionedAt          DateTime?
+  healthCheckedAt        DateTime?
+  deliveredAt            DateTime?
+  terminatedAt           DateTime?
+  createdAt              DateTime                       @default(now())
+  updatedAt              DateTime                       @updatedAt
+  infrastructureOrder    InfrastructureOrder            @relation(fields: [infrastructureOrderId], references: [id], onDelete: Cascade)
+  user                   User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credential             InstanceCredential?
+  subscription           ServiceSubscription?
+  healthChecks           InfrastructureHealthCheck[]
+  secureDeliveryEvents   SecureDeliveryEvent[]
+  billingPolicySnapshots ServiceBillingPolicySnapshot[]
+  resourceVersions       ResourceVersion[]
+  usageIntervals         UsageInterval[]
+  billingInvoices        BillingInvoice[]
+  resourceChangeRequests ResourceChangeRequest[]
+  billingReconciliations BillingReconciliation[]
+  dunningCases           DunningCase[]
 
   @@index([userId, createdAt])
   @@index([status])
@@ -1080,7 +1395,7 @@ model ProductFlowRemediationCase {
 }
 
 model ProviderCatalogState {
-  id                    String                 @id @default("parspack")
+  id                    String                 @id
   provider              InfrastructureProvider @unique
   apiVersion            String                 @default("v1")
   enabled               Boolean                @default(true)
@@ -1119,6 +1434,379 @@ model ServiceConnectionCheck {
   message      String?
   checkedAt    DateTime                     @default(now())
   updatedAt    DateTime                     @updatedAt
+}
+
+model BillingPolicyVersion {
+  id                         String                         @id @default(cuid())
+  policyKey                  String
+  version                    Int
+  scope                      BillingPolicyScope
+  planId                     String?
+  availability               BillingAvailability
+  defaultCadence             BillingCadence
+  displayMode                BillingPriceDisplayMode
+  hourlyMinimumCreditHours   Int                            @default(24)
+  dailyMinimumCreditDays     Int                            @default(1)
+  hourlyGracePeriods         Int                            @default(24)
+  dailyGracePeriods          Int                            @default(3)
+  lowBalanceThresholdPeriods Int                            @default(3)
+  calculationUnit            BillingCalculationUnit
+  minimumChargeSeconds       Int                            @default(0)
+  roundingPolicy             BillingRoundingPolicy
+  prorationSupported         Boolean                        @default(true)
+  stopStateComponentPolicy   Json
+  enabledCadences            Json
+  effectiveFrom              DateTime                       @db.Timestamptz(3)
+  effectiveTo                DateTime?                      @db.Timestamptz(3)
+  createdById                String?
+  changeReason               String
+  createdAt                  DateTime                       @default(now()) @db.Timestamptz(3)
+  plan                       InfrastructurePlan?            @relation("PlanBillingPolicies", fields: [planId], references: [id], onDelete: Restrict)
+  currentPlans               InfrastructurePlan[]           @relation("CurrentPlanBillingPolicy")
+  createdBy                  User?                          @relation("BillingPolicyCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  activationRequests         ActivationRequest[]
+  serviceSnapshots           ServiceBillingPolicySnapshot[]
+
+  @@unique([policyKey, version])
+  @@index([scope, effectiveFrom])
+  @@index([planId, effectiveFrom])
+}
+
+model ActivationRequest {
+  id                        String                        @id @default(cuid())
+  userId                    String
+  serviceOrderId            String                        @unique
+  planId                    String
+  billingPolicyVersionId    String
+  infrastructureOrderId     String?                       @unique
+  selectedCadence           BillingCadence
+  status                    ActivationRequestStatus       @default(WAITING_ADMIN_APPROVAL)
+  estimatedHourlyRial       BigInt?
+  estimatedDailyRial        BigInt?
+  oneTimeChargesRial        BigInt                        @default(0)
+  minimumCreditRequiredRial BigInt
+  estimateSnapshot          Json
+  idempotencyKey            String                        @unique
+  requestedAt               DateTime                      @default(now()) @db.Timestamptz(3)
+  firstApprovedAt           DateTime?                     @db.Timestamptz(3)
+  firstApprovedById         String?
+  providerConfirmedAt       DateTime?                     @db.Timestamptz(3)
+  activeAt                  DateTime?                     @db.Timestamptz(3)
+  canceledAt                DateTime?                     @db.Timestamptz(3)
+  updatedAt                 DateTime                      @updatedAt @db.Timestamptz(3)
+  user                      User                          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  serviceOrder              ServiceOrder                  @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  plan                      InfrastructurePlan            @relation(fields: [planId], references: [id], onDelete: Restrict)
+  billingPolicyVersion      BillingPolicyVersion          @relation(fields: [billingPolicyVersionId], references: [id], onDelete: Restrict)
+  infrastructureOrder       InfrastructureOrder?          @relation(fields: [infrastructureOrderId], references: [id], onDelete: Restrict)
+  firstApprovedBy           User?                         @relation("ActivationApprovedBy", fields: [firstApprovedById], references: [id], onDelete: Restrict)
+  billingPolicySnapshot     ServiceBillingPolicySnapshot?
+
+  @@index([status, requestedAt])
+  @@index([userId, requestedAt])
+  @@index([planId, requestedAt])
+}
+
+model ServiceBillingPolicySnapshot {
+  id                         String                  @id @default(cuid())
+  cloudInstanceId            String
+  billingPolicyVersionId     String
+  activationRequestId        String?                 @unique
+  cadence                    BillingCadence
+  displayMode                BillingPriceDisplayMode
+  calculationUnit            BillingCalculationUnit
+  minimumChargeSeconds       Int
+  roundingPolicy             BillingRoundingPolicy
+  prorationSupported         Boolean
+  hourlyEstimateRial         BigInt?
+  dailyEstimateRial          BigInt?
+  minimumCreditRial          BigInt
+  gracePeriods               Int
+  lowBalanceThresholdPeriods Int
+  stopStateComponentPolicy   Json
+  providerPolicySnapshot     Json
+  effectiveFrom              DateTime                @db.Timestamptz(3)
+  effectiveTo                DateTime?               @db.Timestamptz(3)
+  idempotencyKey             String                  @unique
+  createdAt                  DateTime                @default(now()) @db.Timestamptz(3)
+  cloudInstance              CloudInstance           @relation(fields: [cloudInstanceId], references: [id], onDelete: Restrict)
+  billingPolicyVersion       BillingPolicyVersion    @relation(fields: [billingPolicyVersionId], references: [id], onDelete: Restrict)
+  activationRequest          ActivationRequest?      @relation(fields: [activationRequestId], references: [id], onDelete: Restrict)
+  usageIntervals             UsageInterval[]
+  billingInvoices            BillingInvoice[]
+
+  @@index([cloudInstanceId, effectiveFrom])
+  @@index([billingPolicyVersionId, effectiveFrom])
+}
+
+model ResourceChangeRequest {
+  id                           String               @id @default(cuid())
+  cloudInstanceId              String
+  planId                       String
+  requestedById                String
+  approvedById                 String?
+  sourceResourceVersionId      String?
+  targetBillingPolicyVersionId String?
+  targetCadence                BillingCadence?
+  requestedResources           Json
+  estimateSnapshot             Json
+  incrementalBufferRial        BigInt               @default(0)
+  status                       ResourceChangeStatus @default(REQUESTED)
+  idempotencyKey               String               @unique
+  providerMutationId           String?
+  requestedAt                  DateTime             @default(now()) @db.Timestamptz(3)
+  approvedAt                   DateTime?            @db.Timestamptz(3)
+  providerConfirmedAt          DateTime?            @db.Timestamptz(3)
+  effectiveFrom                DateTime?            @db.Timestamptz(3)
+  updatedAt                    DateTime             @updatedAt @db.Timestamptz(3)
+  cloudInstance                CloudInstance        @relation(fields: [cloudInstanceId], references: [id], onDelete: Restrict)
+  plan                         InfrastructurePlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+  requestedBy                  User                 @relation("ResourceChangeRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  approvedBy                   User?                @relation("ResourceChangeApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+  sourceResourceVersion        ResourceVersion?     @relation("ResourceChangeSourceVersion", fields: [sourceResourceVersionId], references: [id], onDelete: Restrict)
+  resultingResourceVersion     ResourceVersion?     @relation("ResultingResourceVersion")
+
+  @@index([cloudInstanceId, status, requestedAt])
+  @@index([status, requestedAt])
+}
+
+model ResourceVersion {
+  id                    String                  @id @default(cuid())
+  cloudInstanceId       String
+  provider              InfrastructureProvider
+  providerInstanceId    String
+  sourceChangeRequestId String?                 @unique
+  state                 ResourceVersionState
+  vcpu                  Int
+  ramMb                 Int
+  diskGb                Int
+  ipv4Count             Int                     @default(1)
+  backupEnabled         Boolean                 @default(false)
+  snapshotCount         Int                     @default(0)
+  resourceSnapshot      Json
+  providerEventId       String?
+  providerConfirmedAt   DateTime                @db.Timestamptz(3)
+  effectiveFrom         DateTime                @db.Timestamptz(3)
+  effectiveTo           DateTime?               @db.Timestamptz(3)
+  idempotencyKey        String                  @unique
+  createdAt             DateTime                @default(now()) @db.Timestamptz(3)
+  cloudInstance         CloudInstance           @relation(fields: [cloudInstanceId], references: [id], onDelete: Restrict)
+  sourceChangeRequest   ResourceChangeRequest?  @relation("ResultingResourceVersion", fields: [sourceChangeRequestId], references: [id], onDelete: Restrict)
+  changeRequestsFrom    ResourceChangeRequest[] @relation("ResourceChangeSourceVersion")
+  usageIntervals        UsageInterval[]
+  billingLines          BillingLine[]
+
+  @@index([cloudInstanceId, effectiveFrom])
+  @@index([provider, providerInstanceId, effectiveFrom])
+  @@index([state, effectiveFrom])
+}
+
+model RateCardVersion {
+  id                     String                    @id @default(cuid())
+  planId                 String?
+  provider               InfrastructureProvider
+  providerApiVersion     String                    @default("v1")
+  productKind            InfrastructureProductKind
+  externalPlanId         String
+  regionCode             String
+  component              BillingComponentType
+  rateCadence            BillingCadence?
+  calculationUnit        BillingCalculationUnit
+  minimumChargeSeconds   Int                       @default(0)
+  roundingPolicy         BillingRoundingPolicy
+  prorationSupported     Boolean
+  providerAmount         BigInt
+  providerCurrency       String
+  providerAmountUnit     String
+  normalizedProviderRial BigInt
+  markupBasisPoints      Int
+  customerRateRial       BigInt
+  sourceRevision         String
+  effectiveFrom          DateTime                  @db.Timestamptz(3)
+  effectiveTo            DateTime?                 @db.Timestamptz(3)
+  idempotencyKey         String                    @unique
+  createdAt              DateTime                  @default(now()) @db.Timestamptz(3)
+  plan                   InfrastructurePlan?       @relation(fields: [planId], references: [id], onDelete: Restrict)
+  billingLines           BillingLine[]
+
+  @@index([provider, productKind, externalPlanId, effectiveFrom])
+  @@index([planId, component, effectiveFrom])
+  @@index([rateCadence, effectiveFrom])
+}
+
+model UsageInterval {
+  id                      String                       @id @default(cuid())
+  cloudInstanceId         String
+  resourceVersionId       String
+  billingPolicySnapshotId String
+  status                  UsageIntervalStatus
+  startedAt               DateTime                     @db.Timestamptz(3)
+  endedAt                 DateTime?                    @db.Timestamptz(3)
+  providerEventStartId    String?
+  providerEventEndId      String?
+  completenessReason      String?
+  idempotencyKey          String                       @unique
+  createdAt               DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                     @updatedAt @db.Timestamptz(3)
+  cloudInstance           CloudInstance                @relation(fields: [cloudInstanceId], references: [id], onDelete: Restrict)
+  resourceVersion         ResourceVersion              @relation(fields: [resourceVersionId], references: [id], onDelete: Restrict)
+  billingPolicySnapshot   ServiceBillingPolicySnapshot @relation(fields: [billingPolicySnapshotId], references: [id], onDelete: Restrict)
+  billingLines            BillingLine[]
+
+  @@index([cloudInstanceId, startedAt, endedAt])
+  @@index([status, startedAt])
+  @@index([billingPolicySnapshotId, startedAt])
+}
+
+model BillingRun {
+  id             String           @id @default(cuid())
+  cadence        BillingCadence
+  periodStart    DateTime         @db.Timestamptz(3)
+  periodEnd      DateTime         @db.Timestamptz(3)
+  status         BillingRunStatus @default(RUNNING)
+  workerId       String
+  invoiceCount   Int              @default(0)
+  reviewCount    Int              @default(0)
+  failureCode    String?
+  idempotencyKey String           @unique
+  startedAt      DateTime         @default(now()) @db.Timestamptz(3)
+  finishedAt     DateTime?        @db.Timestamptz(3)
+  invoices       BillingInvoice[]
+
+  @@index([cadence, periodStart, periodEnd])
+  @@index([status, startedAt])
+}
+
+model BillingInvoice {
+  id                      String                       @id @default(cuid())
+  billingRunId            String
+  userId                  String
+  walletId                String
+  cloudInstanceId         String
+  billingPolicySnapshotId String
+  cadence                 BillingCadence
+  periodStart             DateTime                     @db.Timestamptz(3)
+  periodEnd               DateTime                     @db.Timestamptz(3)
+  status                  BillingInvoiceStatus         @default(CALCULATING)
+  totalAmountRial         BigInt                       @default(0)
+  paidAmountRial          BigInt                       @default(0)
+  outstandingAmountRial   BigInt                       @default(0)
+  finalizedAt             DateTime?                    @db.Timestamptz(3)
+  settledAt               DateTime?                    @db.Timestamptz(3)
+  reviewReason            String?
+  idempotencyKey          String                       @unique
+  createdAt               DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                     @updatedAt @db.Timestamptz(3)
+  billingRun              BillingRun                   @relation(fields: [billingRunId], references: [id], onDelete: Restrict)
+  user                    User                         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  wallet                  Wallet                       @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  cloudInstance           CloudInstance                @relation(fields: [cloudInstanceId], references: [id], onDelete: Restrict)
+  billingPolicySnapshot   ServiceBillingPolicySnapshot @relation(fields: [billingPolicySnapshotId], references: [id], onDelete: Restrict)
+  lines                   BillingLine[]
+  outstandingBalance      OutstandingBalance?
+  reconciliations         BillingReconciliation[]
+  dunningCases            DunningCase[]
+
+  @@unique([cloudInstanceId, periodStart, periodEnd, billingPolicySnapshotId])
+  @@index([userId, periodEnd])
+  @@index([status, periodEnd])
+  @@index([cadence, periodStart, periodEnd])
+}
+
+model BillingLine {
+  id                  String               @id @default(cuid())
+  billingInvoiceId    String
+  usageIntervalId     String?
+  resourceVersionId   String
+  rateCardVersionId   String
+  component           BillingComponentType
+  intervalStart       DateTime             @db.Timestamptz(3)
+  intervalEnd         DateTime             @db.Timestamptz(3)
+  quantityNumerator   BigInt
+  quantityDenominator BigInt
+  providerCostRial    BigInt
+  markupBasisPoints   Int
+  markupAmountRial    BigInt
+  amountRial          BigInt
+  description         String
+  metadata            Json?
+  idempotencyKey      String               @unique
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  billingInvoice      BillingInvoice       @relation(fields: [billingInvoiceId], references: [id], onDelete: Cascade)
+  usageInterval       UsageInterval?       @relation(fields: [usageIntervalId], references: [id], onDelete: Restrict)
+  resourceVersion     ResourceVersion      @relation(fields: [resourceVersionId], references: [id], onDelete: Restrict)
+  rateCardVersion     RateCardVersion      @relation(fields: [rateCardVersionId], references: [id], onDelete: Restrict)
+
+  @@index([billingInvoiceId, component])
+  @@index([resourceVersionId, intervalStart])
+  @@index([rateCardVersionId, intervalStart])
+}
+
+model OutstandingBalance {
+  id                  String                   @id @default(cuid())
+  billingInvoiceId    String                   @unique
+  userId              String
+  originalAmountRial  BigInt
+  paidAmountRial      BigInt                   @default(0)
+  remainingAmountRial BigInt
+  status              OutstandingBalanceStatus @default(OPEN)
+  dueAt               DateTime                 @db.Timestamptz(3)
+  resolvedAt          DateTime?                @db.Timestamptz(3)
+  createdAt           DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime                 @updatedAt @db.Timestamptz(3)
+  billingInvoice      BillingInvoice           @relation(fields: [billingInvoiceId], references: [id], onDelete: Restrict)
+  user                User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status, dueAt])
+  @@index([status, dueAt])
+}
+
+model BillingReconciliation {
+  id                     String                      @id @default(cuid())
+  provider               InfrastructureProvider
+  kind                   BillingReconciliationKind
+  status                 BillingReconciliationStatus @default(PENDING)
+  cloudInstanceId        String?
+  billingInvoiceId       String?
+  internalAmountRial     BigInt?
+  providerAmount         BigInt?
+  providerCurrency       String?
+  providerAmountUnit     String?
+  normalizedProviderRial BigInt?
+  differenceRial         BigInt?
+  reason                 String?
+  evidence               Json?
+  idempotencyKey         String                      @unique
+  detectedAt             DateTime                    @default(now()) @db.Timestamptz(3)
+  resolvedAt             DateTime?                   @db.Timestamptz(3)
+  cloudInstance          CloudInstance?              @relation(fields: [cloudInstanceId], references: [id], onDelete: Restrict)
+  billingInvoice         BillingInvoice?             @relation(fields: [billingInvoiceId], references: [id], onDelete: Restrict)
+
+  @@index([status, detectedAt])
+  @@index([provider, kind, status])
+  @@index([cloudInstanceId, detectedAt])
+}
+
+model DunningCase {
+  id                  String            @id @default(cuid())
+  cloudInstanceId     String
+  billingInvoiceId    String?
+  type                DunningCaseType
+  status              DunningCaseStatus @default(OPEN)
+  thresholdRial       BigInt
+  observedBalanceRial BigInt
+  runwaySeconds       BigInt?
+  graceEndsAt         DateTime?         @db.Timestamptz(3)
+  notificationSentAt  DateTime?         @db.Timestamptz(3)
+  idempotencyKey      String            @unique
+  createdAt           DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime          @updatedAt @db.Timestamptz(3)
+  resolvedAt          DateTime?         @db.Timestamptz(3)
+  cloudInstance       CloudInstance     @relation(fields: [cloudInstanceId], references: [id], onDelete: Restrict)
+  billingInvoice      BillingInvoice?   @relation(fields: [billingInvoiceId], references: [id], onDelete: Restrict)
+
+  @@index([status, type, createdAt])
+  @@index([cloudInstanceId, status])
 }
 
 model ProviderCatalogItem {

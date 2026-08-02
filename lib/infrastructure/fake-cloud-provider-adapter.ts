@@ -55,6 +55,24 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
   readonly topologyVerificationMode:
     | "STRICT_OBSERVED"
     | "PROVIDER_MANAGED";
+  readonly billingPolicy = {
+    verificationStatus: "VERIFIED",
+    settlementSupported: true,
+    calculationUnit: "SECOND",
+    minimumChargeSeconds: 1,
+    roundingPolicy: "EXACT",
+    prorationSupported: true,
+    hourlyRateAvailable: true,
+    dailyRateAvailable: true,
+    stopStateBillableComponents: {
+      compute: false,
+      disk: true,
+      ip: true,
+      backup: true,
+      traffic: false,
+      snapshot: true,
+    },
+  } as const;
   readonly createCalls: CreateServerInput[] = [];
   private readonly fixtures: FakeCloudProviderFixtures;
   private readonly resources = new Map<string, ProviderResource>();

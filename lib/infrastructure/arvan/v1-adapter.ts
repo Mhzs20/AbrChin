@@ -312,6 +312,24 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
   readonly provider = InfrastructureProvider.ARVAN;
   readonly apiVersion = "v1";
   readonly topologyVerificationMode = "STRICT_OBSERVED" as const;
+  readonly billingPolicy = {
+    verificationStatus: "UNVERIFIED",
+    settlementSupported: false,
+    calculationUnit: "UNVERIFIED",
+    minimumChargeSeconds: null,
+    roundingPolicy: "UNVERIFIED",
+    prorationSupported: null,
+    hourlyRateAvailable: true,
+    dailyRateAvailable: false,
+    stopStateBillableComponents: {
+      compute: "UNVERIFIED",
+      disk: "UNVERIFIED",
+      ip: "UNVERIFIED",
+      backup: "UNVERIFIED",
+      traffic: "UNVERIFIED",
+      snapshot: "UNVERIFIED",
+    },
+  } as const;
 
   private readonly apiKey: string;
   private readonly baseUrl: string;

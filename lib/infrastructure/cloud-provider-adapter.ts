@@ -95,6 +95,30 @@ export type ProviderTopologyVerificationMode =
   | "STRICT_OBSERVED"
   | "PROVIDER_MANAGED";
 
+export type ProviderBillingPolicy = {
+  verificationStatus: "VERIFIED" | "UNVERIFIED";
+  settlementSupported: boolean;
+  calculationUnit: "SECOND" | "MINUTE" | "HOUR" | "DAY" | "UNVERIFIED";
+  minimumChargeSeconds: number | null;
+  roundingPolicy:
+    | "EXACT"
+    | "CEIL_UNIT"
+    | "FLOOR_UNIT"
+    | "NEAREST_UNIT"
+    | "UNVERIFIED";
+  prorationSupported: boolean | null;
+  hourlyRateAvailable: boolean;
+  dailyRateAvailable: boolean;
+  stopStateBillableComponents: {
+    compute: boolean | "UNVERIFIED";
+    disk: boolean | "UNVERIFIED";
+    ip: boolean | "UNVERIFIED";
+    backup: boolean | "UNVERIFIED";
+    traffic: boolean | "UNVERIFIED";
+    snapshot: boolean | "UNVERIFIED";
+  };
+};
+
 export type ValidationResult =
   | { valid: true; checkedAt: Date }
   | {
@@ -192,6 +216,7 @@ export interface CloudProviderAdapter {
   readonly provider: InfrastructureProvider;
   readonly apiVersion: string;
   readonly topologyVerificationMode: ProviderTopologyVerificationMode;
+  readonly billingPolicy: ProviderBillingPolicy;
 
   syncRegions(): Promise<ProviderRegion[]>;
   syncPlans(region: string): Promise<ProviderPlan[]>;

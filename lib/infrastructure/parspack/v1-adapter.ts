@@ -36,6 +36,24 @@ export class ParsPackV1Adapter implements CloudProviderAdapter {
   readonly provider = InfrastructureProvider.PARSPACK;
   readonly apiVersion = "v1";
   readonly topologyVerificationMode = "PROVIDER_MANAGED" as const;
+  readonly billingPolicy = {
+    verificationStatus: "UNVERIFIED",
+    settlementSupported: false,
+    calculationUnit: "UNVERIFIED",
+    minimumChargeSeconds: null,
+    roundingPolicy: "UNVERIFIED",
+    prorationSupported: null,
+    hourlyRateAvailable: true,
+    dailyRateAvailable: false,
+    stopStateBillableComponents: {
+      compute: "UNVERIFIED",
+      disk: "UNVERIFIED",
+      ip: "UNVERIFIED",
+      backup: "UNVERIFIED",
+      traffic: "UNVERIFIED",
+      snapshot: "UNVERIFIED",
+    },
+  } as const;
   private catalogPromise: Promise<ProviderCatalog> | null = null;
   private readonly client: ParsPackProvider;
 
