@@ -50,6 +50,16 @@ enum TopUpStatus {
   EXPIRED
 }
 
+enum OrderPaymentStatus {
+  CREATED
+  PENDING
+  SUCCEEDED
+  REVIEW
+  FAILED
+  CANCELED
+  EXPIRED
+}
+
 enum ServiceOrderStatus {
   DRAFT
   PENDING_PAYMENT
@@ -519,10 +529,36 @@ model ServiceOrder {
   reservedInventoryItems PreprovisionedInventoryItem[] @relation("InventoryReservedOrder")
   assignedInventoryItems PreprovisionedInventoryItem[] @relation("InventoryAssignedOrder")
   purchaseTopUps         WalletTopUp[]
+  orderPayment           OrderPayment?
 
   @@index([userId, createdAt])
   @@index([status])
   @@index([planId])
+}
+
+model OrderPayment {
+  id                    String                 @id @default(cuid())
+  serviceOrderId        String                 @unique
+  amount                BigInt
+  gateway               PaymentGatewayProvider
+  status                OrderPaymentStatus     @default(CREATED)
+  authority             String?                @unique
+  gatewayReference      String?                @unique
+  gatewayConfigSnapshot Json?
+  idempotencyKey        String                 @unique
+  callbackTokenHash     String
+  failureCode           String?
+  failureMessage        String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  verifiedAt            DateTime?
+  expiresAt             DateTime
+  redirectUrl           String?
+  serviceOrder          ServiceOrder           @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+
+  @@index([status, expiresAt])
+  @@index([callbackTokenHash])
+  @@index([gateway, status])
 }
 
 model RecommendationSession {

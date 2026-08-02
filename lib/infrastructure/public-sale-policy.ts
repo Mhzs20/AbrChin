@@ -24,10 +24,15 @@ export type PublicSaleDecision = {
 
 export function getPublicSaleDecision(route: SaleRoute): PublicSaleDecision {
   const env = getEnv();
-  if (
-    route.offerSource === InfrastructureOfferSource.MANUAL_ADMIN ||
-    route.offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY
-  ) {
+  if (route.offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY) {
+    // A verified AbrChin-owned resource does not require a provider mutation.
+    // It may be sold for either catalog product kind, but remains separately
+    // launch-gated and is never the default launch dependency.
+    return env.manualReadyPublicSaleEnabled
+      ? { allowed: true, code: "sale_enabled" }
+      : { allowed: false, code: "provider_sale_disabled" };
+  }
+  if (route.offerSource === InfrastructureOfferSource.MANUAL_ADMIN) {
     return route.productKind === InfrastructureProductKind.READY_INSTANT_SERVER &&
       env.manualReadyPublicSaleEnabled
       ? { allowed: true, code: "sale_enabled" }

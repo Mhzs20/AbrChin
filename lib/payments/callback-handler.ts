@@ -3,6 +3,7 @@ import type { PaymentGatewayProvider } from "@prisma/client";
 
 import { getEnv } from "@/lib/env";
 import { createProviderFor } from "@/lib/payments";
+import { finalizeOrderPaymentFromCallback } from "@/lib/payments/order-payment";
 import { WalletError } from "@/lib/wallet/ledger";
 import { finalizeTopUpFromCallback } from "@/lib/wallet/topup";
 
@@ -61,6 +62,10 @@ export async function handleProviderCallback(
   }
 
   const normalized = provider.normalizeCallback(merged);
+  const paymentId =
+    readParam(url.searchParams, ["paymentId"]) ||
+    readParam(body, ["paymentId"]) ||
+    "";
   const topUpId =
     readParam(url.searchParams, ["topUpId"]) ||
     readParam(body, ["topUpId"]) ||
@@ -71,6 +76,32 @@ export async function handleProviderCallback(
   const resultUrl = new URL("/account/wallet/result", env.paymentCallbackBaseUrl);
 
   try {
+    if (paymentId) {
+      const orderResultUrl = new URL("/account/orders", env.paymentCallbackBaseUrl);
+      if (!token || !/^[a-zA-Z0-9_-]{8,64}$/.test(paymentId) || !/^[a-zA-Z0-9_-]{16,128}$/.test(token)) {
+        orderResultUrl.searchParams.set("payment", "failed");
+        return NextResponse.redirect(orderResultUrl);
+      }
+      const result = await finalizeOrderPaymentFromCallback({
+        expectedGateway,
+        paymentId,
+        token,
+        authority: normalized.authority,
+        statusHint: normalized.statusHint,
+      });
+      orderResultUrl.pathname = `/account/orders/${result.order.id}`;
+      if (result.payment.status === "SUCCEEDED") {
+        orderResultUrl.searchParams.set("payment", "success");
+      } else if (result.payment.status === "REVIEW") {
+        orderResultUrl.searchParams.set("payment", "review");
+      } else if (result.payment.status === "CANCELED") {
+        orderResultUrl.searchParams.set("payment", "canceled");
+      } else {
+        orderResultUrl.searchParams.set("payment", "failed");
+      }
+      return NextResponse.redirect(orderResultUrl);
+    }
+
     if (!topUpId || !token) {
       resultUrl.searchParams.set("status", "failed");
       resultUrl.searchParams.set("reason", "invalid");
@@ -104,6 +135,11 @@ export async function handleProviderCallback(
   } catch (error) {
     if (!(error instanceof WalletError)) {
       console.error(`[payments/${expectedGateway.toLowerCase()}/callback]`, "callback_failed");
+    }
+    if (paymentId) {
+      const orderResultUrl = new URL("/account/orders", env.paymentCallbackBaseUrl);
+      orderResultUrl.searchParams.set("payment", "failed");
+      return NextResponse.redirect(orderResultUrl);
     }
     resultUrl.searchParams.set("status", "failed");
     resultUrl.searchParams.set("reason", "error");

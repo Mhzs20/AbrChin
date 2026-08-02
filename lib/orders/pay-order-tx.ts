@@ -10,8 +10,6 @@ import {
   RecommendationQuoteStatus,
   ServiceOrderStatus,
   WalletStatus,
-  CloudInstanceStatus,
-  ProvisioningJobStatus,
   type Prisma,
 } from "@prisma/client";
 
@@ -29,16 +27,12 @@ import {
   transitionProductFlowTx,
 } from "@/lib/product-flow/service";
 import {
-  assignReservedInventoryTx,
   lockReservedInventoryForPaymentTx,
-  transferInventoryCredentialToInstanceTx,
 } from "@/lib/infrastructure/preprovisioned-inventory";
 
 export type PayOrderTxOptions = {
   /** Test-only: throw after debit ledger to verify full rollback. */
   testInjectFailureAfterDebit?: boolean;
-  /** Test-only: throw after inventory credential transfer to verify rollback. */
-  testInjectFailureAfterCredentialTransfer?: boolean;
 };
 
 const PAYABLE_QUOTE_STATUSES: RecommendationQuoteStatus[] = [
@@ -307,45 +301,6 @@ export async function executePayOrderWithWalletTx(
     return { order: paidOrder, infrastructureOrder: infra };
   }
 
-  if (manualAdmin) {
-    const decremented = await tx.providerCatalogItem.updateMany({
-      where: {
-        id: plan.catalogItem!.id,
-        source: "MANUAL_ADMIN",
-        active: true,
-        available: true,
-        status: "ACTIVE",
-        manualAvailableUnits: { gt: 0 },
-        manualPriceValidUntil: { gt: new Date() },
-      },
-      data: { manualAvailableUnits: { decrement: 1 } },
-    });
-    if (decremented.count !== 1) {
-      throw new WalletError(
-        "inventory_unavailable",
-        "موجودی این سرور آماده تمام شده است؛ مبلغی برداشت نشد.",
-      );
-    }
-    const remaining = await tx.providerCatalogItem.findUniqueOrThrow({
-      where: { id: plan.catalogItem!.id },
-      select: { manualAvailableUnits: true },
-    });
-    if ((remaining.manualAvailableUnits ?? 0) === 0) {
-      await tx.providerCatalogItem.update({
-        where: { id: plan.catalogItem!.id },
-        data: {
-          available: false,
-          status: "UNAVAILABLE",
-          unavailableAt: new Date(),
-        },
-      });
-      await tx.infrastructurePlan.update({
-        where: { id: plan.id },
-        data: { active: false, publicationStatus: "PAUSED" },
-      });
-    }
-  }
-
   const wallet = await ensureWalletForUser(userId, tx);
   if (wallet.status !== WalletStatus.ACTIVE) {
     throw new WalletError("wallet_frozen", "کیف پول فعال نیست.");
@@ -438,14 +393,12 @@ export async function executePayOrderWithWalletTx(
         providerResourceId: inventory?.providerResourceId ?? null,
       },
       deliveryMode: plan.deliveryMode,
-      status: preprovisioned
-        ? InfrastructureOrderStatus.QUEUED
-        : InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
-      requiredFundingRial: preprovisioned
+      // Payment only establishes a paid order. Assignment, resource creation,
+      // and provider mutation begin exclusively after the first Admin approval.
+      status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
+      requiredFundingRial: manualAdmin || preprovisioned
         ? 0n
-        : manualAdmin
-          ? 0n
-          : currentPricing.providerBasePriceRial,
+        : currentPricing.providerBasePriceRial,
       desiredInstanceName: `abrchin-${order.id.slice(-12)}-1`,
       productFlowState: "AWAITING_PAYMENT",
       productFlowRevision: order.productFlowRevision,
@@ -465,81 +418,15 @@ export async function executePayOrderWithWalletTx(
     idempotencyKey: `order-paid:${order.id}`,
     actorUserId: userId,
   });
-  if (inventory && order.recommendationQuote) {
-    await assignReservedInventoryTx(tx, {
-      inventoryItemId: inventory.id,
-      quoteId: order.recommendationQuote.id,
-      orderId: order.id,
-      revision: order.productFlowRevision,
-    });
-    const cloudInstance = await tx.cloudInstance.create({
-      data: {
-        infrastructureOrderId: infrastructureOrder.id,
-        userId,
-        provider: plan.provider,
-        providerApiVersion: plan.providerApiVersion,
-        providerInstanceId: inventory.providerResourceId,
-        name: `abrchin-inventory-${inventory.id.slice(-10)}`,
-        region: inventory.regionCode,
-        size: inventory.externalPlanId,
-        image: inventory.externalImageId,
-        deliveryMode: plan.deliveryMode,
-        ipv4: inventory.observedIpv4,
-        providerState: inventory.observedState,
-        networkId: inventory.observedNetworkId,
-        securityId: inventory.observedSecurityId,
-        providerObservedAt: inventory.lastObservedAt,
-        status: CloudInstanceStatus.PENDING,
-      },
-    });
-    await transferInventoryCredentialToInstanceTx(tx, {
-      inventoryItemId: inventory.id,
-      cloudInstanceId: cloudInstance.id,
-    });
-    if (options?.testInjectFailureAfterCredentialTransfer) {
-      throw new WalletError(
-        "test_inject",
-        "Injected failure after credential transfer",
-      );
-    }
-    await transitionProductFlowTx(tx, {
-      owner: {
-        recommendationSessionId:
-          order.recommendationQuote.sessionId,
-        serviceOrderId: order.id,
-        infrastructureOrderId: infrastructureOrder.id,
-      },
-      from: "PAID",
-      to: "PROVISIONING_SUBMITTED",
-      reason: "preprovisioned_inventory_assigned",
-      idempotencyKey: `preprovisioned-submitted:${order.id}`,
-      actorUserId: userId,
-    });
-    await tx.provisioningJob.create({
-      data: {
-        infrastructureOrderId: infrastructureOrder.id,
-        operation: "adopt_preprovisioned_inventory",
-        status: ProvisioningJobStatus.QUEUED,
-        idempotencyKey: `preprovisioned-adopt:${inventory.id}:${order.id}`,
-        phase: "PROVIDER_RESULT_PERSISTED",
-        providerResourceId: inventory.providerResourceId,
-        jobMetadata: {
-          preprovisionedInventoryItemId: inventory.id,
-          createAllowed: false,
-        },
-      },
-    });
-  } else {
-    await tx.adminNotification.create({
-      data: {
-        type: AdminNotificationType.ORDER_WAITING_PROVIDER_FUNDING,
-        infrastructureOrderId: infrastructureOrder.id,
-        title: "سفارش منتظر تأمین زیرساخت",
-        message: `سفارش ${order.title} پرداخت شد و منتظر تأمین زیرساخت است.`,
-        status: AdminNotificationStatus.UNREAD,
-      },
-    });
-  }
+  await tx.adminNotification.create({
+    data: {
+      type: AdminNotificationType.ORDER_WAITING_PROVIDER_FUNDING,
+      infrastructureOrderId: infrastructureOrder.id,
+      title: "سفارش منتظر تأیید ساخت",
+      message: `سفارش ${order.title} پرداخت شد و منتظر تأیید اول ادمین برای ساخت است.`,
+      status: AdminNotificationStatus.UNREAD,
+    },
+  });
 
   if (order.recommendationQuote) {
     await tx.recommendationQuote.update({

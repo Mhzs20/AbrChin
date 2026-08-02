@@ -19,10 +19,17 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function AccountOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AccountOrderDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ payment?: string }>;
+}) {
   const user = await requireCustomerPage();
 
   const { id } = await params;
+  const { payment } = await searchParams;
   const order = await prisma.serviceOrder.findFirst({
     where: { id, userId: user.id },
     include: {
@@ -56,6 +63,9 @@ export default async function AccountOrderDetailPage({ params }: { params: Promi
     },
   });
   if (!order) notFound();
+  const waitingForAdminProvision =
+    order.status === "PAID" &&
+    order.infrastructureOrder?.status === "WAITING_ADMIN_FUNDING";
   const flowTransitions = await prisma.productFlowTransition.findMany({
     where: { serviceOrderId: order.id },
     orderBy: { createdAt: "asc" },
@@ -74,7 +84,9 @@ export default async function AccountOrderDetailPage({ params }: { params: Promi
           {
             id: "infra",
             title: "آماده‌سازی زیرساخت",
-            description: getInfrastructureStage(order.infrastructureOrder.status),
+            description: waitingForAdminProvision
+              ? "پرداخت موفق؛ منتظر تأیید ساخت"
+              : getInfrastructureStage(order.infrastructureOrder.status),
             done: order.infrastructureOrder.status === "ACTIVE",
           },
           ...order.infrastructureOrder.healthChecks.map((check) => ({
@@ -121,6 +133,13 @@ export default async function AccountOrderDetailPage({ params }: { params: Promi
       <SectionCard title="خلاصه">
         <p>وضعیت: <StatusBadge label={serviceOrderStatusLabel[order.status]} tone="info" /></p>
         <p>مبلغ: <MoneyDisplay amount={formatTomanFa(order.amount)} /></p>
+        {waitingForAdminProvision ? (
+          <p role="status">پرداخت موفق؛ منتظر تأیید ساخت</p>
+        ) : payment === "review" ? (
+          <p role="status">پرداخت دریافت شده و در انتظار بررسی پشتیبانی است.</p>
+        ) : payment === "canceled" || payment === "failed" ? (
+          <p role="status">پرداخت نهایی نشد؛ می‌توانید دوباره اقدام کنید.</p>
+        ) : null}
       </SectionCard>
       <SectionCard title="زمان‌بندی">
         <Timeline items={timeline} />

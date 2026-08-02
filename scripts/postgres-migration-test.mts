@@ -65,6 +65,9 @@ const preprovisionedInventorySafety =
   "20260801210000_preprovisioned_inventory_safety";
 const arvanSaleInventoryCredentials =
   "20260801230000_arvan_sale_inventory_credentials";
+const skuMarkupAndManualPublication =
+  "20260803113000_sku_markup_and_manual_publication";
+const orderGatewayPayments = "20260803130000_order_gateway_payments";
 
 async function copyThrough(lastName: string) {
   for (const name of migrationNames.filter((entry) => entry <= lastName)) {
@@ -2065,6 +2068,10 @@ try {
   await copyThrough(preprovisionedInventorySafety);
   await deploy();
   await copyThrough(arvanSaleInventoryCredentials);
+  await deploy();
+  await copyThrough(skuMarkupAndManualPublication);
+  await deploy();
+  await copyThrough(orderGatewayPayments);
   await deploy();
   const protectedCommerceAfter = {
     order: await db.serviceOrder.findUniqueOrThrow({
@@ -5968,7 +5975,9 @@ try {
     new Date("2026-08-01T00:10:00.000Z"),
   );
   assert.equal(parsPackSuccessCalls.length, 3);
-  assert.equal(parsPackSuccessResult.readyPlanCount, 1);
+  // Provider synchronization refreshes raw catalog only. Publishing a SKU is
+  // an explicit Admin action and must never be materialized from provider data.
+  assert.equal(parsPackSuccessResult.readyPlanCount, 0);
   const parsPackPriced =
     await db.providerCatalogItem.findUniqueOrThrow({
       where: {
@@ -6004,22 +6013,7 @@ try {
     },
     orderBy: { sizeCode: "asc" },
   });
-  assert.equal(
-    parsPackReadyPlans.find((plan) => plan.sizeCode === "runtime-priced")
-      ?.active,
-    true,
-  );
-  assert.equal(
-    parsPackReadyPlans.find((plan) => plan.sizeCode === "runtime-no-price")
-      ?.active,
-    false,
-  );
-  assert.equal(
-    parsPackReadyPlans.every(
-      (plan) => plan.parchinIncluded && plan.deliveryMode === "MANAGED",
-    ),
-    true,
-  );
+  assert.equal(parsPackReadyPlans.length, 0);
   const parsPackSnapshotBeforeFailure = {
     available: parsPackPriced.available,
     active: parsPackPriced.active,
@@ -6487,9 +6481,11 @@ try {
   const previousCredentialKey = process.env.CREDENTIAL_ENCRYPTION_KEY;
   const previousArvanPublicSale = process.env.ARVAN_PUBLIC_SALE_ENABLED;
   const previousArvanMutations = process.env.ARVAN_MUTATIONS_ENABLED;
+  const previousManualReadyPublicSale = process.env.MANUAL_READY_PUBLIC_SALE_ENABLED;
   process.env.CREDENTIAL_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
   process.env.ARVAN_PUBLIC_SALE_ENABLED = "false";
   process.env.ARVAN_MUTATIONS_ENABLED = "false";
+  process.env.MANUAL_READY_PUBLIC_SALE_ENABLED = "false";
   const inventoryItem =
     await observeAndRegisterPreprovisionedInventory({
       planId: preprovisionedPlan.id,
@@ -6605,6 +6601,7 @@ try {
     /فروش عمومی/,
   );
   process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
+  process.env.MANUAL_READY_PUBLIC_SALE_ENABLED = "true";
   assert.equal(
     (
       await findFreshAvailableInventory(inventorySelection)
@@ -6653,7 +6650,7 @@ try {
         accessMethod: "ONE_TIME_PASSWORD",
       },
     }),
-    /ساخت این سرور|فعال نشده/i,
+    /فروش عمومی|ساخت این سرور|فعال نشده/i,
   );
   const apiBackedBlockedOrder = await db.serviceOrder.create({
     data: {
@@ -6680,7 +6677,7 @@ try {
     await import("../lib/orders/service.ts");
   await assert.rejects(
     payGateCheckedOrder("inventory-customer", apiBackedBlockedOrder.id),
-    /ساخت این سرور|فعال نشده/i,
+    /فروش عمومی|ساخت این سرور|فعال نشده/i,
   );
   assert.equal(
     (
@@ -6764,6 +6761,7 @@ try {
       where: { userId: "inventory-customer" },
     });
   process.env.ARVAN_PUBLIC_SALE_ENABLED = "false";
+  process.env.MANUAL_READY_PUBLIC_SALE_ENABLED = "false";
   await assert.rejects(
     payOrderWithWallet("inventory-customer", saleGateOrder.id),
     /فروش عمومی/,
@@ -6783,6 +6781,7 @@ try {
     0,
   );
   process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
+  process.env.MANUAL_READY_PUBLIC_SALE_ENABLED = "true";
   await db.preprovisionedInventoryItem.update({
     where: { id: inventoryItem.id },
     data: { reservationExpiresAt: new Date(Date.now() - 1_000) },
@@ -6819,9 +6818,9 @@ try {
     });
   await assert.rejects(
     payOrderWithWallet("inventory-customer", failureOrder.id, {
-      testInjectFailureAfterCredentialTransfer: true,
+      testInjectFailureAfterDebit: true,
     }),
-    /Injected failure after credential transfer/,
+    /Injected failure after debit/,
   );
   const walletAfterFailure = await db.wallet.findUniqueOrThrow({
     where: { userId: "inventory-customer" },
@@ -6894,43 +6893,38 @@ try {
   ]);
   assert.equal(successfulPayment.order.status, "PAID");
   assert.equal(concurrentPaymentReplay.order.id, successfulPayment.order.id);
-  const assignedInventory =
+  const reservedInventory =
     await db.preprovisionedInventoryItem.findUniqueOrThrow({
       where: { id: inventoryItem.id },
     });
-  assert.equal(assignedInventory.inventoryStatus, "ASSIGNED");
-  assert.equal(assignedInventory.assignedOrderId, successOrder.id);
+  assert.equal(reservedInventory.inventoryStatus, "RESERVED");
+  assert.equal(reservedInventory.assignedOrderId, null);
   assert.equal(
     successfulPayment.infrastructureOrder?.preprovisionedInventoryItemId,
     inventoryItem.id,
   );
-  const paidCloudInstance = await db.cloudInstance.findUniqueOrThrow({
-    where: {
-      infrastructureOrderId: successfulPayment.infrastructureOrder!.id,
-    },
-    include: { credential: true },
-  });
   assert.equal(
-    paidCloudInstance.providerInstanceId,
-    inventoryItem.providerResourceId,
-  );
-  assert.equal(paidCloudInstance.credential?.status, "READY");
-  assert.equal(
-    paidCloudInstance.credential?.ciphertext,
-    inventoryCredential.ciphertext,
+    successfulPayment.infrastructureOrder?.status,
+    InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
   );
   assert.equal(
-    await db.instanceCredential.count({
-      where: { cloudInstanceId: paidCloudInstance.id },
+    await db.cloudInstance.count({
+      where: { infrastructureOrderId: successfulPayment.infrastructureOrder!.id },
     }),
-    1,
+    0,
   );
-  const transferredInventoryCredential =
+  assert.equal(
+    await db.provisioningJob.count({
+      where: { infrastructureOrderId: successfulPayment.infrastructureOrder!.id },
+    }),
+    0,
+  );
+  const retainedInventoryCredential =
     await db.preprovisionedInventoryCredential.findUniqueOrThrow({
       where: { inventoryItemId: inventoryItem.id },
     });
-  assert.equal(transferredInventoryCredential.status, "TRANSFERRED");
-  assert.ok(transferredInventoryCredential.transferredAt);
+  assert.equal(retainedInventoryCredential.status, "READY");
+  assert.equal(retainedInventoryCredential.transferredAt, null);
   const persistedNonSecretSurfaces = JSON.stringify({
     planSnapshot: successQuote.planSnapshot,
     quoteDelivery: successQuote.deliveryConfigurationSnapshot,
@@ -6940,9 +6934,9 @@ try {
           where: { id: successfulPayment.infrastructureOrder!.id },
         })
       ).providerSelectionSnapshot,
-    inventoryAudit: assignedInventory.adminAudit,
+    inventoryAudit: reservedInventory.adminAudit,
     audits: await db.auditLog.findMany({
-      where: { entityId: { in: [inventoryItem.id, paidCloudInstance.id] } },
+      where: { entityId: inventoryItem.id },
     }),
   });
   assert.equal(persistedNonSecretSurfaces.includes(rawInventorySecret), false);
@@ -6957,13 +6951,13 @@ try {
     await db.preprovisionedInventoryItem.count({
       where: { assignedOrderId: successOrder.id },
     }),
-    1,
+    0,
   );
   assert.equal(
-    await db.instanceCredential.count({
-      where: { cloudInstanceId: paidCloudInstance.id },
+    await db.cloudInstance.count({
+      where: { infrastructureOrderId: successfulPayment.infrastructureOrder!.id },
     }),
-    1,
+    0,
   );
 
   await storePreprovisionedInventoryCredential({
@@ -7038,58 +7032,19 @@ try {
     0,
   );
 
-  const prebuiltJob = await db.provisioningJob.findFirstOrThrow({
-    where: {
-      infrastructureOrderId:
-        successfulPayment.infrastructureOrder!.id,
-      operation: "adopt_preprovisioned_inventory",
-    },
-  });
-  await db.provisioningJob.updateMany({
-    where: {
-      status: { in: ["QUEUED", "RUNNING"] },
-      id: { not: prebuiltJob.id },
-    },
-    data: {
-      status: "FAILED",
-      finishedAt: new Date(),
-      workerId: null,
-      claimToken: null,
-      lockedAt: null,
-      leaseExpiresAt: null,
-    },
-  });
-  const claimedPrebuilt = await claimNextProvisioningJob(
-    "inventory-test-worker",
-  );
-  assert.equal(claimedPrebuilt?.id, prebuiltJob.id);
-  const recoveryAdapter = new FakeCloudProviderAdapter({
-    provider: InfrastructureProvider.ARVAN,
-  });
-  const recoveryResult = await processProvisioningJob(
-    prebuiltJob.id,
-    recoveryAdapter,
-    {
-      claimToken: claimedPrebuilt!.claimToken!,
-      healthProbe: async () => true,
-    },
-  );
-  assert.equal(recoveryAdapter.createCalls.length, 0);
-  assert.equal(recoveryResult?.healthy, true);
-  assert.equal(recoveryResult?.delivered, true);
-  const activePreprovisionedOrder =
+  const awaitingPreprovisionedOrder =
     await db.infrastructureOrder.findUniqueOrThrow({
       where: { id: successfulPayment.infrastructureOrder!.id },
       include: { serviceOrder: true, cloudInstance: true },
     });
-  assert.equal(activePreprovisionedOrder.status, "ACTIVE");
-  assert.equal(activePreprovisionedOrder.productFlowState, "ACTIVE");
-  assert.equal(activePreprovisionedOrder.serviceOrder.productFlowState, "ACTIVE");
-  assert.equal(activePreprovisionedOrder.cloudInstance?.status, "ACTIVE");
+  assert.equal(awaitingPreprovisionedOrder.status, "WAITING_ADMIN_FUNDING");
+  assert.equal(awaitingPreprovisionedOrder.productFlowState, "PAID");
+  assert.equal(awaitingPreprovisionedOrder.serviceOrder.productFlowState, "PAID");
+  assert.equal(awaitingPreprovisionedOrder.cloudInstance, null);
   assert.equal(
     await db.secureDeliveryEvent.count({
       where: {
-        infrastructureOrderId: activePreprovisionedOrder.id,
+        infrastructureOrderId: awaitingPreprovisionedOrder.id,
         resultCode: "secure_delivery_pending",
       },
     }),
@@ -7101,7 +7056,7 @@ try {
         where: { id: inventoryItem.id },
       })
     ).inventoryStatus,
-    "DELIVERED",
+    "RESERVED",
   );
 
   const previousParsPackEnv = {
@@ -7349,6 +7304,11 @@ try {
     delete process.env.ARVAN_MUTATIONS_ENABLED;
   } else {
     process.env.ARVAN_MUTATIONS_ENABLED = previousArvanMutations;
+  }
+  if (previousManualReadyPublicSale === undefined) {
+    delete process.env.MANUAL_READY_PUBLIC_SALE_ENABLED;
+  } else {
+    process.env.MANUAL_READY_PUBLIC_SALE_ENABLED = previousManualReadyPublicSale;
   }
 
   const priorSmsProvider = process.env.SMS_PROVIDER;

@@ -19,7 +19,7 @@ export function OrderCheckoutPanel({
   const router = useRouter();
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
-  const topUpKey = useRef<string | null>(null);
+  const paymentKey = useRef<string | null>(null);
 
   async function handlePurchase() {
     setLoading(true);
@@ -45,45 +45,25 @@ export function OrderCheckoutPanel({
         return;
       }
 
-      const payRes = await fetch(`/api/orders/${createBody.order.id}/pay-with-wallet`, { method: "POST" });
+      paymentKey.current ??= crypto.randomUUID();
+      const payRes = await fetch(`/api/orders/${createBody.order.id}/payment`, {
+        method: "POST",
+        headers: { "Idempotency-Key": paymentKey.current },
+      });
       const payBody = await payRes.json();
       if (!payRes.ok) {
-        if (payBody.replacementQuote?.id) {
-          showToast("قیمت تغییر کرده؛ پیشنهاد تازه نمایش داده شد.");
-          router.push(`/account/order/quote/${payBody.replacementQuote.id}`);
-          router.refresh();
-          return;
-        }
-        if (
-          payRes.status === 402 &&
-          payBody.code === "insufficient_funds" &&
-          payBody.orderId
-        ) {
-          topUpKey.current ??= crypto.randomUUID();
-          const topUpRes = await fetch("/api/wallet/topups", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Idempotency-Key": topUpKey.current,
-            },
-            body: JSON.stringify({ orderId: payBody.orderId }),
-          });
-          const topUpBody = await topUpRes.json();
-          if (!topUpRes.ok || !topUpBody.redirectUrl) {
-            throw new Error(
-              topUpBody.error ?? "ایجاد پرداخت کسری کیف پول ممکن نشد.",
-            );
-          }
-          showToast("فقط کسری دقیق کیف پول از درگاه شارژ می‌شود.");
-          window.location.href = topUpBody.redirectUrl;
-          return;
-        }
         throw new Error(payBody.error ?? "پرداخت ناموفق بود");
       }
-
-      showToast(`سفارش ${planTitle} با موفقیت پرداخت شد.`);
-      router.push(`/account/orders/${createBody.order.id}`);
-      router.refresh();
+      if (payBody.alreadyPaid) {
+        router.push(`/account/orders/${createBody.order.id}`);
+        router.refresh();
+        return;
+      }
+      if (!payBody.redirectUrl) {
+        throw new Error("انتقال امن به درگاه پرداخت ممکن نشد.");
+      }
+      showToast(`در حال انتقال به درگاه پرداخت برای ${planTitle}`);
+      window.location.assign(payBody.redirectUrl);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "عملیات ناموفق بود");
     } finally {

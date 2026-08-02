@@ -1,7 +1,7 @@
 "use client";
 
 import { LoaderCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Order = {
   id: string;
@@ -24,6 +24,7 @@ export function OrdersPanel() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const paymentKeys = useRef(new Map<string, string>());
 
   async function refresh() {
     const response = await fetch("/api/orders", { cache: "no-store" });
@@ -78,14 +79,27 @@ export function OrdersPanel() {
     setMessage("");
     setBusyId(orderId);
     try {
-      const response = await fetch(`/api/orders/${orderId}/pay-with-wallet`, { method: "POST" });
+      const idempotencyKey = paymentKeys.current.get(orderId) ?? crypto.randomUUID();
+      paymentKeys.current.set(orderId, idempotencyKey);
+      const response = await fetch(`/api/orders/${orderId}/payment`, {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+      });
       const data = await response.json();
       if (!response.ok) {
         setError(data.error || "پرداخت ممکن نشد.");
         return;
       }
-      setMessage("پرداخت با کیف پول انجام شد.");
-      await refresh();
+      if (data.alreadyPaid) {
+        setMessage("پرداخت سفارش قبلاً ثبت شده است.");
+        await refresh();
+        return;
+      }
+      if (!data.redirectUrl) {
+        setError("انتقال امن به درگاه پرداخت ممکن نشد.");
+        return;
+      }
+      window.location.assign(data.redirectUrl);
     } catch {
       setError("ارتباط برقرار نشد.");
     } finally {
@@ -98,7 +112,7 @@ export function OrdersPanel() {
       <section className="account-card">
         <div className="account-card-head">
           <h2>بسته‌های آزمایشی</h2>
-          <p>قیمت‌ها سمت سرور ثابت‌اند و از کیف پول پرداخت می‌شوند.</p>
+          <p>قیمت‌ها سمت سرور ثابت‌اند و پرداخت با درگاه انجام می‌شود.</p>
         </div>
         <div className="account-actions">
           {PLANS.map((plan) => (
@@ -135,7 +149,7 @@ export function OrdersPanel() {
                   disabled={busyId === order.id}
                   onClick={() => pay(order.id)}
                 >
-                  پرداخت با کیف پول
+                  پرداخت و انتقال به درگاه
                 </button>
               ) : null}
             </li>
