@@ -5,6 +5,7 @@ import {
   InfrastructureOrderStatus,
   PrismaClient,
   ServiceOrderStatus,
+  UserRole,
   WalletStatus,
 } from "@prisma/client";
 
@@ -12,6 +13,10 @@ import {
   createOrderPaymentIntent,
   finalizeOrderPaymentFromCallback,
 } from "../lib/payments/order-payment.ts";
+import {
+  approveProvision,
+  getProvisionApprovalReview,
+} from "../lib/infrastructure/provision-approval.ts";
 import { getActivePlanByCode, toPlanSnapshot } from "../lib/orders/plans.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -54,6 +59,7 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
   let planId = "";
   let catalogItemId = "";
   let orderId = "";
+  let adminUserId = "";
   try {
     const catalog = await prisma.providerCatalogItem.create({
       data: {
@@ -85,6 +91,23 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
       },
     });
     catalogItemId = catalog.id;
+    await prisma.providerCatalogState.upsert({
+      where: { provider: "PARSPACK" },
+      update: {
+        enabled: true,
+        lastCatalogSync: now,
+        lastSyncStatus: "SUCCEEDED",
+        freshnessSlaSeconds: 900,
+      },
+      create: {
+        id: "parspack",
+        provider: "PARSPACK",
+        enabled: true,
+        lastCatalogSync: now,
+        lastSyncStatus: "SUCCEEDED",
+        freshnessSlaSeconds: 900,
+      },
+    });
     await prisma.providerPricingConfig.upsert({
       where: { provider: "PARSPACK" },
       update: {
@@ -233,8 +256,92 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
       (await prisma.wallet.findUniqueOrThrow({ where: { userId } })).availableBalance,
       0n,
     );
+
+    const infrastructureOrder = await prisma.infrastructureOrder.findUniqueOrThrow({
+      where: { serviceOrderId: orderId },
+    });
+    const review = await getProvisionApprovalReview(infrastructureOrder.id);
+    assert.equal(review.canApprove, true);
+    assert.equal(review.balance.requiresConfirmation, true);
+
+    const admin = await prisma.user.create({
+      data: {
+        mobile: `098${suffix.slice(-8).padStart(8, "0")}`,
+        role: UserRole.ADMIN,
+      },
+    });
+    adminUserId = admin.id;
+    await assert.rejects(
+      approveProvision({
+        infrastructureOrderId: infrastructureOrder.id,
+        adminUserId,
+        reason: "بررسی کامل Provider",
+        providerBalanceConfirmed: false,
+        idempotencyKey: `provision-approve:${infrastructureOrder.id}`,
+      }),
+      /موجودی یا شارژ Provider/,
+    );
+    const approved = await approveProvision({
+      infrastructureOrderId: infrastructureOrder.id,
+      adminUserId,
+      reason: "بررسی کامل Provider",
+      providerBalanceConfirmed: true,
+      idempotencyKey: `provision-approve:${infrastructureOrder.id}`,
+    });
+    const approvalReplay = await approveProvision({
+      infrastructureOrderId: infrastructureOrder.id,
+      adminUserId,
+      reason: "بررسی کامل Provider",
+      providerBalanceConfirmed: true,
+      idempotencyKey: `provision-approve:${infrastructureOrder.id}`,
+    });
+    assert.equal(approved.approved, true);
+    assert.deepEqual(approvalReplay, approved);
+    assert.deepEqual(
+      await prisma.infrastructureOrder.findUniqueOrThrow({
+        where: { id: infrastructureOrder.id },
+        select: { status: true, productFlowState: true },
+      }),
+      {
+        status: InfrastructureOrderStatus.FUNDING_CONFIRMED,
+        productFlowState: "PROVISION_APPROVED",
+      },
+    );
+    assert.equal(
+      await prisma.provisioningJob.count({
+        where: { infrastructureOrderId: infrastructureOrder.id },
+      }),
+      0,
+    );
+    assert.equal(
+      await prisma.cloudInstance.count({
+        where: { infrastructureOrderId: infrastructureOrder.id },
+      }),
+      0,
+    );
+    assert.equal(
+      await prisma.adminCommandReceipt.count({
+        where: { infrastructureOrderId: infrastructureOrder.id, operation: "APPROVE_PROVISION" },
+      }),
+      1,
+    );
+    assert.equal(
+      await prisma.auditLog.count({
+        where: {
+          entityType: "infrastructure_order",
+          entityId: infrastructureOrder.id,
+          action: "provision_approved",
+        },
+      }),
+      1,
+    );
   } finally {
     if (orderId) await prisma.serviceOrder.deleteMany({ where: { id: orderId } });
+    if (adminUserId) {
+      await prisma.auditLog.deleteMany({ where: { actorUserId: adminUserId } });
+      await prisma.adminCommandReceipt.deleteMany({ where: { actorUserId: adminUserId } });
+      await prisma.user.deleteMany({ where: { id: adminUserId } });
+    }
     if (userId) {
       await prisma.walletLedgerEntry.deleteMany({ where: { wallet: { userId } } });
       await prisma.wallet.deleteMany({ where: { userId } });

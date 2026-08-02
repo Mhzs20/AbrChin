@@ -9,6 +9,7 @@ export const productFlowStates = [
   "AUTH_REQUIRED",
   "AWAITING_PAYMENT",
   "PAID",
+  "PROVISION_APPROVED",
   "PROVISIONING_SUBMITTED",
   "PROVISIONING",
   "HEALTH_CHECKING",
@@ -75,6 +76,12 @@ const transitions: Record<ProductFlowState, readonly ProductFlowState[]> = {
     "CANCELLED",
   ],
   PAID: [
+    "PROVISION_APPROVED",
+    "PROVISIONING_SUBMITTED",
+    "PROVISIONING_MANUAL_REVIEW",
+    "CANCELLED",
+  ],
+  PROVISION_APPROVED: [
     "PROVISIONING_SUBMITTED",
     "PROVISIONING_MANUAL_REVIEW",
     "CANCELLED",

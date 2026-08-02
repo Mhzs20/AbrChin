@@ -4,7 +4,12 @@ export function classifyAdminOperationQueue(input: {
   status: string;
   productFlowState: string | null;
 }): AdminOperationQueue {
-  if (input.status === "WAITING_ADMIN_FUNDING") return "provision";
+  if (
+    input.status === "WAITING_ADMIN_FUNDING" ||
+    input.status === "FUNDING_CONFIRMED"
+  ) {
+    return "provision";
+  }
   if (
     input.productFlowState === "WAITING_ADMIN_DELIVERY_APPROVAL" ||
     input.productFlowState === "DELIVERED"

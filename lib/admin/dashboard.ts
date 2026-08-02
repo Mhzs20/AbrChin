@@ -339,6 +339,7 @@ export async function getAdminOperationsCenter() {
       where: {
         OR: [
           { status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING },
+          { status: InfrastructureOrderStatus.FUNDING_CONFIRMED },
           { productFlowState: { in: ["WAITING_ADMIN_DELIVERY_APPROVAL", "DELIVERED"] } },
           {
             status: {

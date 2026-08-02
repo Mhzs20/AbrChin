@@ -135,7 +135,7 @@ export async function completeManualReadyDelivery(params: {
       order.plan.catalogItem?.source !== "MANUAL_ADMIN" ||
       order.serviceOrder.status !== ServiceOrderStatus.PAID ||
       order.status !== InfrastructureOrderStatus.WAITING_ADMIN_FUNDING ||
-      order.productFlowState !== "PAID" ||
+      order.productFlowState !== "PROVISION_APPROVED" ||
       order.requiredFundingRial !== 0n ||
       order.cloudInstance ||
       order.provisioningJobs.length > 0 ||
@@ -202,7 +202,7 @@ export async function completeManualReadyDelivery(params: {
     };
     await transitionProductFlowTx(tx, {
       owner,
-      from: "PAID",
+      from: "PROVISION_APPROVED",
       to: "PROVISIONING_SUBMITTED",
       reason: "manual_ready_delivery_started",
       idempotencyKey: `manual-delivery-submitted:${order.id}`,

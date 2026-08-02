@@ -15,8 +15,8 @@ export const serviceOrderStatusLabel: Record<ServiceOrderStatus, string> = {
 };
 
 export const infrastructureOrderStatusLabel: Record<InfrastructureOrderStatus, string> = {
-  WAITING_ADMIN_FUNDING: "در انتظار تأمین زیرساخت",
-  FUNDING_CONFIRMED: "تأمین تأیید شد",
+  WAITING_ADMIN_FUNDING: "منتظر تأیید ساخت",
+  FUNDING_CONFIRMED: "تأیید ساخت ثبت شد",
   QUEUED: "در صف آماده‌سازی",
   PROVISIONING: "در حال آماده‌سازی",
   ACTIVE: "فعال",
@@ -29,8 +29,8 @@ export const infrastructureOrderStatusLabel: Record<InfrastructureOrderStatus, s
 };
 
 export const infrastructureOrderCustomerMessage: Record<InfrastructureOrderStatus, string> = {
-  WAITING_ADMIN_FUNDING: "پرداخت شما انجام شد و سفارش در انتظار تأمین زیرساخت است.",
-  FUNDING_CONFIRMED: "تأمین زیرساخت تأیید شد.",
+  WAITING_ADMIN_FUNDING: "پرداخت شما انجام شد و سفارش منتظر تأیید ساخت است.",
+  FUNDING_CONFIRMED: "تأیید ساخت ثبت شد و آماده‌سازی کنترل‌شده ادامه می‌یابد.",
   QUEUED: "سفارش برای آماده‌سازی در صف قرار گرفت.",
   PROVISIONING: "سرور شما در حال آماده‌سازی است.",
   ACTIVE: "سرور آماده استفاده است.",
