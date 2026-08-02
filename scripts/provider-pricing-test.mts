@@ -159,7 +159,6 @@ function fakeTransaction() {
     },
   ];
   const planUpdates = new Map<string, Record<string, unknown>>();
-  const readyPlans = new Map<string, Record<string, unknown>>();
   let nextId = 1;
   const key = (value: {
     provider: string;
@@ -261,30 +260,15 @@ function fakeTransaction() {
         planUpdates.set(args.where.id, args.data);
         return { id: args.where.id, ...args.data };
       },
-      async updateMany(args: { where?: { OR?: unknown[] } }) {
-        if (args.where?.OR) return { count: 0 };
-        for (const [code, plan] of readyPlans) {
-          readyPlans.set(code, { ...plan, active: false });
-        }
-        return { count: readyPlans.size };
-      },
-      async upsert(args: {
-        where: { code: string };
-        update: Record<string, unknown>;
-        create: Record<string, unknown>;
-      }) {
-        const value = readyPlans.has(args.where.code)
-          ? { ...readyPlans.get(args.where.code), ...args.update }
-          : args.create;
-        readyPlans.set(args.where.code, value);
-        return value;
+      async updateMany() {
+        return { count: 0 };
       },
     },
   };
-  return { tx, items, planUpdates, readyPlans };
+  return { tx, items, planUpdates };
 }
 
-test("catalog persistence upserts idempotently, preserves missing rows, and never guesses mapping", async () => {
+test("catalog persistence upserts raw rows idempotently and never creates sellable SKUs", async () => {
   const fake = fakeTransaction();
   const first = await persistProviderCatalog(fake.tx as never, catalog(), syncedAt);
   const firstId = [...fake.items.values()][0]?.id;
@@ -292,16 +276,12 @@ test("catalog persistence upserts idempotently, preserves missing rows, and neve
   assert.equal(first.pricedItemCount, 1);
   assert.equal(first.mappedPlanCount, 1);
   assert.equal(first.unmappedPlanCount, 1);
-  assert.equal(first.readyPlanCount, 1);
-  assert.equal(fake.readyPlans.size, 1);
-  assert.equal([...fake.readyPlans.values()][0]?.deliveryMode, "MANAGED");
-  assert.equal([...fake.readyPlans.values()][0]?.parchinIncluded, true);
+  assert.equal(first.readyPlanCount, 0);
   assert.equal(fake.planUpdates.get("plan-exact")?.catalogMappingStatus, "MAPPED");
   assert.equal(fake.planUpdates.get("plan-do-not-guess")?.active, false);
 
   await persistProviderCatalog(fake.tx as never, catalog(), syncedAt);
   assert.equal(fake.items.size, 1);
-  assert.equal(fake.readyPlans.size, 1);
   assert.equal([...fake.items.values()][0]?.id, firstId);
 
   const missing = await persistProviderCatalog(
@@ -312,7 +292,6 @@ test("catalog persistence upserts idempotently, preserves missing rows, and neve
   assert.equal(fake.items.size, 1);
   assert.equal([...fake.items.values()][0]?.available, false);
   assert.equal(missing.unavailableItemCount, 1);
-  assert.equal([...fake.readyPlans.values()][0]?.active, false);
 });
 
 test("price and availability revalidation compare immutable snapshots", () => {

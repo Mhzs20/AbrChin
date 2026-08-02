@@ -13,6 +13,7 @@ import {
   compatibleImageCodes,
   resolveCatalogItemPricing,
 } from "@/lib/pricing/plan-pricing";
+import { parseMarkupPercentToBasisPoints } from "@/lib/pricing/provider-pricing";
 import { readRequestMeta } from "@/lib/session";
 import { isRegionEnabledForSale } from "@/lib/infrastructure/provider-region-config";
 import { countAvailableInventoryByPlan } from "@/lib/infrastructure/preprovisioned-inventory";
@@ -65,27 +66,77 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const catalogItem = catalogItemId
       ? await prisma.providerCatalogItem.findUnique({ where: { id: catalogItemId } })
       : null;
-    if (!catalogItem || catalogItem.provider !== before.provider) {
+    if (
+      !catalogItem ||
+      catalogItem.provider !== before.provider ||
+      catalogItem.apiVersion !== before.providerApiVersion
+    ) {
       return jsonError("Catalog Item معتبر نیست.", 400);
+    }
+    const isLegacyArvanReadyMapping =
+      before.provider === "ARVAN" &&
+      before.productKind === "READY_INSTANT_SERVER" &&
+      catalogItem.productKind === "CLOUD_SERVER";
+    if (
+      catalogItem.productKind !== before.productKind &&
+      !isLegacyArvanReadyMapping
+    ) {
+      return jsonError("Catalog Item با مسیر محصول این SKU سازگار نیست.", 400);
     }
     const imageCode =
       typeof body.imageCode === "string" ? body.imageCode.trim() : before.imageCode;
     if (!compatibleImageCodes(catalogItem).includes(imageCode)) {
       return jsonError("Image با Catalog Item سازگار نیست.", 400);
     }
-    const pricingConfig = await prisma.providerPricingConfig.findUnique({
-      where: { provider: before.provider },
-    });
-    const pricing = pricingConfig
-      ? resolveCatalogItemPricing(catalogItem, pricingConfig)
+    let skuMarkupBasisPoints = before.skuMarkupBasisPoints;
+    if (body.skuMarkupPercent != null) {
+      if (String(body.skuMarkupPercent).trim() === "") {
+        skuMarkupBasisPoints = null;
+      } else {
+        try {
+          skuMarkupBasisPoints = parseMarkupPercentToBasisPoints(body.skuMarkupPercent);
+        } catch {
+          return jsonError("درصد افزایش اختصاصی SKU معتبر نیست.", 400);
+        }
+      }
+    }
+    const [pricingConfig, productPricingConfig] = await Promise.all([
+      prisma.providerPricingConfig.findUnique({
+        where: { provider: before.provider },
+      }),
+      prisma.productPricingConfig.findUnique({
+        where: {
+          provider_apiVersion_productKind: {
+            provider: before.provider,
+            apiVersion: before.providerApiVersion,
+            productKind: before.productKind,
+          },
+        },
+      }),
+    ]);
+    const pricing = pricingConfig?.enabled && productPricingConfig?.enabled
+      ? resolveCatalogItemPricing(catalogItem, pricingConfig, {
+          productMarkupBasisPoints:
+            skuMarkupBasisPoints ?? productPricingConfig.markupBasisPoints,
+        })
       : null;
+    const requestedPublication =
+      typeof body.publicationStatus === "string" &&
+      Object.values(InfrastructurePlanPublicationStatus).includes(
+        body.publicationStatus as InfrastructurePlanPublicationStatus,
+      )
+        ? (body.publicationStatus as InfrastructurePlanPublicationStatus)
+        : typeof body.active === "boolean"
+          ? body.active
+            ? InfrastructurePlanPublicationStatus.PUBLISHED
+            : InfrastructurePlanPublicationStatus.PAUSED
+          : before.publicationStatus;
     const requestedActive =
-      typeof body.active === "boolean" ? body.active : before.active;
-    const offerSource =
-      body.offerSource === "API_CATALOG" ||
-      body.offerSource === "PREPROVISIONED_INVENTORY"
-        ? body.offerSource
-        : before.offerSource;
+      requestedPublication === InfrastructurePlanPublicationStatus.PUBLISHED;
+    const offerSource = before.offerSource;
+    if (body.offerSource && body.offerSource !== before.offerSource) {
+      return jsonError("تغییر منبع SKU از این مسیر مجاز نیست.", 400);
+    }
     if (
       offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY &&
       before.productKind !== "READY_INSTANT_SERVER"
@@ -146,10 +197,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         catalogItem.ramMb == null ? null : Math.ceil(catalogItem.ramMb / 1024),
       storageGb: catalogItem.diskGb,
       active: requestedActive && pricing != null,
-      publicationStatus:
-        requestedActive && pricing != null
-          ? InfrastructurePlanPublicationStatus.PUBLISHED
-          : InfrastructurePlanPublicationStatus.PAUSED,
+      publicationStatus: requestedPublication,
+      skuMarkupBasisPoints,
       offerSource,
       offerPriceValidUntil,
       offerLastVerifiedAt:
@@ -178,16 +227,37 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     await writeAuditLog({
       actorUserId: admin.id,
-      action: body.active === false ? AuditActions.PLAN_DISABLE : AuditActions.PLAN_UPDATE,
+      action:
+        requestedPublication === InfrastructurePlanPublicationStatus.PAUSED ||
+        requestedPublication === InfrastructurePlanPublicationStatus.ARCHIVED
+          ? AuditActions.PLAN_DISABLE
+          : AuditActions.PLAN_UPDATE,
       entityType: "infrastructure_plan",
       entityId: plan.id,
-      beforeData: { title: before.title, active: before.active },
-      afterData: { title: plan.title, active: plan.active },
+      beforeData: {
+        title: before.title,
+        active: before.active,
+        publicationStatus: before.publicationStatus,
+        skuMarkupBasisPoints: before.skuMarkupBasisPoints,
+      },
+      afterData: {
+        title: plan.title,
+        active: plan.active,
+        publicationStatus: plan.publicationStatus,
+        skuMarkupBasisPoints: plan.skuMarkupBasisPoints,
+      },
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
 
-    return jsonOk({ plan: { id: plan.id, code: plan.code, active: plan.active } });
+    return jsonOk({
+      plan: {
+        id: plan.id,
+        code: plan.code,
+        active: plan.active,
+        publicationStatus: plan.publicationStatus,
+      },
+    });
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);

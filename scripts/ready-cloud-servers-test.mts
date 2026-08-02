@@ -71,7 +71,7 @@ test("one shared cloud size becomes one sellable item per compatible region", ()
   assert.equal(items.every((item) => item.available), true);
 });
 
-test("ready-server pricing never creates a VM or performs a payment", async () => {
+test("provider catalog sync never creates, publishes, or purchases a server SKU", async () => {
   const [catalog, plans, quoteRoute, quoteService] = await Promise.all([
     readFile("lib/infrastructure/catalog-service.ts", "utf8"),
     readFile("lib/orders/plans.ts", "utf8"),
@@ -81,9 +81,9 @@ test("ready-server pricing never creates a VM or performs a payment", async () =
   const source = `${catalog}\n${plans}\n${quoteRoute}\n${quoteService}`;
   assert.doesNotMatch(source, /\.createInstance\(/);
   assert.doesNotMatch(source, /payOrderWithWallet/);
-  assert.match(catalog, /materializeReadyServerPlans/);
-  assert.match(catalog, /DeliveryMode\.MANAGED/);
-  assert.match(catalog, /parchinIncluded: true/);
+  assert.doesNotMatch(catalog, /materializeReadyServerPlans/);
+  assert.doesNotMatch(catalog, /infrastructurePlan\.upsert/);
+  assert.doesNotMatch(catalog, /publicationStatus:\s*[\s\S]{0,60}PUBLISHED/);
 });
 
 test("ready catalog supports ParsPack, Arvan fixed offers, and manual Admin delivery", async () => {

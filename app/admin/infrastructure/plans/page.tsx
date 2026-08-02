@@ -25,19 +25,19 @@ export const dynamic = "force-dynamic";
 export default async function AdminPlansPage() {
   const access = await getAdminPageAccess();
   if (!access.allowed) return null;
-  const [plans, catalogItems, pricingConfigs, regions, imageAssets] = await Promise.all([
+  const [plans, catalogItems, pricingConfigs, productPricingConfigs, regions, imageAssets] = await Promise.all([
     listAllPlans(),
     prisma.providerCatalogItem.findMany({
       where: {
-        provider: "ARVAN",
         apiVersion: "v1",
-        productKind: "CLOUD_SERVER",
+        productKind: { in: ["CLOUD_SERVER", "READY_INSTANT_SERVER"] },
         source: "API_CATALOG",
         active: true,
       },
       orderBy: [{ regionCode: "asc" }, { sizeCode: "asc" }],
     }),
     prisma.providerPricingConfig.findMany(),
+    prisma.productPricingConfig.findMany({ where: { enabled: true } }),
     listProviderRegionConfigs({
       provider: "ARVAN",
       apiVersion: "v1",
@@ -91,6 +91,9 @@ export default async function AdminPlansPage() {
         ? plan.ramGb
         : Math.ceil(plan.catalogItem.ramMb / 1024),
     storageGb: plan.catalogItem?.diskGb ?? plan.storageGb,
+    skuMarkupBasisPoints: plan.skuMarkupBasisPoints,
+    basePriceRial: plan.pricing?.providerBasePriceRial.toString() ?? null,
+    finalPriceRial: plan.pricing?.finalPriceRial.toString() ?? null,
     imageAssetId:
       imageAssets.find(
         (image) =>
@@ -103,18 +106,26 @@ export default async function AdminPlansPage() {
     const pricingConfig = pricingConfigs.find(
       (config) => config.provider === item.provider && config.apiVersion === item.apiVersion,
     );
+    const productPricingConfig = productPricingConfigs.find(
+      (config) =>
+        config.provider === item.provider &&
+        config.apiVersion === item.apiVersion &&
+        config.productKind === item.productKind,
+    );
     const basePriceRial = catalogItemBasePriceRial(item);
     const finalPriceRial =
       basePriceRial != null && pricingConfig
         ? calculateFinalPriceRial(
             basePriceRial,
-            pricingConfig.markupBasisPoints,
+            pricingConfig.markupBasisPoints +
+              (productPricingConfig?.markupBasisPoints ?? 0),
           )
         : null;
     return {
       id: item.id,
       provider: item.provider,
       source: item.source,
+      productKind: item.productKind,
       regionCode: item.regionCode,
       sizeCode: item.sizeCode,
       compatibleImageCodes: compatibleImageCodes(item),
@@ -122,6 +133,8 @@ export default async function AdminPlansPage() {
       ramMb: item.ramMb,
       diskGb: item.diskGb,
       available: item.available,
+      providerMarkupBasisPoints: pricingConfig?.markupBasisPoints ?? null,
+      productMarkupBasisPoints: productPricingConfig?.markupBasisPoints ?? 0,
       basePriceRial: basePriceRial?.toString() ?? null,
       finalPriceRial: finalPriceRial?.toString() ?? null,
     };

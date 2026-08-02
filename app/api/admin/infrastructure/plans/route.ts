@@ -1,9 +1,7 @@
 import {
   DeliveryMode,
   InfrastructurePlanPublicationStatus,
-  InfrastructureOfferSource,
   InfrastructureProductKind,
-  InfrastructureProvider,
   ParchinLevel,
 } from "@prisma/client";
 import { createHash } from "node:crypto";
@@ -24,9 +22,8 @@ import {
   compatibleImageCodes,
   resolveCatalogItemPricing,
 } from "@/lib/pricing/plan-pricing";
+import { parseMarkupPercentToBasisPoints } from "@/lib/pricing/provider-pricing";
 import { readRequestMeta } from "@/lib/session";
-import { READY_SERVER_PLAN_PREFIX } from "@/lib/cloud-servers/catalog";
-import { isRegionEnabledForSale } from "@/lib/infrastructure/provider-region-config";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +39,10 @@ export async function GET() {
         description: plan.description,
         deliveryMode: plan.deliveryMode,
         productKind: plan.productKind,
+        provider: plan.provider,
         offerSource: plan.offerSource,
+        publicationStatus: plan.publicationStatus,
+        skuMarkupBasisPoints: plan.skuMarkupBasisPoints,
         regionCode: plan.regionCode,
         sizeCode: plan.sizeCode,
         imageCode: plan.imageCode,
@@ -86,9 +86,6 @@ export async function POST(request: Request) {
     const code = typeof body.code === "string" ? body.code.trim() : "";
     const title = typeof body.title === "string" ? body.title.trim() : "";
     if (!code || !title) return jsonError("کد و عنوان الزامی است.", 400);
-    if (code.startsWith(READY_SERVER_PLAN_PREFIX)) {
-      return jsonError("این پیشوند برای پلن‌های خودکار سرور آماده رزرو شده است.", 400);
-    }
     if (
       body.deliveryMode === "RAW" ||
       ("parchinIncluded" in body && body.parchinIncluded !== true)
@@ -108,73 +105,54 @@ export async function POST(request: Request) {
     const catalogItemId =
       typeof body.catalogItemId === "string" ? body.catalogItemId.trim() : "";
     const imageCode = typeof body.imageCode === "string" ? body.imageCode.trim() : "";
-    const offerSource =
-      body.offerSource === "PREPROVISIONED_INVENTORY"
-        ? InfrastructureOfferSource.PREPROVISIONED_INVENTORY
-        : InfrastructureOfferSource.API_CATALOG;
-    const productKind =
-      body.productKind === InfrastructureProductKind.READY_INSTANT_SERVER
-        ? InfrastructureProductKind.READY_INSTANT_SERVER
-        : InfrastructureProductKind.CLOUD_SERVER;
-    if (
-      offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY &&
-      productKind !== InfrastructureProductKind.READY_INSTANT_SERVER
-    ) {
-      return jsonError("موجودی ازپیش‌ساخته فقط در مسیر سرور فوری مجاز است.", 400);
+    if (body.offerSource && body.offerSource !== "API_CATALOG") {
+      return jsonError("موجودی دستی فقط از مسیر اختصاصی خود مدیریت می‌شود.", 400);
     }
-    const offerPriceValidUntil =
-      offerSource === InfrastructureOfferSource.API_CATALOG
-        ? null
-        : new Date(String(body.offerPriceValidUntil ?? ""));
-    if (
-      offerSource !== InfrastructureOfferSource.API_CATALOG &&
-      (!offerPriceValidUntil ||
-        Number.isNaN(offerPriceValidUntil.getTime()) ||
-        offerPriceValidUntil.getTime() <= Date.now())
-    ) {
-      return jsonError("اعتبار قیمت برای منبع دستی الزامی است.", 400);
-    }
-    if (
-      offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY &&
-      body.active !== false
-    ) {
-      return jsonError(
-        "ابتدا پلن موجودی واقعی را غیرفعال بسازید، Resource را ثبت کنید و سپس منتشر کنید.",
-        409,
-      );
-    }
-    const [catalogItem, pricingConfig] = await Promise.all([
-      prisma.providerCatalogItem.findUnique({ where: { id: catalogItemId } }),
-      prisma.providerPricingConfig.findUnique({
-        where: { provider: InfrastructureProvider.ARVAN },
-      }),
-    ]);
+    const catalogItem = await prisma.providerCatalogItem.findUnique({
+      where: { id: catalogItemId },
+    });
     if (
       !catalogItem ||
-      catalogItem.provider !== InfrastructureProvider.ARVAN ||
       catalogItem.apiVersion !== "v1" ||
-      catalogItem.productKind !== "CLOUD_SERVER"
+      catalogItem.source !== "API_CATALOG" ||
+      ![
+        InfrastructureProductKind.CLOUD_SERVER,
+        InfrastructureProductKind.READY_INSTANT_SERVER,
+      ].includes(catalogItem.productKind)
     ) {
       return jsonError("Catalog Item معتبر نیست.", 400);
-    }
-    if (
-      !(await isRegionEnabledForSale({
-        provider: catalogItem.provider,
-        apiVersion: catalogItem.apiVersion,
-        regionCode: catalogItem.regionCode,
-      }))
-    ) {
-      return jsonError("Region برای فروش فعال نیست.", 409);
     }
     if (!compatibleImageCodes(catalogItem).includes(imageCode)) {
       return jsonError("Image با Region و Size انتخاب‌شده سازگار نیست.", 400);
     }
-    const pricing = pricingConfig
-      ? resolveCatalogItemPricing(catalogItem, pricingConfig)
-      : null;
-    if (body.active !== false && !pricing) {
-      return jsonError("Catalog Item ناموجود یا فاقد قرارداد قیمت معتبر است.", 400);
+    let skuMarkupBasisPoints: number | null = null;
+    if (body.skuMarkupPercent != null && String(body.skuMarkupPercent).trim() !== "") {
+      try {
+        skuMarkupBasisPoints = parseMarkupPercentToBasisPoints(body.skuMarkupPercent);
+      } catch {
+        return jsonError("درصد افزایش اختصاصی SKU معتبر نیست.", 400);
+      }
     }
+    const [pricingConfig, productPricingConfig] = await Promise.all([
+      prisma.providerPricingConfig.findUnique({
+        where: { provider: catalogItem.provider },
+      }),
+      prisma.productPricingConfig.findUnique({
+        where: {
+          provider_apiVersion_productKind: {
+            provider: catalogItem.provider,
+            apiVersion: catalogItem.apiVersion,
+            productKind: catalogItem.productKind,
+          },
+        },
+      }),
+    ]);
+    const pricing = pricingConfig?.enabled && productPricingConfig?.enabled
+      ? resolveCatalogItemPricing(catalogItem, pricingConfig, {
+          productMarkupBasisPoints:
+            skuMarkupBasisPoints ?? productPricingConfig.markupBasisPoints,
+        })
+      : null;
 
     const requestFingerprint = createHash("sha256")
       .update(stableJson({ body, catalogItemId: catalogItem.id, imageCode }))
@@ -210,7 +188,7 @@ export async function POST(request: Request) {
               : null,
           provider: catalogItem.provider,
           providerApiVersion: catalogItem.apiVersion,
-          productKind,
+          productKind: catalogItem.productKind,
           regionCode: catalogItem.regionCode,
           sizeCode: catalogItem.sizeCode,
           imageCode,
@@ -224,25 +202,22 @@ export async function POST(request: Request) {
           salePriceRial: pricing?.finalPriceRial ?? 1n,
           renewalPriceRial: pricing?.finalPriceRial ?? 1n,
           estimatedProviderCostRial: pricing?.providerBasePriceRial ?? 1n,
+          skuMarkupBasisPoints,
           deliveryEstimateMinutes: assertPositiveIntegerToman(
             body.deliveryEstimateMinutes,
           ),
           parchinIncluded: true,
           minimumParchinLevel: ParchinLevel.PARCHIN_START,
-          active: body.active !== false && pricing != null,
-          publicationStatus:
-            body.active !== false && pricing != null
-              ? InfrastructurePlanPublicationStatus.PUBLISHED
-              : InfrastructurePlanPublicationStatus.DRAFT,
+          // Raw Provider offers only become local drafts. Publishing is a
+          // separate, audited Admin action after the mapping has been reviewed.
+          active: false,
+          publicationStatus: InfrastructurePlanPublicationStatus.DRAFT,
           instantDelivery: body.instantDelivery === true,
           displayDuringProviderOutage:
             body.displayDuringProviderOutage !== false,
-          offerSource,
-          offerPriceValidUntil,
-          offerLastVerifiedAt:
-            offerSource === InfrastructureOfferSource.API_CATALOG
-              ? null
-              : new Date(),
+          offerSource: "API_CATALOG",
+          offerPriceValidUntil: null,
+          offerLastVerifiedAt: null,
           sortOrder: Number(body.sortOrder ?? 0),
           catalogItemId: catalogItem.id,
           catalogMappingStatus: "MAPPED",
@@ -259,6 +234,8 @@ export async function POST(request: Request) {
           afterData: {
             code: created.code,
             title: created.title,
+            publicationStatus: created.publicationStatus,
+            skuMarkupBasisPoints: created.skuMarkupBasisPoints,
             requestFingerprint,
           },
           idempotencyKey,

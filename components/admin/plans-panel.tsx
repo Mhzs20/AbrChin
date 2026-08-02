@@ -32,12 +32,16 @@ type PlanRow = {
   storageGb: number | null;
   imageAssetId: string | null;
   sortOrder: number;
+  skuMarkupBasisPoints: number | null;
+  basePriceRial: string | null;
+  finalPriceRial: string | null;
 };
 
 type CatalogRow = {
   id: string;
   provider: string;
   source: string;
+  productKind: "CLOUD_SERVER" | "READY_INSTANT_SERVER";
   regionCode: string;
   sizeCode: string;
   compatibleImageCodes: string[];
@@ -45,6 +49,8 @@ type CatalogRow = {
   ramMb: number | null;
   diskGb: number | null;
   available: boolean;
+  providerMarkupBasisPoints: number | null;
+  productMarkupBasisPoints: number;
   basePriceRial: string | null;
   finalPriceRial: string | null;
 };
@@ -56,13 +62,12 @@ const emptyForm = {
   catalogItemId: "",
   imageCode: "",
   deliveryEstimateMinutes: "15",
-  active: true,
+  publicationStatus: "DRAFT",
+  skuMarkupPercent: "",
   instantDelivery: false,
   displayDuringProviderOutage: true,
   sortOrder: "0",
-  offerSource: "API_CATALOG",
   productKind: "CLOUD_SERVER",
-  offerPriceValidUntil: "",
 };
 
 const emptyManualForm = {
@@ -88,6 +93,39 @@ const emptyManualForm = {
 
 function toman(value: string | null) {
   return value ? `${(BigInt(value) / 10n).toLocaleString("fa-IR")} تومان` : "نامعتبر";
+}
+
+function markupBasisPointsFromPercent(value: string): number | null {
+  const raw = value.trim();
+  if (!raw) return null;
+  if (!/^\d+(?:\.\d{1,2})?$/.test(raw)) return null;
+  const [whole, fraction = ""] = raw.split(".");
+  const basisPoints =
+    Number.parseInt(whole, 10) * 100 +
+    Number.parseInt(fraction.padEnd(2, "0") || "0", 10);
+  return Number.isSafeInteger(basisPoints) && basisPoints <= 100_000
+    ? basisPoints
+    : null;
+}
+
+function previewCatalogPrice(
+  item: CatalogRow | null,
+  skuMarkupPercent: string,
+): { finalPriceRial: string; markupAmountRial: string; markupBasisPoints: number } | null {
+  if (!item?.basePriceRial || item.providerMarkupBasisPoints == null) return null;
+  const skuMarkupBasisPoints = markupBasisPointsFromPercent(skuMarkupPercent);
+  if (skuMarkupPercent.trim() && skuMarkupBasisPoints == null) return null;
+  const markupBasisPoints =
+    item.providerMarkupBasisPoints +
+    (skuMarkupBasisPoints ?? item.productMarkupBasisPoints);
+  const basePriceRial = BigInt(item.basePriceRial);
+  const markupAmountRial =
+    (basePriceRial * BigInt(markupBasisPoints) + 9_999n) / 10_000n;
+  return {
+    finalPriceRial: (basePriceRial + markupAmountRial).toString(),
+    markupAmountRial: markupAmountRial.toString(),
+    markupBasisPoints,
+  };
 }
 
 export function AdminPlansPanel({
@@ -124,6 +162,10 @@ export function AdminPlansPanel({
     () => catalogItems.find((item) => item.id === form.catalogItemId) ?? null,
     [catalogItems, form.catalogItemId],
   );
+  const selectedPreview = useMemo(
+    () => previewCatalogPrice(selectedCatalog, form.skuMarkupPercent),
+    [form.skuMarkupPercent, selectedCatalog],
+  );
 
   function openCreate() {
     const first = catalogItems.find((item) => item.available && item.finalPriceRial);
@@ -132,6 +174,7 @@ export function AdminPlansPanel({
       ...emptyForm,
       catalogItemId: first?.id ?? "",
       imageCode: first?.compatibleImageCodes[0] ?? "",
+      productKind: first?.productKind ?? "CLOUD_SERVER",
     });
     setError("");
     setOpen(true);
@@ -146,15 +189,15 @@ export function AdminPlansPanel({
       catalogItemId: plan.catalogItemId ?? "",
       imageCode: plan.imageCode,
       deliveryEstimateMinutes: String(plan.deliveryEstimateMinutes),
-      active: plan.active,
+      publicationStatus: plan.publicationStatus,
+      skuMarkupPercent:
+        plan.skuMarkupBasisPoints == null
+          ? ""
+          : String(plan.skuMarkupBasisPoints / 100),
       instantDelivery: plan.instantDelivery,
       displayDuringProviderOutage: plan.displayDuringProviderOutage,
       sortOrder: String(plan.sortOrder),
-      offerSource: plan.catalogSource ?? "API_CATALOG",
       productKind: plan.productKind,
-      offerPriceValidUntil: plan.offerPriceValidUntil
-        ? new Date(plan.offerPriceValidUntil).toISOString().slice(0, 16)
-        : "",
     });
     setError("");
     setOpen(true);
@@ -166,6 +209,7 @@ export function AdminPlansPanel({
       ...current,
       catalogItemId,
       imageCode: item?.compatibleImageCodes[0] ?? "",
+      productKind: item?.productKind ?? current.productKind,
     }));
   }
 
@@ -320,7 +364,7 @@ export function AdminPlansPanel({
     <>
       <div style={{ marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" className="product-btn product-btn--primary" onClick={openCreate}>
-          انتشار از کاتالوگ آروان
+          ساخت Draft از کاتالوگ Provider
         </button>
         <button
           type="button"
@@ -348,6 +392,12 @@ export function AdminPlansPanel({
               {plan.title} <span className="product-tech">({plan.code})</span>
               {plan.catalogMappingStatus !== "MAPPED" ? " · بدون Mapping" : ""}
               {` · ${plan.publicationStatus}`}
+              {plan.skuMarkupBasisPoints != null
+                ? ` · افزایش اختصاصی SKU: ${plan.skuMarkupBasisPoints / 100}%`
+                : " · افزایش پیش‌فرض محصول"}
+              {plan.basePriceRial && plan.finalPriceRial
+                ? ` · هزینه Provider: ${toman(plan.basePriceRial)} · قیمت فروش: ${toman(plan.finalPriceRial)}`
+                : " · قیمت نیازمند بررسی"}
               {plan.catalogSource === "MANUAL_API_BACKED"
                 ? " · دستی متکی به API"
                 : plan.catalogSource === "MANUAL_ADMIN"
@@ -422,28 +472,21 @@ export function AdminPlansPanel({
       </ul>
       <ConfirmDialog
         open={open}
-        title={editing ? "ویرایش پلن" : "پلن جدید"}
-        confirmLabel="ذخیره"
+        title={editing ? "ویرایش SKU" : "ساخت SKU پیش‌نویس"}
+        confirmLabel={editing ? "ذخیره تغییرات" : "ساخت Draft"}
         loading={loading}
         onCancel={() => setOpen(false)}
         onConfirm={submit}
       >
-        <FormField id="plan-product-kind" label="مسیر محصول">
+        <FormField id="plan-product-kind" label="مسیر محصول از Catalog">
           <select
             id="plan-product-kind"
             value={form.productKind}
-            disabled={Boolean(editing)}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                productKind: event.target.value,
-                instantDelivery:
-                  event.target.value === "READY_INSTANT_SERVER",
-              }))
-            }
+            disabled
+            onChange={() => undefined}
           >
-            <option value="CLOUD_SERVER">سرور ابری سفارشی آروان</option>
-            <option value="READY_INSTANT_SERVER">سرور فوری ثابت آروان</option>
+            <option value="CLOUD_SERVER">سرور ابری از Catalog</option>
+            <option value="READY_INSTANT_SERVER">سرور فوری از Catalog</option>
           </select>
         </FormField>
         <FormField id="plan-code" label="کد">
@@ -478,60 +521,62 @@ export function AdminPlansPanel({
         </FormField>
         {selectedCatalog ? (
           <p style={{ fontSize: 13 }}>
+            Provider: {selectedCatalog.provider} · نوع: {selectedCatalog.productKind === "READY_INSTANT_SERVER" ? "سرور فوری" : "سرور ابری"}
+            <br />
             منابع Read-only: {selectedCatalog.vcpu ?? "—"} vCPU · {selectedCatalog.ramMb ?? "—"} MB RAM · {selectedCatalog.diskGb ?? "—"} GB
             <br />
-            قیمت پایه: {toman(selectedCatalog.basePriceRial)} · قیمت نهایی: {toman(selectedCatalog.finalPriceRial)}
+            قیمت پایه: {toman(selectedCatalog.basePriceRial)} · Markup Provider: {selectedCatalog.providerMarkupBasisPoints == null ? "تنظیم نشده" : `${selectedCatalog.providerMarkupBasisPoints / 100}%`}
+            <br />
+            {selectedPreview
+              ? `Markup اعمال‌شده: ${selectedPreview.markupBasisPoints / 100}% · مبلغ Markup: ${toman(selectedPreview.markupAmountRial)} · پیش‌نمایش فروش زیرساخت: ${toman(selectedPreview.finalPriceRial)}`
+              : "برای پیش‌نمایش، قیمت و Markup معتبر Provider لازم است."}
           </p>
         ) : null}
         <FormField id="plan-delivery" label="زمان تحویل تقریبی (دقیقه)">
           <input id="plan-delivery" type="number" min={1} value={form.deliveryEstimateMinutes} onChange={(event) => setForm((current) => ({ ...current, deliveryEstimateMinutes: event.target.value }))} required />
         </FormField>
-        <FormField id="plan-source" label="منبع فروش">
-          <select
-            id="plan-source"
-            value={form.offerSource}
+        <FormField id="plan-sku-markup" label="افزایش اختصاصی SKU (درصد، اختیاری)">
+          <input
+            id="plan-sku-markup"
+            inputMode="decimal"
+            min="0"
+            max="1000"
+            value={form.skuMarkupPercent}
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
-                offerSource: event.target.value,
-                productKind:
-                  event.target.value === "PREPROVISIONED_INVENTORY"
-                    ? "READY_INSTANT_SERVER"
-                    : current.productKind,
-                active:
-                  event.target.value === "PREPROVISIONED_INVENTORY"
-                    ? false
-                    : current.active,
+                skuMarkupPercent: event.target.value,
               }))
             }
-          >
-            <option value="API_CATALOG">API Catalog</option>
-            <option value="PREPROVISIONED_INVENTORY">موجودی واقعی ازپیش‌ساخته</option>
-          </select>
+            placeholder="استفاده از افزایش پیش‌فرض محصول"
+          />
         </FormField>
-        {form.offerSource !== "API_CATALOG" ? (
-          <FormField id="plan-offer-expiry" label="اعتبار قیمت تا">
-            <input
-              id="plan-offer-expiry"
-              type="datetime-local"
-              value={form.offerPriceValidUntil}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  offerPriceValidUntil: event.target.value,
-                }))
-              }
-              required
-            />
-          </FormField>
-        ) : null}
         <FormField id="plan-sort" label="ترتیب نمایش">
           <input id="plan-sort" type="number" value={form.sortOrder} onChange={(event) => setForm((current) => ({ ...current, sortOrder: event.target.value }))} />
         </FormField>
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} />
-          فعال
-        </label>
+        {editing ? (
+          <FormField id="plan-publication" label="وضعیت انتشار">
+            <select
+              id="plan-publication"
+              value={form.publicationStatus}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  publicationStatus: event.target.value,
+                }))
+              }
+            >
+              <option value="DRAFT">Draft — بازبینی نشده</option>
+              <option value="PUBLISHED">Published — قابل‌فروش</option>
+              <option value="PAUSED">Paused — توقف فروش</option>
+              <option value="ARCHIVED">Archived — بایگانی</option>
+            </select>
+          </FormField>
+        ) : (
+          <p className="product-tech">
+            SKU جدید همیشه به‌شکل Draft ایجاد می‌شود؛ انتشار فقط در ویرایش بعدی و پس از بررسی Admin انجام می‌شود.
+          </p>
+        )}
         <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input type="checkbox" checked={form.instantDelivery} onChange={(event) => setForm((current) => ({ ...current, instantDelivery: event.target.checked }))} />
           تحویل فوری

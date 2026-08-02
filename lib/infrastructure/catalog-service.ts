@@ -3,22 +3,12 @@ import {
   DeliveryMode,
   InfrastructureProductKind,
   InfrastructureProvider,
-  ParchinLevel,
   ProviderCatalogStatus,
   ProviderSyncStatus,
-  type ProviderCatalogItem,
   type Prisma,
 } from "@prisma/client";
 import { createHash, randomUUID } from "node:crypto";
 
-import {
-  READY_SERVER_PLAN_PREFIX,
-  readyServerDescription,
-  readyServerPlanCode,
-  readyServerSortOrder,
-  readyServerTitle,
-  selectReadyServerImage,
-} from "@/lib/cloud-servers/catalog";
 import type { ProviderCatalog } from "@/lib/infrastructure/types";
 import {
   calculateFinalPriceRial,
@@ -76,101 +66,6 @@ type CatalogItemInput = {
   payloadHash: string;
   catalogVersion: string;
 };
-
-async function materializeReadyServerPlans(
-  tx: Prisma.TransactionClient,
-  items: ProviderCatalogItem[],
-  pricingConfig: { markupBasisPoints: number },
-  syncedAt: Date,
-) {
-  await tx.infrastructurePlan.updateMany({
-    where: {
-      provider: InfrastructureProvider.PARSPACK,
-      code: { startsWith: READY_SERVER_PLAN_PREFIX },
-      active: true,
-    },
-    data: { active: false },
-  });
-
-  let readyPlanCount = 0;
-  for (const item of items) {
-    const imageCodes = Array.isArray(item.compatibleImageCodes)
-      ? item.compatibleImageCodes.filter(
-          (code): code is string => typeof code === "string",
-        )
-      : [];
-    const imageCode = selectReadyServerImage(imageCodes);
-    if (!imageCode) continue;
-
-    const contract = normalizeProviderPriceContract({
-      currencyCode: item.currencyCode,
-      amountUnit: item.amountUnit,
-    });
-    const providerBasePriceRial =
-      item.priceMonthlyAmount != null &&
-      item.priceMonthlyAmount > 0n &&
-      contract
-        ? providerAmountToRial({
-            scaledAmount: item.priceMonthlyAmount,
-            scale: item.priceScale,
-            contract,
-          })
-        : null;
-    const finalPriceRial =
-      providerBasePriceRial == null
-        ? null
-        : calculateFinalPriceRial(
-            providerBasePriceRial,
-            pricingConfig.markupBasisPoints,
-          );
-    const sellable =
-      item.active &&
-      item.available &&
-      providerBasePriceRial != null &&
-      finalPriceRial != null;
-    const code = readyServerPlanCode(item.regionCode, item.sizeCode);
-    const planData = {
-      title: readyServerTitle(item),
-      description: readyServerDescription({
-        regionCode: item.regionCode,
-        imageCode,
-      }),
-      provider: InfrastructureProvider.PARSPACK,
-      regionCode: item.regionCode,
-      sizeCode: item.sizeCode,
-      imageCode,
-      deliveryMode: DeliveryMode.MANAGED,
-      vcpu: item.vcpu,
-      ramGb: item.ramMb == null ? null : Math.ceil(item.ramMb / 1024),
-      storageGb: item.diskGb,
-      salePriceRial: finalPriceRial ?? 1n,
-      renewalPriceRial: finalPriceRial ?? 1n,
-      estimatedProviderCostRial: providerBasePriceRial ?? 1n,
-      deliveryEstimateMinutes: 15,
-      parchinIncluded: true,
-      minimumParchinLevel: ParchinLevel.PARCHIN_START,
-      active: sellable,
-      publicationStatus: sellable
-        ? ("PUBLISHED" as const)
-        : ("PAUSED" as const),
-      instantDelivery: true,
-      displayDuringProviderOutage: true,
-      sortOrder: readyServerSortOrder(item),
-      catalogItemId: item.id,
-      catalogMappingStatus: CatalogMappingStatus.MAPPED,
-      catalogMappedAt: syncedAt,
-    };
-
-    await tx.infrastructurePlan.upsert({
-      where: { code },
-      update: planData,
-      create: { code, ...planData },
-    });
-    if (sellable) readyPlanCount += 1;
-  }
-
-  return readyPlanCount;
-}
 
 function parseOptionalPrice(value?: string): bigint | null {
   if (value == null) return null;
@@ -385,7 +280,10 @@ export async function persistProviderCatalog(
   }
 
   const plans = await tx.infrastructurePlan.findMany({
-    where: { provider: InfrastructureProvider.PARSPACK },
+    where: {
+      provider: InfrastructureProvider.PARSPACK,
+      offerSource: "API_CATALOG",
+    },
   });
   const persistedItems = await tx.providerCatalogItem.findMany({
     where: { provider: InfrastructureProvider.PARSPACK },
@@ -452,13 +350,6 @@ export async function persistProviderCatalog(
     mappedPlanCount += 1;
   }
 
-  const readyPlanCount = await materializeReadyServerPlans(
-    tx,
-    persistedItems,
-    pricingConfig,
-    syncedAt,
-  );
-
   await tx.infrastructurePlan.updateMany({
     where: {
       provider: InfrastructureProvider.PARSPACK,
@@ -498,7 +389,7 @@ export async function persistProviderCatalog(
     unavailableItemCount,
     mappedPlanCount,
     unmappedPlanCount,
-    readyPlanCount,
+    readyPlanCount: 0,
     priceContractConfirmed: Boolean(contract),
   };
 }

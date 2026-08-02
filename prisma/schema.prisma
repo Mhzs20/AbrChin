@@ -640,6 +640,7 @@ model InfrastructurePlan {
   salePriceRial                BigInt
   renewalPriceRial             BigInt?
   estimatedProviderCostRial    BigInt
+  skuMarkupBasisPoints         Int?
   deliveryEstimateMinutes      Int                                 @default(15)
   parchinIncluded              Boolean                             @default(false)
   minimumParchinLevel          ParchinLevel?

@@ -268,7 +268,12 @@ function resolveConfiguredPlanPricing(
     !parchin
   ) return null;
   return resolvePlanPricing(plan, manualAdmin ? null : provider!, {
-    productMarkupBasisPoints: manualAdmin ? 0 : product!.markupBasisPoints,
+    // Provider markup is always configured at the provider level. A SKU can
+    // intentionally override only the product-level increment; it never
+    // replaces or bypasses the provider default.
+    productMarkupBasisPoints: manualAdmin
+      ? 0
+      : plan.skuMarkupBasisPoints ?? product!.markupBasisPoints,
     taxBasisPoints: configs.commerce?.taxBps ?? 1000,
     parchinLevel: selectedParchinLevel,
     parchinPriceRial: parchin.priceRial,
