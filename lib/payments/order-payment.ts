@@ -234,7 +234,7 @@ export async function finalizeOrderPaymentFromCallback(input: {
     });
     return { payment: failed, order: payment.serviceOrder, alreadySettled: false as const, failed: true as const };
   }
-  if (verified.amountRial !== payment.amount) {
+  if (verified.amountRial !== payment.amount || verified.currency !== "IRR") {
     const review = await prisma.orderPayment.update({
       where: { id: payment.id },
       data: {

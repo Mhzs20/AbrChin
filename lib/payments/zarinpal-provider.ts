@@ -150,6 +150,7 @@ export class ZarinpalPaymentProvider implements PaymentProvider {
       authority: input.authority,
       gatewayReference: String(data.ref_id ?? input.authority),
       amountRial: input.expectedAmountRial,
+      currency: "IRR",
     };
   }
 

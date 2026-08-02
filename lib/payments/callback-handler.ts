@@ -71,6 +71,10 @@ export async function handleProviderCallback(
     readParam(body, ["topUpId"]) ||
     normalized.orderId ||
     "";
+  const paymentAttemptId =
+    readParam(url.searchParams, ["attemptId", "paymentAttemptId"]) ||
+    readParam(body, ["attemptId", "paymentAttemptId"]) ||
+    "";
   const token = readParam(url.searchParams, ["token"]) || readParam(body, ["token"]) || "";
 
   const resultUrl = new URL("/account/wallet/result", env.paymentCallbackBaseUrl);
@@ -102,14 +106,15 @@ export async function handleProviderCallback(
       return NextResponse.redirect(orderResultUrl);
     }
 
-    if (!topUpId || !token) {
+    if ((!topUpId && !paymentAttemptId) || !token) {
       resultUrl.searchParams.set("status", "failed");
       resultUrl.searchParams.set("reason", "invalid");
       return NextResponse.redirect(resultUrl);
     }
 
     // Runtime validation of identifiers (no raw callback dump to logs)
-    if (!/^[a-zA-Z0-9_-]{8,64}$/.test(topUpId) || !/^[a-zA-Z0-9_-]{16,128}$/.test(token)) {
+    const callbackEntityId = paymentAttemptId || topUpId;
+    if (!/^[a-zA-Z0-9_-]{8,64}$/.test(callbackEntityId) || !/^[a-zA-Z0-9_-]{16,128}$/.test(token)) {
       resultUrl.searchParams.set("status", "failed");
       resultUrl.searchParams.set("reason", "invalid");
       return NextResponse.redirect(resultUrl);
@@ -117,7 +122,8 @@ export async function handleProviderCallback(
 
     const result = await finalizeTopUpFromCallback({
       expectedGateway,
-      topUpId,
+      paymentAttemptId: paymentAttemptId || undefined,
+      topUpId: topUpId || undefined,
       token,
       authority: normalized.authority,
       statusHint: normalized.statusHint,
@@ -126,6 +132,8 @@ export async function handleProviderCallback(
     resultUrl.searchParams.set("topUpId", result.topUp.id);
     if (result.topUp.status === "SUCCEEDED") {
       resultUrl.searchParams.set("status", "success");
+    } else if (result.review) {
+      resultUrl.searchParams.set("status", "review");
     } else if (result.topUp.status === "CANCELED") {
       resultUrl.searchParams.set("status", "canceled");
     } else {

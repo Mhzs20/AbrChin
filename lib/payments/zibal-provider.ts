@@ -150,16 +150,13 @@ export class ZibalPaymentProvider implements PaymentProvider {
       }
     }
 
-    if (amountRial !== input.expectedAmountRial) {
-      return { ok: false, code: "amount_mismatch", message: "Payment amount mismatch" };
-    }
-
     const refNumber = payload.refNumber;
     return {
       ok: true,
       authority: input.authority,
       gatewayReference: refNumber != null ? String(refNumber) : input.authority,
       amountRial,
+      currency: "IRR",
     };
   }
 

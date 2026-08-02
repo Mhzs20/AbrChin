@@ -836,23 +836,25 @@ model PaymentRecoveryAction {
 }
 
 model WalletTopUpRefund {
-  id             String                 @id @default(cuid())
-  walletTopUpId  String
-  requestedById  String
-  reviewedById   String?
-  amount         BigInt
-  currency       String                 @default("IRR")
-  status         ControlledRefundStatus @default(REQUESTED)
-  reason         String
-  reviewReason   String?
-  ledgerEntryId  String?                @unique
-  idempotencyKey String                 @unique
-  requestedAt    DateTime               @default(now()) @db.Timestamptz(3)
-  reviewedAt     DateTime?              @db.Timestamptz(3)
-  completedAt    DateTime?              @db.Timestamptz(3)
-  walletTopUp    WalletTopUp            @relation(fields: [walletTopUpId], references: [id], onDelete: Restrict)
-  requestedBy    User                   @relation("TopUpRefundRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
-  reviewedBy     User?                  @relation("TopUpRefundReviewedBy", fields: [reviewedById], references: [id], onDelete: Restrict)
+  id                     String                 @id @default(cuid())
+  walletTopUpId          String
+  requestedById          String
+  reviewedById           String?
+  amount                 BigInt
+  currency               String                 @default("IRR")
+  status                 ControlledRefundStatus @default(REQUESTED)
+  reason                 String
+  reviewReason           String?
+  ledgerEntryId          String?                @unique
+  gatewayRefundReference String?                @unique
+  idempotencyKey         String                 @unique
+  requestedAt            DateTime               @default(now()) @db.Timestamptz(3)
+  reviewedAt             DateTime?              @db.Timestamptz(3)
+  gatewayRefundedAt      DateTime?              @db.Timestamptz(3)
+  completedAt            DateTime?              @db.Timestamptz(3)
+  walletTopUp            WalletTopUp            @relation(fields: [walletTopUpId], references: [id], onDelete: Restrict)
+  requestedBy            User                   @relation("TopUpRefundRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  reviewedBy             User?                  @relation("TopUpRefundReviewedBy", fields: [reviewedById], references: [id], onDelete: Restrict)
 
   @@index([status, requestedAt])
   @@index([walletTopUpId, requestedAt])

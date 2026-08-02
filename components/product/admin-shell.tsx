@@ -44,6 +44,7 @@ const drawerGroups = [
       { href: "/admin/users", label: "کاربران", icon: FileText },
       { href: "/admin/wallets", label: "کیف پول‌ها", icon: CreditCard },
       { href: "/admin/payment-gateways", label: "درگاه‌های پرداخت", icon: CreditCard },
+      { href: "/admin/payment-recovery", label: "بازیابی پرداخت Wallet", icon: CreditCard },
       { href: "/admin/audit", label: "گزارش عملیات", icon: FileText },
     ],
   },

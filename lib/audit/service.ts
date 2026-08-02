@@ -102,6 +102,12 @@ export const AuditActions = {
   ROLE_CHANGE: "role_change",
   WALLET_ADJUSTMENT: "wallet_adjustment",
   REFUND: "refund",
+  PAYMENT_REVERIFY: "payment_reverify",
+  WALLET_CREDIT_RECONCILE: "wallet_credit_reconcile",
+  PAYMENT_MARK_FAILED: "payment_mark_definitively_failed",
+  CONTROLLED_TOPUP_REFUND: "controlled_topup_refund",
+  CONTROLLED_TOPUP_REFUND_COMPLETED:
+    "controlled_topup_refund_completed",
   GATEWAY_CHANGE: "gateway_change",
   TOPUP_PRESET_CHANGE: "topup_preset_change",
   PLAN_CREATE: "plan_create",

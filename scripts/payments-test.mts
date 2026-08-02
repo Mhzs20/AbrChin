@@ -135,8 +135,11 @@ test("zibal adapter create/verify/cancel/errors without leaking merchant", async
     authority: "15966442233311",
     expectedAmountRial: 5000n,
   });
-  assert.equal(mismatch.ok, false);
-  if (!mismatch.ok) assert.equal(mismatch.code, "amount_mismatch");
+  assert.equal(mismatch.ok, true);
+  if (mismatch.ok) {
+    assert.equal(mismatch.amountRial, 999n);
+    assert.equal(mismatch.currency, "IRR");
+  }
 
   const already = createZibalForTest({
     merchant,

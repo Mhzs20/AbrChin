@@ -27,6 +27,7 @@ export type VerifyPaymentResult =
       authority: string;
       gatewayReference: string;
       amountRial: bigint;
+      currency: string;
     }
   | {
       ok: false;

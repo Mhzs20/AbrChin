@@ -16,6 +16,11 @@ export async function GET(_request: Request, { params }: Params) {
     const topUp = await prisma.walletTopUp.findFirst({
       where: { id, walletId: wallet.id },
       include: {
+        paymentAttempts: {
+          orderBy: { attemptNumber: "desc" },
+          take: 1,
+          select: { status: true },
+        },
         purchaseOrder: {
           select: {
             id: true,
@@ -38,6 +43,9 @@ export async function GET(_request: Request, { params }: Params) {
         createdAt: topUp.createdAt.toISOString(),
         verifiedAt: topUp.verifiedAt?.toISOString() ?? null,
         expiresAt: topUp.expiresAt.toISOString(),
+        retryable: ["FAILED", "CANCELED", "EXPIRED"].includes(
+          topUp.paymentAttempts[0]?.status ?? "",
+        ),
         resumePath: topUp.purchaseOrder?.recommendationQuoteId
           ? `/${topUp.purchaseOrder.productKind === "READY_INSTANT_SERVER" ? "ready-servers" : "cloud-servers"}/quote/${topUp.purchaseOrder.recommendationQuoteId}`
           : null,

@@ -10,6 +10,8 @@ function ResultInner() {
   const topUpId = params.get("topUpId");
   const [detail, setDetail] = useState("");
   const [resumePath, setResumePath] = useState<string | null>(null);
+  const [retryable, setRetryable] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [polling, setPolling] = useState(Boolean(params.get("topUpId")));
 
   useEffect(() => {
@@ -29,6 +31,7 @@ function ResultInner() {
             ? data.topUp.resumePath
             : null,
         );
+        setRetryable(Boolean(data.topUp?.retryable));
         if (data.topUp?.status === "SUCCEEDED" || data.topUp?.status === "FAILED" || data.topUp?.status === "CANCELED" || attempts >= 8) {
           window.clearInterval(timer);
           setPolling(false);
@@ -46,9 +49,32 @@ function ResultInner() {
     };
   }, [topUpId]);
 
+  async function retryPayment() {
+    if (!topUpId || retrying) return;
+    setRetrying(true);
+    try {
+      const response = await fetch(`/api/wallet/topups/${topUpId}/retry`, {
+        method: "POST",
+        headers: {
+          "Idempotency-Key": `customer-topup-retry-${crypto.randomUUID()}`,
+        },
+      });
+      const data = await response.json();
+      if (!response.ok || typeof data.redirectUrl !== "string") {
+        setRetrying(false);
+        return;
+      }
+      window.location.href = data.redirectUrl;
+    } catch {
+      setRetrying(false);
+    }
+  }
+
   const title =
     status === "success" || detail === "SUCCEEDED"
       ? "شارژ با موفقیت انجام شد"
+      : status === "review"
+        ? "پرداخت در حال تطبیق است"
       : status === "canceled" || detail === "CANCELED"
         ? "پرداخت لغو شد"
         : "شارژ انجام نشد";
@@ -57,9 +83,25 @@ function ResultInner() {
     <div className="auth-card">
       <div className="auth-card-head">
         <h1>{title}</h1>
-        <p>{polling ? "در حال بررسی وضعیت پرداخت..." : "می‌توانید به کیف پول برگردید یا تراکنش‌ها را ببینید."}</p>
+        <p>
+          {polling
+            ? "در حال بررسی وضعیت پرداخت..."
+            : status === "review"
+              ? "وجه دوباره دریافت نمی‌شود؛ نتیجه در صف تطبیق امن بررسی خواهد شد."
+              : "می‌توانید به کیف پول برگردید یا تراکنش‌ها را ببینید."}
+        </p>
       </div>
       <div className="account-actions">
+        {retryable ? (
+          <button
+            className="button button-primary"
+            disabled={retrying}
+            onClick={() => void retryPayment()}
+            type="button"
+          >
+            {retrying ? "در حال ساخت تلاش جدید..." : "تلاش پرداخت جدید"}
+          </button>
+        ) : null}
         {resumePath && (status === "success" || detail === "SUCCEEDED") ? (
           <Link className="button button-primary" href={resumePath}>
             ادامه و پرداخت سفارش

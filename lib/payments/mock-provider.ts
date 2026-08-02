@@ -109,6 +109,7 @@ export class MockPaymentProvider implements PaymentProvider {
       authority: input.authority,
       gatewayReference: input.authority,
       amountRial: input.expectedAmountRial,
+      currency: "IRR",
     };
   }
 }
