@@ -1,17 +1,15 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
 import { TopUpForm } from "@/components/topup-form";
+import { requireCustomerPage } from "@/lib/auth/guards";
 import { getPublicDefaultGatewaySummary } from "@/lib/payments";
-import { getCurrentUser } from "@/lib/session";
 import { getTopUpSettingsView } from "@/lib/wallet/topup-settings";
 
 export const metadata: Metadata = { title: "شارژ کیف پول | ابرچین", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
 export default async function TopUpPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login?next=/account/wallet/topup");
+  await requireCustomerPage();
 
   const topUpSettings = await getTopUpSettingsView();
 

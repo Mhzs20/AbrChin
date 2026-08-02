@@ -10,9 +10,9 @@ import {
   StatusBadge,
 } from "@/components/product";
 import { getAccountOverview } from "@/lib/account/queries";
+import { requireCustomerPage } from "@/lib/auth/guards";
 import { serviceOrderStatusLabel } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
-import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "نمای کلی | حساب من | ابرچین",
@@ -22,8 +22,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AccountOverviewPage() {
-  const user = await getCurrentUser();
-  if (!user) return null;
+  const user = await requireCustomerPage();
 
   const overview = await getAccountOverview(user.id);
   const greeting = user.displayName;

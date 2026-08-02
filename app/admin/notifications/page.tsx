@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { DataTable, PageHeader, StatusBadge } from "@/components/product";
+import { getAdminPageAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 
 export const metadata: Metadata = {
@@ -13,6 +14,9 @@ export const dynamic = "force-dynamic";
 const statusLabel = { UNREAD: "خوانده‌نشده", READ: "خوانده‌شده", RESOLVED: "حل‌شده" } as const;
 
 export default async function AdminNotificationsPage() {
+  const access = await getAdminPageAccess();
+  if (!access.allowed) return null;
+
   const notifications = await prisma.adminNotification.findMany({
     orderBy: { createdAt: "desc" },
     take: 100,

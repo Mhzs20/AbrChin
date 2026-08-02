@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { DataTable, PageHeader, StatusBadge, TechnicalValue } from "@/components/product";
+import { getAdminPageAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import { cloudInstanceStatusLabel, deliveryModeLabel } from "@/lib/labels/infrastructure";
 
@@ -13,6 +14,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminInstancesPage() {
+  const access = await getAdminPageAccess();
+  if (!access.allowed) return null;
+
   const instances = await prisma.cloudInstance.findMany({
     orderBy: { createdAt: "desc" },
     take: 100,

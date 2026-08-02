@@ -28,6 +28,23 @@ test("profile page route exists in app tree", async () => {
   assert.equal(existsSync("app/admin/page.tsx"), true);
   assert.equal(existsSync("app/account/order/page.tsx"), true);
   assert.equal(existsSync("app/api/admin/infrastructure/plans/route.ts"), true);
+  assert.equal(existsSync("components/product/customer-shell.tsx"), true);
+  assert.equal(existsSync("components/product/admin-shell.tsx"), true);
+  assert.equal(existsSync("lib/auth/guards.ts"), true);
+});
+
+test("admin and customer panels use central role guards", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const guards = await readFile("lib/auth/guards.ts", "utf8");
+  const adminLayout = await readFile("app/admin/layout.tsx", "utf8");
+  const customerLayout = await readFile("app/account/layout.tsx", "utf8");
+  const loginForm = await readFile("components/login-form.tsx", "utf8");
+
+  assert.match(guards, /export async function requireAdmin\(/);
+  assert.match(guards, /export async function requireCustomer\(/);
+  assert.match(adminLayout, /getAdminPageAccess/);
+  assert.match(customerLayout, /requireCustomerPage/);
+  assert.match(loginForm, /role === "ADMIN" \? "\/admin" : "\/account"/);
 });
 
 test("admin infrastructure action routes exist", async () => {

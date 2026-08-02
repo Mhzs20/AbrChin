@@ -12,7 +12,7 @@ import {
   TechnicalValue,
 } from "@/components/product";
 import { listInfrastructureOrders } from "@/lib/admin/dashboard";
-import { guardAdminPage } from "@/lib/admin/auth";
+import { getAdminPageAccess } from "@/lib/auth/guards";
 import {
   deliveryModeLabel,
   infrastructureOrderStatusLabel,
@@ -27,7 +27,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminInfrastructureOrdersPage() {
-  const admin = await guardAdminPage();
+  const access = await getAdminPageAccess();
+  if (!access.allowed) return null;
+  const { user: admin } = access;
   const orders = await listInfrastructureOrders();
 
   const columns = [

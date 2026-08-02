@@ -1,7 +1,8 @@
+import { panelApiError, requireAdmin } from "@/lib/auth/guards";
 import { jsonError, jsonOk, readIdempotencyKey, rejectCrossOrigin } from "@/lib/http";
 import { isIdempotencyConflictError } from "@/lib/idempotency";
 import { refundOrder } from "@/lib/orders/service";
-import { AuthRequiredError, readRequestMeta, requireCurrentUser } from "@/lib/session";
+import { readRequestMeta } from "@/lib/session";
 import { WalletError } from "@/lib/wallet/errors";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +14,7 @@ export async function POST(request: Request, { params }: Params) {
   if (rejected) return rejected;
 
   try {
-    const user = await requireCurrentUser();
-    if (user.role !== "ADMIN") {
-      return jsonError("دسترسی مجاز نیست.", 403);
-    }
+    const user = await requireAdmin();
 
     const { id } = await params;
     let reason = "بازگشت وجه توسط ادمین";
@@ -38,7 +36,8 @@ export async function POST(request: Request, { params }: Params) {
     });
     return jsonOk({ order: { id: order.id, status: order.status } });
   } catch (error) {
-    if (error instanceof AuthRequiredError) return jsonError("برای ادامه وارد شوید.", 401);
+    const accessError = panelApiError(error);
+    if (accessError) return jsonError(accessError.message, accessError.status);
     if (isIdempotencyConflictError(error)) {
       return jsonError("شناسه یکتا با درخواست قبلی تعارض دارد.", 409, {
         code: error.code,

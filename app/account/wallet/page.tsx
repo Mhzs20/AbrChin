@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
 import { WalletPanel } from "@/components/wallet-panel";
-import { getCurrentUser } from "@/lib/session";
+import { requireCustomerPage } from "@/lib/auth/guards";
 
 export const metadata: Metadata = {
   title: "کیف پول | حساب من | ابرچین",
@@ -11,7 +10,6 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function WalletPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login?next=/account/wallet");
+  await requireCustomerPage();
   return <WalletPanel />;
 }

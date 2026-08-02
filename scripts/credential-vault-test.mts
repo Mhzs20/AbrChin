@@ -45,7 +45,7 @@ test("credential reveal is one-time and clears encrypted material", async () => 
   assert.match(service, /revealedAt: null/);
   assert.match(service, /ciphertext: null/);
   assert.match(service, /authTag: null/);
-  assert.match(customerRoute, /requireCurrentUser/);
+  assert.match(customerRoute, /requireCustomer/);
   assert.doesNotMatch(customerRoute, /ciphertext|authTag|iv:/);
 });
 

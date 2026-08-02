@@ -1,16 +1,14 @@
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import "../product.css";
-import { AccountShell } from "@/components/product/account-shell";
+import { CustomerShell } from "@/components/product/customer-shell";
 import { ToastProvider } from "@/components/product/toast";
+import { requireCustomerPage } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/session";
 
 export default async function AccountLayout({ children }: { children: ReactNode }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login?next=/account");
+  const user = await requireCustomerPage();
 
   const wallet = await prisma.wallet.findUnique({ where: { userId: user.id } });
   const headersList = await headers();
@@ -18,9 +16,9 @@ export default async function AccountLayout({ children }: { children: ReactNode 
 
   return (
     <ToastProvider>
-      <AccountShell user={user} pathname={pathname} walletBalanceRial={wallet?.availableBalance?.toString()}>
+      <CustomerShell user={user} pathname={pathname} walletBalanceRial={wallet?.availableBalance?.toString()}>
         {children}
-      </AccountShell>
+      </CustomerShell>
     </ToastProvider>
   );
 }

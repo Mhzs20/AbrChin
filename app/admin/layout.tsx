@@ -3,13 +3,17 @@ import type { ReactNode } from "react";
 
 import "../product.css";
 import { AdminShell } from "@/components/product/admin-shell";
+import { AdminAccessDenied } from "@/components/product/panel-access-denied";
 import { ToastProvider } from "@/components/product/toast";
-import { guardAdminPage } from "@/lib/admin/auth";
+import { getAdminPageAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import { AdminNotificationStatus } from "@prisma/client";
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  const user = await guardAdminPage();
+  const access = await getAdminPageAccess();
+  if (!access.allowed) return <AdminAccessDenied />;
+
+  const { user } = access;
   const unreadNotifications = await prisma.adminNotification.count({
     where: { status: AdminNotificationStatus.UNREAD },
   });

@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { MoneyDisplay, PageHeader, SectionCard, StatCard, StatusBadge } from "@/components/product";
 import { getAdminDashboardStats, getRecentAdminOperations, getSystemStatuses } from "@/lib/admin/dashboard";
+import { getAdminPageAccess } from "@/lib/auth/guards";
 import { infrastructureOrderStatusLabel } from "@/lib/labels/infrastructure";
 import { ledgerTypeLabel } from "@/lib/labels/ledger";
 import { formatTomanFa } from "@/lib/money";
@@ -15,6 +16,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
+  const access = await getAdminPageAccess();
+  if (!access.allowed) return null;
+
   const [stats, system, recent] = await Promise.all([
     getAdminDashboardStats(),
     getSystemStatuses(),

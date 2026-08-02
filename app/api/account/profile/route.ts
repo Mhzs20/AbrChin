@@ -1,6 +1,7 @@
+import { panelApiError, requireCustomer } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
-import { AuthRequiredError, requireCurrentUser, toPublicUser } from "@/lib/session";
+import { toPublicUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ export async function PATCH(request: Request) {
   if (rejected) return rejected;
 
   try {
-    const current = await requireCurrentUser();
+    const current = await requireCustomer();
 
     let body: unknown;
     try {
@@ -35,9 +36,8 @@ export async function PATCH(request: Request) {
 
     return jsonOk({ user: toPublicUser(user) });
   } catch (error) {
-    if (error instanceof AuthRequiredError) {
-      return jsonError("برای ادامه وارد شوید.", 401);
-    }
+    const accessError = panelApiError(error);
+    if (accessError) return jsonError(accessError.message, accessError.status);
     console.error("[account/profile]", error instanceof Error ? error.message : "unknown");
     return jsonError("به‌روزرسانی پروفایل ممکن نیست.", 500);
   }

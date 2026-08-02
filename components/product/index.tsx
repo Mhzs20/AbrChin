@@ -357,7 +357,7 @@ export function Pagination({
   );
 }
 
-export { AccountShell } from "@/components/product/account-shell";
+export { CustomerShell } from "@/components/product/customer-shell";
 export { AdminShell } from "@/components/product/admin-shell";
 export { ConfirmDialog } from "@/components/product/confirm-dialog";
 export { DetailDrawer } from "@/components/product/detail-drawer";

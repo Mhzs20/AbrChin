@@ -2,13 +2,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PageHeader, SectionCard } from "@/components/product";
+import { requireCustomerPage } from "@/lib/auth/guards";
 
 export const metadata: Metadata = {
   title: "راهنما و پشتیبانی | حساب من | ابرچین",
   robots: { index: false, follow: false },
 };
 
-export default function AccountSupportPage() {
+export default async function AccountSupportPage() {
+  await requireCustomerPage();
+
   return (
     <>
       <PageHeader title="راهنما و پشتیبانی" description="راه‌های ارتباطی و سوالات متداول" />

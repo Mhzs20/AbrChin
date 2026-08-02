@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { DataTable, PageHeader, TechnicalValue } from "@/components/product";
+import { getAdminPageAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 
 export const metadata: Metadata = {
@@ -11,6 +12,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminAuditPage() {
+  const access = await getAdminPageAccess();
+  if (!access.allowed) return null;
+
   const logs = await prisma.auditLog.findMany({
     orderBy: { createdAt: "desc" },
     take: 100,

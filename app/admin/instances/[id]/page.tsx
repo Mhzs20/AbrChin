@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { PageHeader, SectionCard, Timeline } from "@/components/product";
 import { InstanceCredentialForm } from "@/components/admin/instance-credential-form";
+import { getAdminPageAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import { getInfrastructureStage } from "@/lib/labels/infrastructure";
 
@@ -14,6 +15,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminInstanceDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const access = await getAdminPageAccess();
+  if (!access.allowed) return null;
+
   const { id } = await params;
   const instance = await prisma.cloudInstance.findUnique({
     where: { id },

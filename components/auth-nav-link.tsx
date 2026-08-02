@@ -8,12 +8,13 @@ import { useEffect, useState } from "react";
 type MeResponse = {
   user?: {
     id: string;
+    role: "ADMIN" | "CUSTOMER";
   };
 };
 
 export function AuthNavLink() {
   const pathname = usePathname();
-  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [role, setRole] = useState<"ADMIN" | "CUSTOMER" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,13 +24,13 @@ export function AuthNavLink() {
         const response = await fetch("/api/auth/me", { cache: "no-store" });
         if (cancelled) return;
         if (!response.ok) {
-          setSignedIn(false);
+          setRole(null);
           return;
         }
         const data = (await response.json()) as MeResponse;
-        setSignedIn(Boolean(data.user));
+        setRole(data.user?.role ?? null);
       } catch {
-        if (!cancelled) setSignedIn(false);
+        if (!cancelled) setRole(null);
       }
     }
 
@@ -39,8 +40,8 @@ export function AuthNavLink() {
     };
   }, [pathname]);
 
-  const href = signedIn ? "/account" : "/login";
-  const label = signedIn ? "حساب من" : "ورود";
+  const href = role === "ADMIN" ? "/admin" : role === "CUSTOMER" ? "/account" : "/login";
+  const label = role === "ADMIN" ? "پنل مدیریت" : role === "CUSTOMER" ? "حساب من" : "ورود";
 
   return (
     <Link
@@ -49,7 +50,7 @@ export function AuthNavLink() {
       aria-label={label}
     >
       <UserRound size={16} aria-hidden="true" />
-      <span>{signedIn === null ? "ورود" : label}</span>
+      <span>{label}</span>
     </Link>
   );
 }

@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { EmptyState, PageHeader, SectionCard, StatusBadge } from "@/components/product";
+import { requireCustomerPage } from "@/lib/auth/guards";
 import { deliveryModeLabel } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
 import { listActivePlans } from "@/lib/orders/plans";
 import { parchinPlanLabel } from "@/lib/parchin/catalog";
-import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "انتخاب راهکار | حساب من | ابرچین",
@@ -16,8 +16,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AccountOrderPage() {
-  const user = await getCurrentUser();
-  if (!user) return null;
+  await requireCustomerPage();
 
   const plans = await listActivePlans();
 

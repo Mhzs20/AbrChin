@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
 import { ProfilePanel } from "@/components/account/profile-panel";
+import { requireCustomerPage } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "پروفایل | حساب من | ابرچین",
@@ -13,8 +12,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AccountProfilePage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login?next=/account/profile");
+  const user = await requireCustomerPage();
 
   const dbUser = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
 

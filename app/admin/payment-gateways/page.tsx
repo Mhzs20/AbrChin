@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { AdminPaymentGatewaysPanel } from "@/components/admin-payment-gateways-panel";
 import { PageHeader } from "@/components/product";
+import { getAdminPageAccess } from "@/lib/auth/guards";
 import { listGatewayConfigs } from "@/lib/payments";
 
 export const metadata: Metadata = {
@@ -11,6 +12,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminPaymentGatewaysPage() {
+  const access = await getAdminPageAccess();
+  if (!access.allowed) return null;
+
   const gateways = await listGatewayConfigs();
   return (
     <>

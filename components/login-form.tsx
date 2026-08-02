@@ -10,7 +10,7 @@ function toEnglishDigits(value: string) {
   return value.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
 }
 
-export function LoginForm({ nextPath = "/account" }: { nextPath?: string }) {
+export function LoginForm() {
   const router = useRouter();
   const mobileRef = useRef<HTMLInputElement>(null);
   const otpRef = useRef<HTMLInputElement>(null);
@@ -82,32 +82,37 @@ export function LoginForm({ nextPath = "/account" }: { nextPath?: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mobile, code: toEnglishDigits(code) }),
       });
-      const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        user?: { role: "ADMIN" | "CUSTOMER" };
+      };
 
       if (!response.ok) {
         setError(data.error || "تأیید کد ممکن نشد.");
         return;
       }
 
-      try {
-        const claimResponse = await fetch(
-          "/api/recommendations/sessions/claim",
-          { method: "POST" },
-        );
-        if (!claimResponse.ok) {
+      if (data.user?.role === "CUSTOMER") {
+        try {
+          const claimResponse = await fetch(
+            "/api/recommendations/sessions/claim",
+            { method: "POST" },
+          );
+          if (!claimResponse.ok) {
+            setError(
+              "ورود انجام شد، اما اتصال گفت‌وگو به حساب کامل نشد. دوباره تلاش کن.",
+            );
+            return;
+          }
+        } catch {
           setError(
             "ورود انجام شد، اما اتصال گفت‌وگو به حساب کامل نشد. دوباره تلاش کن.",
           );
           return;
         }
-      } catch {
-        setError(
-          "ورود انجام شد، اما اتصال گفت‌وگو به حساب کامل نشد. دوباره تلاش کن.",
-        );
-        return;
       }
 
-      router.replace(nextPath);
+      router.replace(data.user?.role === "ADMIN" ? "/admin" : "/account");
       router.refresh();
     } catch {
       setError("ارتباط با سرور برقرار نشد.");
