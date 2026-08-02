@@ -55,7 +55,8 @@ export function ReadyCloudCatalog({
           <strong>فروش این سرورها موقتاً متوقف است.</strong>
           <p>
             هیچ SKU منتشرشده‌ای با قیمت، موجودی و Sale Gate معتبر در دسترس
-            نیست. آخرین اطلاعات سالم فقط در صورت مجوز Admin نمایش داده می‌شود.
+            نیست. پس از بررسی و انتشار دوبارهٔ Admin، فقط ظرفیت معتبر نمایش
+            داده می‌شود.
           </p>
         </div>
       </section>
@@ -129,7 +130,7 @@ export function ReadyCloudCatalog({
                 <strong>{formatRialAsToman(offer.salePriceRial)}</strong> تومان
               </span>
               <small>
-                ماهانه و تمدید فعلی
+                قیمت ماه اول · تمدید {formatRialAsToman(offer.renewalPriceRial)} تومان
                 {offer.hourlyPriceRial
                   ? ` · ساعتی ${formatRialAsToman(offer.hourlyPriceRial)} تومان`
                   : ""}
@@ -139,17 +140,11 @@ export function ReadyCloudCatalog({
             <ul>
               <li>
                 <Check size={14} aria-hidden="true" />
-                {offer.catalogSource === "MANUAL_API_BACKED"
-                  ? offer.purchasable
-                    ? "پلن دستی است و موجودی آن همین حالا از Provider تأیید شد"
-                    : "پلن دستی قابل مشاهده است؛ خرید تا Revalidation Provider متوقف است"
-                  : offer.catalogSource === "MANUAL_ADMIN"
-                    ? `${offer.availableInventory.toLocaleString("fa-IR")} واحد از موجودی تحویل دستی ابرچین باقی مانده است`
-                  : offer.catalogSource === "PREPROVISIONED_INVENTORY"
-                    ? `${offer.availableInventory.toLocaleString("fa-IR")} Resource واقعی و سالم آمادهٔ رزرو است`
-                  : offer.purchasable
-                    ? "قیمت و موجودی در همین بازدید تأیید شده‌اند"
-                    : "آخرین اطلاعات سالم نمایش داده شده؛ خرید تا بازیابی ارتباط متوقف است"}
+                قیمت و ظرفیت پیش از ساخت Quote دوباره بررسی می‌شوند
+              </li>
+              <li>
+                <Check size={14} aria-hidden="true" />
+                سیستم‌عامل‌های مجاز: {offer.operatingSystemLabels.join("، ") || offer.imageLabel}
               </li>
               <li>
                 <ShieldCheck size={14} aria-hidden="true" />

@@ -15,7 +15,6 @@ import { prisma } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import {
   getCatalogFreshness,
-  requestCatalogSync,
 } from "@/lib/infrastructure/multi-provider-catalog-service";
 import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
 import { countAvailableInventoryByPlan } from "@/lib/infrastructure/preprovisioned-inventory";
@@ -94,6 +93,7 @@ export type PublicPlanOffer = {
   regionCode: string;
   locationLabel: string;
   imageLabel: string;
+  operatingSystemLabels: string[];
   vcpu: number | null;
   ramGb: number | null;
   storageGb: number | null;
@@ -105,12 +105,6 @@ export type PublicPlanOffer = {
   parchinIncluded: boolean;
   checkedAt: string;
   available: true;
-  catalogSource:
-    | "API_CATALOG"
-    | "MANUAL_API_BACKED"
-    | "PREPROVISIONED_INVENTORY"
-    | "MANUAL_ADMIN";
-  availableInventory: number;
   instantDelivery: boolean;
   purchasable: boolean;
 };
@@ -205,6 +199,16 @@ export function toPublicPlanOffer(plan: PricedInfrastructurePlan): PublicPlanOff
     regionCode: plan.regionCode,
     locationLabel: readyServerLocation(plan.regionCode).label,
     imageLabel: readyServerImageLabel(plan.imageCode),
+    operatingSystemLabels: [
+      ...new Set(
+        (Array.isArray(plan.catalogItem.compatibleImageCodes)
+          ? plan.catalogItem.compatibleImageCodes
+          : []
+        ).filter(
+          (code): code is string => typeof code === "string" && code.length > 0,
+        ).map(readyServerImageLabel),
+      ),
+    ],
     vcpu: plan.pricing.vcpu,
     ramGb: plan.pricing.ramGb,
     storageGb: plan.pricing.storageGb,
@@ -216,8 +220,6 @@ export function toPublicPlanOffer(plan: PricedInfrastructurePlan): PublicPlanOff
     parchinIncluded: plan.parchinIncluded,
     checkedAt: plan.pricing.providerPriceCheckedAt.toISOString(),
     available: true,
-    catalogSource: plan.offerSource,
-    availableInventory: 0,
     instantDelivery: plan.instantDelivery,
     purchasable: true,
   };
@@ -433,8 +435,7 @@ export async function listCloudServerPlans(): Promise<PricedInfrastructurePlan[]
 
 export async function listPublicPlanOffers() {
   try {
-    const plans = await listReadyServerPlans();
-    return plans.map(toPublicPlanOffer);
+    return (await listLiveReadyServerOffers()).offers;
   } catch {
     // Public catalog pages fail closed and render an unavailable state. The
     // readiness endpoint remains the authoritative database outage signal.
@@ -449,8 +450,6 @@ export async function listLiveReadyServerOffers() {
       getCatalogFreshness("PARSPACK").catch(() => null),
       getCatalogFreshness("ARVAN").catch(() => null),
     ]);
-    if (parsPackResult && !parsPackResult.fresh) void requestCatalogSync("PARSPACK");
-    if (arvanResult && !arvanResult.fresh) void requestCatalogSync("ARVAN");
     const inventoryCounts = await countAvailableInventoryByPlan(
       plans.filter((plan) => plan.offerSource === "PREPROVISIONED_INVENTORY")
         .map((plan) => plan.id),
@@ -466,10 +465,11 @@ export async function listLiveReadyServerOffers() {
         productKind: plan.productKind,
         offerSource: plan.offerSource,
       }) && (manual ? manualUnits > 0 : preprovisioned ? inventoryCount > 0 : freshness?.fresh === true);
-      if (!manual && !preprovisioned && !freshness?.fresh && !plan.displayDuringProviderOutage) return [];
+      // A customer never sees stale API Catalog data. Admin can inspect
+      // last-known-good records separately and choose when to sync again.
+      if (!purchasable) return [];
       return [{
         ...toPublicPlanOffer(plan),
-        availableInventory: manual ? manualUnits : inventoryCount,
         purchasable,
       }];
     });
@@ -494,9 +494,6 @@ export async function listLiveReadyServerOffers() {
 export async function listLiveCloudServerOffers() {
   try {
     const freshness = await getCatalogFreshness("ARVAN");
-    if (!freshness.fresh) {
-      await requestCatalogSync("ARVAN");
-    }
     const [plans, saleRegions] = await Promise.all([
       listCloudServerPlans(),
       listProviderRegionConfigs({
@@ -517,16 +514,13 @@ export async function listLiveCloudServerOffers() {
         .map((plan) => plan.id),
     );
     const offers = plans
-      .filter(
-        (plan) => freshness.fresh || plan.displayDuringProviderOutage,
-      )
+      .filter(() => freshness.fresh)
       .map((plan) => {
         const inventoryCount = inventoryCounts.get(plan.id) ?? 0;
         return {
         ...toPublicPlanOffer(plan),
         locationLabel:
           displayNames.get(plan.regionCode) ?? plan.regionCode,
-        availableInventory: inventoryCount,
         purchasable:
           isPublicSaleEnabled({
             provider: plan.provider,
@@ -537,7 +531,8 @@ export async function listLiveCloudServerOffers() {
             ? inventoryCount > 0
             : freshness.fresh),
       };
-      });
+      })
+      .filter((offer) => offer.purchasable);
     return {
       live: freshness.fresh,
       degraded: !freshness.fresh,

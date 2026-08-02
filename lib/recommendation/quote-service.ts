@@ -20,7 +20,6 @@ import {
 } from "@/lib/orders/plans";
 import {
   getCatalogFreshness,
-  requestCatalogSync,
 } from "@/lib/infrastructure/multi-provider-catalog-service";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import {
@@ -172,10 +171,9 @@ function bigintToSafeNumber(value: bigint): number {
 async function requireFreshCatalog(provider: InfrastructureProvider) {
   const freshness = await getCatalogFreshness(provider);
   if (!freshness.fresh) {
-    await requestCatalogSync(provider);
     throw new WalletError(
       "quote_unavailable",
-      "کاتالوگ در حال به‌روزرسانی است؛ کمی بعد دوباره تلاش کن.",
+      "قیمت یا ظرفیت این سرویس تازه نیست؛ پس از بررسی مجدد دوباره تلاش کن.",
     );
   }
 }
@@ -374,10 +372,9 @@ async function lockAndRevalidatePlan(
       plan.pricing.providerBasePriceRial ||
     current.currency !== plan.pricing.currency
   ) {
-    await requestCatalogSync(plan.provider);
     throw new WalletError(
       "quote_revalidation_failed",
-      "قیمت ارائه‌دهنده تغییر کرده است؛ کاتالوگ در حال به‌روزرسانی است.",
+      "قیمت یا ظرفیت این سرویس تغییر کرده است؛ Quote تازه دریافت کن.",
     );
   }
   const regionConfig = await prisma.providerRegionConfig.findUnique({
@@ -1119,10 +1116,9 @@ export async function createRecommendationQuotes(params: {
       configuredPlan.pricing.providerBasePriceRial ||
     current.currency !== configuredPlan.pricing.currency
   ) {
-    await requestCatalogSync(InfrastructureProvider.ARVAN);
     throw new WalletError(
       "quote_revalidation_failed",
-      "قیمت انتخاب تغییر کرده و کاتالوگ در حال به‌روزرسانی است.",
+      "قیمت یا ظرفیت انتخاب تغییر کرده است؛ Quote تازه دریافت کن.",
     );
   }
   const main = {
@@ -1333,6 +1329,8 @@ export async function getActiveRecommendationQuote(
       expiresAt: { gt: now },
       plan: {
         active: true,
+        publicationStatus: "PUBLISHED",
+        catalogMappingStatus: "MAPPED",
         deliveryMode: "MANAGED",
         parchinIncluded: true,
       },

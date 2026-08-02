@@ -14,7 +14,8 @@ test("cloud and ready purchase routes stay provider-separated before login", asy
   assert.match(readyPage, /سرورهای آماده/);
   assert.match(readyPage, /listLiveReadyServerOffers/);
   assert.doesNotMatch(readyPage, /listLiveCloudServerOffers/);
-  assert.match(cards, /ماهانه و تمدید فعلی/);
+  assert.match(cards, /قیمت ماه اول/);
+  assert.match(cards, /سیستم‌عامل‌های مجاز/);
   assert.match(quoteButton, /دریافت Quote/);
   assert.match(cards, /همه موقعیت‌ها/);
   assert.match(cards, /۱۰ دقیقه/);

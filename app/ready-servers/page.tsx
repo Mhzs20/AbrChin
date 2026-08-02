@@ -45,7 +45,7 @@ export default async function ReadyServersPage() {
       <div className="quick-buy-strip">
         <span>
           <RefreshCw size={15} aria-hidden="true" />
-          {catalog.degraded ? " آخرین اطلاعات سالم: " : " آخرین بررسی: "}
+          {catalog.degraded ? " نیازمند بررسی دوباره: " : " آخرین بررسی: "}
           {checkedAt}
         </span>
         <span>

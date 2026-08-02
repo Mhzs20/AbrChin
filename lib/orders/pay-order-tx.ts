@@ -183,7 +183,7 @@ export async function executePayOrderWithWalletTx(
       ? resolvePlanPricing(plan, manualAdmin ? null : pricingConfig, {
           productMarkupBasisPoints: manualAdmin
             ? 0
-            : productPricing!.markupBasisPoints,
+            : plan.skuMarkupBasisPoints ?? productPricing!.markupBasisPoints,
           taxBasisPoints: commerce?.taxBps ?? 1000,
           parchinLevel,
           parchinPriceRial: parchin.priceRial,

@@ -82,7 +82,7 @@ export function ReadyServerQuoteButton({
       return;
     }
     if (accessMethod === "SSH_KEY" && !sshKeyName.trim()) {
-      setError("نام کلید SSH ثبت‌شده در آروان را وارد کن.");
+      setError("نام کلید SSH ثبت‌شده را وارد کن.");
       return;
     }
     setLoading(true);
@@ -218,7 +218,7 @@ export function ReadyServerQuoteButton({
           type="button"
         >
           {disabled ? (
-            "در انتظار بازیابی ارتباط Provider"
+            "در انتظار بررسی دوبارهٔ ظرفیت"
           ) : loading ? (
             <>
               <LoaderCircle

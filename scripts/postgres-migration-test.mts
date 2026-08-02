@@ -6586,10 +6586,9 @@ try {
     (offer) => offer.id === preprovisionedPlan.id,
   );
   assert.equal(degradedOffers.degraded, true);
-  assert.equal(manualOffer?.purchasable, false);
-  assert.equal(apiOffer?.purchasable, false);
-  assert.equal(inventoryOffer?.purchasable, false);
-  assert.equal(inventoryOffer?.availableInventory, 1);
+  assert.equal(manualOffer, undefined);
+  assert.equal(apiOffer, undefined);
+  assert.equal(inventoryOffer, undefined);
   const {
     createCloudServerQuote,
   } = await import("../lib/recommendation/quote-service.ts");

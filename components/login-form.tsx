@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight, LoaderCircle, Smartphone } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 type Step = "mobile" | "otp";
@@ -12,6 +12,7 @@ function toEnglishDigits(value: string) {
 
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const mobileRef = useRef<HTMLInputElement>(null);
   const otpRef = useRef<HTMLInputElement>(null);
 
@@ -112,7 +113,14 @@ export function LoginForm() {
         }
       }
 
-      router.replace(data.user?.role === "ADMIN" ? "/admin" : "/account");
+      const requestedNext = searchParams.get("next");
+      const safeNext =
+        requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
+          ? requestedNext
+          : null;
+      router.replace(
+        data.user?.role === "ADMIN" ? "/admin" : safeNext ?? "/account",
+      );
       router.refresh();
     } catch {
       setError("ارتباط با سرور برقرار نشد.");

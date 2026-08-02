@@ -298,7 +298,7 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
         ? resolvePlanPricing(quote.plan, manualAdmin ? null : pricingConfig, {
             productMarkupBasisPoints: manualAdmin
               ? 0
-              : productPricing!.markupBasisPoints,
+              : quote.plan.skuMarkupBasisPoints ?? productPricing!.markupBasisPoints,
             taxBasisPoints: commerce?.taxBps ?? 1000,
             parchinLevel: parchin.level,
             parchinPriceRial: parchin.priceRial,

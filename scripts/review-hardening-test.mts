@@ -19,7 +19,7 @@ test("customer paths never run a full provider catalog sync", async () => {
   }
   const plans = await source("lib/orders/plans.ts");
   assert.match(plans, /getCatalogFreshness/);
-  assert.match(plans, /requestCatalogSync/);
+  assert.doesNotMatch(plans, /requestCatalogSync/);
   const sync = await source(
     "lib/infrastructure/multi-provider-catalog-service.ts",
   );

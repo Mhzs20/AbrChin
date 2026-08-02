@@ -93,10 +93,10 @@ export function OrderCheckoutPanel({
 
   return (
     <section className="product-card" style={{ marginTop: 16 }}>
-      <h2 style={{ marginTop: 0 }}>پرداخت</h2>
+      <h2 style={{ marginTop: 0 }}>ثبت سفارش</h2>
       <p>مبلغ قابل پرداخت: <strong>{priceToman} تومان</strong></p>
       <button type="button" className="product-btn product-btn--primary" disabled={loading} onClick={handlePurchase}>
-        {loading ? "در حال پردازش..." : "پرداخت با کیف پول"}
+        {loading ? "در حال پردازش..." : "خرید و ثبت سفارش"}
       </button>
     </section>
   );
