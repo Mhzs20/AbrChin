@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { InfrastructureOrderActions } from "@/components/admin/infrastructure-order-actions";
+import { DeliveryApprovalActions } from "@/components/admin/delivery-approval-actions";
 import { ManualProvisionButton } from "@/components/admin/manual-ready-delivery-button";
 import { ProvisionApprovalActions } from "@/components/admin/provision-approval-actions";
 import {
@@ -14,6 +16,7 @@ import {
 import { listInfrastructureOrders } from "@/lib/admin/dashboard";
 import { getAdminPageAccess } from "@/lib/auth/guards";
 import { getProvisionApprovalReview } from "@/lib/infrastructure/provision-approval";
+import { getDeliveryApprovalReview } from "@/lib/infrastructure/delivery-approval";
 import {
   deliveryModeLabel,
   infrastructureOrderStatusLabel,
@@ -46,6 +49,14 @@ export default async function AdminInfrastructureOrdersPage() {
       .map((order) => getProvisionApprovalReview(order.id)),
   );
   const reviewByOrderId = new Map(reviews.map((review) => [review.infrastructureOrderId, review]));
+  const deliveryReviews = await Promise.all(
+    orders
+      .filter((order) => order.productFlowState === "WAITING_ADMIN_DELIVERY_APPROVAL")
+      .map((order) => getDeliveryApprovalReview(order.id)),
+  );
+  const deliveryReviewByOrderId = new Map(
+    deliveryReviews.map((review) => [review.infrastructureOrderId, review]),
+  );
 
   const columns = [
     { key: "order", header: "سفارش" },
@@ -54,13 +65,30 @@ export default async function AdminInfrastructureOrdersPage() {
     { key: "sale", header: "فروش" },
     { key: "providerCost", header: "هزینه Provider" },
     { key: "payment", header: "پرداخت" },
-    { key: "review", header: "بازبینی پیش از ساخت" },
+    { key: "review", header: "بازبینی ساخت / تحویل" },
     { key: "region", header: "Region" },
     { key: "status", header: "وضعیت" },
     { key: "actions", header: "عملیات" },
   ];
 
   const actionFor = (order: (typeof orders)[number]) => {
+    const deliveryReview = deliveryReviewByOrderId.get(order.id);
+    if (deliveryReview) {
+      return (
+        <div style={{ display: "grid", gap: 8 }}>
+          {order.cloudInstance ? (
+            <Link className="product-btn product-btn--quiet" href={`/admin/instances/${order.cloudInstance.id}`}>
+              بازبینی محافظت‌شدهٔ Credential
+            </Link>
+          ) : null}
+          <DeliveryApprovalActions
+            orderId={order.id}
+            canApprove={deliveryReview.canApprove}
+            blockingMessages={deliveryReview.blockingIssues.map((issue) => issue.message)}
+          />
+        </div>
+      );
+    }
     const review = reviewByOrderId.get(order.id);
     if (review) {
       return (
@@ -94,6 +122,22 @@ export default async function AdminInfrastructureOrdersPage() {
   };
 
   const reviewSummary = (order: (typeof orders)[number]) => {
+    const deliveryReview = deliveryReviewByOrderId.get(order.id);
+    if (deliveryReview) {
+      const resource = deliveryReview.resource;
+      return (
+        <div style={{ display: "grid", gap: 4 }}>
+          <span>Source: {deliveryReview.provider.source}</span>
+          <span>Resource: {resource.providerResourceId ?? "—"}</span>
+          <span>IP: {resource.ipv4 ?? "—"}</span>
+          <span>Region/Plan/Image: {resource.region ?? "—"} / {resource.plan ?? "—"} / {resource.image ?? "—"}</span>
+          <span>Power: {resource.powerState ?? "—"}</span>
+          <span>Health: {deliveryReview.health.status ?? "—"} ({deliveryReview.health.resultCode ?? "—"})</span>
+          <span>Credential: {deliveryReview.credential.status ?? "—"}</span>
+          {deliveryReview.warnings.map((warning) => <span key={warning.code}>{warning.message}</span>)}
+        </div>
+      );
+    }
     const review = reviewByOrderId.get(order.id);
     if (!review) return "—";
     const cost = (value: string | null) =>

@@ -35,7 +35,7 @@ export function InstanceCredentialForm({
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "ثبت اطلاعات دسترسی ممکن نیست.");
       setSecret("");
-      setMessage("اطلاعات رمزگذاری شد و برای یک‌بار نمایش به مشتری آماده است.");
+      setMessage("اطلاعات رمزگذاری شد و منتظر تأیید نهایی تحویل Admin است.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "ثبت اطلاعات دسترسی ممکن نیست.");
     } finally {

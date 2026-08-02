@@ -42,6 +42,9 @@ export default async function AccountOrderDetailPage({
             select: {
               id: true,
               ipv4: true,
+              region: true,
+              size: true,
+              image: true,
               status: true,
               credential: {
                 select: {
@@ -66,6 +69,9 @@ export default async function AccountOrderDetailPage({
   const waitingForAdminProvision =
     order.status === "PAID" &&
     order.infrastructureOrder?.status === "WAITING_ADMIN_FUNDING";
+  const waitingForAdminDelivery =
+    order.infrastructureOrder?.productFlowState ===
+    "WAITING_ADMIN_DELIVERY_APPROVAL";
   const flowTransitions = await prisma.productFlowTransition.findMany({
     where: { serviceOrderId: order.id },
     orderBy: { createdAt: "asc" },
@@ -86,6 +92,8 @@ export default async function AccountOrderDetailPage({
             title: "آماده‌سازی زیرساخت",
             description: waitingForAdminProvision
               ? "پرداخت موفق؛ منتظر تأیید ساخت"
+              : waitingForAdminDelivery
+                ? "آماده‌سازی کامل شد؛ منتظر تأیید نهایی تحویل"
               : getInfrastructureStage(order.infrastructureOrder.status),
             done: order.infrastructureOrder.status === "ACTIVE",
           },
@@ -135,6 +143,8 @@ export default async function AccountOrderDetailPage({
         <p>مبلغ: <MoneyDisplay amount={formatTomanFa(order.amount)} /></p>
         {waitingForAdminProvision ? (
           <p role="status">پرداخت موفق؛ منتظر تأیید ساخت</p>
+        ) : waitingForAdminDelivery ? (
+          <p role="status">سرور در حال آماده‌سازی نهایی است و پس از تأیید تحویل، اطلاعات دسترسی امن در همین صفحه آماده می‌شود.</p>
         ) : payment === "review" ? (
           <p role="status">پرداخت دریافت شده و در انتظار بررسی پشتیبانی است.</p>
         ) : payment === "canceled" || payment === "failed" ? (
@@ -146,18 +156,25 @@ export default async function AccountOrderDetailPage({
       </SectionCard>
       {order.infrastructureOrder?.cloudInstance?.status === "ACTIVE" &&
       order.infrastructureOrder.cloudInstance.ipv4 ? (
-        <SectionCard title="تحویل امن سرور">
-          <CredentialRevealPanel
-            instanceId={order.infrastructureOrder.cloudInstance.id}
-            ipv4={order.infrastructureOrder.cloudInstance.ipv4}
-            credentialStatus={
-              order.infrastructureOrder.cloudInstance.credential?.status ?? null
-            }
-            credentialExpiresAt={
-              order.infrastructureOrder.cloudInstance.credential?.expiresAt.toISOString() ?? null
-            }
-          />
-        </SectionCard>
+        <>
+          <SectionCard title="اطلاعات سرویس">
+            <p>IP: <strong dir="ltr">{order.infrastructureOrder.cloudInstance.ipv4}</strong></p>
+            <p>Region: <strong dir="ltr">{order.infrastructureOrder.cloudInstance.region}</strong></p>
+            <p>Plan / Image: <strong dir="ltr">{order.infrastructureOrder.cloudInstance.size} / {order.infrastructureOrder.cloudInstance.image}</strong></p>
+          </SectionCard>
+          <SectionCard title="تحویل امن سرور">
+            <CredentialRevealPanel
+              instanceId={order.infrastructureOrder.cloudInstance.id}
+              ipv4={order.infrastructureOrder.cloudInstance.ipv4}
+              credentialStatus={
+                order.infrastructureOrder.cloudInstance.credential?.status ?? null
+              }
+              credentialExpiresAt={
+                order.infrastructureOrder.cloudInstance.credential?.expiresAt.toISOString() ?? null
+              }
+            />
+          </SectionCard>
+        </>
       ) : null}
       {order.infrastructureOrder?.cloudInstance?.subscription ? (
         <SectionCard title="تمدید و چرخه عمر">

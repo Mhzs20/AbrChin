@@ -12,17 +12,20 @@ import {
 const USERNAME_PATTERN = /^[a-z_][a-z0-9_-]{0,31}$/i;
 
 export class InstanceCredentialError extends Error {
+  readonly code:
+    | "invalid_input"
+    | "instance_not_ready"
+    | "not_found"
+    | "already_revealed"
+    | "expired";
+
   constructor(
-    readonly code:
-      | "invalid_input"
-      | "instance_not_ready"
-      | "not_found"
-      | "already_revealed"
-      | "expired",
+    code: InstanceCredentialError["code"],
     message: string,
   ) {
     super(message);
     this.name = "InstanceCredentialError";
+    this.code = code;
   }
 }
 
@@ -156,6 +159,52 @@ export async function revealInstanceCredential(params: {
   return {
     username: credential.username,
     secret,
+    ipv4: credential.cloudInstance.ipv4,
+  };
+}
+
+/**
+ * An Admin may inspect a prepared credential during the second approval. This
+ * deliberately does not change its one-time customer state or emit its value;
+ * callers must audit the protected, explicit reveal action themselves.
+ */
+export async function revealInstanceCredentialForAdmin(params: {
+  instanceId: string;
+}) {
+  const credential = await prisma.instanceCredential.findFirst({
+    where: {
+      cloudInstanceId: params.instanceId,
+      status: InstanceCredentialStatus.READY,
+      cloudInstance: {
+        status: CloudInstanceStatus.PENDING,
+        infrastructureOrder: {
+          productFlowState: "WAITING_ADMIN_DELIVERY_APPROVAL",
+        },
+      },
+    },
+    include: { cloudInstance: true },
+  });
+  if (
+    !credential ||
+    !credential.ciphertext ||
+    !credential.iv ||
+    !credential.authTag
+  ) {
+    throw new InstanceCredentialError(
+      "not_found",
+      "Credential آماده برای بازبینی نهایی وجود ندارد.",
+    );
+  }
+  if (credential.expiresAt.getTime() <= Date.now()) {
+    throw new InstanceCredentialError("expired", "مهلت Credential تمام شده است.");
+  }
+  return {
+    username: credential.username,
+    secret: decryptCredential({
+      ciphertext: credential.ciphertext,
+      iv: credential.iv,
+      authTag: credential.authTag,
+    }),
     ipv4: credential.cloudInstance.ipv4,
   };
 }

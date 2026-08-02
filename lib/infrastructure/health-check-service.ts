@@ -202,7 +202,12 @@ async function queueHealthRetryDispatchTx(
   });
 }
 
-async function activateDeliveredServiceTx(
+/**
+ * Activates a service only after the second Admin gate has transitioned the
+ * product flow to DELIVERED. Keeping this transaction separate from health
+ * checks and credential storage prevents an accidental delivery shortcut.
+ */
+export async function activateApprovedDeliveryTx(
   tx: Prisma.TransactionClient,
   infrastructureOrderId: string,
 ) {
@@ -338,7 +343,7 @@ export async function completeSecureDelivery(
   infrastructureOrderId: string,
 ) {
   return prisma.$transaction((tx) =>
-    activateDeliveredServiceTx(tx, infrastructureOrderId),
+    activateApprovedDeliveryTx(tx, infrastructureOrderId),
   );
 }
 

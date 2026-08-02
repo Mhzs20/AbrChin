@@ -132,5 +132,9 @@ export const AuditActions = {
   MANUAL_READY_DELIVERY: "manual_ready_delivery",
   NOTIFICATION_RESOLVE: "notification_resolve",
   CREDENTIAL_READY: "credential_ready",
+  CREDENTIAL_ADMIN_REVIEWED: "credential_admin_reviewed",
   CREDENTIAL_REVEALED: "credential_revealed",
+  DELIVERY_APPROVED: "delivery_approved",
+  DELIVERY_APPROVAL_BLOCKED: "delivery_approval_blocked",
+  DELIVERY_HELD: "delivery_held",
 } as const;

@@ -78,3 +78,7 @@ export const verifyMobileLimiter = new MemoryRateLimiter(15, 15 * 60 * 1000);
 export const verifyIpLimiter = new MemoryRateLimiter(40, 15 * 60 * 1000);
 export const recommendationQuoteIpLimiter = new MemoryRateLimiter(30, 15 * 60 * 1000);
 export const readyServerQuoteIpLimiter = new MemoryRateLimiter(30, 15 * 60 * 1000);
+// A credential is one-time by design; this secondary gate throttles probing
+// attempts before the protected reveal path is reached.
+export const credentialRevealLimiter = new MemoryRateLimiter(5, 15 * 60 * 1000);
+export const adminCredentialRevealLimiter = new MemoryRateLimiter(10, 15 * 60 * 1000);

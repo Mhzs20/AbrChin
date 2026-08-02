@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { PageHeader, SectionCard, Timeline } from "@/components/product";
 import { InstanceCredentialForm } from "@/components/admin/instance-credential-form";
+import { AdminCredentialReveal } from "@/components/admin/admin-credential-reveal";
 import { getAdminPageAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import { getInfrastructureStage } from "@/lib/labels/infrastructure";
@@ -76,6 +77,12 @@ export default async function AdminInstanceDetailPage({ params }: { params: Prom
         />
       </SectionCard>
       <SectionCard title="تحویل امن دسترسی">
+        {order.productFlowState === "WAITING_ADMIN_DELIVERY_APPROVAL" ? (
+          <AdminCredentialReveal
+            instanceId={instance.id}
+            credentialStatus={instance.credential?.status ?? null}
+          />
+        ) : null}
         <InstanceCredentialForm
           instanceId={instance.id}
           currentStatus={instance.credential?.status ?? null}

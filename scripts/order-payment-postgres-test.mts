@@ -18,6 +18,10 @@ import {
   approveProvision,
   getProvisionApprovalReview,
 } from "../lib/infrastructure/provision-approval.ts";
+import {
+  approveDelivery,
+  getDeliveryApprovalReview,
+} from "../lib/infrastructure/delivery-approval.ts";
 import { completeManualReadyDelivery } from "../lib/infrastructure/manual-ready-delivery.ts";
 import { dispatchApprovedProvision } from "../lib/infrastructure/provision-dispatch.ts";
 import {
@@ -29,6 +33,10 @@ import {
   credentialFingerprint,
   encryptCredential,
 } from "../lib/security/credential-vault.ts";
+import {
+  revealInstanceCredential,
+  revealInstanceCredentialForAdmin,
+} from "../lib/security/instance-credentials.ts";
 import { getActivePlanByCode, toPlanSnapshot } from "../lib/orders/plans.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -735,6 +743,83 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
       }),
       0,
     );
+    assert.ok(inventoryFinal.cloudInstance);
+    const inventoryInstanceId = inventoryFinal.cloudInstance.id;
+    const pendingReview = await getDeliveryApprovalReview(inventoryInfrastructureOrder.id);
+    assert.equal(pendingReview.canApprove, true);
+    assert.equal(pendingReview.credential.status, "READY");
+    const adminCredential = await revealInstanceCredentialForAdmin({
+      instanceId: inventoryInstanceId,
+    });
+    assert.equal(adminCredential.secret, inventorySecret);
+    assert.equal(
+      (await prisma.instanceCredential.findUniqueOrThrow({
+        where: { cloudInstanceId: inventoryInstanceId },
+      })).status,
+      "READY",
+    );
+    await assert.rejects(
+      revealInstanceCredential({ instanceId: inventoryInstanceId, userId }),
+      /آماده نیست/,
+    );
+    const deliveryApproved = await approveDelivery({
+      infrastructureOrderId: inventoryInfrastructureOrder.id,
+      adminUserId,
+      reason: "Resource، Health و Credential بررسی شد.",
+      idempotencyKey: `delivery-approve:${inventoryInfrastructureOrder.id}`,
+    });
+    const deliveryReplay = await approveDelivery({
+      infrastructureOrderId: inventoryInfrastructureOrder.id,
+      adminUserId,
+      reason: "Resource، Health و Credential بررسی شد.",
+      idempotencyKey: `delivery-approve:${inventoryInfrastructureOrder.id}`,
+    });
+    assert.equal(deliveryApproved.approved, true);
+    assert.deepEqual(deliveryReplay, deliveryApproved);
+    const deliveredInventory = await prisma.infrastructureOrder.findUniqueOrThrow({
+      where: { id: inventoryInfrastructureOrder.id },
+      include: { cloudInstance: { include: { credential: true, subscription: true } } },
+    });
+    assert.equal(deliveredInventory.status, InfrastructureOrderStatus.ACTIVE);
+    assert.equal(deliveredInventory.productFlowState, "ACTIVE");
+    assert.equal(deliveredInventory.cloudInstance?.status, "ACTIVE");
+    assert.ok(deliveredInventory.cloudInstance?.subscription);
+    assert.equal(
+      await prisma.adminCommandReceipt.count({
+        where: {
+          infrastructureOrderId: inventoryInfrastructureOrder.id,
+          operation: "APPROVE_DELIVERY",
+        },
+      }),
+      1,
+    );
+    assert.equal(
+      await prisma.auditLog.count({
+        where: {
+          entityType: "infrastructure_order",
+          entityId: inventoryInfrastructureOrder.id,
+          action: "delivery_approved",
+        },
+      }),
+      1,
+    );
+    await assert.rejects(
+      revealInstanceCredential({ instanceId: inventoryInstanceId, userId: adminUserId }),
+      /آماده نیست/,
+    );
+    const customerCredential = await revealInstanceCredential({
+      instanceId: inventoryInstanceId,
+      userId,
+    });
+    assert.equal(customerCredential.secret, inventorySecret);
+    await assert.rejects(
+      revealInstanceCredential({ instanceId: inventoryInstanceId, userId }),
+      /قبلاً نمایش داده شده/,
+    );
+    const notification = await prisma.provisioningNotificationOutbox.findUniqueOrThrow({
+      where: { idempotencyKey: `instance-active:${inventoryInfrastructureOrder.id}` },
+    });
+    assert.equal(JSON.stringify(notification).includes(inventorySecret), false);
   } finally {
     if (inventoryInfrastructureOrderId) {
       await prisma.infrastructureOrder.deleteMany({
