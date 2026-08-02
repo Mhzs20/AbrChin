@@ -21,9 +21,11 @@ Readiness:               https://abrchin.ir/api/readiness
 ```
 
 نمایش یک‌بارمصرف Credential از جزئیات سرویس مشتری و API مالکیت‌دار
-`/api/account/instances/{id}/credentials/reveal` انجام می‌شود. تحویل دستی از
-دکمهٔ همان سفارش در صفحه Admin Orders و API محافظت‌شده
-`/api/admin/infrastructure/orders/{id}/manual-delivery` انجام می‌شود.
+`/api/account/instances/{id}/credentials/reveal` انجام می‌شود. Fulfillment دستی
+پس از تأیید اول Admin از دکمهٔ همان سفارش در صفحه Admin Orders و API محافظت‌شده
+`/api/admin/infrastructure/orders/{id}/fulfill-manually` ثبت می‌شود. این کار
+سفارش را فقط به «منتظر تأیید تحویل Admin» می‌رساند؛ مسیرهای
+`approve-delivery` و `hold-delivery` گیت دوم مستقل هستند.
 
 ## Environment لازم
 
@@ -156,6 +158,14 @@ curl -fsS http://127.0.0.1:3010/api/readiness
 
 هر تغییر Env نیازمند Recreate شدن `web` و `worker` با همان Image/SHA است.
 
+## قاعدهٔ توقف Founder
+
+تا وقتی Founder صریحاً Deploy و تست واقعی را مجاز نکرده است، این Runbook فقط
+برای Preflight است: هیچ Gate باز، Migration Production، پرداخت واقعی، Provision
+Provider، ارسال Credential یا عملیات بازگشت‌ناپذیر انجام نمی‌شود. نتیجهٔ تست
+واقعی باید در Checklist فاز ۱ ثبت شود؛ سبز بودن Build یا اتصال Read-only به‌معنای
+اجازهٔ فروش عمومی نیست.
+
 ## تست Founder
 
 ### ۱. Manual Ready
@@ -163,9 +173,21 @@ curl -fsS http://127.0.0.1:3010/api/readiness
 در `/admin/infrastructure/plans` یک `MANUAL_ADMIN` با قیمت واقعی، سیستم‌عامل،
 منابع و تعداد حداقل یک بسازید و منتشر کنید. در `/ready-servers` Quote بگیرید،
 با OTP وارد شوید، کسری دقیق Wallet را از درگاه واقعی شارژ و سفارش را پرداخت
-کنید. در `/admin/infrastructure/orders` Resource ID، IPv4، Username و Password
-موقت یکتا را ثبت کنید. مالک در `/account/services` باید IP را ببیند و Credential
-را فقط یک‌بار Reveal کند. مقدار موجودی باید یک واحد کم شده باشد.
+کنید. سپس ترتیب زیر الزامی است:
+
+1. ابتدا Order را در `Waiting Admin Provision Approval` بررسی کنید و مطمئن شوید
+   هیچ Resource یا Job جدیدی پیش از تأیید اول ساخته نشده است.
+2. هزینه/موجودی Source را بررسی و فقط یک‌بار `تأیید و ساخت/تخصیص` را ثبت کنید.
+3. در `/admin/infrastructure/orders` Resource ID، IPv4، Region، Plan، Image،
+   Username و Password موقت یکتا را با Fulfillment دستی محافظت‌شده ثبت کنید.
+4. Order باید به `Waiting Admin Delivery Approval` برسد؛ در این نقطه Customer
+   نباید IP یا Credential ببیند. Credential فقط با دکمهٔ صریح بازبینی در جزئیات
+   Instance و برای Admin قابل مشاهده است.
+5. Resource، Health و تطبیق Snapshot را بررسی کنید؛ سپس فقط یک‌بار
+   `تأیید نهایی تحویل` را ثبت کنید. در صورت اختلاف، `نگه‌داشتن تحویل` را بزنید.
+6. اکنون مالک در `/account/orders/{id}` اطلاعات غیرحساس سرویس را می‌بیند و
+   Credential را فقط یک‌بار Reveal می‌کند. مقدار موجودی باید دقیقاً یک واحد کم
+   شده باشد و Audit هر دو تأیید را داشته باشد.
 
 ### ۲. ParsPack Ready
 
