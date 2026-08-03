@@ -14,6 +14,10 @@ const inventoryCredentialMigrationPath =
   "prisma/migrations/20260801230000_arvan_sale_inventory_credentials/migration.sql";
 const finalLaunchMigrationPath =
   "prisma/migrations/20260801235900_final_launch_routing/migration.sql";
+const providerBillingContractMigrationPath =
+  "prisma/migrations/20260803190000_provider_billing_contract_gate/migration.sql";
+const billingRuntimeSafetyMigrationPath =
+  "prisma/migrations/20260803200000_billing_runtime_safety/migration.sql";
 
 test("catalog pricing migration is additive and preserves financial history", async () => {
   const migration = await readFile(migrationPath, "utf8");
@@ -139,4 +143,27 @@ test("final launch migration is additive and preserves all financial rows", asyn
   assert.doesNotMatch(migration, /UPDATE "Wallet"/);
   assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
   assert.doesNotMatch(migration, /UPDATE "Payment/);
+});
+
+test("billing runtime safety migrations are additive and non-retroactive", async () => {
+  const [providerContract, runtimeSafety] = await Promise.all([
+    readFile(providerBillingContractMigrationPath, "utf8"),
+    readFile(billingRuntimeSafetyMigrationPath, "utf8"),
+  ]);
+  assert.match(providerContract, /CREATE TABLE "ProviderBillingContractVersion"/);
+  assert.match(providerContract, /route_version_key/);
+  assert.match(runtimeSafety, /ADD VALUE IF NOT EXISTS 'REVOKED'/);
+  assert.match(runtimeSafety, /ADD VALUE IF NOT EXISTS 'INVALID'/);
+  assert.match(
+    runtimeSafety,
+    /ADD COLUMN "providerBillingContractSnapshot" JSONB/,
+  );
+  for (const migration of [providerContract, runtimeSafety]) {
+    assert.doesNotMatch(migration, /\bDROP\b/i);
+    assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+    assert.doesNotMatch(migration, /DELETE FROM/i);
+    assert.doesNotMatch(migration, /UPDATE "ServiceOrder"/);
+    assert.doesNotMatch(migration, /UPDATE "Wallet"/);
+    assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
+  }
 });

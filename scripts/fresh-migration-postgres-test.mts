@@ -21,6 +21,13 @@ await withIsolatedPostgres("fresh", async (databaseUrl) => {
       ),
       "fresh schema must include the Provider Billing Contract migration",
     );
+    assert.ok(
+      migrations.some(
+        (migration) =>
+          migration.migration_name === "20260803200000_billing_runtime_safety",
+      ),
+      "fresh schema must include the Billing Runtime Safety migration",
+    );
     assert.equal(
       await db.providerBillingContractVersion.count({
         where: {
@@ -29,6 +36,17 @@ await withIsolatedPostgres("fresh", async (databaseUrl) => {
         },
       }),
       2,
+    );
+    const contractStatuses = await db.$queryRaw<Array<{ enumlabel: string }>>`
+      SELECT enumlabel
+      FROM pg_enum
+      JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+      WHERE pg_type.typname = 'ProviderBillingContractStatus'
+      ORDER BY enumsortorder ASC
+    `;
+    assert.deepEqual(
+      contractStatuses.map((status) => status.enumlabel),
+      ["VERIFIED", "UNVERIFIED", "REVOKED", "INVALID"],
     );
   } finally {
     await db.$disconnect();

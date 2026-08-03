@@ -290,6 +290,19 @@ test("wallet top-up to estimate, activation and Admin approval stays mutation-fr
   });
   assert.deepEqual(replay, approved);
   assert.equal(approved.providerMutationExecuted, false);
+  const approvedActivation = await db.activationRequest.findUniqueOrThrow({
+    where: { id: activation.id },
+  });
+  assert.equal(
+    (approvedActivation.providerBillingContractSnapshot as { version?: number })
+      .version,
+    2,
+  );
+  assert.equal(
+    (approvedActivation.providerBillingContractSnapshot as { status?: string })
+      .status,
+    "VERIFIED",
+  );
   assert.equal(
     await db.provisioningJob.count({
       where: { infrastructureOrderId: approved.infrastructureOrderId },

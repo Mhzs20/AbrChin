@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   readdir,
+  rm,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -2219,7 +2220,7 @@ try {
   await copyThrough(migrationNames.at(-1)!);
   await deploy();
 
-  const providerBillingContracts =
+  const providerBillingContracts = (
     await db.providerBillingContractVersion.findMany({
       where: {
         productKind: InfrastructureProductKind.CLOUD_SERVER,
@@ -2233,7 +2234,8 @@ try {
         version: true,
         calculationUnit: true,
       },
-    });
+    })
+  ).sort((left, right) => left.provider.localeCompare(right.provider));
   assert.deepEqual(providerBillingContracts, [
     {
       provider: InfrastructureProvider.ARVAN,
@@ -7636,4 +7638,5 @@ try {
     `DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`,
   );
   await db.$disconnect();
+  await rm(tempRoot, { recursive: true, force: true });
 }

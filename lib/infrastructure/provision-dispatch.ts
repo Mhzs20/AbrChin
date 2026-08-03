@@ -155,32 +155,27 @@ export async function dispatchApprovedProvision(
     }
     if (!approvedById) return { state: "NOT_APPROVED" };
 
-    const selection = parseLockedProvisioningSelection({
-      snapshot: order.providerSelectionSnapshot,
-      provider: order.provider,
-      providerApiVersion: order.providerApiVersion,
-      productKind: order.productKind,
-    });
-    const billingGate = await evaluateProvisioningBillingContractGate(
-      {
-        pendingService: order.activationRequest,
-        provider: order.provider,
-        providerApiVersion: order.providerApiVersion,
-        productKind: order.productKind,
-        externalPlanId: selection.externalPlanId,
-      },
-      tx,
-    );
-    if (!billingGate.allowed) {
-      await blockProvisionForBillingContractTx(tx, {
-        order,
-        approvedById,
-        blockingReasons: billingGate.blockingReasons,
-      });
-      return {
-        state: "BILLING_CONTRACT_BLOCKED",
-        blockingReasons: billingGate.blockingReasons,
-      };
+    if (order.plan.billingModel === "PAYG_WALLET") {
+      const billingGate = await evaluateProvisioningBillingContractGate(
+        {
+          pendingService: order.activationRequest,
+          provider: order.provider,
+          providerApiVersion: order.providerApiVersion,
+          productKind: order.productKind,
+        },
+        tx,
+      );
+      if (!billingGate.allowed) {
+        await blockProvisionForBillingContractTx(tx, {
+          order,
+          approvedById,
+          blockingReasons: billingGate.blockingReasons,
+        });
+        return {
+          state: "BILLING_CONTRACT_BLOCKED",
+          blockingReasons: billingGate.blockingReasons,
+        };
+      }
     }
 
     const source = order.plan.offerSource;
@@ -189,6 +184,36 @@ export async function dispatchApprovedProvision(
       !automationEnabled({ provider: order.provider, offerSource: source })
     ) {
       return { state: "MANUAL_FULFILLMENT_REQUIRED" };
+    }
+
+    const selection = parseLockedProvisioningSelection({
+      snapshot: order.providerSelectionSnapshot,
+      provider: order.provider,
+      providerApiVersion: order.providerApiVersion,
+      productKind: order.productKind,
+    });
+    if (order.plan.billingModel === "PAYG_WALLET") {
+      const lockedBillingGate = await evaluateProvisioningBillingContractGate(
+        {
+          pendingService: order.activationRequest,
+          provider: order.provider,
+          providerApiVersion: order.providerApiVersion,
+          productKind: order.productKind,
+          externalPlanId: selection.externalPlanId,
+        },
+        tx,
+      );
+      if (!lockedBillingGate.allowed) {
+        await blockProvisionForBillingContractTx(tx, {
+          order,
+          approvedById,
+          blockingReasons: lockedBillingGate.blockingReasons,
+        });
+        return {
+          state: "BILLING_CONTRACT_BLOCKED",
+          blockingReasons: lockedBillingGate.blockingReasons,
+        };
+      }
     }
 
     const desiredInstanceName = order.desiredInstanceName ?? buildDesiredInstanceName(order.id);

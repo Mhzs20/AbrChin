@@ -725,6 +725,7 @@ export async function processProvisioningJob(
         include: {
           serviceOrder: { include: { recommendationQuote: true } },
           activationRequest: { include: { billingPolicyVersion: true } },
+          plan: true,
           cloudInstance: true,
           provisioningJobs: true,
         },
@@ -955,21 +956,23 @@ export async function processProvisioningJob(
       providerApiVersion: order.providerApiVersion,
       productKind: order.productKind,
     });
-    const lockedBillingGate = await evaluateProvisioningBillingContractGate(
-      {
-        pendingService: order.activationRequest,
-        provider: order.provider,
-        providerApiVersion: order.providerApiVersion,
-        productKind: order.productKind,
-        externalPlanId: locked.externalPlanId,
-      },
-      prisma,
-    );
-    if (!lockedBillingGate.allowed) {
-      throw new InfrastructureError(
-        "billing_contract_blocked",
-        `Billing contract snapshot is blocked: ${lockedBillingGate.blockingReasons.join(", ")}`,
+    if (order.plan.billingModel === "PAYG_WALLET") {
+      const lockedBillingGate = await evaluateProvisioningBillingContractGate(
+        {
+          pendingService: order.activationRequest,
+          provider: order.provider,
+          providerApiVersion: order.providerApiVersion,
+          productKind: order.productKind,
+          externalPlanId: locked.externalPlanId,
+        },
+        prisma,
       );
+      if (!lockedBillingGate.allowed) {
+        throw new InfrastructureError(
+          "billing_contract_blocked",
+          `Billing contract snapshot is blocked: ${lockedBillingGate.blockingReasons.join(", ")}`,
+        );
+      }
     }
     const createInput: CreateServerInput = {
       productKind: locked.productKind,
@@ -1018,7 +1021,7 @@ export async function processProvisioningJob(
     // Re-read the exact approved contract immediately before the first
     // provider mutation. A newer contract is never substituted for the
     // pending service snapshot.
-    if (aboutToCreate) {
+    if (aboutToCreate && order.plan.billingModel === "PAYG_WALLET") {
       const preMutationBillingGate =
         await evaluateProvisioningBillingContractGate(
           {

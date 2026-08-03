@@ -125,5 +125,13 @@ test("platform readiness fails closed for database and worker outages", () => {
   assert.equal(derivePlatformReadinessStatus("healthy", "stale"), "degraded");
   assert.equal(derivePlatformReadinessStatus("healthy", "unknown"), "degraded");
   assert.equal(derivePlatformReadinessStatus("healthy", "down"), "outage");
+  assert.equal(
+    derivePlatformReadinessStatus("healthy", "down", "stale", "stale"),
+    "outage",
+  );
   assert.equal(derivePlatformReadinessStatus("down", "healthy"), "outage");
+  assert.equal(
+    derivePlatformReadinessStatus("healthy", "healthy", "healthy", "stale"),
+    "degraded",
+  );
 });
