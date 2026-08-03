@@ -7633,10 +7633,16 @@ try {
     "PostgreSQL integration passed (143 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, durable concurrent health-retry dispatch, poison dispatch isolation, persisted dispatch backoff, dead-letter manual review, three-attempt health retry ceiling, missing-outbox batch progress, concurrent outbox uniqueness, idempotent reconciler replay, forward-only Admin catalog, preprovisioned inventory and inventory-credential migrations with immutable commerce snapshots, Arvan master-sale gate at quote and pre-debit payment, old-quote gate revalidation, API-backed mutation-gate enforcement, inventory-only sale with mutations disabled, credentialless/revoked/transferred inventory exclusion, unique encrypted inventory credentials, raw-secret non-disclosure, atomic credential transfer, post-debit rollback, idempotent payment replay, concurrent no-double-sell, shared Network/Security eligibility, secure delivery to ACTIVE, zero-create inventory recovery, API/manual outage fail-closed behavior, real healthy inventory-only outage sale, atomic no-double-sell reservation, expired and failed-payment reservation release, exact post-payment assignment, idempotent debit/assignment replay, unsellable inventory states, ParsPack fail-closed listing, delivery, new-quote, old-quote conversion and pre-debit payment gates with immutable wallet, ledger, order and payment state, immutable routing, Kavenegar CONFIG_REQUIRED safety, Admin-curated Arvan publication isolation, Arvan partial-region last-known-good preservation, ParsPack 403 audit persistence without retry, exact TOMAN-to-IRR materialization, non-sellable invalid-price catalog enforcement, critical incident deduplication, durable SMS outbox delivery, and incident recovery",
   );
 } finally {
-  await flowDb?.$disconnect();
-  await db.$executeRawUnsafe(
-    `DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`,
-  );
-  await db.$disconnect();
-  await rm(tempRoot, { recursive: true, force: true });
+  try {
+    await flowDb?.$disconnect();
+    await db.$executeRawUnsafe(
+      `DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`,
+    );
+  } finally {
+    try {
+      await db.$disconnect();
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  }
 }

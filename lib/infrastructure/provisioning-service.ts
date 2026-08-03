@@ -653,6 +653,9 @@ export async function getWorkerHealthStatus() {
 type ProvisioningProcessOptions = {
   healthProbe?: ConnectivityProbe;
   claimToken: string;
+  /** Internal test seam: executes after the initial contract guard and before
+   * the final guard immediately preceding the provider mutation. */
+  beforeProviderMutationBillingGuard?: () => void | Promise<void>;
   beforeFinalizeJob?: () => void | Promise<void>;
   beforeNotificationDelivery?: () => void | Promise<void>;
   beforeHealthRetrySchedule?: () => void | Promise<void>;
@@ -1022,6 +1025,9 @@ export async function processProvisioningJob(
     // provider mutation. A newer contract is never substituted for the
     // pending service snapshot.
     if (aboutToCreate && order.plan.billingModel === "PAYG_WALLET") {
+      if (process.env.ABRCHIN_ISOLATED_TEST === "1") {
+        await options.beforeProviderMutationBillingGuard?.();
+      }
       const preMutationBillingGate =
         await evaluateProvisioningBillingContractGate(
           {

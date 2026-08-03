@@ -4,6 +4,8 @@ import test, { after } from "node:test";
 
 import { PrismaClient } from "@prisma/client";
 
+import { serializeProviderBillingContract } from "../lib/billing/provider-contract.ts";
+import { FakeCloudProviderAdapter } from "../lib/infrastructure/fake-cloud-provider-adapter.ts";
 import { processProvisioningJob } from "../lib/infrastructure/provisioning-service.ts";
 
 if (
@@ -21,8 +23,9 @@ after(async () => {
   await db.$disconnect();
 });
 
-test("a legacy or revoked billing snapshot is held before any provider mutation", async () => {
+async function seedRuntimeFixture(input: { verifiedContract: boolean }) {
   const suffix = randomBytes(5).toString("hex");
+  const contractVersion = Number.parseInt(suffix.slice(0, 6), 16) + 1;
   const now = new Date();
   const [customer, admin] = await Promise.all([
     db.user.create({ data: { mobile: `runtime-customer-${suffix}` } }),
@@ -125,6 +128,42 @@ test("a legacy or revoked billing snapshot is held before any provider mutation"
       },
     },
   });
+  const contract = input.verifiedContract
+    ? await db.providerBillingContractVersion.create({
+        data: {
+          provider: "ARVAN",
+          providerApiVersion: "v1",
+          productKind: "CLOUD_SERVER",
+          version: contractVersion,
+          status: "VERIFIED",
+          source: "controlled-postgres-test",
+          calculationUnit: "SECOND",
+          minimumChargeSeconds: 1,
+          roundingPolicy: "EXACT",
+          prorationSupported: true,
+          hourlyRateAvailable: true,
+          dailyRateAvailable: true,
+          stopStateBillableComponents: {
+            compute: false,
+            disk: true,
+            ip: true,
+            backup: true,
+            traffic: false,
+            snapshot: true,
+          },
+          fieldVerification: {
+            calculationUnit: "VERIFIED",
+            minimumChargeSeconds: "VERIFIED",
+            roundingPolicy: "VERIFIED",
+            prorationSupported: "VERIFIED",
+            hourlyRateAvailable: "VERIFIED",
+            dailyRateAvailable: "VERIFIED",
+            stopStateBillableComponents: "VERIFIED",
+          },
+          effectiveFrom: new Date(now.getTime() - 60_000),
+        },
+      })
+    : null;
   await db.activationRequest.create({
     data: {
       userId: customer.id,
@@ -148,9 +187,11 @@ test("a legacy or revoked billing snapshot is held before any provider mutation"
         billingPolicyVersionId: policy.id,
         billingSnapshot: { cadence: "HOURLY" },
       },
-      // Simulates an Approved order from before the forward-only snapshot
-      // migration. It must never reach adapter.createServer.
-      providerBillingContractSnapshot: null,
+      // A null value models a forward-only legacy Approval. A verified test
+      // contract is serialized exactly as a current Approval snapshot.
+      providerBillingContractSnapshot: contract
+        ? serializeProviderBillingContract(contract)
+        : null,
       idempotencyKey: `runtime-activation-${suffix}`,
       firstApprovedAt: now,
       firstApprovedById: admin.id,
@@ -182,6 +223,11 @@ test("a legacy or revoked billing snapshot is held before any provider mutation"
     },
   });
 
+  return { contract, job, order, claimToken };
+}
+
+test("a legacy PAYG job without a billing snapshot is held before provider mutation", async () => {
+  const fixture = await seedRuntimeFixture({ verifiedContract: false });
   let createCalls = 0;
   const controlledProvider = {
     provider: "ARVAN",
@@ -191,16 +237,17 @@ test("a legacy or revoked billing snapshot is held before any provider mutation"
       throw new Error("provider_create_must_not_be_called");
     },
   };
+
   const result = await processProvisioningJob(
-    job.id,
+    fixture.job.id,
     controlledProvider as never,
-    { claimToken },
+    { claimToken: fixture.claimToken },
   );
   assert.deepEqual(result, { state: "PROVIDER_FAILED" });
   assert.equal(createCalls, 0);
   const [persistedJob, persistedOrder] = await Promise.all([
-    db.provisioningJob.findUniqueOrThrow({ where: { id: job.id } }),
-    db.infrastructureOrder.findUniqueOrThrow({ where: { id: order.id } }),
+    db.provisioningJob.findUniqueOrThrow({ where: { id: fixture.job.id } }),
+    db.infrastructureOrder.findUniqueOrThrow({ where: { id: fixture.order.id } }),
   ]);
   assert.equal(persistedJob.status, "FAILED");
   assert.equal(persistedJob.lastErrorCode, "billing_contract_blocked");
@@ -210,12 +257,63 @@ test("a legacy or revoked billing snapshot is held before any provider mutation"
   );
   assert.equal(persistedOrder.status, "MANUAL_REVIEW");
   assert.equal(persistedOrder.productFlowState, "PROVISIONING_MANUAL_REVIEW");
+});
 
-  const replay = await processProvisioningJob(
-    job.id,
-    controlledProvider as never,
-    { claimToken },
-  );
+test("a contract revoked between the two guards never reaches provider mutation", async () => {
+  const fixture = await seedRuntimeFixture({ verifiedContract: true });
+  assert.ok(fixture.contract);
+  const provider = new FakeCloudProviderAdapter({ provider: "ARVAN" });
+  let finalGuardReached = false;
+
+  const result = await processProvisioningJob(fixture.job.id, provider, {
+    claimToken: fixture.claimToken,
+    beforeProviderMutationBillingGuard: async () => {
+      finalGuardReached = true;
+      await db.providerBillingContractVersion.update({
+        where: { id: fixture.contract!.id },
+        data: { status: "REVOKED" },
+      });
+    },
+  });
+  assert.deepEqual(result, { state: "PROVIDER_FAILED" });
+  assert.equal(finalGuardReached, true);
+  assert.equal(provider.createCalls.length, 0);
+  const [persistedJob, persistedOrder] = await Promise.all([
+    db.provisioningJob.findUniqueOrThrow({ where: { id: fixture.job.id } }),
+    db.infrastructureOrder.findUniqueOrThrow({ where: { id: fixture.order.id } }),
+  ]);
+  assert.equal(persistedJob.status, "FAILED");
+  assert.equal(persistedJob.lastErrorCode, "billing_contract_blocked");
+  assert.match(persistedJob.lastErrorMessage ?? "", /contract_revoked/);
+  assert.equal(persistedOrder.status, "MANUAL_REVIEW");
+  assert.equal(persistedOrder.productFlowState, "PROVISIONING_MANUAL_REVIEW");
+
+  const replay = await processProvisioningJob(fixture.job.id, provider, {
+    claimToken: fixture.claimToken,
+  });
   assert.equal(replay, null);
-  assert.equal(createCalls, 0);
+  assert.equal(provider.createCalls.length, 0);
+});
+
+test("a valid contract snapshot submits exactly one idempotent provider mutation", async () => {
+  const fixture = await seedRuntimeFixture({ verifiedContract: true });
+  const provider = new FakeCloudProviderAdapter({ provider: "ARVAN" });
+
+  const result = await processProvisioningJob(fixture.job.id, provider, {
+    claimToken: fixture.claimToken,
+    healthProbe: async () => true,
+  });
+  assert.equal(result?.healthy, true);
+  assert.equal(provider.createCalls.length, 1);
+  const persistedJob = await db.provisioningJob.findUniqueOrThrow({
+    where: { id: fixture.job.id },
+  });
+  assert.equal(persistedJob.status, "SUCCEEDED");
+
+  const replay = await processProvisioningJob(fixture.job.id, provider, {
+    claimToken: fixture.claimToken,
+    healthProbe: async () => true,
+  });
+  assert.equal(replay, null);
+  assert.equal(provider.createCalls.length, 1);
 });
