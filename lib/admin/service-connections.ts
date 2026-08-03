@@ -9,6 +9,7 @@ import {
 import { isSafePaymentCallbackBaseUrl, toSafeConnectionFailure } from "@/lib/admin/service-connection-safety";
 import { prisma } from "@/lib/db";
 import { getEnv } from "@/lib/env";
+import { checkArvanAuthenticatedConnection } from "@/lib/infrastructure/arvan/connection-check";
 import { createCloudProviderAdapter, isCloudProviderConfigured } from "@/lib/infrastructure/provider-factory";
 import { ensureGatewayConfigsSeeded } from "@/lib/payments/gateway-config";
 import { createProviderFor, hasServerCredentials } from "@/lib/payments/provider-factory";
@@ -185,15 +186,29 @@ export async function runServiceConnectionCheck(service: ServiceConnectionName) 
         const provider = service === ServiceConnectionName.ARVAN
           ? InfrastructureProvider.ARVAN
           : InfrastructureProvider.PARSPACK;
-        const adapter = createCloudProviderAdapter(provider, "v1");
-        const regions = await adapter.syncRegions();
-        if (regions.length === 0) {
-          status = ServiceConnectionCheckStatus.ERROR;
-          message = "هیچ Region قابل استفاده‌ای دریافت نشد.";
-          errorCode = "contract_mismatch";
+        if (provider === InfrastructureProvider.ARVAN) {
+          const env = getEnv();
+          const result = await checkArvanAuthenticatedConnection({
+            apiKey: env.arvanApiKey,
+            baseUrl: env.arvanApiBaseUrl,
+            timeoutMs: env.arvanTimeoutMs,
+          });
+          status = result.ok
+            ? ServiceConnectionCheckStatus.HEALTHY
+            : ServiceConnectionCheckStatus.ERROR;
+          message = result.message;
+          errorCode = result.ok ? null : result.code;
         } else {
-          status = ServiceConnectionCheckStatus.HEALTHY;
-          message = "اتصال خواندنی با موفقیت بررسی شد.";
+          const adapter = createCloudProviderAdapter(provider, "v1");
+          const regions = await adapter.syncRegions();
+          if (regions.length === 0) {
+            status = ServiceConnectionCheckStatus.ERROR;
+            message = "هیچ Region قابل استفاده‌ای دریافت نشد.";
+            errorCode = "contract_mismatch";
+          } else {
+            status = ServiceConnectionCheckStatus.HEALTHY;
+            message = "اتصال خواندنی با موفقیت بررسی شد.";
+          }
         }
       } catch (error) {
         const safe = toSafeConnectionFailure(error);

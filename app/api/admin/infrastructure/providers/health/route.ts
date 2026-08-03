@@ -1,15 +1,14 @@
-import { InfrastructureProvider } from "@prisma/client";
+import { InfrastructureProvider, ServiceConnectionName } from "@prisma/client";
 
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
+import { runServiceConnectionCheck } from "@/lib/admin/service-connections";
 import { toSafeConnectionFailure } from "@/lib/admin/service-connection-safety";
 import { prisma } from "@/lib/db";
 import {
-  createCloudProviderAdapter,
   createInfrastructureProvider,
   isCloudProviderConfigured,
   isProviderConfigured,
 } from "@/lib/infrastructure/provider-factory";
-import { listProviderSyncRegionCodes } from "@/lib/infrastructure/provider-region-config";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
@@ -37,20 +36,14 @@ export async function POST(request: Request) {
     const checkedAt = new Date();
     let ok = false;
     let message = "تنظیم نشده";
-    let providerRequestId: string | null = null;
+    const providerRequestId: string | null = null;
     if (configured) {
       if (provider === InfrastructureProvider.ARVAN) {
-        const regionCodes = await listProviderSyncRegionCodes(provider, "v1");
-        const adapter = createCloudProviderAdapter(provider, "v1", {
-          regionCodes,
-        });
-        const regions = await adapter.syncRegions();
-        if (regions[0]) await adapter.syncPlans(regions[0].code);
-        ok = regions.length > 0;
-        providerRequestId =
-          regions.find((region) => region.providerRequestId)
-            ?.providerRequestId ?? null;
-        message = ok ? "اتصال برقرار است" : "Region فعالی دریافت نشد";
+        const connection = await runServiceConnectionCheck(
+          ServiceConnectionName.ARVAN,
+        );
+        ok = connection.status === "HEALTHY";
+        message = connection.message;
       } else {
         const health = await createInfrastructureProvider().checkConnection();
         ok = health.ok;
