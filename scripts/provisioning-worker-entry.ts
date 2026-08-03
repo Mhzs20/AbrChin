@@ -16,7 +16,7 @@ import { runProvisioningWorkerCycle, touchWorkerHeartbeat } from "@/lib/infrastr
 import { processSubscriptionLifecycle } from "@/lib/subscriptions/service";
 import { getWorkerConfig } from "@/lib/worker/config";
 import { processOperationalAlertOutbox } from "@/lib/operations/alert-worker";
-import { settleLatestClosedBillingPeriod } from "@/lib/billing/worker";
+import { settleClosedBillingPeriodsCatchUp } from "@/lib/billing/worker";
 import { enqueueExpiredDunningForSuspensionReview } from "@/lib/billing/dunning";
 
 const config = getWorkerConfig();
@@ -32,6 +32,14 @@ const BILLING_WORKER_INTERVAL_MS = Math.max(
     10,
   ),
   60_000,
+);
+const BILLING_CATCH_UP_MAX_PERIODS = Math.min(
+  Math.max(
+    Number.parseInt(process.env.BILLING_CATCH_UP_MAX_PERIODS ?? "24", 10) ||
+      24,
+    1,
+  ),
+  500,
 );
 
 let stopping = false;
@@ -89,15 +97,17 @@ async function main() {
       }
       if (Date.now() >= nextBillingAt) {
         const billingNow = new Date();
-        await settleLatestClosedBillingPeriod({
+        await settleClosedBillingPeriodsCatchUp({
           cadence: "HOURLY",
           workerId: config.workerId,
           now: billingNow,
+          maxPeriods: BILLING_CATCH_UP_MAX_PERIODS,
         });
-        await settleLatestClosedBillingPeriod({
+        await settleClosedBillingPeriodsCatchUp({
           cadence: "DAILY",
           workerId: config.workerId,
           now: billingNow,
+          maxPeriods: BILLING_CATCH_UP_MAX_PERIODS,
         });
         await enqueueExpiredDunningForSuspensionReview(billingNow);
         nextBillingAt = Date.now() + BILLING_WORKER_INTERVAL_MS;

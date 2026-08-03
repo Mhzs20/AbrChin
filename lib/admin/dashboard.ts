@@ -8,6 +8,7 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
+import { getBillingCatchUpStatus } from "@/lib/billing/worker";
 import { isCloudProviderConfigured } from "@/lib/infrastructure/provider-factory";
 import { getWorkerHealthStatus } from "@/lib/infrastructure/provisioning-service";
 import { ensureGatewayConfigsSeeded } from "@/lib/payments/gateway-config";
@@ -333,10 +334,11 @@ export async function getRecentAdminOperations() {
 }
 
 export async function getAdminOperationsCenter() {
-  const [system, plans, queues] = await Promise.all([
+  const [system, plans, queues, billingCatchUp] = await Promise.all([
     getSystemStatuses(),
     listAllAdminPlansForOperationsCenter(),
     listAdminOperationsQueues(),
+    getBillingCatchUpStatus(),
   ]);
 
   const publishedSellableSkuCount = plans.filter(
@@ -382,6 +384,19 @@ export async function getAdminOperationsCenter() {
         status: paymentConfigured ? "healthy" : "unconfigured",
         message: paymentConfigured ? "درگاه فعال است" : "درگاه فعال تنظیم نشده است",
         href: "/admin/connections",
+      },
+      {
+        key: "billing-catch-up",
+        label: "Billing Catch-up",
+        status:
+          billingCatchUp.status === "CURRENT" ? "healthy" : "warning",
+        message:
+          billingCatchUp.status === "CURRENT"
+            ? "تمام Periodهای بسته ثبت شده‌اند"
+            : `قدیمی‌ترین Period عقب‌افتاده: ${billingCatchUp.cadences
+                .find((item) => item.oldestOutstandingPeriod)
+                ?.oldestOutstandingPeriod?.periodEnd ?? "نامشخص"}`,
+        href: "/admin",
       },
     ],
     queues,

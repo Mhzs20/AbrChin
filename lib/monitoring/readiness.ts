@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getBillingCatchUpStatus } from "@/lib/billing/worker";
 import { getWorkerHealthStatus } from "@/lib/infrastructure/provisioning-service";
 
 export type ReadinessComponentStatus = "healthy" | "stale" | "down" | "unknown";
@@ -9,9 +10,15 @@ const DATABASE_TIMEOUT_MS = 2_500;
 export function derivePlatformReadinessStatus(
   database: ReadinessComponentStatus,
   worker: ReadinessComponentStatus,
+  billingCatchUp: ReadinessComponentStatus = "healthy",
 ): PlatformReadinessStatus {
   if (database === "down") return "outage";
-  if (database !== "healthy" || worker === "stale" || worker === "unknown") {
+  if (
+    database !== "healthy" ||
+    worker === "stale" ||
+    worker === "unknown" ||
+    billingCatchUp !== "healthy"
+  ) {
     return "degraded";
   }
   if (worker === "down") return "outage";
@@ -42,25 +49,37 @@ export async function getPlatformReadiness() {
   const database = await checkDatabase();
   let worker: ReadinessComponentStatus = "unknown";
   let workerLastSeenAt: string | null = null;
+  let billingCatchUp: ReadinessComponentStatus = "unknown";
+  let billingCatchUpStatus: Awaited<
+    ReturnType<typeof getBillingCatchUpStatus>
+  > | null = null;
 
   if (database === "healthy") {
     try {
-      const workerHealth = await getWorkerHealthStatus();
+      const [workerHealth, catchUp] = await Promise.all([
+        getWorkerHealthStatus(),
+        getBillingCatchUpStatus(),
+      ]);
       worker = workerHealth.status;
       workerLastSeenAt = workerHealth.lastSeenAt;
+      billingCatchUpStatus = catchUp;
+      billingCatchUp =
+        catchUp.status === "CURRENT" ? "healthy" : "stale";
     } catch {
       worker = "unknown";
     }
   }
 
   return {
-    status: derivePlatformReadinessStatus(database, worker),
+    status: derivePlatformReadinessStatus(database, worker, billingCatchUp),
     components: {
       web: "healthy" as const,
       database,
       provisioningWorker: worker,
+      billingCatchUp,
     },
     workerLastSeenAt,
+    billingCatchUp: billingCatchUpStatus,
     checkedAt: new Date().toISOString(),
   };
 }

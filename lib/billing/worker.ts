@@ -11,7 +11,10 @@ import {
   calculateBillingLineAmount,
   requiredBillableComponents,
 } from "@/lib/billing/calculation";
-import { latestClosedPeriodUtc } from "@/lib/billing/policy";
+import {
+  latestClosedPeriodUtc,
+  periodContainingUtc,
+} from "@/lib/billing/policy";
 import { prisma } from "@/lib/db";
 
 type BillingPeriod = {
@@ -34,6 +37,29 @@ const SETTLED_INVOICE_STATUSES = new Set<BillingInvoiceStatus>([
   BillingInvoiceStatus.UNPAID,
 ]);
 
+const TERMINAL_BILLING_RUN_STATUSES = new Set<BillingRunStatus>([
+  BillingRunStatus.COMPLETED,
+  // PARTIAL means the period was deliberately recorded for Admin review. It
+  // must not starve later closed periods in the catch-up queue.
+  BillingRunStatus.PARTIAL,
+]);
+
+const DEFAULT_CATCH_UP_MAX_PERIODS = 24;
+
+export type BillingCatchUpCadenceStatus = {
+  cadence: BillingCadence;
+  pendingPeriods: number;
+  oldestOutstandingPeriod: {
+    periodStart: string;
+    periodEnd: string;
+  } | null;
+};
+
+export type BillingCatchUpStatus = {
+  status: "CURRENT" | "BACKLOG";
+  cadences: BillingCatchUpCadenceStatus[];
+};
+
 function maximumDate(left: Date, right: Date) {
   return left > right ? left : right;
 }
@@ -44,6 +70,23 @@ function minimumDate(left: Date, right: Date) {
 
 function periodKey(cadence: BillingCadence, start: Date, end: Date) {
   return `${cadence}:${start.toISOString()}:${end.toISOString()}`;
+}
+
+function nextPeriodStart(cadence: BillingCadence, periodStart: Date) {
+  return new Date(
+    periodStart.getTime() +
+      (cadence === BillingCadence.HOURLY
+        ? 60 * 60 * 1_000
+        : 24 * 60 * 60 * 1_000),
+  );
+}
+
+function catchUpLimit(value: number | undefined) {
+  if (value == null) return DEFAULT_CATCH_UP_MAX_PERIODS;
+  if (!Number.isSafeInteger(value) || value < 1 || value > 500) {
+    throw new Error("billing_catch_up_limit_invalid");
+  }
+  return value;
 }
 
 async function retrySerializableBilling<T>(
@@ -63,6 +106,63 @@ async function retrySerializableBilling<T>(
     }
   }
   throw lastError;
+}
+
+async function recordBillingRunFailure(input: {
+  cadence: BillingCadence;
+  periodStart: Date;
+  periodEnd: Date;
+  workerId: string;
+  failureCode: string;
+}) {
+  const key = periodKey(input.cadence, input.periodStart, input.periodEnd);
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${`billing-run:${key}`}, 0)
+        )::text AS locked
+      `;
+      const existing = await tx.billingRun.findUnique({
+        where: { idempotencyKey: `billing-run:${key}` },
+      });
+      if (existing && TERMINAL_BILLING_RUN_STATUSES.has(existing.status)) {
+        return;
+      }
+      if (existing) {
+        await tx.billingRun.update({
+          where: { id: existing.id },
+          data: {
+            status: BillingRunStatus.FAILED,
+            workerId: input.workerId,
+            failureCode: input.failureCode,
+            finishedAt: new Date(),
+          },
+        });
+        return;
+      }
+      await tx.billingRun.create({
+        data: {
+          cadence: input.cadence,
+          periodStart: input.periodStart,
+          periodEnd: input.periodEnd,
+          status: BillingRunStatus.FAILED,
+          workerId: input.workerId,
+          failureCode: input.failureCode,
+          finishedAt: new Date(),
+          idempotencyKey: `billing-run:${key}`,
+        },
+      });
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+  );
+}
+
+function failureCode(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message.slice(0, 180);
+  }
+  return "billing_settlement_failed";
 }
 
 function validatePeriod(input: BillingPeriod) {
@@ -779,8 +879,9 @@ export async function settleClosedBillingPeriod(input: BillingPeriod) {
     input.periodStart,
     input.periodEnd,
   );
-  return retrySerializableBilling(() =>
-    prisma.$transaction(
+  try {
+    return await retrySerializableBilling(() =>
+      prisma.$transaction(
       async (tx) => {
       await tx.$queryRaw`
         SELECT pg_advisory_xact_lock(
@@ -790,7 +891,10 @@ export async function settleClosedBillingPeriod(input: BillingPeriod) {
       const existingRun = await tx.billingRun.findUnique({
         where: { idempotencyKey: `billing-run:${key}` },
       });
-      if (existingRun?.status === BillingRunStatus.COMPLETED) {
+      if (
+        existingRun &&
+        TERMINAL_BILLING_RUN_STATUSES.has(existingRun.status)
+      ) {
         return existingRun;
       }
       const run = existingRun
@@ -851,8 +955,18 @@ export async function settleClosedBillingPeriod(input: BillingPeriod) {
         maxWait: 10_000,
         timeout: 60_000,
       },
-    ),
-  );
+      ),
+    );
+  } catch (error) {
+    await recordBillingRunFailure({
+      cadence: input.cadence,
+      periodStart: input.periodStart,
+      periodEnd: input.periodEnd,
+      workerId: input.workerId,
+      failureCode: failureCode(error),
+    });
+    throw error;
+  }
 }
 
 export async function settleLatestClosedBillingPeriod(input: {
@@ -868,6 +982,148 @@ export async function settleLatestClosedBillingPeriod(input: {
     now,
     ...period,
   });
+}
+
+async function listClosedBillingPeriodsForCatchUp(input: {
+  cadence: BillingCadence;
+  now: Date;
+  maxPeriods: number;
+}) {
+  const limit = catchUpLimit(input.maxPeriods);
+  const latest = latestClosedPeriodUtc(input.cadence, input.now);
+  const snapshots = await prisma.serviceBillingPolicySnapshot.findMany({
+    where: {
+      cadence: input.cadence,
+      effectiveFrom: { lt: latest.periodEnd },
+    },
+    orderBy: { effectiveFrom: "asc" },
+    select: { effectiveFrom: true, effectiveTo: true },
+  });
+  const earliestSnapshot = snapshots[0];
+  if (!earliestSnapshot) return [];
+
+  const first = periodContainingUtc(
+    input.cadence,
+    earliestSnapshot.effectiveFrom,
+  ).periodStart;
+  const completedRuns = await prisma.billingRun.findMany({
+    where: {
+      cadence: input.cadence,
+      periodStart: { gte: first, lt: latest.periodEnd },
+      periodEnd: { lte: latest.periodEnd },
+      status: { in: [...TERMINAL_BILLING_RUN_STATUSES] },
+    },
+    select: { periodStart: true, periodEnd: true },
+  });
+  const completed = new Set(
+    completedRuns.map((run) =>
+      periodKey(input.cadence, run.periodStart, run.periodEnd),
+    ),
+  );
+  const periods: Array<{ periodStart: Date; periodEnd: Date }> = [];
+  let periodStart = first;
+  while (periodStart < latest.periodEnd && periods.length < limit) {
+    const periodEnd = nextPeriodStart(input.cadence, periodStart);
+    const hasUsageWindow = snapshots.some(
+      (snapshot) =>
+        snapshot.effectiveFrom < periodEnd &&
+        (!snapshot.effectiveTo || snapshot.effectiveTo > periodStart),
+    );
+    if (!hasUsageWindow) {
+      const nextSnapshot = snapshots.find(
+        (snapshot) => snapshot.effectiveFrom >= periodEnd,
+      );
+      if (!nextSnapshot) break;
+      periodStart = periodContainingUtc(
+        input.cadence,
+        nextSnapshot.effectiveFrom,
+      ).periodStart;
+      continue;
+    }
+    if (!completed.has(periodKey(input.cadence, periodStart, periodEnd))) {
+      periods.push({ periodStart, periodEnd });
+    }
+    periodStart = periodEnd;
+  }
+  return periods;
+}
+
+/**
+ * Settles a bounded, chronological slice of missed closed periods. The
+ * BillingRun idempotency key and PostgreSQL advisory lock remain the single
+ * concurrency boundary, so two workers may safely run this at the same time.
+ */
+export async function settleClosedBillingPeriodsCatchUp(input: {
+  cadence: BillingCadence;
+  workerId: string;
+  now?: Date;
+  maxPeriods?: number;
+}) {
+  const now = input.now ?? new Date();
+  const periods = await listClosedBillingPeriodsForCatchUp({
+    cadence: input.cadence,
+    now,
+    maxPeriods: input.maxPeriods ?? DEFAULT_CATCH_UP_MAX_PERIODS,
+  });
+  const runs = [];
+  for (const period of periods) {
+    try {
+      runs.push(
+        await settleClosedBillingPeriod({
+          cadence: input.cadence,
+          workerId: input.workerId,
+          now,
+          ...period,
+        }),
+      );
+    } catch (error) {
+      return {
+        cadence: input.cadence,
+        runs,
+        failedPeriod: {
+          periodStart: period.periodStart.toISOString(),
+          periodEnd: period.periodEnd.toISOString(),
+          failureCode: failureCode(error),
+        },
+      };
+    }
+  }
+  return {
+    cadence: input.cadence,
+    runs,
+    failedPeriod: null,
+  };
+}
+
+export async function getBillingCatchUpStatus(
+  now = new Date(),
+): Promise<BillingCatchUpStatus> {
+  const cadences = await Promise.all(
+    [BillingCadence.HOURLY, BillingCadence.DAILY].map(async (cadence) => {
+      const periods = await listClosedBillingPeriodsForCatchUp({
+        cadence,
+        now,
+        maxPeriods: 1,
+      });
+      const oldest = periods[0] ?? null;
+      return {
+        cadence,
+        pendingPeriods: oldest ? 1 : 0,
+        oldestOutstandingPeriod: oldest
+          ? {
+              periodStart: oldest.periodStart.toISOString(),
+              periodEnd: oldest.periodEnd.toISOString(),
+            }
+          : null,
+      };
+    }),
+  );
+  return {
+    status: cadences.some((cadence) => cadence.pendingPeriods > 0)
+      ? "BACKLOG"
+      : "CURRENT",
+    cadences,
+  };
 }
 
 export function billingRangesCoverPeriod(

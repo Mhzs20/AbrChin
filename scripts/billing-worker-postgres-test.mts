@@ -20,7 +20,11 @@ import {
   evaluateResourceChangeCredit,
 } from "../lib/billing/policy.ts";
 import { recordProviderConfirmedResourceVersion } from "../lib/billing/resource-timeline.ts";
-import { settleClosedBillingPeriod } from "../lib/billing/worker.ts";
+import {
+  getBillingCatchUpStatus,
+  settleClosedBillingPeriod,
+  settleClosedBillingPeriodsCatchUp,
+} from "../lib/billing/worker.ts";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required for billing worker tests");
@@ -78,6 +82,7 @@ async function createFixture(input: {
   stopPolicy?: Record<string, boolean>;
   lowBalanceThresholdPeriods?: number;
   gracePeriods?: number;
+  serviceStartedAt?: Date;
 }) {
   fixtureCounter += 1;
   const cadence = input.cadence ?? BillingCadence.DAILY;
@@ -85,6 +90,7 @@ async function createFixture(input: {
     cadence === BillingCadence.DAILY
       ? addHours(input.periodStart, 24)
       : addHours(input.periodStart, 1);
+  const serviceStartedAt = input.serviceStartedAt ?? input.periodStart;
   const prefix = `${runId}-${fixtureCounter}-${input.suffix}`;
   const user = await db.user.create({
     data: {
@@ -157,8 +163,8 @@ async function createFixture(input: {
       deliveryMode: "RAW",
       status: "ACTIVE",
       providerState: "ACTIVE",
-      providerObservedAt: input.periodStart,
-      provisionedAt: input.periodStart,
+      providerObservedAt: serviceStartedAt,
+      provisionedAt: serviceStartedAt,
     },
   });
   const policy = await db.billingPolicyVersion.create({
@@ -193,7 +199,7 @@ async function createFixture(input: {
           SNAPSHOT: true,
         },
       enabledCadences: [cadence],
-      effectiveFrom: input.periodStart,
+      effectiveFrom: serviceStartedAt,
       effectiveTo: periodEnd,
       changeReason: "controlled billing worker test",
     },
@@ -228,7 +234,7 @@ async function createFixture(input: {
         calculationUnit: "SECOND",
         currencyNormalizedExplicitly: true,
       },
-      effectiveFrom: input.periodStart,
+      effectiveFrom: serviceStartedAt,
       effectiveTo: periodEnd,
       idempotencyKey: `${prefix}-snapshot`,
     },
@@ -237,7 +243,7 @@ async function createFixture(input: {
     input.segments ??
     [
       {
-        start: input.periodStart,
+        start: serviceStartedAt,
         end: periodEnd,
       },
     ];
@@ -345,6 +351,7 @@ async function createFixture(input: {
     cadence,
     periodStart: input.periodStart,
     periodEnd,
+    serviceStartedAt,
   };
 }
 
@@ -395,6 +402,210 @@ test("usage billing worker is crash-safe, split-aware and wallet-safe", async (t
     assert.equal(invoice.cadence, "HOURLY");
     assert.equal(invoice.totalAmountRial, 1_000n);
     assert.equal(invoice.status, "PAID");
+  });
+
+  await t.test("catch-up settles every missed hourly period in chronological batches", async () => {
+    const starts = [14, 15, 16].map((hour) =>
+      new Date(`2026-06-14T${String(hour).padStart(2, "0")}:00:00.000Z`),
+    );
+    const fixtures = await Promise.all(
+      starts.map((periodStart, index) =>
+        createFixture({
+          suffix: `catchup-hour-${index}`,
+          periodStart,
+          cadence: BillingCadence.HOURLY,
+        }),
+      ),
+    );
+    const now = new Date("2026-06-14T17:10:00.000Z");
+    assert.equal((await getBillingCatchUpStatus(now)).status, "BACKLOG");
+    const result = await settleClosedBillingPeriodsCatchUp({
+      cadence: BillingCadence.HOURLY,
+      workerId: "catchup-hourly",
+      now,
+      maxPeriods: 3,
+    });
+    assert.equal(result.runs.length, 3);
+    assert.equal(result.failedPeriod, null);
+    for (const fixture of fixtures) {
+      const invoice = await invoiceFor(fixture.instance.id);
+      assert.equal(invoice.status, "PAID");
+      assert.equal(
+        await db.walletLedgerEntry.count({
+          where: {
+            walletId: fixture.wallet.id,
+            type: "USAGE_SETTLEMENT",
+          },
+        }),
+        1,
+      );
+    }
+  });
+
+  await t.test("catch-up processes missed daily periods independently", async () => {
+    const fixtures = await Promise.all(
+      [15, 16, 17].map((day) =>
+        createFixture({ suffix: `catchup-day-${day}`, periodStart: utcDay(day) }),
+      ),
+    );
+    const result = await settleClosedBillingPeriodsCatchUp({
+      cadence: BillingCadence.DAILY,
+      workerId: "catchup-daily",
+      now: utcDay(19),
+      maxPeriods: 3,
+    });
+    assert.equal(result.runs.length, 3);
+    for (const fixture of fixtures) {
+      assert.equal((await invoiceFor(fixture.instance.id)).status, "PAID");
+    }
+  });
+
+  await t.test("restart resumes a bounded catch-up from the next period", async () => {
+    const starts = [18, 19, 20].map((hour) =>
+      new Date(`2026-06-20T${String(hour).padStart(2, "0")}:00:00.000Z`),
+    );
+    const fixtures = await Promise.all(
+      starts.map((periodStart, index) =>
+        createFixture({
+          suffix: `catchup-restart-${index}`,
+          periodStart,
+          cadence: BillingCadence.HOURLY,
+        }),
+      ),
+    );
+    const now = new Date("2026-06-20T21:10:00.000Z");
+    const first = await settleClosedBillingPeriodsCatchUp({
+      cadence: BillingCadence.HOURLY,
+      workerId: "catchup-before-restart",
+      now,
+      maxPeriods: 1,
+    });
+    assert.equal(first.runs.length, 1);
+    const resumed = await settleClosedBillingPeriodsCatchUp({
+      cadence: BillingCadence.HOURLY,
+      workerId: "catchup-after-restart",
+      now,
+      maxPeriods: 3,
+    });
+    assert.equal(resumed.runs.length, 2);
+    assert.equal(
+      await db.billingInvoice.count({
+        where: { cloudInstanceId: { in: fixtures.map((fixture) => fixture.instance.id) } },
+      }),
+      3,
+    );
+  });
+
+  await t.test("two workers can run the same catch-up without duplicate debits", async () => {
+    const fixtures = await Promise.all(
+      [21, 22, 23].map((hour) =>
+        createFixture({
+          suffix: `catchup-concurrent-${hour}`,
+          periodStart: new Date(`2026-06-21T${String(hour).padStart(2, "0")}:00:00.000Z`),
+          cadence: BillingCadence.HOURLY,
+        }),
+      ),
+    );
+    const input = {
+      cadence: BillingCadence.HOURLY,
+      now: new Date("2026-06-22T00:10:00.000Z"),
+      maxPeriods: 3,
+    };
+    await Promise.all([
+      settleClosedBillingPeriodsCatchUp({ ...input, workerId: "catchup-a" }),
+      settleClosedBillingPeriodsCatchUp({ ...input, workerId: "catchup-b" }),
+    ]);
+    for (const fixture of fixtures) {
+      assert.equal(
+        await db.walletLedgerEntry.count({
+          where: { walletId: fixture.wallet.id, type: "USAGE_SETTLEMENT" },
+        }),
+        1,
+      );
+    }
+  });
+
+  await t.test("a failed period is retried without a double debit", async () => {
+    const fixture = await createFixture({
+      suffix: "catchup-failed-retry",
+      periodStart: new Date("2026-06-22T10:00:00.000Z"),
+      cadence: BillingCadence.HOURLY,
+    });
+    await db.billingRun.create({
+      data: {
+        cadence: BillingCadence.HOURLY,
+        periodStart: fixture.periodStart,
+        periodEnd: fixture.periodEnd,
+        status: "FAILED",
+        workerId: "crashed-worker",
+        failureCode: "simulated_crash",
+        finishedAt: fixture.periodEnd,
+        idempotencyKey: `billing-run:HOURLY:${fixture.periodStart.toISOString()}:${fixture.periodEnd.toISOString()}`,
+      },
+    });
+    const result = await settleClosedBillingPeriodsCatchUp({
+      cadence: BillingCadence.HOURLY,
+      workerId: "retry-worker",
+      now: new Date("2026-06-22T11:10:00.000Z"),
+      maxPeriods: 1,
+    });
+    assert.equal(result.runs.length, 1);
+    assert.equal((await invoiceFor(fixture.instance.id)).status, "PAID");
+    assert.equal(
+      await db.walletLedgerEntry.count({
+        where: { walletId: fixture.wallet.id, type: "USAGE_SETTLEMENT" },
+      }),
+      1,
+    );
+  });
+
+  await t.test("a service beginning mid-period receives only its covered usage", async () => {
+    const periodStart = new Date("2026-06-23T12:00:00.000Z");
+    const fixture = await createFixture({
+      suffix: "catchup-mid-period-service",
+      periodStart,
+      cadence: BillingCadence.HOURLY,
+      serviceStartedAt: new Date(periodStart.getTime() + 30 * 60 * 1_000),
+    });
+    await settleClosedBillingPeriodsCatchUp({
+      cadence: BillingCadence.HOURLY,
+      workerId: "mid-period-worker",
+      now: new Date("2026-06-23T13:10:00.000Z"),
+      maxPeriods: 1,
+    });
+    const invoice = await invoiceFor(fixture.instance.id);
+    assert.equal(invoice.totalAmountRial, 500n);
+    assert.equal(invoice.status, "PAID");
+  });
+
+  await t.test("a partial review does not hide later closed periods", async () => {
+    const incomplete = await createFixture({
+      suffix: "catchup-partial-review",
+      periodStart: new Date("2026-06-24T08:00:00.000Z"),
+      cadence: BillingCadence.HOURLY,
+      segments: [
+        {
+          start: new Date("2026-06-24T08:00:00.000Z"),
+          end: new Date("2026-06-24T09:00:00.000Z"),
+          status: "INCOMPLETE",
+          completenessReason: "provider_event_missing",
+        },
+      ],
+    });
+    const later = await createFixture({
+      suffix: "catchup-after-partial",
+      periodStart: new Date("2026-06-24T09:00:00.000Z"),
+      cadence: BillingCadence.HOURLY,
+    });
+    const result = await settleClosedBillingPeriodsCatchUp({
+      cadence: BillingCadence.HOURLY,
+      workerId: "partial-continues-worker",
+      now: new Date("2026-06-24T10:10:00.000Z"),
+      maxPeriods: 2,
+    });
+    assert.equal(result.runs.length, 2);
+    assert.equal((await invoiceFor(incomplete.instance.id)).status, "UNDER_REVIEW");
+    assert.equal((await invoiceFor(later.instance.id)).status, "PAID");
   });
 
   await t.test(
