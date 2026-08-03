@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import { PrismaClient } from "@prisma/client";
 
-import { withIsolatedPostgres } from "./postgres-isolation.ts";
+import { withIsolatedPostgres } from "./postgres-isolation.mts";
 
 await withIsolatedPostgres("fresh", async (databaseUrl) => {
   const db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
