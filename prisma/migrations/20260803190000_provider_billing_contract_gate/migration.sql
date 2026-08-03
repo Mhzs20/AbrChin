@@ -26,9 +26,9 @@ CREATE TABLE "ProviderBillingContractVersion" (
     CONSTRAINT "ProviderBillingContractVersion_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "ProviderBillingContractVersion_provider_providerApiVersion_productKind_version_key"
+CREATE UNIQUE INDEX "ProviderBillingContractVersion_route_version_key"
   ON "ProviderBillingContractVersion"("provider", "providerApiVersion", "productKind", "version");
-CREATE INDEX "ProviderBillingContractVersion_provider_providerApiVersion_productKind_effectiveFrom_idx"
+CREATE INDEX "ProviderBillingContractVersion_route_effective_idx"
   ON "ProviderBillingContractVersion"("provider", "providerApiVersion", "productKind", "effectiveFrom");
 
 -- Arvan and ParsPack currently have no verified PAYG billing evidence. These

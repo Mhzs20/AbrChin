@@ -1,4 +1,5 @@
 import {
+  AdminNotificationType,
   InfrastructureOfferSource,
   InfrastructureOrderStatus,
   ProvisioningJobStatus,
@@ -6,6 +7,7 @@ import {
 } from "@prisma/client";
 
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
+import { evaluateProvisioningBillingContractGate } from "@/lib/billing/provisioning-contract-gate";
 import { prisma } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import {
@@ -25,6 +27,7 @@ type DispatchResult =
   | { state: "DISPATCHED"; jobId: string; operation: string }
   | { state: "ALREADY_DISPATCHED"; jobId: string; operation: string }
   | { state: "MANUAL_FULFILLMENT_REQUIRED" }
+  | { state: "BILLING_CONTRACT_BLOCKED"; blockingReasons: string[] }
   | { state: "NOT_APPROVED" };
 
 function resultRecord(value: Prisma.JsonValue) {
@@ -56,6 +59,7 @@ async function loadApprovedOrderTx(tx: Prisma.TransactionClient, infrastructureO
     include: {
       plan: { include: { catalogItem: true } },
       serviceOrder: { include: { recommendationQuote: true } },
+      activationRequest: { include: { billingPolicyVersion: true } },
       provisioningJobs: { orderBy: { createdAt: "asc" } },
       preprovisionedInventoryItem: true,
     },
@@ -82,6 +86,58 @@ async function loadApprovedOrderTx(tx: Prisma.TransactionClient, infrastructureO
   };
 }
 
+async function blockProvisionForBillingContractTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    order: Awaited<ReturnType<typeof loadApprovedOrderTx>>["order"];
+    approvedById: string;
+    blockingReasons: string[];
+  },
+) {
+  const owner = {
+    recommendationSessionId:
+      input.order.serviceOrder.recommendationQuote?.sessionId ?? null,
+    serviceOrderId: input.order.serviceOrderId,
+    infrastructureOrderId: input.order.id,
+  };
+  await transitionProductFlowTx(tx, {
+    owner,
+    from: "PROVISION_APPROVED",
+    to: "PROVISIONING_MANUAL_REVIEW",
+    reason: "provider_billing_contract_snapshot_blocked",
+    metadata: { blockingReasons: input.blockingReasons },
+    idempotencyKey: `provider-billing-contract-blocked:${input.order.id}`,
+    actorUserId: input.approvedById,
+  });
+  await tx.infrastructureOrder.update({
+    where: { id: input.order.id },
+    data: { status: InfrastructureOrderStatus.MANUAL_REVIEW },
+  });
+  await tx.adminNotification.create({
+    data: {
+      type: AdminNotificationType.PROVISIONING_FAILED,
+      infrastructureOrderId: input.order.id,
+      title: "Billing Contract نیاز به بررسی دارد",
+      message: `Provisioning پیش از تماس با Provider متوقف شد: ${input.blockingReasons.join(", ")}`,
+    },
+  });
+  await writeAuditLog(
+    {
+      actorUserId: input.approvedById,
+      action: AuditActions.PROVISION_APPROVAL_BLOCKED,
+      entityType: "infrastructure_order",
+      entityId: input.order.id,
+      afterData: {
+        blockingReasons: input.blockingReasons,
+        providerMutationExecuted: false,
+        containsSecret: false,
+      },
+      idempotencyKey: `audit:provider-billing-contract-blocked:${input.order.id}`,
+    },
+    tx,
+  );
+}
+
 export async function dispatchApprovedProvision(
   infrastructureOrderId: string,
 ): Promise<DispatchResult> {
@@ -99,6 +155,34 @@ export async function dispatchApprovedProvision(
     }
     if (!approvedById) return { state: "NOT_APPROVED" };
 
+    const selection = parseLockedProvisioningSelection({
+      snapshot: order.providerSelectionSnapshot,
+      provider: order.provider,
+      providerApiVersion: order.providerApiVersion,
+      productKind: order.productKind,
+    });
+    const billingGate = await evaluateProvisioningBillingContractGate(
+      {
+        pendingService: order.activationRequest,
+        provider: order.provider,
+        providerApiVersion: order.providerApiVersion,
+        productKind: order.productKind,
+        externalPlanId: selection.externalPlanId,
+      },
+      tx,
+    );
+    if (!billingGate.allowed) {
+      await blockProvisionForBillingContractTx(tx, {
+        order,
+        approvedById,
+        blockingReasons: billingGate.blockingReasons,
+      });
+      return {
+        state: "BILLING_CONTRACT_BLOCKED",
+        blockingReasons: billingGate.blockingReasons,
+      };
+    }
+
     const source = order.plan.offerSource;
     if (
       source !== InfrastructureOfferSource.PREPROVISIONED_INVENTORY &&
@@ -107,12 +191,6 @@ export async function dispatchApprovedProvision(
       return { state: "MANUAL_FULFILLMENT_REQUIRED" };
     }
 
-    const selection = parseLockedProvisioningSelection({
-      snapshot: order.providerSelectionSnapshot,
-      provider: order.provider,
-      providerApiVersion: order.providerApiVersion,
-      productKind: order.productKind,
-    });
     const desiredInstanceName = order.desiredInstanceName ?? buildDesiredInstanceName(order.id);
     const owner = {
       recommendationSessionId: order.serviceOrder.recommendationQuote?.sessionId ?? null,

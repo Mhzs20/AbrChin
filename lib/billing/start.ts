@@ -5,7 +5,7 @@ import {
 } from "@prisma/client";
 
 import {
-  getEffectiveProviderBillingContract,
+  getVerifiedProviderBillingContractFromSnapshot,
   requireVerifiedProviderBillingContract,
   serializeProviderBillingContract,
   stopStatePolicyFromProviderContract,
@@ -78,8 +78,9 @@ export async function startInitialUsageBillingTx(
       "منابع Plan برای شروع Billing کامل نیست.",
     );
   }
-  const providerContractRecord = await getEffectiveProviderBillingContract(
+  const providerContractResult = await getVerifiedProviderBillingContractFromSnapshot(
     {
+      snapshot: activation.providerBillingContractSnapshot,
       provider: plan.provider,
       providerApiVersion: plan.providerApiVersion,
       productKind: plan.productKind,
@@ -87,11 +88,20 @@ export async function startInitialUsageBillingTx(
     },
     tx,
   );
+  if (
+    !providerContractResult.contract ||
+    providerContractResult.blockingReasons.length > 0
+  ) {
+    throw new WalletError(
+      "provider_billing_contract_unverified",
+      `قرارداد Billing Provider برای Snapshot سرویس مسدود است: ${providerContractResult.blockingReasons.join(", ")}`,
+    );
+  }
   const providerContract = requireVerifiedProviderBillingContract(
-    providerContractRecord,
+    providerContractResult.contract,
   );
   const providerContractSnapshot = serializeProviderBillingContract(
-    providerContractRecord!,
+    providerContractResult.contract,
   );
   const estimate = record(activation.estimateSnapshot);
   const providerHourlyRial = bigintField(

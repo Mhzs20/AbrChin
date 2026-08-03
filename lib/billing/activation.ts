@@ -27,6 +27,7 @@ import { calculateMarkupRial } from "@/lib/billing/policy";
 import {
   getEffectiveProviderBillingContract,
   requireVerifiedProviderBillingContract,
+  serializeProviderBillingContract,
 } from "@/lib/billing/provider-contract";
 import { prisma } from "@/lib/db";
 import { idempotencyFingerprint } from "@/lib/idempotency";
@@ -444,15 +445,17 @@ export async function approveActivation(input: {
           "Snapshot فعال‌سازی کامل نیست.",
         );
       }
-      requireVerifiedProviderBillingContract(
-        await getEffectiveProviderBillingContract(
-          {
-            provider: activation.plan.provider,
-            providerApiVersion: activation.plan.providerApiVersion,
-            productKind: activation.plan.productKind,
-          },
-          tx,
-        ),
+      const providerBillingContract = await getEffectiveProviderBillingContract(
+        {
+          provider: activation.plan.provider,
+          providerApiVersion: activation.plan.providerApiVersion,
+          productKind: activation.plan.productKind,
+        },
+        tx,
+      );
+      requireVerifiedProviderBillingContract(providerBillingContract);
+      const providerBillingContractSnapshot = serializeProviderBillingContract(
+        providerBillingContract!,
       );
       const infra = await tx.infrastructureOrder.create({
         data: {
@@ -521,6 +524,8 @@ export async function approveActivation(input: {
         data: {
           status: ActivationRequestStatus.APPROVED,
           infrastructureOrderId: infra.id,
+          providerBillingContractSnapshot:
+            providerBillingContractSnapshot as Prisma.InputJsonValue,
           firstApprovedAt: new Date(),
           firstApprovedById: input.adminUserId,
         },

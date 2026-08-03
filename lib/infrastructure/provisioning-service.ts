@@ -12,6 +12,7 @@ import {
 
 import { prisma } from "@/lib/db";
 import { startInitialUsageBillingTx } from "@/lib/billing/start";
+import { evaluateProvisioningBillingContractGate } from "@/lib/billing/provisioning-contract-gate";
 import {
   customerSafeProviderMessage,
   InfrastructureError,
@@ -723,6 +724,7 @@ export async function processProvisioningJob(
       infrastructureOrder: {
         include: {
           serviceOrder: { include: { recommendationQuote: true } },
+          activationRequest: { include: { billingPolicyVersion: true } },
           cloudInstance: true,
           provisioningJobs: true,
         },
@@ -801,7 +803,6 @@ export async function processProvisioningJob(
       "Provisioning requires the exact paid provider route",
     );
   }
-
   if (job.operation === "adopt_preprovisioned_inventory") {
     const inventory = order.preprovisionedInventoryItemId
       ? await prisma.preprovisionedInventoryItem.findUnique({
@@ -954,6 +955,22 @@ export async function processProvisioningJob(
       providerApiVersion: order.providerApiVersion,
       productKind: order.productKind,
     });
+    const lockedBillingGate = await evaluateProvisioningBillingContractGate(
+      {
+        pendingService: order.activationRequest,
+        provider: order.provider,
+        providerApiVersion: order.providerApiVersion,
+        productKind: order.productKind,
+        externalPlanId: locked.externalPlanId,
+      },
+      prisma,
+    );
+    if (!lockedBillingGate.allowed) {
+      throw new InfrastructureError(
+        "billing_contract_blocked",
+        `Billing contract snapshot is blocked: ${lockedBillingGate.blockingReasons.join(", ")}`,
+      );
+    }
     const createInput: CreateServerInput = {
       productKind: locked.productKind,
       region: locked.region,
@@ -998,6 +1015,28 @@ export async function processProvisioningJob(
       createWasSent = true;
     }
 
+    // Re-read the exact approved contract immediately before the first
+    // provider mutation. A newer contract is never substituted for the
+    // pending service snapshot.
+    if (aboutToCreate) {
+      const preMutationBillingGate =
+        await evaluateProvisioningBillingContractGate(
+          {
+            pendingService: order.activationRequest,
+            provider: order.provider,
+            providerApiVersion: order.providerApiVersion,
+            productKind: order.productKind,
+            externalPlanId: locked.externalPlanId,
+          },
+          prisma,
+        );
+      if (!preMutationBillingGate.allowed) {
+        throw new InfrastructureError(
+          "billing_contract_blocked",
+          `Billing contract snapshot is blocked: ${preMutationBillingGate.blockingReasons.join(", ")}`,
+        );
+      }
+    }
     await assertFence(workerFence);
     const submission = await submitProvisioningOnce({
       adapter: provider,
@@ -1242,8 +1281,11 @@ export async function processProvisioningJob(
         ? error.code
         : "provider_unavailable";
     const insufficientBalance = isInsufficientBalanceError(error);
+    const billingContractBlocked =
+      error instanceof InfrastructureError &&
+      error.code === "billing_contract_blocked";
     const manualSnapshotReview =
-      errorCode === "provider_lock_incomplete";
+      errorCode === "provider_lock_incomplete" || billingContractBlocked;
     const needsReconciliation =
       !insufficientBalance &&
       (isAmbiguousProviderError(error) ||
@@ -1263,6 +1305,8 @@ export async function processProvisioningJob(
           to: targetFlow,
           reason: insufficientBalance
             ? "provider_funding_blocked"
+            : billingContractBlocked
+              ? "provider_billing_contract_snapshot_blocked"
             : manualSnapshotReview
               ? "paid_provider_snapshot_incomplete"
               : needsReconciliation
@@ -1270,6 +1314,8 @@ export async function processProvisioningJob(
                 : "provider_create_failed",
           idempotencyKey: insufficientBalance
             ? `provider-funding-blocked:${job.id}`
+            : billingContractBlocked
+              ? `provider-billing-contract-blocked:${job.id}`
             : needsReconciliation
               ? `provider-reconciling:${job.id}`
               : `provider-retryable:${job.id}`,
@@ -1281,7 +1327,9 @@ export async function processProvisioningJob(
             : ProvisioningJobStatus.NEEDS_RECONCILIATION;
         const infraStatus = insufficientBalance
           ? InfrastructureOrderStatus.WAITING_ADMIN_FUNDING
-          : manualSnapshotReview || !needsReconciliation
+          : manualSnapshotReview
+            ? InfrastructureOrderStatus.MANUAL_REVIEW
+            : !needsReconciliation
             ? InfrastructureOrderStatus.FAILED
             : InfrastructureOrderStatus.NEEDS_RECONCILIATION;
         const failed = await tx.provisioningJob.updateMany({
@@ -1295,7 +1343,9 @@ export async function processProvisioningJob(
             status: jobStatus,
             phase: "PROVIDER_FAILED",
             lastErrorCode: errorCode,
-            lastErrorMessage: customerSafeProviderMessage(),
+            lastErrorMessage: billingContractBlocked
+              ? error.message.slice(0, 500)
+              : customerSafeProviderMessage(),
             finishedAt: new Date(),
             workerId: null,
             claimToken: null,
@@ -1321,17 +1371,23 @@ export async function processProvisioningJob(
             idempotencyKey: `provider-failure:${job.id}`,
             type: insufficientBalance
               ? AdminNotificationType.PROVIDER_BALANCE_BLOCKED
+              : manualSnapshotReview
+                ? AdminNotificationType.PROVISIONING_FAILED
               : needsReconciliation
                 ? AdminNotificationType.NEEDS_RECONCILIATION
                 : AdminNotificationType.PROVISIONING_FAILED,
             infrastructureOrderId: order.id,
             title: insufficientBalance
               ? "کمبود اعتبار Provider"
+              : billingContractBlocked
+                ? "Billing Contract نیاز به بررسی دارد"
               : needsReconciliation
                 ? "نیاز به تطبیق"
                 : "خطای آماده‌سازی",
             message: insufficientBalance
               ? "اعتبار Provider کافی نیست و نیاز به بررسی دستی دارد."
+              : billingContractBlocked
+                ? `Provisioning پیش از تماس با Provider متوقف شد: ${error.message.slice(0, 500)}`
               : needsReconciliation
                 ? "وضعیت ساخت سرور مبهم است و نیاز به تطبیق دارد."
                 : "آماده‌سازی سرور با خطا مواجه شد.",

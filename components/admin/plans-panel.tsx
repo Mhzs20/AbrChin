@@ -56,7 +56,7 @@ type BillingPolicyRow = {
 };
 
 type ProviderBillingContractRow = {
-  status: "VERIFIED" | "UNVERIFIED";
+  status: "VERIFIED" | "UNVERIFIED" | "REVOKED" | "INVALID";
   source: string;
   version: number;
   effectiveFrom: string;

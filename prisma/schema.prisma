@@ -142,6 +142,8 @@ enum BillingRoundingPolicy {
 enum ProviderBillingContractStatus {
   VERIFIED
   UNVERIFIED
+  REVOKED
+  INVALID
 }
 
 enum ActivationRequestStatus {
@@ -1498,34 +1500,35 @@ model BillingPolicyVersion {
 }
 
 model ActivationRequest {
-  id                        String                        @id @default(cuid())
-  userId                    String
-  serviceOrderId            String                        @unique
-  planId                    String
-  billingPolicyVersionId    String
-  infrastructureOrderId     String?                       @unique
-  selectedCadence           BillingCadence
-  status                    ActivationRequestStatus       @default(WAITING_ADMIN_APPROVAL)
-  estimatedHourlyRial       BigInt?
-  estimatedDailyRial        BigInt?
-  oneTimeChargesRial        BigInt                        @default(0)
-  minimumCreditRequiredRial BigInt
-  estimateSnapshot          Json
-  idempotencyKey            String                        @unique
-  requestedAt               DateTime                      @default(now()) @db.Timestamptz(3)
-  firstApprovedAt           DateTime?                     @db.Timestamptz(3)
-  firstApprovedById         String?
-  providerConfirmedAt       DateTime?                     @db.Timestamptz(3)
-  activeAt                  DateTime?                     @db.Timestamptz(3)
-  canceledAt                DateTime?                     @db.Timestamptz(3)
-  updatedAt                 DateTime                      @updatedAt @db.Timestamptz(3)
-  user                      User                          @relation(fields: [userId], references: [id], onDelete: Restrict)
-  serviceOrder              ServiceOrder                  @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
-  plan                      InfrastructurePlan            @relation(fields: [planId], references: [id], onDelete: Restrict)
-  billingPolicyVersion      BillingPolicyVersion          @relation(fields: [billingPolicyVersionId], references: [id], onDelete: Restrict)
-  infrastructureOrder       InfrastructureOrder?          @relation(fields: [infrastructureOrderId], references: [id], onDelete: Restrict)
-  firstApprovedBy           User?                         @relation("ActivationApprovedBy", fields: [firstApprovedById], references: [id], onDelete: Restrict)
-  billingPolicySnapshot     ServiceBillingPolicySnapshot?
+  id                              String                        @id @default(cuid())
+  userId                          String
+  serviceOrderId                  String                        @unique
+  planId                          String
+  billingPolicyVersionId          String
+  infrastructureOrderId           String?                       @unique
+  selectedCadence                 BillingCadence
+  status                          ActivationRequestStatus       @default(WAITING_ADMIN_APPROVAL)
+  estimatedHourlyRial             BigInt?
+  estimatedDailyRial              BigInt?
+  oneTimeChargesRial              BigInt                        @default(0)
+  minimumCreditRequiredRial       BigInt
+  estimateSnapshot                Json
+  providerBillingContractSnapshot Json?
+  idempotencyKey                  String                        @unique
+  requestedAt                     DateTime                      @default(now()) @db.Timestamptz(3)
+  firstApprovedAt                 DateTime?                     @db.Timestamptz(3)
+  firstApprovedById               String?
+  providerConfirmedAt             DateTime?                     @db.Timestamptz(3)
+  activeAt                        DateTime?                     @db.Timestamptz(3)
+  canceledAt                      DateTime?                     @db.Timestamptz(3)
+  updatedAt                       DateTime                      @updatedAt @db.Timestamptz(3)
+  user                            User                          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  serviceOrder                    ServiceOrder                  @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  plan                            InfrastructurePlan            @relation(fields: [planId], references: [id], onDelete: Restrict)
+  billingPolicyVersion            BillingPolicyVersion          @relation(fields: [billingPolicyVersionId], references: [id], onDelete: Restrict)
+  infrastructureOrder             InfrastructureOrder?          @relation(fields: [infrastructureOrderId], references: [id], onDelete: Restrict)
+  firstApprovedBy                 User?                         @relation("ActivationApprovedBy", fields: [firstApprovedById], references: [id], onDelete: Restrict)
+  billingPolicySnapshot           ServiceBillingPolicySnapshot?
 
   @@index([status, requestedAt])
   @@index([userId, requestedAt])

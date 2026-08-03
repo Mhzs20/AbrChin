@@ -49,6 +49,18 @@ export default async function StatusPage() {
       status: readiness.components.provisioningWorker,
       icon: Workflow,
     },
+    {
+      title: "تسویهٔ دوره‌های Billing",
+      description: "ثبت دوره‌های بسته و Catch-up محدود",
+      status: readiness.components.billingCatchUp,
+      icon: Activity,
+    },
+    {
+      title: "قراردادهای Billing Provider",
+      description: "نسخه و تأیید قراردادهای آروان و پارس‌پک",
+      status: readiness.components.billingContracts,
+      icon: CheckCircle2,
+    },
   ];
 
   return (
