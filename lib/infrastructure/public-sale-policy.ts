@@ -19,7 +19,7 @@ type SaleRoute = {
 
 export type PublicSaleDecision = {
   allowed: boolean;
-  code: "sale_enabled" | "provider_sale_disabled" | "provider_provisioning_not_enabled";
+  code: "sale_enabled" | "provider_sale_disabled";
 };
 
 export function getPublicSaleDecision(route: SaleRoute): PublicSaleDecision {
@@ -39,12 +39,9 @@ export function getPublicSaleDecision(route: SaleRoute): PublicSaleDecision {
       : { allowed: false, code: "provider_sale_disabled" };
   }
   if (route.provider === InfrastructureProvider.PARSPACK) {
-    if (!env.parspackPublicSaleEnabled) {
-      return { allowed: false, code: "provider_sale_disabled" };
-    }
-    return env.parspackMutationsEnabled
+    return env.parspackPublicSaleEnabled
       ? { allowed: true, code: "sale_enabled" }
-      : { allowed: false, code: "provider_provisioning_not_enabled" };
+      : { allowed: false, code: "provider_sale_disabled" };
   }
   if (route.provider === InfrastructureProvider.ARVAN) {
     if (!env.arvanPublicSaleEnabled) {
@@ -56,12 +53,6 @@ export function getPublicSaleDecision(route: SaleRoute): PublicSaleDecision {
         : env.arvanCloudPublicSaleEnabled;
     if (!productGate) {
       return { allowed: false, code: "provider_sale_disabled" };
-    }
-    if (!env.arvanMutationsEnabled) {
-      return {
-        allowed: false,
-        code: "provider_provisioning_not_enabled",
-      };
     }
     return { allowed: true, code: "sale_enabled" };
   }
@@ -75,19 +66,13 @@ export function isPublicSaleEnabled(route: SaleRoute) {
 export function assertPublicSaleEnabled(route: SaleRoute) {
   const decision = getPublicSaleDecision(route);
   if (decision.allowed) return;
-  if (decision.code === "provider_sale_disabled") {
-    throw new WalletError(
-      decision.code,
-      route.provider === InfrastructureProvider.PARSPACK
-        ? "فروش عمومی سرورهای فوری موقتاً غیرفعال است؛ مبلغی برداشت نشد."
-        : route.offerSource === InfrastructureOfferSource.MANUAL_ADMIN ||
-            route.offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY
-          ? "فروش عمومی موجودی آمادهٔ ابرچین موقتاً غیرفعال است؛ مبلغی برداشت نشد."
-          : "فروش عمومی این مسیر آروان موقتاً غیرفعال است؛ مبلغی برداشت نشد.",
-    );
-  }
   throw new WalletError(
     decision.code,
-    "ساخت این سرور هنوز برای پرداخت فعال نشده است؛ مبلغی برداشت نشد.",
+    route.provider === InfrastructureProvider.PARSPACK
+      ? "فروش عمومی سرورهای فوری موقتاً غیرفعال است؛ مبلغی برداشت نشد."
+      : route.offerSource === InfrastructureOfferSource.MANUAL_ADMIN ||
+          route.offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY
+        ? "فروش عمومی موجودی آمادهٔ ابرچین موقتاً غیرفعال است؛ مبلغی برداشت نشد."
+        : "فروش عمومی این مسیر آروان موقتاً غیرفعال است؛ مبلغی برداشت نشد.",
   );
 }

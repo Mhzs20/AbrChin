@@ -233,7 +233,7 @@ test("Arvan ready/cloud and manual inventory sale gates are independent", () => 
         offerSource: "API_CATALOG",
         productKind: InfrastructureProductKind.CLOUD_SERVER,
       }),
-      { allowed: false, code: "provider_provisioning_not_enabled" },
+      { allowed: true, code: "sale_enabled" },
     );
     process.env.MANUAL_READY_PUBLIC_SALE_ENABLED = "true";
     assert.equal(
@@ -291,7 +291,7 @@ test("ParsPack public sale is fail-closed and independent from connectivity", ()
     );
 
     process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
-    process.env.PARSPACK_MUTATIONS_ENABLED = "true";
+    process.env.PARSPACK_MUTATIONS_ENABLED = "false";
     process.env.PARSPACK_ENABLED = "false";
     assert.deepEqual(
       getPublicSaleDecision({

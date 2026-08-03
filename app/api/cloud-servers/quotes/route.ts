@@ -114,8 +114,7 @@ export async function POST(request: Request) {
       const status =
         error.code === "quote_unavailable" ||
         error.code === "quote_revalidation_failed" ||
-        error.code === "provider_sale_disabled" ||
-        error.code === "provider_provisioning_not_enabled"
+        error.code === "provider_sale_disabled"
           ? 409
           : 400;
       return jsonError(error.message, status);
