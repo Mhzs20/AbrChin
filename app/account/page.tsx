@@ -54,18 +54,45 @@ export default async function AccountOverviewPage() {
 
       <SectionCard title="Billing مصرفی">
         <p>
-          تخمین ساعتی:{" "}
+          {overview.billing.displayMode !== "DAILY" ? (
+            <>
+              تخمین ساعتی:{" "}
+              <strong>
+                {overview.billing.hourlyEstimateRial == null
+                  ? "—"
+                  : `${formatTomanFa(overview.billing.hourlyEstimateRial)} تومان`}
+              </strong>
+            </>
+          ) : null}
+          {overview.billing.displayMode === "BOTH" ? " · " : null}
+          {overview.billing.displayMode !== "HOURLY" ? (
+            <>
+              تخمین ۲۴ ساعت:{" "}
+              <strong>
+                {overview.billing.dailyEstimateRial == null
+                  ? "—"
+                  : `${formatTomanFa(overview.billing.dailyEstimateRial)} تومان`}
+              </strong>
+            </>
+          ) : null}
+        </p>
+        <p>
+          Cadence مالی:{" "}
           <strong>
-            {overview.billing.hourlyEstimateRial == null
-              ? "—"
-              : `${formatTomanFa(overview.billing.hourlyEstimateRial)} تومان`}
+            {overview.billing.cadence === "HOURLY"
+              ? "تسویه ساعتی"
+              : overview.billing.cadence === "DAILY"
+                ? "تسویه روزانه"
+                : "—"}
           </strong>
           {" · "}
-          تخمین ۲۴ ساعت:{" "}
+          Settlement بعدی:{" "}
           <strong>
-            {overview.billing.dailyEstimateRial == null
-              ? "—"
-              : `${formatTomanFa(overview.billing.dailyEstimateRial)} تومان`}
+            {overview.billing.nextSettlementAt
+              ? new Date(
+                  overview.billing.nextSettlementAt,
+                ).toLocaleString("fa-IR")
+              : "—"}
           </strong>
         </p>
         <p>

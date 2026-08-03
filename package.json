@@ -14,6 +14,8 @@
     "test:wallet-recovery": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/wallet-payment-recovery-postgres-test.mts",
     "test:billing-worker": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/billing-worker-postgres-test.mts",
     "test:billing-policy": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/billing-policy-test.mts",
+    "test:billing-admin": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/billing-admin-policy-postgres-test.mts",
+    "test:connection-check": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/arvan-connection-check-test.mts",
     "test:wallet-activation": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/wallet-activation-postgres-test.mts",
     "test:customer-navigation": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/customer-wallet-navigation-test.mts",
     "test:delivery-credential": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/delivery-credential-postgres-test.mts",
@@ -27,7 +29,7 @@
     "test:providers": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/multi-provider-test.mts scripts/provider-flow-behavior-test.mts scripts/review-hardening-test.mts",
     "test:postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/postgres-migration-test.mts",
     "integration:parspack": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/parspack-probe.mts",
-    "test:all": "npm run lint && npm run test:auth && npm run test:wallet && npm run test:payments && npm run test:infrastructure && npm run test:account-admin && npm run test:recommendation && npm run test:providers && npm run build && npm run test:panel-role-e2e && npm run test:worker-runtime && npm run test:smoke && git diff --check",
+    "test:all": "npm run lint && npm run test:auth && npm run test:wallet && npm run test:billing-policy && npm run test:customer-navigation && npm run test:connection-check && npm run test:payments && npm run test:infrastructure && npm run test:account-admin && npm run test:recommendation && npm run test:providers && npm run build && npm run test:panel-role-e2e && npm run test:worker-runtime && npm run test:smoke && git diff --check",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev"

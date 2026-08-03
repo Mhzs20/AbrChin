@@ -57,6 +57,7 @@ type RateInput = {
   customerRateRial: bigint;
   markupBasisPoints?: number;
   calculationUnit?: "SECOND" | "MINUTE" | "HOUR" | "DAY";
+  rateCadence?: BillingCadence | null;
 };
 
 function utcDay(day: number) {
@@ -309,7 +310,10 @@ async function createFixture(input: {
           regionCode: "ir-thr",
           component: rate.component ?? "COMPUTE",
           resourceUnit: rate.resourceUnit ?? "INSTANCE",
-          rateCadence: cadence,
+          rateCadence:
+            rate.rateCadence === undefined
+              ? cadence
+              : rate.rateCadence,
           calculationUnit: rate.calculationUnit ?? "HOUR",
           minimumChargeSeconds: 0,
           roundingPolicy: "EXACT",
@@ -392,6 +396,29 @@ test("usage billing worker is crash-safe, split-aware and wallet-safe", async (t
     assert.equal(invoice.totalAmountRial, 1_000n);
     assert.equal(invoice.status, "PAID");
   });
+
+  await t.test(
+    "generic duration rate settles a daily period without inventing a daily contract",
+    async () => {
+      const fixture = await createFixture({
+        suffix: "generic-daily-rate",
+        periodStart: utcDay(14),
+        rates: [
+          {
+            start: utcDay(14),
+            end: utcDay(15),
+            providerRateRial: 800n,
+            customerRateRial: 1_000n,
+            rateCadence: null,
+          },
+        ],
+      });
+      await runFixture(fixture);
+      const invoice = await invoiceFor(fixture.instance.id);
+      assert.equal(invoice.totalAmountRial, 24_000n);
+      assert.equal(fixture.rateCards[0]!.rateCadence, null);
+    },
+  );
 
   await t.test("mid-day CPU/RAM resource versions are split", async () => {
     const start = utcDay(2);

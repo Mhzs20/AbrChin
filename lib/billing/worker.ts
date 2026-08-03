@@ -386,9 +386,19 @@ async function processSnapshot(
         provider: resource.provider,
         productKind: "CLOUD_SERVER",
         component: { in: components },
-        rateCadence: input.cadence,
+        OR: [
+          { rateCadence: input.cadence },
+          { rateCadence: null },
+        ],
         effectiveFrom: { lt: usage.end },
-        OR: [{ effectiveTo: null }, { effectiveTo: { gt: usage.start } }],
+        AND: [
+          {
+            OR: [
+              { effectiveTo: null },
+              { effectiveTo: { gt: usage.start } },
+            ],
+          },
+        ],
       },
       orderBy: { effectiveFrom: "asc" },
     });

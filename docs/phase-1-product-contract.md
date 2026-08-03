@@ -104,6 +104,11 @@ Global policy → Plan override → Service snapshot
 
 - Planهای جدید Cloud به‌صورت پیش‌فرض Hourly هستند.
 - Cadence سرویس فعال موجود بدون تصمیم صریح تغییر نمی‌کند.
+- Admin در صفحه Plan یک نسخه جدید با Availability، Default Cadence،
+  Display Mode، Buffer، Grace، Low-balance threshold و `effectiveFrom` ثبت
+  می‌کند؛ Preview پیش از ذخیره نشان می‌دهد Serviceهای فعال تغییر نمی‌کنند.
+- تغییر Cadence یک Service فعال فقط با Action کنترل‌شده Admin، اعتبار کافی و
+  از مرز Period بعدی مجاز است؛ Usage باز در همان مرز Split می‌شود.
 - Buffer فعال‌سازی، Threshold کمبود موجودی و Grace Period تنظیم Admin هستند.
 - حداقل اعتبار پیش‌فرض برابر Estimate بیست‌وچهار ساعت به‌علاوه One-time
   charges است.

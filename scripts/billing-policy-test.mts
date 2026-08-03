@@ -11,6 +11,10 @@ import {
   periodContainingUtc,
   validateBillingPolicyContract,
 } from "../lib/billing/policy.ts";
+import {
+  billingDefaultsForNewPlan,
+  parsePlanBillingPolicyInput,
+} from "../lib/billing/policy-admin.ts";
 
 const basePolicy = {
   availability: "HOURLY_ONLY" as const,
@@ -123,5 +127,57 @@ test("policy validation rejects hidden invalid buffer values", () => {
         hourlyMinimumCreditHours: 0,
       }),
     BillingPolicyError,
+  );
+});
+
+test("new Cloud plans are PAYG hourly by global policy while ready servers stay prepaid", () => {
+  assert.deepEqual(
+    billingDefaultsForNewPlan("CLOUD_SERVER", "global-hourly-v1"),
+    {
+      billingModel: "PAYG_WALLET",
+      billingPolicyVersionId: "global-hourly-v1",
+    },
+  );
+  assert.deepEqual(
+    billingDefaultsForNewPlan("READY_INSTANT_SERVER", null),
+    {
+      billingModel: "PREPAID_TERM",
+      billingPolicyVersionId: null,
+    },
+  );
+  assert.throws(
+    () => billingDefaultsForNewPlan("CLOUD_SERVER", null),
+    /Global Billing Policy/,
+  );
+});
+
+test("Admin billing policy input is non-retroactive and supports zero grace", () => {
+  const now = new Date("2026-08-03T12:00:00.000Z");
+  const parsed = parsePlanBillingPolicyInput(
+    {
+      availability: "HOURLY_AND_DAILY",
+      defaultCadence: "DAILY",
+      displayMode: "BOTH",
+      hourlyMinimumCreditHours: 12,
+      dailyMinimumCreditDays: 1,
+      hourlyGracePeriods: 0,
+      dailyGracePeriods: 2,
+      lowBalanceThresholdPeriods: 3,
+      effectiveFrom: "2026-08-03T13:00:00.000Z",
+      changeReason: "controlled policy update",
+    },
+    now,
+  );
+  assert.equal(parsed.hourlyGracePeriods, 0);
+  assert.throws(
+    () =>
+      parsePlanBillingPolicyInput(
+        {
+          ...parsed,
+          effectiveFrom: "2026-08-03T11:59:00.000Z",
+        },
+        now,
+      ),
+    /نمی‌تواند در گذشته/,
   );
 });

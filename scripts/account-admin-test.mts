@@ -74,4 +74,16 @@ test("admin infrastructure action routes exist", async () => {
     ),
     true,
   );
+  assert.equal(
+    existsSync(
+      "app/api/admin/infrastructure/plans/[id]/billing-policy/route.ts",
+    ),
+    true,
+  );
+  assert.equal(
+    existsSync(
+      "app/api/admin/instances/[id]/billing-cadence/route.ts",
+    ),
+    true,
+  );
 });

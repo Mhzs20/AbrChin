@@ -11,16 +11,20 @@ export function CloudActivationPanel({
   quoteId,
   hourlyEstimateToman,
   dailyEstimateToman,
-  minimumCreditToman,
+  hourlyMinimumCreditToman,
+  dailyMinimumCreditToman,
   walletBalanceToman,
   availability,
+  displayMode,
 }: {
   quoteId: string;
   hourlyEstimateToman: string;
   dailyEstimateToman: string;
-  minimumCreditToman: string;
+  hourlyMinimumCreditToman: string;
+  dailyMinimumCreditToman: string;
   walletBalanceToman: string;
   availability: "HOURLY_ONLY" | "DAILY_ONLY" | "HOURLY_AND_DAILY";
+  displayMode: "HOURLY" | "DAILY" | "BOTH";
 }) {
   const { showToast } = useToast();
   const [cadence, setCadence] = useState<Cadence>(
@@ -90,15 +94,28 @@ export function CloudActivationPanel({
         </label>
       ) : null}
       <p>
-        تخمین ساعتی: <strong>{hourlyEstimateToman} تومان</strong>
-        <br />
-        تخمین ۲۴ ساعت: <strong>{dailyEstimateToman} تومان</strong>
+        {displayMode !== "DAILY" ? (
+          <>
+            تخمین ساعتی: <strong>{hourlyEstimateToman} تومان</strong>
+          </>
+        ) : null}
+        {displayMode === "BOTH" ? <br /> : null}
+        {displayMode !== "HOURLY" ? (
+          <>
+            تخمین ۲۴ ساعت: <strong>{dailyEstimateToman} تومان</strong>
+          </>
+        ) : null}
       </p>
       <p>
         موجودی Wallet: <strong>{walletBalanceToman} تومان</strong>
         <br />
         حداقل اعتبار فعال‌سازی:{" "}
-        <strong>{minimumCreditToman} تومان</strong>
+        <strong>
+          {cadence === "HOURLY"
+            ? hourlyMinimumCreditToman
+            : dailyMinimumCreditToman}{" "}
+          تومان
+        </strong>
       </p>
       <small>
         این مبلغ Estimate است؛ Invoice نهایی می‌تواند Traffic یا Add-onهای

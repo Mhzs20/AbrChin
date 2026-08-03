@@ -4,9 +4,11 @@ import { prisma } from "@/lib/db";
 import { getInfrastructureStage } from "@/lib/labels/infrastructure";
 import { ledgerTypeLabel } from "@/lib/labels/ledger";
 import { formatTomanFa } from "@/lib/money";
+import { periodContainingUtc } from "@/lib/billing/policy";
 
 export async function getAccountOverview(userId: string) {
-  const utcDayStart = new Date();
+  const now = new Date();
+  const utcDayStart = new Date(now);
   utcDayStart.setUTCHours(0, 0, 0, 0);
   const [wallet, activeServices, pendingOrders, latestOrder, latestService, recentTransactions, todayUsage, latestSettlement, pendingResourceChanges, outstanding] =
     await Promise.all([
@@ -40,7 +42,10 @@ export async function getAccountOverview(userId: string) {
             take: 1,
           },
           billingPolicySnapshots: {
-            where: { effectiveTo: null },
+            where: {
+              effectiveFrom: { lte: now },
+              OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+            },
             orderBy: { effectiveFrom: "desc" },
             take: 1,
           },
@@ -103,6 +108,9 @@ export async function getAccountOverview(userId: string) {
     wallet && hourlyEstimateRial && hourlyEstimateRial > 0n
       ? (wallet.availableBalance * 3_600n) / hourlyEstimateRial
       : null;
+  const nextSettlementAt = billingSnapshot
+    ? periodContainingUtc(billingSnapshot.cadence, now).periodEnd
+    : null;
 
   return {
     walletBalanceRial: wallet?.availableBalance ?? 0n,
@@ -131,6 +139,9 @@ export async function getAccountOverview(userId: string) {
         : null,
       hourlyEstimateRial,
       dailyEstimateRial,
+      cadence: billingSnapshot?.cadence ?? null,
+      displayMode: billingSnapshot?.displayMode ?? null,
+      nextSettlementAt,
       runwaySeconds,
       currentResources: currentResources
         ? {

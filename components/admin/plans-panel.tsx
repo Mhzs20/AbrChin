@@ -35,6 +35,23 @@ type PlanRow = {
   skuMarkupBasisPoints: number | null;
   basePriceRial: string | null;
   finalPriceRial: string | null;
+  billingPolicy: BillingPolicyRow | null;
+  pendingBillingPolicy: string | null;
+};
+
+type BillingPolicyRow = {
+  id: string;
+  version: number;
+  scope: string;
+  availability: "HOURLY_ONLY" | "DAILY_ONLY" | "HOURLY_AND_DAILY";
+  defaultCadence: "HOURLY" | "DAILY";
+  displayMode: "HOURLY" | "DAILY" | "BOTH";
+  hourlyMinimumCreditHours: number;
+  dailyMinimumCreditDays: number;
+  hourlyGracePeriods: number;
+  dailyGracePeriods: number;
+  lowBalanceThresholdPeriods: number;
+  effectiveFrom: string;
 };
 
 type CatalogRow = {
@@ -89,6 +106,22 @@ const emptyManualForm = {
   publish: false,
   sortOrder: "0",
   offerSource: "MANUAL_ADMIN",
+};
+
+const emptyBillingForm = {
+  availability: "HOURLY_ONLY" as
+    | "HOURLY_ONLY"
+    | "DAILY_ONLY"
+    | "HOURLY_AND_DAILY",
+  defaultCadence: "HOURLY" as "HOURLY" | "DAILY",
+  displayMode: "BOTH" as "HOURLY" | "DAILY" | "BOTH",
+  hourlyMinimumCreditHours: "24",
+  dailyMinimumCreditDays: "1",
+  hourlyGracePeriods: "24",
+  dailyGracePeriods: "3",
+  lowBalanceThresholdPeriods: "3",
+  effectiveFrom: "",
+  changeReason: "",
 };
 
 function toman(value: string | null) {
@@ -158,6 +191,8 @@ export function AdminPlansPanel({
   const [inventoryUsername, setInventoryUsername] = useState("root");
   const [inventorySecret, setInventorySecret] = useState("");
   const [inventoryReason, setInventoryReason] = useState("");
+  const [billingPlan, setBillingPlan] = useState<PlanRow | null>(null);
+  const [billingForm, setBillingForm] = useState(emptyBillingForm);
   const selectedCatalog = useMemo(
     () => catalogItems.find((item) => item.id === form.catalogItemId) ?? null,
     [catalogItems, form.catalogItemId],
@@ -211,6 +246,86 @@ export function AdminPlansPanel({
       imageCode: item?.compatibleImageCodes[0] ?? "",
       productKind: item?.productKind ?? current.productKind,
     }));
+  }
+
+  function openBillingPolicy(plan: PlanRow) {
+    const policy = plan.billingPolicy;
+    setBillingPlan(plan);
+    setBillingForm({
+      availability: policy?.availability ?? "HOURLY_ONLY",
+      defaultCadence: policy?.defaultCadence ?? "HOURLY",
+      displayMode: policy?.displayMode ?? "BOTH",
+      hourlyMinimumCreditHours: String(
+        policy?.hourlyMinimumCreditHours ?? 24,
+      ),
+      dailyMinimumCreditDays: String(
+        policy?.dailyMinimumCreditDays ?? 1,
+      ),
+      hourlyGracePeriods: String(policy?.hourlyGracePeriods ?? 24),
+      dailyGracePeriods: String(policy?.dailyGracePeriods ?? 3),
+      lowBalanceThresholdPeriods: String(
+        policy?.lowBalanceThresholdPeriods ?? 3,
+      ),
+      effectiveFrom: "",
+      changeReason: "",
+    });
+    setError("");
+  }
+
+  async function submitBillingPolicy() {
+    if (!billingPlan) return;
+    const effectiveFrom = new Date(billingForm.effectiveFrom);
+    if (Number.isNaN(effectiveFrom.getTime())) {
+      setError("زمان شروع اثر معتبر و الزامی است.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/admin/infrastructure/plans/${billingPlan.id}/billing-policy`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: JSON.stringify({
+            ...billingForm,
+            hourlyMinimumCreditHours: Number(
+              billingForm.hourlyMinimumCreditHours,
+            ),
+            dailyMinimumCreditDays: Number(
+              billingForm.dailyMinimumCreditDays,
+            ),
+            hourlyGracePeriods: Number(
+              billingForm.hourlyGracePeriods,
+            ),
+            dailyGracePeriods: Number(
+              billingForm.dailyGracePeriods,
+            ),
+            lowBalanceThresholdPeriods: Number(
+              billingForm.lowBalanceThresholdPeriods,
+            ),
+            effectiveFrom: effectiveFrom.toISOString(),
+          }),
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : "ذخیره Billing Policy ممکن نشد.",
+        );
+        return;
+      }
+      window.location.reload();
+    } catch {
+      setError("ارتباط برقرار نشد.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function submit() {
@@ -405,8 +520,23 @@ export function AdminPlansPanel({
                 : plan.catalogSource === "PREPROVISIONED_INVENTORY"
                   ? ` · موجودی واقعی: ${plan.availableInventory.toLocaleString("fa-IR")}`
                   : " · API Catalog"}
+              {plan.billingPolicy
+                ? ` · Billing: ${plan.billingPolicy.availability} / پیش‌فرض ${plan.billingPolicy.defaultCadence}`
+                : ""}
+              {plan.pendingBillingPolicy
+                ? ` · تغییر زمان‌بندی‌شده: ${new Date(plan.pendingBillingPolicy).toLocaleString("fa-IR")}`
+                : ""}
             </span>
             <span style={{ display: "flex", gap: 8 }}>
+            {plan.productKind === "CLOUD_SERVER" ? (
+              <button
+                type="button"
+                className="product-btn product-btn--quiet"
+                onClick={() => openBillingPolicy(plan)}
+              >
+                تنظیم Billing
+              </button>
+            ) : null}
             {plan.catalogSource === "PREPROVISIONED_INVENTORY" ? (
               <button
                 type="button"
@@ -585,6 +715,115 @@ export function AdminPlansPanel({
           <input type="checkbox" checked={form.displayDuringProviderOutage} onChange={(event) => setForm((current) => ({ ...current, displayDuringProviderOutage: event.target.checked }))} />
           نمایش آخرین اطلاعات سالم هنگام اختلال Provider
         </label>
+        {error ? <p className="product-error">{error}</p> : null}
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={Boolean(billingPlan)}
+        title={`Billing Policy — ${billingPlan?.title ?? ""}`}
+        confirmLabel="ثبت نسخه جدید"
+        loading={loading}
+        onCancel={() => setBillingPlan(null)}
+        onConfirm={submitBillingPolicy}
+      >
+        <p className="product-tech">
+          این تغییر نسخه‌دار است و فقط Activationهای آینده را تغییر می‌دهد.
+          Snapshot سرویس‌های فعال و Invoiceهای بسته‌شده دست‌نخورده می‌مانند.
+        </p>
+        <FormField id="billing-availability" label="Billing availability">
+          <select
+            id="billing-availability"
+            value={billingForm.availability}
+            onChange={(event) => {
+              const availability = event.target.value as
+                | "HOURLY_ONLY"
+                | "DAILY_ONLY"
+                | "HOURLY_AND_DAILY";
+              setBillingForm((current) => ({
+                ...current,
+                availability,
+                defaultCadence:
+                  availability === "DAILY_ONLY"
+                    ? "DAILY"
+                    : availability === "HOURLY_ONLY"
+                      ? "HOURLY"
+                      : current.defaultCadence,
+              }));
+            }}
+          >
+            <option value="HOURLY_ONLY">فقط ساعتی</option>
+            <option value="DAILY_ONLY">فقط روزانه</option>
+            <option value="HOURLY_AND_DAILY">انتخاب ساعتی یا روزانه</option>
+          </select>
+        </FormField>
+        <FormField id="billing-default-cadence" label="Cadence پیش‌فرض">
+          <select
+            id="billing-default-cadence"
+            value={billingForm.defaultCadence}
+            onChange={(event) =>
+              setBillingForm((current) => ({
+                ...current,
+                defaultCadence: event.target.value as
+                  | "HOURLY"
+                  | "DAILY",
+              }))
+            }
+            disabled={billingForm.availability !== "HOURLY_AND_DAILY"}
+          >
+            <option value="HOURLY">ساعتی</option>
+            <option value="DAILY">روزانه</option>
+          </select>
+        </FormField>
+        <FormField id="billing-display-mode" label="نمایش قیمت">
+          <select
+            id="billing-display-mode"
+            value={billingForm.displayMode}
+            onChange={(event) =>
+              setBillingForm((current) => ({
+                ...current,
+                displayMode: event.target.value as
+                  | "HOURLY"
+                  | "DAILY"
+                  | "BOTH",
+              }))
+            }
+          >
+            <option value="HOURLY">فقط تخمین ساعتی</option>
+            <option value="DAILY">فقط تخمین روزانه</option>
+            <option value="BOTH">هر دو تخمین</option>
+          </select>
+        </FormField>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
+          <FormField id="billing-hourly-buffer" label="Buffer ساعتی (ساعت)">
+            <input id="billing-hourly-buffer" type="number" min={1} value={billingForm.hourlyMinimumCreditHours} onChange={(event) => setBillingForm((current) => ({ ...current, hourlyMinimumCreditHours: event.target.value }))} />
+          </FormField>
+          <FormField id="billing-daily-buffer" label="Buffer روزانه (روز)">
+            <input id="billing-daily-buffer" type="number" min={1} value={billingForm.dailyMinimumCreditDays} onChange={(event) => setBillingForm((current) => ({ ...current, dailyMinimumCreditDays: event.target.value }))} />
+          </FormField>
+          <FormField id="billing-hourly-grace" label="Grace ساعتی (Period)">
+            <input id="billing-hourly-grace" type="number" min={0} value={billingForm.hourlyGracePeriods} onChange={(event) => setBillingForm((current) => ({ ...current, hourlyGracePeriods: event.target.value }))} />
+          </FormField>
+          <FormField id="billing-daily-grace" label="Grace روزانه (Period)">
+            <input id="billing-daily-grace" type="number" min={0} value={billingForm.dailyGracePeriods} onChange={(event) => setBillingForm((current) => ({ ...current, dailyGracePeriods: event.target.value }))} />
+          </FormField>
+        </div>
+        <FormField id="billing-low-balance" label="Low-balance threshold (Period)">
+          <input id="billing-low-balance" type="number" min={1} value={billingForm.lowBalanceThresholdPeriods} onChange={(event) => setBillingForm((current) => ({ ...current, lowBalanceThresholdPeriods: event.target.value }))} />
+        </FormField>
+        <FormField id="billing-effective-from" label="زمان شروع اثر">
+          <input id="billing-effective-from" type="datetime-local" value={billingForm.effectiveFrom} onChange={(event) => setBillingForm((current) => ({ ...current, effectiveFrom: event.target.value }))} required />
+        </FormField>
+        <FormField id="billing-change-reason" label="دلیل تغییر">
+          <textarea id="billing-change-reason" rows={2} value={billingForm.changeReason} onChange={(event) => setBillingForm((current) => ({ ...current, changeReason: event.target.value }))} required />
+        </FormField>
+        <div className="product-tech" aria-live="polite">
+          <strong>پیش‌نمایش اثر:</strong>{" "}
+          {billingForm.availability === "HOURLY_AND_DAILY"
+            ? "Customer بین تسویه ساعتی و روزانه یکی را انتخاب می‌کند"
+            : billingForm.availability === "HOURLY_ONLY"
+              ? "فقط Settlement ساعتی فعال می‌شود"
+              : "فقط Settlement روزانه فعال می‌شود"}
+          {`؛ نمایش ${billingForm.displayMode} مستقل از Cadence مالی است؛ اثر از ${billingForm.effectiveFrom ? new Date(billingForm.effectiveFrom).toLocaleString("fa-IR") : "زمان نامعتبر"}.`}
+        </div>
         {error ? <p className="product-error">{error}</p> : null}
       </ConfirmDialog>
       <ConfirmDialog

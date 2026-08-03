@@ -57,3 +57,8 @@ Global → Plan override → immutable Service snapshot
 
 Plan جدید Cloud پیش‌فرض Hourly است. Service فعال موجود بدون Migration/تصمیم
 صریح Cadence قبلی را حفظ می‌کند.
+
+Plan override از Admin به‌صورت نسخه جدید و Auditشده ثبت می‌شود. تغییر Cadence
+Service، Snapshot قبلی را تا مرز Period بعدی معتبر نگه می‌دارد و Snapshot و
+Usage Interval جدید را از همان مرز آغاز می‌کند؛ Invoice یا Usage بسته‌شده
+بازنویسی نمی‌شود.

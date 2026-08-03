@@ -24,6 +24,7 @@ import {
 } from "@/lib/pricing/plan-pricing";
 import { parseMarkupPercentToBasisPoints } from "@/lib/pricing/provider-pricing";
 import { readRequestMeta } from "@/lib/session";
+import { billingDefaultsForNewPlan } from "@/lib/billing/policy-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -178,6 +179,22 @@ export async function POST(request: Request) {
           where: { id: replay.entityId },
         });
       }
+      const globalBillingPolicy =
+        catalogItem.productKind === InfrastructureProductKind.CLOUD_SERVER
+          ? await tx.billingPolicyVersion.findFirst({
+              where: {
+                policyKey: "global",
+                scope: "GLOBAL",
+                effectiveFrom: { lte: new Date() },
+                effectiveTo: null,
+              },
+              orderBy: { version: "desc" },
+            })
+          : null;
+      const billingDefaults = billingDefaultsForNewPlan(
+        catalogItem.productKind,
+        globalBillingPolicy?.id ?? null,
+      );
       const created = await tx.infrastructurePlan.create({
         data: {
           code,
@@ -218,6 +235,7 @@ export async function POST(request: Request) {
           offerSource: "API_CATALOG",
           offerPriceValidUntil: null,
           offerLastVerifiedAt: null,
+          ...billingDefaults,
           sortOrder: Number(body.sortOrder ?? 0),
           catalogItemId: catalogItem.id,
           catalogMappingStatus: "MAPPED",

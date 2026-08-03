@@ -14,6 +14,8 @@ import {
 import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
 import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
 import { countAvailableInventoryByPlan } from "@/lib/infrastructure/preprovisioned-inventory";
+import { getEffectiveBillingPolicy } from "@/lib/billing/policy-service";
+import { serializeBillingPolicy } from "@/lib/billing/policy-admin";
 
 export const metadata: Metadata = {
   title: "پلن‌های زیرساخت | پنل مدیریت | ابرچین",
@@ -57,6 +59,34 @@ export default async function AdminPlansPage() {
   const inventoryCounts = await countAvailableInventoryByPlan(
     plans.map((plan) => plan.id),
   );
+  const now = new Date();
+  const effectiveBillingPolicies = new Map(
+    await Promise.all(
+      plans
+        .filter(
+          (plan) =>
+            plan.productKind === "CLOUD_SERVER" &&
+            plan.billingModel === "PAYG_WALLET",
+        )
+        .map(async (plan) => [
+          plan.id,
+          await getEffectiveBillingPolicy(plan.id, now),
+        ] as const),
+    ),
+  );
+  const pendingBillingPolicies =
+    await prisma.billingPolicyVersion.findMany({
+      where: {
+        planId: {
+          in: plans
+            .filter((plan) => plan.productKind === "CLOUD_SERVER")
+            .map((plan) => plan.id),
+        },
+        effectiveFrom: { gt: now },
+        effectiveTo: null,
+      },
+      orderBy: { effectiveFrom: "asc" },
+    });
   const panelPlans = plans.map((plan) => ({
     id: plan.id,
     code: plan.code,
@@ -101,6 +131,15 @@ export default async function AdminPlansPage() {
           image.externalId === plan.imageCode,
       )?.id ?? null,
     sortOrder: plan.sortOrder,
+    billingPolicy: effectiveBillingPolicies.has(plan.id)
+      ? serializeBillingPolicy(
+          effectiveBillingPolicies.get(plan.id)!,
+        )
+      : null,
+    pendingBillingPolicy:
+      pendingBillingPolicies.find(
+        (policy) => policy.planId === plan.id,
+      )?.effectiveFrom.toISOString() ?? null,
   }));
   const panelCatalogItems = catalogItems.map((item) => {
     const pricingConfig = pricingConfigs.find(

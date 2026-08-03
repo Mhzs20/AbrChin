@@ -144,7 +144,11 @@ export async function recordProviderConfirmedResourceVersion(input: {
           where: {
             cloudInstanceId: instance.id,
             resourceVersionId: current.id,
-            endedAt: null,
+            startedAt: { lt: input.providerConfirmedAt },
+            OR: [
+              { endedAt: null },
+              { endedAt: { gt: input.providerConfirmedAt } },
+            ],
           },
           data: {
             status: "COMPLETE",
@@ -173,17 +177,45 @@ export async function recordProviderConfirmedResourceVersion(input: {
           idempotencyKey: input.idempotencyKey,
         },
       });
-      await tx.usageInterval.create({
-        data: {
+      if (current) {
+        await tx.usageInterval.updateMany({
+          where: {
+            cloudInstanceId: instance.id,
+            resourceVersionId: current.id,
+            startedAt: { gte: input.providerConfirmedAt },
+          },
+          data: { resourceVersionId: resourceVersion.id },
+        });
+      }
+      const existingScheduledInterval = await tx.usageInterval.findFirst({
+        where: {
           cloudInstanceId: instance.id,
           resourceVersionId: resourceVersion.id,
           billingPolicySnapshotId: snapshot.id,
-          status: "OPEN",
-          startedAt: input.providerConfirmedAt,
-          providerEventStartId: input.providerEventId,
-          idempotencyKey: `usage:${input.idempotencyKey}`,
+          startedAt: { lte: input.providerConfirmedAt },
+          OR: [
+            { endedAt: null },
+            { endedAt: { gt: input.providerConfirmedAt } },
+          ],
         },
       });
+      if (!existingScheduledInterval) {
+        await tx.usageInterval.create({
+          data: {
+            cloudInstanceId: instance.id,
+            resourceVersionId: resourceVersion.id,
+            billingPolicySnapshotId: snapshot.id,
+            status: snapshot.effectiveTo ? "COMPLETE" : "OPEN",
+            startedAt: input.providerConfirmedAt,
+            endedAt: snapshot.effectiveTo,
+            providerEventStartId: input.providerEventId,
+            providerEventEndId: snapshot.effectiveTo
+              ? `billing-policy:${snapshot.id}`
+              : null,
+            idempotencyKey: `usage:${input.idempotencyKey}`,
+          },
+        });
+      }
       if (changeRequest) {
         await tx.resourceChangeRequest.update({
           where: { id: changeRequest.id },

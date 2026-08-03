@@ -132,7 +132,10 @@ export async function startInitialUsageBillingTx(
       regionCode: plan.regionCode,
       component: "COMPUTE",
       resourceUnit: "INSTANCE",
-      rateCadence: "HOURLY",
+      // Usage calculation and Wallet settlement are independent. This
+      // duration-based rate is valid for either hourly or daily settlement;
+      // an independent Provider daily contract is stored as a DAILY rate.
+      rateCadence: null,
       calculationUnit: policy.calculationUnit,
       minimumChargeSeconds: policy.minimumChargeSeconds,
       roundingPolicy: policy.roundingPolicy,

@@ -109,6 +109,8 @@ export const AuditActions = {
   CONTROLLED_TOPUP_REFUND_COMPLETED:
     "controlled_topup_refund_completed",
   BILLING_ADJUSTMENT: "billing_adjustment",
+  BILLING_POLICY_UPDATE: "billing_policy_update",
+  BILLING_CADENCE_CHANGE: "billing_cadence_change",
   ACTIVATION_REQUESTED: "activation_requested",
   ACTIVATION_APPROVED: "activation_approved",
   RESOURCE_CHANGE_APPROVED: "resource_change_approved",

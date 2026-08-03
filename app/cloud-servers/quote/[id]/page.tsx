@@ -69,6 +69,19 @@ export default async function ReadyServerQuotePage({
           cadence: policy?.defaultCadence ?? "HOURLY",
         })
       : null;
+  const alternateActivationEstimate =
+    user &&
+    quoteRecord.plan.billingModel === "PAYG_WALLET" &&
+    policy?.availability === "HOURLY_AND_DAILY"
+      ? await getActivationEstimate({
+          quoteId: quote.id,
+          userId: user.id,
+          cadence:
+            policy.defaultCadence === "HOURLY"
+              ? "DAILY"
+              : "HOURLY",
+        })
+      : null;
   const wallet = user ? await ensureWalletForUser(user.id) : null;
   const publicHourlyEstimate =
     quoteRecord.providerHourlyPriceIrr != null &&
@@ -130,13 +143,27 @@ export default async function ReadyServerQuotePage({
                 dailyEstimateToman={formatTomanFa(
                   activationEstimate.dailyEstimateRial,
                 )}
-                minimumCreditToman={formatTomanFa(
-                  activationEstimate.minimumCreditRequiredRial,
+                hourlyMinimumCreditToman={formatTomanFa(
+                  activationEstimate.cadence === "HOURLY"
+                    ? activationEstimate.minimumCreditRequiredRial
+                    : alternateActivationEstimate
+                        ?.minimumCreditRequiredRial ??
+                        activationEstimate
+                          .minimumCreditRequiredRial,
+                )}
+                dailyMinimumCreditToman={formatTomanFa(
+                  activationEstimate.cadence === "DAILY"
+                    ? activationEstimate.minimumCreditRequiredRial
+                    : alternateActivationEstimate
+                        ?.minimumCreditRequiredRial ??
+                        activationEstimate
+                          .minimumCreditRequiredRial,
                 )}
                 walletBalanceToman={formatTomanFa(
                   wallet?.availableBalance ?? 0n,
                 )}
                 availability={activationEstimate.availability}
+                displayMode={activationEstimate.displayMode}
               />
             ) : (
               <OrderCheckoutPanel

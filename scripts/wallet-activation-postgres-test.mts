@@ -299,6 +299,15 @@ test("wallet top-up to estimate, activation and Admin approval stays mutation-fr
   );
   assert.equal(
     (
+      await db.rateCardVersion.findFirstOrThrow({
+        where: { planId: plan.id },
+        orderBy: { effectiveFrom: "desc" },
+      })
+    ).rateCadence,
+    null,
+  );
+  assert.equal(
+    (
       await db.activationRequest.findUniqueOrThrow({
         where: { id: activation.id },
       })

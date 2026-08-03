@@ -22,12 +22,29 @@ export async function getEffectiveBillingPolicy(
 ): Promise<BillingPolicyVersion> {
   const plan = await db.infrastructurePlan.findUnique({
     where: { id: planId },
-    include: { billingPolicyVersion: true },
   });
   if (!plan || plan.billingModel !== "PAYG_WALLET") {
     throw new Error("payg_plan_not_found");
   }
-  const policy = plan.billingPolicyVersion;
+  const planPolicy = await db.billingPolicyVersion.findFirst({
+    where: {
+      planId,
+      effectiveFrom: { lte: at },
+      OR: [{ effectiveTo: null }, { effectiveTo: { gt: at } }],
+    },
+    orderBy: [{ effectiveFrom: "desc" }, { version: "desc" }],
+  });
+  const policy =
+    planPolicy ??
+    (await db.billingPolicyVersion.findFirst({
+      where: {
+        policyKey: "global",
+        scope: "GLOBAL",
+        effectiveFrom: { lte: at },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: at } }],
+      },
+      orderBy: [{ effectiveFrom: "desc" }, { version: "desc" }],
+    }));
   if (
     !policy ||
     policy.effectiveFrom.getTime() > at.getTime() ||
