@@ -1,6 +1,7 @@
 import {
   BillingCadence,
   BillingInvoiceStatus,
+  type BillingRun,
   BillingRunStatus,
   Prisma,
   type BillingComponentType,
@@ -48,7 +49,7 @@ const DEFAULT_CATCH_UP_MAX_PERIODS = 24;
 
 export type BillingCatchUpCadenceStatus = {
   cadence: BillingCadence;
-  pendingPeriods: number;
+  hasBacklog: boolean;
   oldestOutstandingPeriod: {
     periodStart: string;
     periodEnd: string;
@@ -59,6 +60,45 @@ export type BillingCatchUpStatus = {
   status: "CURRENT" | "BACKLOG";
   cadences: BillingCatchUpCadenceStatus[];
 };
+
+export type BillingCatchUpFailurePeriod = {
+  periodStart: string;
+  periodEnd: string;
+  billingRunId: string | null;
+  failureCode: string;
+};
+
+export type BillingCatchUpResult = {
+  cadence: BillingCadence;
+  runs: BillingRun[];
+  failedPeriod: BillingCatchUpFailurePeriod | null;
+};
+
+export class BillingCatchUpFailure extends Error {
+  readonly cadence: BillingCadence;
+  readonly failedPeriod: BillingCatchUpFailurePeriod;
+
+  constructor(result: BillingCatchUpResult) {
+    if (!result.failedPeriod) {
+      throw new Error("billing_catch_up_failure_requires_failed_period");
+    }
+    super(
+      `billing_catch_up_failed:${result.cadence}:${result.failedPeriod.periodStart}:${result.failedPeriod.failureCode}`,
+    );
+    this.name = "BillingCatchUpFailure";
+    this.cadence = result.cadence;
+    this.failedPeriod = result.failedPeriod;
+  }
+}
+
+/**
+ * A bounded batch that reaches its limit is a normal worker cycle. A failed
+ * period is not: callers must keep the worker heartbeat stale until the next
+ * successful catch-up cycle can retry the durable BillingRun.
+ */
+export function requireSuccessfulBillingCatchUp(result: BillingCatchUpResult) {
+  if (result.failedPeriod) throw new BillingCatchUpFailure(result);
+}
 
 function maximumDate(left: Date, right: Date) {
   return left > right ? left : right;
@@ -114,9 +154,9 @@ async function recordBillingRunFailure(input: {
   periodEnd: Date;
   workerId: string;
   failureCode: string;
-}) {
+}): Promise<BillingRun | null> {
   const key = periodKey(input.cadence, input.periodStart, input.periodEnd);
-  await prisma.$transaction(
+  return prisma.$transaction(
     async (tx) => {
       await tx.$queryRaw`
         SELECT pg_advisory_xact_lock(
@@ -127,10 +167,10 @@ async function recordBillingRunFailure(input: {
         where: { idempotencyKey: `billing-run:${key}` },
       });
       if (existing && TERMINAL_BILLING_RUN_STATUSES.has(existing.status)) {
-        return;
+        return null;
       }
       if (existing) {
-        await tx.billingRun.update({
+        return tx.billingRun.update({
           where: { id: existing.id },
           data: {
             status: BillingRunStatus.FAILED,
@@ -139,9 +179,8 @@ async function recordBillingRunFailure(input: {
             finishedAt: new Date(),
           },
         });
-        return;
       }
-      await tx.billingRun.create({
+      return tx.billingRun.create({
         data: {
           cadence: input.cadence,
           periodStart: input.periodStart,
@@ -1058,7 +1097,7 @@ export async function settleClosedBillingPeriodsCatchUp(input: {
   workerId: string;
   now?: Date;
   maxPeriods?: number;
-}) {
+}): Promise<BillingCatchUpResult> {
   const now = input.now ?? new Date();
   const periods = await listClosedBillingPeriodsForCatchUp({
     cadence: input.cadence,
@@ -1077,12 +1116,20 @@ export async function settleClosedBillingPeriodsCatchUp(input: {
         }),
       );
     } catch (error) {
+      const failedRun = await recordBillingRunFailure({
+        cadence: input.cadence,
+        periodStart: period.periodStart,
+        periodEnd: period.periodEnd,
+        workerId: input.workerId,
+        failureCode: failureCode(error),
+      });
       return {
         cadence: input.cadence,
         runs,
         failedPeriod: {
           periodStart: period.periodStart.toISOString(),
           periodEnd: period.periodEnd.toISOString(),
+          billingRunId: failedRun?.id ?? null,
           failureCode: failureCode(error),
         },
       };
@@ -1108,7 +1155,7 @@ export async function getBillingCatchUpStatus(
       const oldest = periods[0] ?? null;
       return {
         cadence,
-        pendingPeriods: oldest ? 1 : 0,
+        hasBacklog: Boolean(oldest),
         oldestOutstandingPeriod: oldest
           ? {
               periodStart: oldest.periodStart.toISOString(),
@@ -1119,7 +1166,7 @@ export async function getBillingCatchUpStatus(
     }),
   );
   return {
-    status: cadences.some((cadence) => cadence.pendingPeriods > 0)
+    status: cadences.some((cadence) => cadence.hasBacklog)
       ? "BACKLOG"
       : "CURRENT",
     cadences,

@@ -16,7 +16,11 @@ import { runProvisioningWorkerCycle, touchWorkerHeartbeat } from "@/lib/infrastr
 import { processSubscriptionLifecycle } from "@/lib/subscriptions/service";
 import { getWorkerConfig } from "@/lib/worker/config";
 import { processOperationalAlertOutbox } from "@/lib/operations/alert-worker";
-import { settleClosedBillingPeriodsCatchUp } from "@/lib/billing/worker";
+import {
+  BillingCatchUpFailure,
+  requireSuccessfulBillingCatchUp,
+  settleClosedBillingPeriodsCatchUp,
+} from "@/lib/billing/worker";
 import { enqueueExpiredDunningForSuspensionReview } from "@/lib/billing/dunning";
 
 const config = getWorkerConfig();
@@ -97,18 +101,20 @@ async function main() {
       }
       if (Date.now() >= nextBillingAt) {
         const billingNow = new Date();
-        await settleClosedBillingPeriodsCatchUp({
+        const hourlyCatchUp = await settleClosedBillingPeriodsCatchUp({
           cadence: "HOURLY",
           workerId: config.workerId,
           now: billingNow,
           maxPeriods: BILLING_CATCH_UP_MAX_PERIODS,
         });
-        await settleClosedBillingPeriodsCatchUp({
+        requireSuccessfulBillingCatchUp(hourlyCatchUp);
+        const dailyCatchUp = await settleClosedBillingPeriodsCatchUp({
           cadence: "DAILY",
           workerId: config.workerId,
           now: billingNow,
           maxPeriods: BILLING_CATCH_UP_MAX_PERIODS,
         });
+        requireSuccessfulBillingCatchUp(dailyCatchUp);
         await enqueueExpiredDunningForSuspensionReview(billingNow);
         nextBillingAt = Date.now() + BILLING_WORKER_INTERVAL_MS;
       }
@@ -123,7 +129,22 @@ async function main() {
         }
       }
     } catch (error) {
-      console.error("[abrchin-worker]", error instanceof Error ? error.message : "unknown");
+      if (error instanceof BillingCatchUpFailure) {
+        console.error(
+          JSON.stringify({
+            event: "billing_catch_up_failed",
+            workerId: config.workerId,
+            cadence: error.cadence,
+            periodStart: error.failedPeriod.periodStart,
+            periodEnd: error.failedPeriod.periodEnd,
+            billingRunId: error.failedPeriod.billingRunId,
+            failureCode: error.failedPeriod.failureCode,
+            retryStatus: "pending_next_billing_cycle",
+          }),
+        );
+      } else {
+        console.error("[abrchin-worker]", error instanceof Error ? error.message : "unknown");
+      }
       await touchWorkerHeartbeat({ cycleOk: false, status: "stale" });
       await sleep(config.pollMs);
     }

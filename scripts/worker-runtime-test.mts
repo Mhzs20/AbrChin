@@ -4,6 +4,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
 
+import {
+  BillingCatchUpFailure,
+  requireSuccessfulBillingCatchUp,
+} from "../lib/billing/worker.ts";
+
 function loadEnvFile() {
   if (process.env.DATABASE_URL || !existsSync(".env")) return;
   for (const line of readFileSync(".env", "utf8").split("\n")) {
@@ -45,6 +50,34 @@ test("successful idle cycles update the healthy heartbeat before branching", () 
   assert.ok(cycleIndex >= 0);
   assert.ok(heartbeatIndex > cycleIndex);
   assert.ok(branchIndex > heartbeatIndex);
+});
+
+test("failed billing catch-up prevents a healthy worker cycle and carries retry context", () => {
+  assert.throws(
+    () =>
+      requireSuccessfulBillingCatchUp({
+        cadence: "HOURLY",
+        runs: [],
+        failedPeriod: {
+          periodStart: "2026-08-01T01:00:00.000Z",
+          periodEnd: "2026-08-01T02:00:00.000Z",
+          billingRunId: "billing-run-1",
+          failureCode: "simulated_failure",
+        },
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof BillingCatchUpFailure);
+      assert.equal(error.cadence, "HOURLY");
+      assert.equal(error.failedPeriod.billingRunId, "billing-run-1");
+      return true;
+    },
+  );
+  const source = readFileSync("scripts/provisioning-worker-entry.ts", "utf8");
+  const failureCheck = source.indexOf("requireSuccessfulBillingCatchUp(hourlyCatchUp)");
+  const heartbeat = source.indexOf("await touchWorkerHeartbeat({ cycleOk: true })");
+  assert.ok(failureCheck >= 0);
+  assert.ok(heartbeat > failureCheck);
+  assert.match(source, /retryStatus: "pending_next_billing_cycle"/);
 });
 
 test("worker healthcheck rejects a fresh stale heartbeat", () => {

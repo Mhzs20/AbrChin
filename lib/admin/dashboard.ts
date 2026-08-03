@@ -426,7 +426,10 @@ export async function getAdminOperationsCenter() {
         return {
           key: `billing-contract-${provider.toLowerCase()}`,
           label: `${provider === "ARVAN" ? "آروان" : "پارس‌پک"} Billing Contract`,
-          status: contract?.status === "VERIFIED" ? "healthy" : "warning",
+          status:
+            contract?.status === "VERIFIED" && blockingReasons.length === 0
+              ? "healthy"
+              : "warning",
           message: contract
             ? `${contract.status} · ${contract.source} · v${contract.version} · ${contract.effectiveFrom.toISOString()}${blockingReasons.length ? ` · تأییدنشده: ${blockingReasons.join(", ")}` : ""}`
             : "UNVERIFIED · contract missing",

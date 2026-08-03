@@ -12,7 +12,7 @@ export function derivePlatformReadinessStatus(
   worker: ReadinessComponentStatus,
   billingCatchUp: ReadinessComponentStatus = "healthy",
 ): PlatformReadinessStatus {
-  if (database === "down") return "outage";
+  if (database === "down" || worker === "down") return "outage";
   if (
     database !== "healthy" ||
     worker === "stale" ||
@@ -21,7 +21,6 @@ export function derivePlatformReadinessStatus(
   ) {
     return "degraded";
   }
-  if (worker === "down") return "outage";
   return "operational";
 }
 
