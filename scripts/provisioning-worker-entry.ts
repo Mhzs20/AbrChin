@@ -16,12 +16,21 @@ import { runProvisioningWorkerCycle, touchWorkerHeartbeat } from "@/lib/infrastr
 import { processSubscriptionLifecycle } from "@/lib/subscriptions/service";
 import { getWorkerConfig } from "@/lib/worker/config";
 import { processOperationalAlertOutbox } from "@/lib/operations/alert-worker";
+import { settleLatestClosedBillingPeriod } from "@/lib/billing/worker";
+import { enqueueExpiredDunningForSuspensionReview } from "@/lib/billing/dunning";
 
 const config = getWorkerConfig();
 validateProviderEnvironment();
 const SUBSCRIPTION_LIFECYCLE_INTERVAL_MS = 60_000;
 const CATALOG_SYNC_INTERVAL_MS = Math.max(
   Number.parseInt(process.env.CATALOG_SYNC_INTERVAL_MS ?? "300000", 10),
+  60_000,
+);
+const BILLING_WORKER_INTERVAL_MS = Math.max(
+  Number.parseInt(
+    process.env.BILLING_WORKER_INTERVAL_MS ?? "60000",
+    10,
+  ),
   60_000,
 );
 
@@ -42,6 +51,7 @@ async function main() {
   let idleRounds = 0;
   let nextSubscriptionLifecycleAt = 0;
   let nextCatalogSyncAt = 0;
+  let nextBillingAt = 0;
 
   while (!stopping) {
     try {
@@ -76,6 +86,21 @@ async function main() {
           persistIncidents: true,
         });
         nextCatalogSyncAt = Date.now() + CATALOG_SYNC_INTERVAL_MS;
+      }
+      if (Date.now() >= nextBillingAt) {
+        const billingNow = new Date();
+        await settleLatestClosedBillingPeriod({
+          cadence: "HOURLY",
+          workerId: config.workerId,
+          now: billingNow,
+        });
+        await settleLatestClosedBillingPeriod({
+          cadence: "DAILY",
+          workerId: config.workerId,
+          now: billingNow,
+        });
+        await enqueueExpiredDunningForSuspensionReview(billingNow);
+        nextBillingAt = Date.now() + BILLING_WORKER_INTERVAL_MS;
       }
       await touchWorkerHeartbeat({ cycleOk: true });
       if (processed || alertsProcessed > 0) {

@@ -132,6 +132,70 @@ export function calculateMinimumCreditRial(input: {
   );
 }
 
+export function calculateResourceChangeBufferRial(input: {
+  policy: BillingPolicyContract;
+  cadence: BillingCadence;
+  currentHourlyEstimateRial: bigint;
+  targetHourlyEstimateRial: bigint;
+  currentDailyEstimateRial: bigint;
+  targetDailyEstimateRial: bigint;
+  oneTimeChargesRial?: bigint;
+}) {
+  validateBillingPolicyContract(input.policy);
+  assertCadenceAllowed(input.policy.availability, input.cadence);
+  const oneTimeCharges = input.oneTimeChargesRial ?? 0n;
+  if (oneTimeCharges < 0n) {
+    throw new BillingPolicyError(
+      "invalid_one_time_charge",
+      "One-time charge cannot be negative",
+    );
+  }
+  const current =
+    input.cadence === "HOURLY"
+      ? input.currentHourlyEstimateRial
+      : input.currentDailyEstimateRial;
+  const target =
+    input.cadence === "HOURLY"
+      ? input.targetHourlyEstimateRial
+      : input.targetDailyEstimateRial;
+  const incrementalRate = target > current ? target - current : 0n;
+  const periods =
+    input.cadence === "HOURLY"
+      ? BigInt(input.policy.hourlyMinimumCreditHours)
+      : BigInt(input.policy.dailyMinimumCreditDays);
+  return incrementalRate * periods + oneTimeCharges;
+}
+
+export function evaluateResourceChangeCredit(input: {
+  availableBalanceRial: bigint;
+  requiredIncrementalBufferRial: bigint;
+  isDowngrade: boolean;
+}) {
+  if (
+    input.availableBalanceRial < 0n ||
+    input.requiredIncrementalBufferRial < 0n
+  ) {
+    throw new BillingPolicyError(
+      "invalid_credit_evaluation",
+      "Credit evaluation amounts cannot be negative",
+    );
+  }
+  if (input.isDowngrade) {
+    return {
+      allowed: true as const,
+      shortfallRial: 0n,
+    };
+  }
+  const shortfall =
+    input.requiredIncrementalBufferRial > input.availableBalanceRial
+      ? input.requiredIncrementalBufferRial - input.availableBalanceRial
+      : 0n;
+  return {
+    allowed: shortfall === 0n,
+    shortfallRial: shortfall,
+  };
+}
+
 export function buildPriceDisplay(input: {
   displayMode: BillingPriceDisplayMode;
   hourlyRateRial: bigint | null;

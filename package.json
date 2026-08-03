@@ -12,6 +12,8 @@
     "test:auth": "node --experimental-strip-types --test scripts/auth-unit-test.mts scripts/auth-integration-test.mts scripts/kavenegar-sms-test.mts",
     "test:wallet": "node --experimental-strip-types --test scripts/wallet-test.mts",
     "test:wallet-recovery": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/wallet-payment-recovery-postgres-test.mts",
+    "test:billing-worker": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/billing-worker-postgres-test.mts",
+    "test:billing-policy": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/billing-policy-test.mts",
     "test:payments": "node --experimental-strip-types --test scripts/payments-test.mts",
     "test:infrastructure": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/infrastructure-test.mts scripts/worker-test.mts scripts/production-hardening-test.mts scripts/parspack-contract-test.mts scripts/provider-pricing-test.mts scripts/migration-safety-test.mts",
     "test:worker-runtime": "node --experimental-strip-types --test scripts/worker-runtime-test.mts",
