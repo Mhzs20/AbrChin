@@ -4,6 +4,7 @@ import {
   LedgerType,
   PaymentGatewayProvider,
   ProvisioningJobStatus,
+  ServiceConnectionName,
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
@@ -15,7 +16,7 @@ import { catalogItemBasePriceRial } from "@/lib/pricing/plan-pricing";
 import { calculateQuotePricing } from "@/lib/pricing/quote-line-items";
 import { assessInfrastructureRecoveryActions } from "@/lib/infrastructure/resource-disposition";
 import { getOperationalAlertConfigurationStatus } from "@/lib/operations/alert-configuration";
-import { classifyAdminOperationQueue } from "@/lib/admin/operations";
+import { listAdminOperationsQueues } from "@/lib/admin/operations";
 
 export async function getAdminDashboardStats() {
   const todayStart = new Date();
@@ -79,9 +80,10 @@ export async function getAdminDashboardStats() {
 export async function getSystemStatuses() {
   await ensureGatewayConfigsSeeded();
   const gateways = await prisma.paymentGatewayConfig.findMany();
-  const [catalogStates, pricingConfigs] = await Promise.all([
+  const [catalogStates, pricingConfigs, connectionChecks] = await Promise.all([
     prisma.providerCatalogState.findMany(),
     prisma.providerPricingConfig.findMany(),
+    prisma.serviceConnectionCheck.findMany(),
   ]);
   const catalog = catalogStates.find((item) => item.provider === "PARSPACK");
   const pricing = pricingConfigs.find((item) => item.provider === "PARSPACK");
@@ -89,31 +91,30 @@ export async function getSystemStatuses() {
   const arvanCatalog = catalogStates.find((item) => item.provider === "ARVAN");
   const arvanPricing = pricingConfigs.find((item) => item.provider === "ARVAN");
   const persistedConnection = (
+    service: ServiceConnectionName,
     configured: boolean,
-    state: (typeof catalogStates)[number] | undefined,
-  ) => ({
-    status: !configured
-      ? "unconfigured" as const
-      : state?.lastError
-        ? "error" as const
-        : state?.lastHealthCheck
+  ) => {
+    const check = connectionChecks.find((item) => item.service === service);
+    return {
+      status: !configured
+        ? "unconfigured" as const
+        : check?.status === "HEALTHY"
           ? "healthy" as const
-          : "disabled" as const,
-    message: !configured
-      ? "تنظیم نشده"
-      : state?.lastError
-        ? "آخرین بررسی ناموفق بود"
-        : state?.lastHealthCheck
-          ? "آخرین بررسی موفق بود"
-          : "بررسی اتصال اجرا نشده است",
-  });
+          : check?.status === "ERROR"
+            ? "error" as const
+            : "disabled" as const,
+      message: !configured
+        ? "تنظیم نشده"
+        : check?.message ?? "بررسی اتصال اجرا نشده است",
+    };
+  };
   const parspackConnection = persistedConnection(
+    ServiceConnectionName.PARSPACK,
     isCloudProviderConfigured("PARSPACK"),
-    catalog,
   );
   const arvanConnection = persistedConnection(
+    ServiceConnectionName.ARVAN,
     isCloudProviderConfigured("ARVAN"),
-    arvanCatalog,
   );
 
   const providerState = (
@@ -332,53 +333,11 @@ export async function getRecentAdminOperations() {
 }
 
 export async function getAdminOperationsCenter() {
-  const [system, plans, orders] = await Promise.all([
+  const [system, plans, queues] = await Promise.all([
     getSystemStatuses(),
     listAllAdminPlansForOperationsCenter(),
-    prisma.infrastructureOrder.findMany({
-      where: {
-        OR: [
-          { status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING },
-          { status: InfrastructureOrderStatus.FUNDING_CONFIRMED },
-          { productFlowState: { in: ["WAITING_ADMIN_DELIVERY_APPROVAL", "DELIVERED"] } },
-          {
-            productFlowState: {
-              in: [
-                "PROVISIONING_RETRYABLE",
-                "PROVISIONING_RECONCILING",
-                "PROVISIONING_MANUAL_REVIEW",
-                "HEALTH_CHECK_FAILED",
-                "DELIVERY_RETRYABLE",
-              ],
-            },
-          },
-          {
-            status: {
-              in: [
-                InfrastructureOrderStatus.BLOCKED_PROVIDER_BALANCE,
-                InfrastructureOrderStatus.NEEDS_RECONCILIATION,
-                InfrastructureOrderStatus.MANUAL_REVIEW,
-                InfrastructureOrderStatus.FAILED,
-              ],
-            },
-          },
-        ],
-      },
-      orderBy: { updatedAt: "asc" },
-      take: 30,
-      include: { user: true, plan: true, serviceOrder: true },
-    }),
+    listAdminOperationsQueues(),
   ]);
-
-  const queues = {
-    provision: [] as typeof orders,
-    delivery: [] as typeof orders,
-    attention: [] as typeof orders,
-  };
-  for (const order of orders) {
-    const queue = classifyAdminOperationQueue(order);
-    if (queue) queues[queue].push(order);
-  }
 
   const publishedSellableSkuCount = plans.filter(
     (plan) =>

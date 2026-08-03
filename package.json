@@ -17,6 +17,7 @@
     "test:wallet-activation": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/wallet-activation-postgres-test.mts",
     "test:customer-navigation": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/customer-wallet-navigation-test.mts",
     "test:delivery-credential": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/delivery-credential-postgres-test.mts",
+    "test:admin-operations": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/admin-operations-postgres-test.mts",
     "test:payments": "node --experimental-strip-types --test scripts/payments-test.mts",
     "test:infrastructure": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/infrastructure-test.mts scripts/worker-test.mts scripts/production-hardening-test.mts scripts/parspack-contract-test.mts scripts/provider-pricing-test.mts scripts/migration-safety-test.mts",
     "test:worker-runtime": "node --experimental-strip-types --test scripts/worker-runtime-test.mts",

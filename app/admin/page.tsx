@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { OperationsQueueAction } from "@/components/admin/operations-queue-action";
 import { PageHeader, SectionCard, StatCard, StatusBadge } from "@/components/product";
 import { getAdminOperationsCenter } from "@/lib/admin/dashboard";
 import { getAdminPageAccess } from "@/lib/auth/guards";
-import { infrastructureOrderStatusLabel } from "@/lib/labels/infrastructure";
 
 export const metadata: Metadata = {
   title: "داشبورد | پنل مدیریت | ابرچین",
@@ -21,24 +21,6 @@ export default async function AdminDashboardPage() {
 
   const connectionTone = (status: string) =>
     status === "healthy" ? "success" : status === "error" ? "danger" : "warning";
-  const queueCards = [
-    {
-      key: "provision",
-      title: "منتظر تأیید ساخت",
-      description: "پرداخت ثبت شده است؛ پیش از ساخت، هزینه و وضعیت Provider را بررسی کنید.",
-    },
-    {
-      key: "delivery",
-      title: "منتظر تأیید تحویل",
-      description: "Resource آماده است و تا تأیید شما به Customer نمایش داده نمی‌شود.",
-    },
-    {
-      key: "attention",
-      title: "نیازمند اقدام",
-      description: "خطا یا اختلاف وجود دارد؛ سفارش و پرداخت حفظ شده‌اند و نیاز به تصمیم دارند.",
-    },
-  ] as const;
-
   return (
     <>
       <PageHeader
@@ -69,27 +51,28 @@ export default async function AdminDashboardPage() {
         </div>
       </SectionCard>
 
-      <SectionCard title="صف اقدام سفارش‌ها">
+      <SectionCard title="صف‌های مالی و عملیاتی">
         <div className="product-stat-grid">
-          {queueCards.map((card) => {
-            const orders = operations.queues[card.key];
+          {operations.queues.map((queue) => {
             return (
               <StatCard
-                key={card.key}
-                label={card.title}
-                value={orders.length.toLocaleString("fa-IR")}
-                action={<Link href="/admin/infrastructure/orders">مشاهده و اقدام</Link>}
+                key={queue.key}
+                label={queue.title}
+                value={queue.items.length.toLocaleString("fa-IR")}
               >
-                <p style={{ margin: 0, color: "var(--product-muted)", fontSize: 13 }}>{card.description}</p>
-                {orders.length > 0 ? (
+                <p style={{ margin: 0, color: "var(--product-muted)", fontSize: 13 }}>{queue.description}</p>
+                {queue.items.length > 0 ? (
                   <ul style={{ margin: "10px 0 0", padding: 0, listStyle: "none", display: "grid", gap: 6 }}>
-                    {orders.slice(0, 3).map((order) => (
-                      <li key={order.id} className="product-tech">
-                        {order.serviceOrderId.slice(-8)} — {order.plan.title} — {infrastructureOrderStatusLabel[order.status]}
+                    {queue.items.slice(0, 5).map((item) => (
+                      <li key={item.id} className="product-tech" style={{ display: "grid", gap: 4 }}>
+                        <span>{item.reference.slice(-18)} — {item.summary}</span>
+                        <span>
+                          <OperationsQueueAction item={item} />
+                        </span>
                       </li>
                     ))}
                   </ul>
-                ) : null}
+                ) : <p className="product-tech">موردی در صف نیست.</p>}
               </StatCard>
             );
           })}

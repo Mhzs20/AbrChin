@@ -46,4 +46,18 @@ test("operations center assigns real order states to exactly one actionable queu
     }),
     null,
   );
+  assert.equal(
+    classifyAdminOperationQueue({
+      status: "FUNDING_CONFIRMED",
+      productFlowState: "PROVISION_APPROVED",
+    }),
+    null,
+  );
+  assert.equal(
+    classifyAdminOperationQueue({
+      status: "ACTIVE",
+      productFlowState: "DELIVERED",
+    }),
+    null,
+  );
 });
