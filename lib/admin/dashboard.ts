@@ -9,6 +9,9 @@ import {
 
 import { prisma } from "@/lib/db";
 import { getBillingCatchUpStatus } from "@/lib/billing/worker";
+import {
+  providerBillingContractBlockingReasons,
+} from "@/lib/billing/provider-contract";
 import { isCloudProviderConfigured } from "@/lib/infrastructure/provider-factory";
 import { getWorkerHealthStatus } from "@/lib/infrastructure/provisioning-service";
 import { ensureGatewayConfigsSeeded } from "@/lib/payments/gateway-config";
@@ -334,12 +337,27 @@ export async function getRecentAdminOperations() {
 }
 
 export async function getAdminOperationsCenter() {
-  const [system, plans, queues, billingCatchUp] = await Promise.all([
+  const now = new Date();
+  const [system, plans, queues, billingCatchUp, billingContracts] =
+    await Promise.all([
     getSystemStatuses(),
     listAllAdminPlansForOperationsCenter(),
     listAdminOperationsQueues(),
     getBillingCatchUpStatus(),
+    prisma.providerBillingContractVersion.findMany({
+      where: {
+        productKind: "CLOUD_SERVER",
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+      },
+      orderBy: [{ effectiveFrom: "desc" }, { version: "desc" }],
+    }),
   ]);
+  const currentBillingContracts = new Map<string, (typeof billingContracts)[number]>();
+  for (const contract of billingContracts) {
+    const key = `${contract.provider}:${contract.providerApiVersion}:${contract.productKind}`;
+    if (!currentBillingContracts.has(key)) currentBillingContracts.set(key, contract);
+  }
 
   const publishedSellableSkuCount = plans.filter(
     (plan) =>
@@ -398,6 +416,23 @@ export async function getAdminOperationsCenter() {
                 ?.oldestOutstandingPeriod?.periodEnd ?? "نامشخص"}`,
         href: "/admin",
       },
+      ...["ARVAN", "PARSPACK"].map((provider) => {
+        const contract = currentBillingContracts.get(
+          `${provider}:v1:CLOUD_SERVER`,
+        );
+        const blockingReasons = providerBillingContractBlockingReasons(
+          contract ?? null,
+        );
+        return {
+          key: `billing-contract-${provider.toLowerCase()}`,
+          label: `${provider === "ARVAN" ? "آروان" : "پارس‌پک"} Billing Contract`,
+          status: contract?.status === "VERIFIED" ? "healthy" : "warning",
+          message: contract
+            ? `${contract.status} · ${contract.source} · v${contract.version} · ${contract.effectiveFrom.toISOString()}${blockingReasons.length ? ` · تأییدنشده: ${blockingReasons.join(", ")}` : ""}`
+            : "UNVERIFIED · contract missing",
+          href: "/admin/infrastructure/plans",
+        };
+      }),
     ],
     queues,
   };

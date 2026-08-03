@@ -4,6 +4,12 @@ import {
   ResourceVersionState,
 } from "@prisma/client";
 
+import {
+  getEffectiveProviderBillingContract,
+  requireVerifiedProviderBillingContract,
+  serializeProviderBillingContract,
+  stopStatePolicyFromProviderContract,
+} from "@/lib/billing/provider-contract";
 import { WalletError } from "@/lib/wallet/errors";
 
 function record(value: Prisma.JsonValue): Record<string, unknown> {
@@ -72,10 +78,22 @@ export async function startInitialUsageBillingTx(
       "منابع Plan برای شروع Billing کامل نیست.",
     );
   }
-  const estimate = record(activation.estimateSnapshot);
-  const nestedBilling = record(
-    estimate.billingSnapshot as Prisma.JsonValue,
+  const providerContractRecord = await getEffectiveProviderBillingContract(
+    {
+      provider: plan.provider,
+      providerApiVersion: plan.providerApiVersion,
+      productKind: plan.productKind,
+      at: input.providerConfirmedAt,
+    },
+    tx,
   );
+  const providerContract = requireVerifiedProviderBillingContract(
+    providerContractRecord,
+  );
+  const providerContractSnapshot = serializeProviderBillingContract(
+    providerContractRecord!,
+  );
+  const estimate = record(activation.estimateSnapshot);
   const providerHourlyRial = bigintField(
     estimate.providerHourlyRial,
     "providerHourlyRial",
@@ -96,10 +114,10 @@ export async function startInitialUsageBillingTx(
       activationRequestId: activation.id,
       cadence: activation.selectedCadence,
       displayMode: policy.displayMode,
-      calculationUnit: policy.calculationUnit,
-      minimumChargeSeconds: policy.minimumChargeSeconds,
-      roundingPolicy: policy.roundingPolicy,
-      prorationSupported: policy.prorationSupported,
+      calculationUnit: providerContract.calculationUnit,
+      minimumChargeSeconds: providerContract.minimumChargeSeconds,
+      roundingPolicy: providerContract.roundingPolicy,
+      prorationSupported: providerContract.prorationSupported,
       hourlyEstimateRial,
       dailyEstimateRial,
       minimumCreditRial: activation.minimumCreditRequiredRial,
@@ -110,10 +128,11 @@ export async function startInitialUsageBillingTx(
       lowBalanceThresholdPeriods:
         policy.lowBalanceThresholdPeriods,
       stopStateComponentPolicy:
-        policy.stopStateComponentPolicy as Prisma.InputJsonValue,
+        stopStatePolicyFromProviderContract(
+          providerContract,
+        ) as Prisma.InputJsonValue,
       providerPolicySnapshot:
-        (nestedBilling.providerPolicySnapshot ??
-          {}) as Prisma.InputJsonValue,
+        providerContractSnapshot as Prisma.InputJsonValue,
       effectiveFrom: input.providerConfirmedAt,
       idempotencyKey: `billing-policy:activation:${activation.id}`,
     },
@@ -136,10 +155,10 @@ export async function startInitialUsageBillingTx(
       // duration-based rate is valid for either hourly or daily settlement;
       // an independent Provider daily contract is stored as a DAILY rate.
       rateCadence: null,
-      calculationUnit: policy.calculationUnit,
-      minimumChargeSeconds: policy.minimumChargeSeconds,
-      roundingPolicy: policy.roundingPolicy,
-      prorationSupported: policy.prorationSupported,
+      calculationUnit: providerContract.calculationUnit,
+      minimumChargeSeconds: providerContract.minimumChargeSeconds,
+      roundingPolicy: providerContract.roundingPolicy,
+      prorationSupported: providerContract.prorationSupported,
       providerAmount: providerHourlyRial,
       providerCurrency: "IRR",
       providerAmountUnit: "RIAL",
@@ -153,6 +172,8 @@ export async function startInitialUsageBillingTx(
         typeof estimate.quoteId === "string"
           ? `quote:${estimate.quoteId}`
           : `activation:${activation.id}`,
+      providerBillingContractSnapshot:
+        providerContractSnapshot as Prisma.InputJsonValue,
       effectiveFrom: input.providerConfirmedAt,
       idempotencyKey: `rate:activation:${activation.id}:compute`,
     },

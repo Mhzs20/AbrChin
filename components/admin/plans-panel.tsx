@@ -37,6 +37,7 @@ type PlanRow = {
   finalPriceRial: string | null;
   billingPolicy: BillingPolicyRow | null;
   pendingBillingPolicy: string | null;
+  providerBillingContract: ProviderBillingContractRow | null;
 };
 
 type BillingPolicyRow = {
@@ -52,6 +53,14 @@ type BillingPolicyRow = {
   dailyGracePeriods: number;
   lowBalanceThresholdPeriods: number;
   effectiveFrom: string;
+};
+
+type ProviderBillingContractRow = {
+  status: "VERIFIED" | "UNVERIFIED";
+  source: string;
+  version: number;
+  effectiveFrom: string;
+  unverifiedFields: string[];
 };
 
 type CatalogRow = {
@@ -525,6 +534,12 @@ export function AdminPlansPanel({
                 : ""}
               {plan.pendingBillingPolicy
                 ? ` · تغییر زمان‌بندی‌شده: ${new Date(plan.pendingBillingPolicy).toLocaleString("fa-IR")}`
+                : ""}
+              {plan.providerBillingContract
+                ? ` · قرارداد Provider: ${plan.providerBillingContract.status} / ${plan.providerBillingContract.source} / v${plan.providerBillingContract.version} / ${new Date(plan.providerBillingContract.effectiveFrom).toLocaleString("fa-IR")}`
+                : ""}
+              {plan.providerBillingContract?.unverifiedFields.length
+                ? ` · موارد تأییدنشده: ${plan.providerBillingContract.unverifiedFields.join(", ")}`
                 : ""}
             </span>
             <span style={{ display: "flex", gap: 8 }}>

@@ -139,6 +139,11 @@ enum BillingRoundingPolicy {
   NEAREST_UNIT
 }
 
+enum ProviderBillingContractStatus {
+  VERIFIED
+  UNVERIFIED
+}
+
 enum ActivationRequestStatus {
   CREDIT_REQUIRED
   WAITING_ADMIN_APPROVAL
@@ -1559,6 +1564,30 @@ model ServiceBillingPolicySnapshot {
   @@index([billingPolicyVersionId, effectiveFrom])
 }
 
+model ProviderBillingContractVersion {
+  id                          String                        @id @default(cuid())
+  provider                    InfrastructureProvider
+  providerApiVersion          String
+  productKind                 InfrastructureProductKind
+  version                     Int
+  status                      ProviderBillingContractStatus
+  source                      String
+  calculationUnit             BillingCalculationUnit?
+  minimumChargeSeconds        Int?
+  roundingPolicy              BillingRoundingPolicy?
+  prorationSupported          Boolean?
+  hourlyRateAvailable         Boolean?
+  dailyRateAvailable          Boolean?
+  stopStateBillableComponents Json
+  fieldVerification           Json
+  effectiveFrom               DateTime                      @db.Timestamptz(3)
+  effectiveTo                 DateTime?                     @db.Timestamptz(3)
+  createdAt                   DateTime                      @default(now()) @db.Timestamptz(3)
+
+  @@unique([provider, providerApiVersion, productKind, version])
+  @@index([provider, providerApiVersion, productKind, effectiveFrom])
+}
+
 model ResourceChangeRequest {
   id                           String               @id @default(cuid())
   cloudInstanceId              String
@@ -1625,33 +1654,34 @@ model ResourceVersion {
 }
 
 model RateCardVersion {
-  id                     String                    @id @default(cuid())
-  planId                 String?
-  provider               InfrastructureProvider
-  providerApiVersion     String                    @default("v1")
-  productKind            InfrastructureProductKind
-  externalPlanId         String
-  regionCode             String
-  component              BillingComponentType
-  resourceUnit           BillingResourceUnit
-  rateCadence            BillingCadence?
-  calculationUnit        BillingCalculationUnit
-  minimumChargeSeconds   Int                       @default(0)
-  roundingPolicy         BillingRoundingPolicy
-  prorationSupported     Boolean
-  providerAmount         BigInt
-  providerCurrency       String
-  providerAmountUnit     String
-  normalizedProviderRial BigInt
-  markupBasisPoints      Int
-  customerRateRial       BigInt
-  sourceRevision         String
-  effectiveFrom          DateTime                  @db.Timestamptz(3)
-  effectiveTo            DateTime?                 @db.Timestamptz(3)
-  idempotencyKey         String                    @unique
-  createdAt              DateTime                  @default(now()) @db.Timestamptz(3)
-  plan                   InfrastructurePlan?       @relation(fields: [planId], references: [id], onDelete: Restrict)
-  billingLines           BillingLine[]
+  id                              String                    @id @default(cuid())
+  planId                          String?
+  provider                        InfrastructureProvider
+  providerApiVersion              String                    @default("v1")
+  productKind                     InfrastructureProductKind
+  externalPlanId                  String
+  regionCode                      String
+  component                       BillingComponentType
+  resourceUnit                    BillingResourceUnit
+  rateCadence                     BillingCadence?
+  calculationUnit                 BillingCalculationUnit
+  minimumChargeSeconds            Int                       @default(0)
+  roundingPolicy                  BillingRoundingPolicy
+  prorationSupported              Boolean
+  providerAmount                  BigInt
+  providerCurrency                String
+  providerAmountUnit              String
+  normalizedProviderRial          BigInt
+  markupBasisPoints               Int
+  customerRateRial                BigInt
+  sourceRevision                  String
+  providerBillingContractSnapshot Json?
+  effectiveFrom                   DateTime                  @db.Timestamptz(3)
+  effectiveTo                     DateTime?                 @db.Timestamptz(3)
+  idempotencyKey                  String                    @unique
+  createdAt                       DateTime                  @default(now()) @db.Timestamptz(3)
+  plan                            InfrastructurePlan?       @relation(fields: [planId], references: [id], onDelete: Restrict)
+  billingLines                    BillingLine[]
 
   @@index([provider, productKind, externalPlanId, effectiveFrom])
   @@index([planId, component, effectiveFrom])

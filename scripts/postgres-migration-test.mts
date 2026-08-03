@@ -2216,6 +2216,40 @@ try {
   await deploy();
   await copyThrough(walletFirstActivation);
   await deploy();
+  await copyThrough(migrationNames.at(-1)!);
+  await deploy();
+
+  const providerBillingContracts =
+    await db.providerBillingContractVersion.findMany({
+      where: {
+        productKind: InfrastructureProductKind.CLOUD_SERVER,
+        providerApiVersion: "v1",
+      },
+      orderBy: { provider: "asc" },
+      select: {
+        provider: true,
+        status: true,
+        source: true,
+        version: true,
+        calculationUnit: true,
+      },
+    });
+  assert.deepEqual(providerBillingContracts, [
+    {
+      provider: InfrastructureProvider.ARVAN,
+      status: "UNVERIFIED",
+      source: "adapter_contract_not_verified",
+      version: 1,
+      calculationUnit: null,
+    },
+    {
+      provider: InfrastructureProvider.PARSPACK,
+      status: "UNVERIFIED",
+      source: "adapter_contract_not_verified",
+      version: 1,
+      calculationUnit: null,
+    },
+  ]);
 
   const finalPaygUpgrade =
     await db.$queryRawUnsafe<

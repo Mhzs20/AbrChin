@@ -24,9 +24,12 @@ import {
   getEffectiveBillingPolicy,
 } from "@/lib/billing/policy-service";
 import { calculateMarkupRial } from "@/lib/billing/policy";
+import {
+  getEffectiveProviderBillingContract,
+  requireVerifiedProviderBillingContract,
+} from "@/lib/billing/provider-contract";
 import { prisma } from "@/lib/db";
 import { idempotencyFingerprint } from "@/lib/idempotency";
-import { providerBillingPolicy } from "@/lib/infrastructure/cloud-provider-adapter";
 import { assertPublicSaleEnabled } from "@/lib/infrastructure/public-sale-policy";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
 import { WalletError } from "@/lib/wallet/errors";
@@ -37,6 +40,7 @@ type QuoteForEstimate = {
   id: string;
   providerHourlyPriceIrr: bigint | null;
   markupBasisPointsSnapshot: number | null;
+  providerApiVersion: string | null;
   expiresAt: Date;
   plan: {
     id: string;
@@ -80,18 +84,27 @@ async function estimateForQuote(
     new Date(),
     db,
   );
-  const providerPolicy = providerBillingPolicy(quote.plan.provider);
+  const providerContract = await getEffectiveProviderBillingContract(
+    {
+      provider: quote.plan.provider,
+      // Missing Provider API identity must resolve to no contract, never a
+      // guessed contract version.
+      providerApiVersion: quote.providerApiVersion ?? "__missing__",
+      productKind: "CLOUD_SERVER",
+    },
+    db,
+  );
   const billingSnapshot = buildActivationBillingSnapshot({
     policy,
     cadence,
     hourlyEstimateRial,
     dailyEstimateRial,
     oneTimeChargesRial,
-    providerPolicy,
+    providerContract,
   });
   return {
     policy,
-    providerPolicy,
+    providerContract,
     providerHourlyRial,
     markupBasisPoints,
     markupHourlyRial,
@@ -431,6 +444,16 @@ export async function approveActivation(input: {
           "Snapshot فعال‌سازی کامل نیست.",
         );
       }
+      requireVerifiedProviderBillingContract(
+        await getEffectiveProviderBillingContract(
+          {
+            provider: activation.plan.provider,
+            providerApiVersion: activation.plan.providerApiVersion,
+            productKind: activation.plan.productKind,
+          },
+          tx,
+        ),
+      );
       const infra = await tx.infrastructureOrder.create({
         data: {
           id: infrastructureOrderId,

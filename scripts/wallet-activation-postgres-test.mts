@@ -219,6 +219,63 @@ test("wallet top-up to estimate, activation and Admin approval stays mutation-fr
     /PAYG|Wallet/,
   );
 
+  await assert.rejects(
+    approveActivation({
+      activationRequestId: activation.id,
+      adminUserId: admin.id,
+      reason: "تأیید کنترل‌شده فعال‌سازی",
+      idempotencyKey: `activation-approve-unverified-${suffix}`,
+    }),
+    /قرارداد Billing Provider تأیید نشده است/,
+  );
+  assert.equal(
+    await db.infrastructureOrder.count({ where: { userId: customer.id } }),
+    0,
+  );
+  const contractEffectiveFrom = new Date();
+  await db.providerBillingContractVersion.updateMany({
+    where: {
+      provider: "ARVAN",
+      providerApiVersion: "v1",
+      productKind: "CLOUD_SERVER",
+      effectiveTo: null,
+    },
+    data: { effectiveTo: contractEffectiveFrom },
+  });
+  await db.providerBillingContractVersion.create({
+    data: {
+      provider: "ARVAN",
+      providerApiVersion: "v1",
+      productKind: "CLOUD_SERVER",
+      version: 2,
+      status: "VERIFIED",
+      source: "fake_provider_test_contract",
+      calculationUnit: "SECOND",
+      minimumChargeSeconds: 1,
+      roundingPolicy: "EXACT",
+      prorationSupported: true,
+      hourlyRateAvailable: true,
+      dailyRateAvailable: true,
+      stopStateBillableComponents: {
+        compute: false,
+        disk: true,
+        ip: true,
+        backup: true,
+        traffic: false,
+        snapshot: true,
+      },
+      fieldVerification: {
+        calculationUnit: "VERIFIED",
+        minimumChargeSeconds: "VERIFIED",
+        roundingPolicy: "VERIFIED",
+        prorationSupported: "VERIFIED",
+        hourlyRateAvailable: "VERIFIED",
+        dailyRateAvailable: "VERIFIED",
+        stopStateBillableComponents: "VERIFIED",
+      },
+      effectiveFrom: contractEffectiveFrom,
+    },
+  });
   const approved = await approveActivation({
     activationRequestId: activation.id,
     adminUserId: admin.id,
@@ -297,15 +354,30 @@ test("wallet top-up to estimate, activation and Admin approval stays mutation-fr
     await db.usageInterval.count({ where: { cloudInstanceId: instance.id } }),
     1,
   );
+  const billingSnapshot = await db.serviceBillingPolicySnapshot.findUniqueOrThrow({
+    where: { id: firstBilling!.id },
+  });
   assert.equal(
-    (
-      await db.rateCardVersion.findFirstOrThrow({
-        where: { planId: plan.id },
-        orderBy: { effectiveFrom: "desc" },
-      })
-    ).rateCadence,
-    null,
+    (billingSnapshot.providerPolicySnapshot as { status?: string }).status,
+    "VERIFIED",
   );
+  assert.equal(
+    (billingSnapshot.providerPolicySnapshot as { version?: number }).version,
+    2,
+  );
+  const rateCard = await db.rateCardVersion.findFirstOrThrow({
+    where: { planId: plan.id },
+    orderBy: { effectiveFrom: "desc" },
+  });
+  assert.equal(
+    (rateCard.providerBillingContractSnapshot as { status?: string }).status,
+    "VERIFIED",
+  );
+  assert.equal(
+    (rateCard.providerBillingContractSnapshot as { source?: string }).source,
+    "fake_provider_test_contract",
+  );
+  assert.equal(rateCard.rateCadence, null);
   assert.equal(
     (
       await db.activationRequest.findUniqueOrThrow({

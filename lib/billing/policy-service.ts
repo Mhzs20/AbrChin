@@ -3,15 +3,16 @@ import type {
   BillingPolicyVersion,
   Prisma,
   PrismaClient,
+  ProviderBillingContractVersion,
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
-import type { ProviderBillingPolicy } from "@/lib/infrastructure/cloud-provider-adapter";
 import {
   assertCadenceAllowed,
   calculateMinimumCreditRial,
   validateBillingPolicyContract,
 } from "@/lib/billing/policy";
+import { serializeProviderBillingContract } from "@/lib/billing/provider-contract";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -62,7 +63,7 @@ export function buildActivationBillingSnapshot(input: {
   hourlyEstimateRial: bigint | null;
   dailyEstimateRial: bigint | null;
   oneTimeChargesRial: bigint;
-  providerPolicy: ProviderBillingPolicy;
+  providerContract: ProviderBillingContractVersion | null;
 }) {
   assertCadenceAllowed(input.policy.availability, input.cadence);
   const minimumCreditRial = calculateMinimumCreditRial({
@@ -92,6 +93,14 @@ export function buildActivationBillingSnapshot(input: {
     stopStateComponentPolicy:
       input.policy.stopStateComponentPolicy as Prisma.InputJsonValue,
     providerPolicySnapshot:
-      input.providerPolicy as unknown as Prisma.InputJsonValue,
+      input.providerContract
+        ? (serializeProviderBillingContract(
+            input.providerContract,
+          ) as Prisma.InputJsonValue)
+        : ({
+            status: "UNVERIFIED",
+            source: "provider_billing_contract_missing",
+            unverifiedFields: ["provider_billing_contract_missing"],
+          } as Prisma.InputJsonValue),
   };
 }

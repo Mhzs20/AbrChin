@@ -16,6 +16,9 @@ import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-
 import { countAvailableInventoryByPlan } from "@/lib/infrastructure/preprovisioned-inventory";
 import { getEffectiveBillingPolicy } from "@/lib/billing/policy-service";
 import { serializeBillingPolicy } from "@/lib/billing/policy-admin";
+import {
+  providerBillingContractBlockingReasons,
+} from "@/lib/billing/provider-contract";
 
 export const metadata: Metadata = {
   title: "پلن‌های زیرساخت | پنل مدیریت | ابرچین",
@@ -27,7 +30,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminPlansPage() {
   const access = await getAdminPageAccess();
   if (!access.allowed) return null;
-  const [plans, catalogItems, pricingConfigs, productPricingConfigs, regions, imageAssets] = await Promise.all([
+  const [plans, catalogItems, pricingConfigs, productPricingConfigs, regions, imageAssets, providerBillingContracts] = await Promise.all([
     listAllPlans(),
     prisma.providerCatalogItem.findMany({
       where: {
@@ -55,11 +58,29 @@ export default async function AdminPlansPage() {
       },
       orderBy: [{ regionCode: "asc" }, { name: "asc" }],
     }),
+    prisma.providerBillingContractVersion.findMany({
+      where: {
+        productKind: "CLOUD_SERVER",
+        effectiveFrom: { lte: new Date() },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: new Date() } }],
+      },
+      orderBy: [{ effectiveFrom: "desc" }, { version: "desc" }],
+    }),
   ]);
   const inventoryCounts = await countAvailableInventoryByPlan(
     plans.map((plan) => plan.id),
   );
   const now = new Date();
+  const currentProviderBillingContracts = new Map<
+    string,
+    (typeof providerBillingContracts)[number]
+  >();
+  for (const contract of providerBillingContracts) {
+    const key = `${contract.provider}:${contract.providerApiVersion}:${contract.productKind}`;
+    if (!currentProviderBillingContracts.has(key)) {
+      currentProviderBillingContracts.set(key, contract);
+    }
+  }
   const effectiveBillingPolicies = new Map(
     await Promise.all(
       plans
@@ -140,6 +161,24 @@ export default async function AdminPlansPage() {
       pendingBillingPolicies.find(
         (policy) => policy.planId === plan.id,
       )?.effectiveFrom.toISOString() ?? null,
+    providerBillingContract:
+      plan.productKind === "CLOUD_SERVER"
+        ? (() => {
+            const contract = currentProviderBillingContracts.get(
+              `${plan.provider}:${plan.providerApiVersion}:${plan.productKind}`,
+            );
+            return contract
+              ? {
+                  status: contract.status,
+                  source: contract.source,
+                  version: contract.version,
+                  effectiveFrom: contract.effectiveFrom.toISOString(),
+                  unverifiedFields:
+                    providerBillingContractBlockingReasons(contract),
+                }
+              : null;
+          })()
+        : null,
   }));
   const panelCatalogItems = catalogItems.map((item) => {
     const pricingConfig = pricingConfigs.find(
