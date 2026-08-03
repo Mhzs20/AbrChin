@@ -102,3 +102,15 @@
 - Deploy انجام شده یا نشده
 
 Branch، PR، Worktree، Reviewer state و گزارش تست‌های نامرتبط را وارد خروجی نکن.
+
+## Cursor Cloud specific instructions
+
+Stack: Next.js 16 (Turbopack) + React 19 + Prisma 6 + PostgreSQL 16 monolith on port `3010`, plus a separate Node provisioning/billing worker. Standard dev commands are in `README.md` and `package.json` scripts; only the non-obvious startup caveats are captured here.
+
+- PostgreSQL 16 runs locally on the VM (db `abrchin`, user `abrchin`, password `abrchin`, `127.0.0.1:5432`). It is NOT auto-started on boot — start it with `sudo pg_ctlcluster 16 main start` before running the app, tests, or migrations. Confirm with `sudo pg_lsclusters`.
+- A dev `.env` already exists on the VM (gitignored, so it is not in the repo). `DATABASE_URL` points to the local Postgres above, and `ADMIN_MOBILES=09120000000`. If `.env` is missing, recreate it from `.env.example` and set `SESSION_SECRET` (≥16 chars) and a base64 32-byte `CREDENTIAL_ENCRYPTION_KEY`.
+- Apply schema after Postgres is up: `npx prisma migrate deploy` (migrations are intentionally NOT part of the startup update script).
+- Web dev server: `npm run dev` → `http://localhost:3010`. Liveness is `/api/health`; readiness is `/api/readiness`.
+- Worker: there is no npm run script to launch it. Build with `npm run build:worker`, then run `node dist/worker/provisioning-worker.js` with the env loaded (e.g. `set -a; . ./.env; set +a; node dist/worker/provisioning-worker.js`). It has no HTTP port; it heartbeats via the DB and `/api/readiness` reports the worker `degraded/outage` when it is not running.
+- Expected dev readiness: `/api/readiness` returns `degraded` with `billingContracts: stale` because provider billing contracts are unverified without real Arvan/ParsPack credentials. This is normal in dev; `web`, `database`, `provisioningWorker`, and `billingCatchUp` should be `healthy`.
+- OTP login in dev uses `SMS_PROVIDER=console`, so the login code is printed to the web server console, not sent by SMS. Find it with a `[sms:console]` log line (e.g. `otp=NNNNNN`). Providers/payments default to mock/fail-closed gates, so no external credentials are needed for local dev.
