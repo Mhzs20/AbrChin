@@ -58,7 +58,9 @@ export default async function AccountServicesPage() {
           className="product-btn product-btn--quiet"
           href={`/account/orders/${service.infrastructureOrder.serviceOrder.id}`}
         >
-          مدیریت و تمدید
+          {service.infrastructureOrder.plan.billingModel === "PAYG_WALLET"
+            ? "مدیریت مصرف"
+            : "مدیریت و تمدید"}
         </Link>
       ),
     },
@@ -78,7 +80,9 @@ export default async function AccountServicesPage() {
         className="product-btn product-btn--quiet"
         href={`/account/orders/${service.infrastructureOrder.serviceOrder.id}`}
       >
-        مدیریت و تمدید
+        {service.infrastructureOrder.plan.billingModel === "PAYG_WALLET"
+          ? "مدیریت مصرف"
+          : "مدیریت و تمدید"}
       </Link>
     ),
   }));
@@ -93,7 +97,15 @@ export default async function AccountServicesPage() {
           <h2 className="product-section-title">نمونه زمان‌بندی آماده‌سازی</h2>
           <Timeline
             items={[
-              { id: "paid", title: "پرداخت", done: true },
+              {
+                id: "requested",
+                title:
+                  services[0].infrastructureOrder.plan.billingModel ===
+                  "PAYG_WALLET"
+                    ? "درخواست فعال‌سازی"
+                    : "پرداخت دوره ثابت",
+                done: true,
+              },
               {
                 id: "funding",
                 title: "تأمین زیرساخت",

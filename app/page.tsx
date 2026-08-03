@@ -28,7 +28,7 @@ export default function HomePage() {
 
         <div className="home-actions">
           <Link className="button button-primary button-large" href="/cloud-servers">
-            خرید سریع سرور ابری
+            پیکربندی سرور ابری
             <ArrowLeft size={19} aria-hidden="true" />
           </Link>
           <Link className="button button-quiet button-large" href="/compass">
@@ -38,7 +38,7 @@ export default function HomePage() {
         </div>
 
         <div className="trust-line" aria-label="ویژگی‌های سرویس ابرچین">
-          <span><Check size={15} aria-hidden="true" /> تأیید قبل از خرید</span>
+          <span><Check size={15} aria-hidden="true" /> تأیید قبل از فعال‌سازی</span>
           <span><Check size={15} aria-hidden="true" /> ارتقا بدون بن‌بست</span>
           <span><ShieldCheck size={15} aria-hidden="true" /> دسترسی امن با پرچین پایه</span>
         </div>

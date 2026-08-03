@@ -83,7 +83,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
             <AuthNavLink />
             <Link className="button button-primary button-compact" href="/cloud-servers">
               <Sparkles size={17} aria-hidden="true" />
-              خرید سرور
+              پیکربندی سرور
             </Link>
           </div>
         </header>

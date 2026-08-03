@@ -75,8 +75,9 @@ arvan:v1:{region}:{externalPlanId}
 ```
 
 بنابراین یک `externalPlanId` در دو Region دو `ProviderCatalogItem` مستقل دارد.
-قیمت ماهانه فقط از `price_per_month` خوانده می‌شود؛ `price_per_hour × 720`
-مبنای Quote نیست.
+نرخ ساعتی و ماهانه فقط از فیلد صریح همان واحد خوانده می‌شوند. Adapter حق ندارد
+واحد یا Currency را حدس بزند. تبدیل نرخ ساعتی/ماهانه به Estimate روزانه فقط با
+Billing Policy نسخه‌دار Provider انجام می‌شود و مبنای Retroactive نیست.
 
 فیلد `memory` آروان در این قرارداد GB است و فقط داخل Adapter به MB تبدیل
 می‌شود. اگر `memory_in_bytes` معتبر موجود باشد مقدار دقیق آن ترجیح داده
@@ -115,15 +116,15 @@ ARVAN_MUTATIONS_ENABLED=false
 MANUAL_READY_PUBLIC_SALE_ENABLED=false
 ```
 
-Gate عمومی آروان همراه با Gate نوع محصول، Listing قابل‌خرید، Delivery Options،
-Quote، Quote-to-Order و Payment آروان را کنترل می‌کند و پیش‌فرض همه `false` است.
-Admin، Catalog Sync، Region Validation و Observation موجودی با خاموش‌بودن آن
-فعال می‌مانند. `API_CATALOG` و `MANUAL_API_BACKED` برای پرداخت به Gate عمومی،
-Gate محصول، Mutation و Revalidation موفق نیاز دارند. `MANUAL_ADMIN` و
-`PREPROVISIONED_INVENTORY` با Gate مستقل Manual کنترل می‌شوند و هرگز
-`createServer` اجرا نمی‌کنند. Gate هنگام
-Payment و پیش از Debit دوباره بررسی می‌شود؛ بنابراین خاموش‌شدن آن Quote یا
-Order در انتظار پرداخت را بدون برداشت وجه متوقف می‌کند.
+Gate عمومی آروان همراه Gate نوع محصول، Listing، Delivery Options، Estimate و
+Activation Request را کنترل می‌کند و پیش‌فرض `false` است. Admin، Catalog Sync،
+Region Validation و Observation موجودی با خاموش‌بودن آن فعال می‌مانند.
+`API_CATALOG` و `MANUAL_API_BACKED` به Sale Gate، Rate/Availability freshness و
+Revalidation موفق نیاز دارند؛ Mutation Gate فقط هنگام Dispatch واقعی و پس از
+Admin Approval بررسی می‌شود. Sale روشن با Mutation خاموش Estimate، Wallet
+Top-up و Activation را مجاز و Fulfillment را دستی/کنترل‌شده می‌کند.
+`MANUAL_ADMIN` و `PREPROVISIONED_INVENTORY` با Gate مستقل Manual کنترل می‌شوند
+و هرگز `createServer` اجرا نمی‌کنند.
 
 صرف تنظیم API Key هیچ POST/DELETEای را فعال نمی‌کند. فعال‌سازی Lifecycle فقط
 پس از تأیید عملیاتی Founder مجاز است؛ در کد و نمونه Environment تمام Gateهای
@@ -156,8 +157,9 @@ Size بدون Region قطعی با `__unscoped__` حفظ ولی غیرقابل �
 
 سه Gate ParsPack مستقل‌اند: `PARSPACK_ENABLED` فقط اتصال و Sync،
 `PARSPACK_PUBLIC_SALE_ENABLED` فروش عمومی و `PARSPACK_MUTATIONS_ENABLED`
-ساخت Resource را کنترل می‌کند. فروش Provider-based فقط با هر دو Gate فروش و
-Mutation باز است و هر سه مقدار به‌صورت پیش‌فرض `false` هستند.
+ساخت Resource را کنترل می‌کند. Sale برای Estimate/Request به Mutation وابسته
+نیست؛ Dispatch واقعی هر دو Admin Approval و Mutation Gate را می‌خواهد. همه
+مقادیر به‌صورت پیش‌فرض `false` هستند.
 
 ## Persist و Sync
 
@@ -188,18 +190,17 @@ Sync فقط Catalog خام را مالک است و دیگر `InfrastructurePlan`
 می‌کند. بنابراین اضافه‌شدن صدها Flavor در Provider به معنی نمایش خودکار آن‌ها
 به Customer نیست.
 
-منشأ Catalog و قرارداد فروش دو مفهوم جدا هستند. `API_CATALOG` از Sync آروان
+منشأ Catalog و قرارداد فروش دو مفهوم جدا هستند. `API_CATALOG` از Sync Provider
 می‌آید و `MANUAL_API_BACKED` فقط اجازه می‌دهد Admin Plan و قیمت را تعریف کند؛
-هر دو برای Quote و Payment به Revalidation موفق Provider نیاز دارند. ظرفیت
-عددی Admin هیچ‌وقت جای Availability واقعی Provider را نمی‌گیرد و هنگام قطعی
-صرفاً Last-known-good قابل مشاهده است، نه قابل خرید.
+هر دو برای Estimate و Activation به Revalidation موفق Provider نیاز دارند.
+ظرفیت عددی Admin هیچ‌وقت جای Availability واقعی Provider را نمی‌گیرد و هنگام
+قطعی صرفاً Last-known-good قابل مشاهده است، نه قابل فعال‌سازی.
 
 `MANUAL_ADMIN` SKU، قیمت و تعداد قابل‌تحویل Admin را نگه می‌دارد؛ Sync هیچ
-Providerی آن را تغییر نمی‌دهد. تعداد در همان Transaction پرداخت با شرط
-`manualAvailableUnits > 0` کاهش می‌یابد، بنابراین دو پرداخت هم‌زمان Oversell
-نمی‌کنند. سفارش Paid وارد `WAITING_ADMIN_FUNDING` می‌شود تا Admin همان سفارش
-را با Resource ID، IPv4 و Credential موقت تحویل دهد. این مسیر هیچ Provider
-Mutation یا Provisioning Job ایجاد نمی‌کند.
+Providerی آن را تغییر نمی‌دهد. برای `PREPAID_TERM` رزرو تعداد در Transaction
+Checkout انجام می‌شود. برای `PAYG_WALLET` رزرو/تخصیص فقط پس از Activation و
+Admin Approval اول انجام می‌شود. هر دو مسیر Oversell را با Row Lock منع
+می‌کنند و هیچ Provider Mutation خودکاری ندارند.
 
 `PREPROVISIONED_INVENTORY` فقط برای Resource ازپیش‌ساختهٔ واقعی است. هر سرور
 یک Row مستقل با شناسهٔ یکتای `provider + apiVersion + providerResourceId`،
@@ -221,11 +222,12 @@ Quote داخل Transaction و با `FOR UPDATE SKIP LOCKED` دقیقاً یک Ro
 یا Assignment نمی‌سازد و Worker فقط Health/Delivery همان Resource را ادامه
 می‌دهد، بدون `createServer`، Provider fallback یا Swap.
 
-در Payment، Inventory و Credential با Row Lock و همان تابع Eligibility مشترک
-دوباره بررسی می‌شوند. Debit، Assignment، ساخت `CloudInstance`، کپی Ciphertext
-به یک `InstanceCredential` و تغییر Credential موجودی به `TRANSFERRED` در یک
-Transaction انجام می‌شوند. شکست هر مرحله همهٔ این Writeها را Rollback می‌کند؛
-Secure Delivery نیز همان مکانیزم نمایش یک‌بارمصرف موجود را استفاده می‌کند.
+در `PREPAID_TERM`، Checkout می‌تواند Inventory را با Row Lock رزرو کند. در
+`PAYG_WALLET`، Wallet Top-up هیچ Inventory یا Credential را لمس نمی‌کند؛
+Assignment فقط پس از Approval اول است. Assignment، ساخت `CloudInstance`، کپی
+Ciphertext و تغییر Credential موجودی به `TRANSFERRED` در Transaction
+Idempotent انجام می‌شوند. شکست هر مرحله همه Writeها را Rollback می‌کند؛ Secure
+Delivery نیز همان مکانیزم نمایش یک‌بارمصرف را استفاده می‌کند.
 
 پاسخ `401/403` ParsPack با کد امن `provider_auth_failed` و بدون Retry ثبت
 می‌شود. شکست Provider، Timeout، ناسازگاری Response Contract و شکست
@@ -264,7 +266,7 @@ Web و Worker Crash نمی‌کنند. وضعیت عملیاتی `CONFIG_REQUIRE
 فروش عمومی ParsPack نیز با `PARSPACK_PUBLIC_SALE_ENABLED=false` مستقل از Sync
 غیرفعال می‌ماند؛ Catalog و Route قطعی ParsPack حذف یا به آروان منتقل نمی‌شوند.
 
-## پول، Markup، پرچین و مالیات
+## پول، Markup، پرچین و هزینه‌های صریح
 
 واحد داخلی همه مبالغ `IRR` و نوع Database `BigInt` است. تبدیل نمایش:
 
@@ -278,18 +280,17 @@ Toman = IRR / 10
 قیمت Quote:
 
 ```text
-Provider Infrastructure Cost
-+ Infrastructure Markup (Provider BPS + Product Kind BPS)
-+ Mandatory Parchin
-+ Provider Add-ons
-+ Tax
-= Final Quote
+Provider component rates
++ Admin percentage markup
++ Explicit measurable add-ons
++ Explicit one-time charges
+= Customer estimate / invoice lines
 ```
 
-تمام ضرب‌های BPS Integer هستند و division با Round-up تا یک ریال انجام
-می‌شود. مالیات روی Subtotal پیش از Tax اعمال می‌شود. مقدار پیش‌فرض Tax
-`1000 bps` یا ۱۰٪ است. Markup، پرچین، Add-on و Tax Line Itemهای مستقل Quote و
-Invoice هستند.
+تمام ضرب‌های BPS Integer هستند و Rounding از Billing Policy Provider می‌آید.
+Markup فقط درصد Admin است. مالیات یا هزینه پنهان بدون قرارداد و تنظیم صریح
+اضافه نمی‌شود. Add-on، Traffic و One-time charge فقط با Line Item مستقل،
+واحد قابل‌اندازه‌گیری و Snapshot معتبر وارد Invoice می‌شوند.
 
 سطوح پرچین:
 
@@ -316,28 +317,28 @@ Health Check به یکی از `GENERAL_LINUX`, `WINDOWS`, `WEB_APPLICATION`,
 `CUSTOM` طبقه‌بندی می‌کند. این Classification قیمت Provider را تغییر
 نمی‌دهد.
 
-## Quote، Payment و Renewal
+## Estimate، Wallet و Billing
 
-Quote ده دقیقه معتبر است و Provider/API/Product، Region، Plan، Image،
-Network، Security، منابع، قیمت Provider، Markup، پرچین، Add-on، Tax، قیمت
-نهایی، زمان، Catalog Version و Payload Hash را Snapshot می‌کند.
+Estimate ده دقیقه معتبر است و Provider/API/Product، Region، Plan، Image،
+Network، Security، Resource، RateCardVersion، Markup، Add-on و Payload Hash را
+Snapshot می‌کند.
 
-پیش از Payment، Catalog و Selection دوباره Refresh می‌شوند. تغییر Price،
-Availability، Image compatibility، Tax، Markup یا پرچین فقط همان Quote
-پرداخت‌نشده را Invalid می‌کند؛ Conversation و Answerها باقی می‌مانند. Order
-پرداخت‌شده هرگز با Sync یا تغییر تنظیمات Reprice نمی‌شود.
+پیش از Activation، Catalog و Selection دوباره Refresh می‌شوند. تغییر Rate،
+Availability، Image compatibility یا Markup فقط Estimate را Invalid می‌کند؛
+Conversation و Wallet Credit باقی می‌مانند.
 
-همه خریدهای زیرساخت Wallet-based هستند. اگر موجودی کافی نباشد، Server اختلاف
-دقیق `order.amount - wallet.availableBalance` را به IRR محاسبه و یک Top-up
-متصل به همان `ServiceOrder` می‌سازد. Callback فقط پس از Verify رسمی و با Ledger
-Idempotent کیف پول را یک‌بار Credit می‌کند. شارژ، سفارش را خودکار با قیمت
-تغییرکرده Debit نمی‌کند؛ کاربر به همان Checkout برمی‌گردد و Quote، Source،
-قیمت و Availability پیش از Debit کامل دوباره بررسی می‌شوند. Debit، Paid شدن
-Order، Snapshot منبع و ساخت `InfrastructureOrder` در یک Transaction انجام
-می‌شوند.
+درگاه بانکی فقط Wallet Top-up می‌سازد. Callback پس از Verify رسمی و با Ledger
+Idempotent کیف پول را یک‌بار Credit می‌کند. شارژ Wallet، Order را Debit،
+Activation را Approve یا Resource را Provision نمی‌کند.
 
-Renewal Auto-charge ندارد. هر تمدید Quote مستقل ده‌دقیقه‌ای و Snapshot مستقل
-می‌گیرد و پیش از برداشت دوباره Revalidate می‌شود.
+Activation Request پس از بررسی حداقل اعتبار ثبت می‌شود. Approval اول Admin،
+Provision کنترل‌شده و Provider Confirmation به‌ترتیب انجام می‌شوند. Billing از
+`ResourceVersion.effectiveFrom` شروع و بر اساس UsageInterval و RateCardVersion
+نسخه‌دار Settlement می‌شود. Wallet ناکافی Invoice کامل و Outstanding می‌سازد
+و منفی نمی‌شود.
+
+`PREPAID_TERM` Checkout و Renewal دستی مستقل دارد. Renewal Auto-charge ندارد و
+نباید با Usage Billing Cloud مخلوط شود.
 
 برای جلوگیری از Markup دوبل، Migration چندارائه‌دهنده Markup قدیمی ParsPack
 را فقط در `ProviderPricingConfig` نگه می‌دارد و
@@ -429,7 +430,8 @@ Manual از سقف سه Retry خودکار مستقل است و هیچ‌کدا�
 نمی‌زنند. یک Partial Unique Index اجرای هم‌زمان Retry و Recovery را برای یک
 Order منع می‌کند.
 
-Refund نیز در Transaction واحد انجام می‌شود: Service/Session/Infrastructure
+Refund سفارش `PREPAID_TERM` نیز در Transaction واحد انجام می‌شود:
+Service/Session/Infrastructure
 و Wallet Rowها قفل، سند Debit و Refund معکوس بررسی، Wallet/Ledger به‌شکل
 Idempotent ثبت و سپس State Machine با Reason
 `wallet_refund_completed` به `CANCELLED` منتقل می‌شود. فقط سفارش فاقد
@@ -438,12 +440,13 @@ Wallet/Ledger updateها را Rollback می‌کند.
 
 ## Reconciliation و ایمنی
 
-قبل از Create، Order باید Paid، Provider قفل و Idempotency Key ثبت شده باشد.
-Worker فقط `providerSelectionSnapshot` همان Order پرداخت‌شده را می‌خواند و
-هیچ fallbackای به Plan یا Catalog فعلی ندارد. Provider/API/Region/Plan/Image/
+قبل از Create، PREPAID Order باید Paid و PAYG Activation باید Approval اول
+داشته باشد؛ Provider و Idempotency Key در هر دو قفل هستند. Worker فقط
+`providerSelectionSnapshot` همان درخواست تأییدشده را می‌خواند و هیچ fallbackای
+به Plan یا Catalog فعلی ندارد. Provider/API/Region/Plan/Image/
 Network/Security/Access ناقص یا ناسازگار پیش از هر Create به Manual Review
-می‌رود. Adapter Worker همان `CloudProviderAdapter` چندارائه‌دهنده است؛ در
-این Branch `ARVAN_MUTATIONS_ENABLED=false` باقی می‌ماند.
+می‌رود. Adapter Worker همان `CloudProviderAdapter` چندارائه‌دهنده است؛
+Mutation Gate پیش‌فرض بسته است و فقط در Dispatch واقعی بررسی می‌شود.
 پس از Timeout، Create دوباره ارسال نمی‌شود. ابتدا Task/Resource ID و سپس نام
 `abrchin-{orderPublicId}-{attempt}` Reconcile می‌شود. نبودن در یک List response
 برای Retry کافی نیست؛ `noResourceConfirmedAt` باید به‌طور قطعی ثبت شود.

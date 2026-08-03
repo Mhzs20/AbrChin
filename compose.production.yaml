@@ -164,6 +164,7 @@ services:
       WORKER_LEASE_MS: ${WORKER_LEASE_MS:-120000}
       WORKER_STALE_AFTER_MS: ${WORKER_STALE_AFTER_MS:-60000}
       WORKER_ID: ${WORKER_ID:-provisioning-worker}
+      BILLING_WORKER_INTERVAL_MS: ${BILLING_WORKER_INTERVAL_MS:-60000}
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=32m

@@ -1,44 +1,69 @@
-# Checklist Founder برای پذیرش فاز ۱
+# Checklist Founder برای پذیرش Wallet-first فاز ۱
 
-> این سند یک مسیر اجرای دستی است، نه مجوز Deploy یا بازکردن Gate. مقادیر Secret
-> را در این فایل، Ticket، Log یا Screenshot ثبت نکنید.
+> این سند مجوز Deploy، پرداخت یا Provider Mutation نیست. Secret، شماره مشتری،
+> Gateway response و Credential را در Log/Screenshot ثبت نکنید.
 
-## پیش‌نیازهای بیرونی
+## پیش‌نیاز
 
-- [ ] SHA تأییدشدهٔ `main` با Runbook Deploy یکسان است.
-- [ ] Environment Production بدون چاپ مقدار Secret کامل شده است: Database,
-  Session, Credential encryption, OTP/Kavenegar, Gateway و Provider منتخب.
-- [ ] در Admin، Connection Check فقط‌خواندنی Arvan، ParsPack، OTP و Gateway
-  نتیجهٔ قابل‌فهم دارد.
-- [ ] حداقل یک SKU Published از Source تأییدشده با قیمت/Availability تازه وجود
-  دارد.
-- [ ] همهٔ Gateهای Sale و Mutation ابتدا `false` هستند.
+- [ ] SHA تأییدشده `origin/main` دقیقاً با Image مورد تست برابر است.
+- [ ] Migration تازه و Upgrade روی PostgreSQL Backup/Fixture پاس شده‌اند.
+- [ ] Environment Production برای Database، Session، Credential encryption،
+  OTP، Gateway و Provider کامل است.
+- [ ] `BILLING_WORKER_INTERVAL_MS` و Billing Policy global/plan بررسی شده‌اند.
+- [ ] Planهای جدید Cloud پیش‌فرض Hourly هستند و Serviceهای موجود Cadence قبلی
+  خود را حفظ کرده‌اند.
+- [ ] Connection Check آروان GET احرازشده واقعی دارد؛ Allowlist به‌تنهایی
+  Healthy نیست.
+- [ ] Sale Gate و Mutation Gate ابتدا `false` هستند.
+- [ ] هیچ Mock Provider/Gateway در Production فعال نیست.
 
-## یک خرید کنترل‌شده
+## سناریوی کنترل‌شده Cloud PAYG
 
-1. Founder فقط Gate لازم برای همان Source و همان تست را، پس از Deploy صریح، باز
-   می‌کند؛ Provider یا محصول دیگری باز نمی‌شود.
-2. Customer با OTP واقعی وارد می‌شود، یک Quote ده‌دقیقه‌ای معتبر می‌گیرد و یک
-   پرداخت واقعی انجام می‌دهد.
-3. Callback فقط Payment و Order را به `Waiting Admin Provision Approval`
-   می‌رساند. پیش از تأیید اول هیچ Resource یا Job ساختی نباید وجود داشته باشد.
-4. Admin قیمت/Availability/Balance و اختلاف Snapshot را بررسی کرده و یک‌بار
-   Provision را تأیید می‌کند.
-5. Provider یا Fulfillment دستی دقیقاً یک Resource با Source/Region/Plan/Image
-   قفل‌شده ثبت می‌کند. Admin ابتدا Resource، Health و Credential را می‌بیند.
-6. Admin در صورت اشکال Hold/Needs Attention را انتخاب می‌کند؛ در صورت تطبیق
-   کامل، یک‌بار Delivery را تأیید می‌کند.
-7. فقط پس از تأیید دوم، Customer اطلاعات غیرحساس سرویس را می‌بیند و Credential
-   یک‌بار Reveal می‌شود.
-8. Payment، دو Admin command، Attempt/Resource و Delivery/Refund احتمالی در
-   Audit بررسی می‌شوند؛ هیچ Secret یا Raw Provider response در آن‌ها نیست.
+1. Customer منابع را در `/cloud-servers` انتخاب و Estimate ساعتی/۲۴ساعته،
+   Markup و حداقل اعتبار را می‌بیند.
+2. Customer Wallet را با یک Top-up واقعی شارژ می‌کند. Callback فقط Top-up را
+   Verify و Wallet را یک بار Credit می‌کند.
+3. بازگشت به Quote نباید Payment دوم بسازد. اگر Wallet کافی است Gateway
+   دوباره باز نمی‌شود.
+4. Customer Activation Request را ثبت می‌کند. Wallet Debit خرید و Provider
+   Job/Resource نباید وجود داشته باشد.
+5. Admin در صف Approval اول، اعتبار، Quote/Rate freshness و Availability را
+   بررسی می‌کند.
+6. Approval اول فقط اجازه Provision می‌دهد. Dispatch/Fulfillment دقیقاً یک
+   Resource می‌سازد.
+7. Provider Confirmation، `ResourceVersion.effectiveFrom` و Billing start را
+   با UTC ثبت می‌کند.
+8. Admin Resource و Credential را بررسی می‌کند؛ Customer هنوز Secret ندارد.
+9. Approval دوم دقیقاً یک Delivery می‌سازد. مالک Credential را فقط یک بار
+   Reveal می‌کند.
+10. یک Period بسته توسط Billing Worker Settlement می‌شود و Invoice، Lines،
+    Wallet Ledger و Runway بررسی می‌شوند.
+11. Worker دوباره و هم‌زمان اجرا می‌شود؛ Invoice یا Debit دوم نباید ساخته شود.
+12. Provider Reconciliation بدون تغییر بی‌صدای Wallet بررسی می‌شود.
+
+## Failure/Recovery
+
+- [ ] Callback دیررس و تکراری فقط یک Wallet Credit ساخته است.
+- [ ] Timeout Verify در Recovery Queue و Reverify بعدی موفق است.
+- [ ] Amount/Currency mismatch در Admin Review است و Secret نمایش داده نمی‌شود.
+- [ ] Refund تکراری Ledger دوم نمی‌سازد؛ شارژ مصرف‌شده Review می‌خواهد.
+- [ ] Resize میان Period دو ResourceVersion/Interval دقیق دارد.
+- [ ] Upgrade با اعتبار ناکافی Block و Downgrade امن مجاز است.
+- [ ] Wallet ناکافی `PARTIALLY_PAID/UNPAID` و Outstanding ثبت می‌کند.
+- [ ] Low Balance Notification و سپس Suspension Review ایجاد می‌شود.
+- [ ] Suspend بدون Admin action و Terminate/Delete خودکار اجرا نمی‌شود.
+- [ ] Retry Delivery و Provision Resource/Notification تکراری نمی‌سازد.
+
+## PREPAID_TERM
+
+- [ ] Plan دوره‌ثابت UI و Checkout مستقل دارد.
+- [ ] Renewal دستی است؛ Auto-renew و Auto-charge وجود ندارد.
+- [ ] رکورد PREPAID با Usage Billing Cloud مخلوط نشده است.
 
 ## نتیجه
 
-- [ ] خرید واقعی کامل شد.
-- [ ] Resource تکراری ایجاد نشد.
-- [ ] Gateهای بازشده و Provider/Product آزمایش‌شده ثبت شدند، بدون Secret.
-- [ ] اگر آزمون ناموفق بود: Order در Needs Attention با Retry/Reconcile/Hold یا
-  Refund داخلی Audit‌شده قرار گرفت؛ هیچ Refund بانکی خودکار ادعا نشد.
-- [ ] فقط پس از تأیید جداگانهٔ Founder دربارهٔ همان Source، فروش عمومی تصمیم‌گیری
-  می‌شود.
+- [ ] همه Actionها در Audit با Actor/Reason/Idempotency دیده می‌شوند.
+- [ ] هیچ Secret یا Raw Provider response در UI/Log/Audit نیست.
+- [ ] Gateهای بازشده دوباره بسته یا وضعیت نهایی آن‌ها ثبت شده است.
+- [ ] Founder به‌صورت جداگانه درباره Controlled Deploy و سپس Public Sale
+  تصمیم گرفته است.

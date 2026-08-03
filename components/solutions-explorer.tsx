@@ -92,7 +92,7 @@ export function SolutionsExplorer() {
             </div>
 
             <Link className="solution-link" href={`/cloud-servers?project=${solution.id}`}>
-              خرید سریع سرور ابری
+              پیکربندی سرور ابری
               <ArrowLeft size={18} aria-hidden="true" />
             </Link>
           </article>

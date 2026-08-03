@@ -1,44 +1,55 @@
 # Production deployment
 
+> این سند فقط Runbook است. اجرای Deploy، Payment واقعی، Refund بانکی یا
+> Provider Mutation نیازمند مجوز صریح Founder است.
+
 ## Compose
-`compose.production.yaml` runs:
-- `db` Postgres 16 (private network, persistent volume `abrchin_pg_data`)
-- `web` Next standalone image with migrate-on-start entrypoint
-- `worker` provisioning and subscription lifecycle worker with a heartbeat healthcheck
+
+`compose.production.yaml` شامل:
+
+- PostgreSQL 16 با Volume پایدار
+- Next.js Web
+- Worker برای Provisioning، Billing Settlement، Dunning و Reconciliation
 
 ## Bootstrap
-1. Copy `.env.production.example` to `.env` in the project root and fill secrets.
-2. Export the file before bootstrap: `set -a; source .env; set +a`.
-3. Run `./ops/bootstrap-production.sh`
 
-## Migrations
-Production uses `prisma migrate deploy` only (via Docker entrypoint).
+1. `.env.production.example` را بدون Commit به `.env` کپی و Secretها را وارد
+   کنید.
+2. SHA تأییدشده `origin/main` و Image را قفل کنید.
+3. `docker compose ... config --quiet` را اجرا کنید.
+4. فقط `prisma migrate deploy` مجاز است؛ `migrate dev` یا Reset در Production
+   ممنوع است.
+5. پس از Migration، Web و Worker را با همان Image/SHA بالا بیاورید.
 
-## Backup
-`./ops/backup-postgres.sh` creates gzipped `pg_dump` files and keeps 7 days.
-Optional remote sync can be added with rclone after the dump.
+## Secret و Environment
 
-## Required secrets
-- `POSTGRES_PASSWORD`
-- `DATABASE_URL`
+- `POSTGRES_PASSWORD`, `DATABASE_URL`
 - `SESSION_SECRET`
-- `CREDENTIAL_ENCRYPTION_KEY` (exactly 32 random bytes, Base64 encoded)
-- `KAVENEGAR_API_KEY` (when SMS_PROVIDER=kavenegar)
-- `ZIBAL_MERCHANT` (default Production gateway)
-- `ZARINPAL_MERCHANT_ID` (optional alternate gateway)
+- `CREDENTIAL_ENCRYPTION_KEY`
+- `KAVENEGAR_API_KEY` در صورت OTP واقعی
+- `ZIBAL_MERCHANT` یا `ZARINPAL_MERCHANT_ID`
 - `PAYMENT_CALLBACK_BASE_URL`
 - `ADMIN_MOBILES`
-- `PARSPACK_API_TOKEN` (when `PARSPACK_ENABLED=true`)
-- `ARVAN_API_KEY` (when `ARVAN_ENABLED=true`; server-side only)
-- `PARSPACK_PRICE_CURRENCY` and `PARSPACK_PRICE_AMOUNT_UNIT` only after the
-  provider price contract is explicitly verified. Without them pricing fails closed.
+- `ARVAN_API_KEY` و/یا `PARSPACK_API_TOKEN`
+- `PARSPACK_PRICE_CURRENCY`, `PARSPACK_PRICE_AMOUNT_UNIT`
+- `BILLING_WORKER_INTERVAL_MS`
 
-After migration, an admin must run Catalog Sync, inspect unmapped plans, set the
-Provider and Product Markup, Tax BPS and every Parchin price, and only then
-activate sellable plans. Keep `ARVAN_MUTATIONS_ENABLED=false`; the migration and
-Catalog Sync are read-only and never create Provider resources.
+مقدار Secret در Shell output، Log، Screenshot یا Admin response چاپ نمی‌شود.
 
-Keep every sale and mutation gate disabled until its separate Founder check:
+## Migration gate
+
+پیش از Deploy:
+
+- Fresh migration روی PostgreSQL ایزوله پاس شود.
+- Upgrade از Schema قبلی با داده Wallet/Order/Resource پاس شود.
+- Backfill Cadence سرویس فعال Non-retroactive باشد.
+- Planهای Cloud جدید Hourly و Serviceهای موجود روی Snapshot قبلی بمانند.
+- Migration هیچ Sale/Mutation Gate را باز نکند.
+- Rollback کد Database/Volume را حذف نکند.
+
+## Gateها
+
+همه Flagها ابتدا خاموش‌اند:
 
 ```text
 PARSPACK_PUBLIC_SALE_ENABLED=false
@@ -50,19 +61,47 @@ ARVAN_MUTATIONS_ENABLED=false
 MANUAL_READY_PUBLIC_SALE_ENABLED=false
 ```
 
-Public-sale and product gates are checked again before every wallet debit.
-Provider-backed plans also require the matching Mutation gate and successful
-provider revalidation. Manual and pre-provisioned inventory use the independent
-Manual gate; a pre-provisioned Resource still requires a fresh observation,
-health result and unique encrypted `READY` credential. Registering catalog or
-inventory does not turn public sales on.
+Sale و Mutation مستقل هستند. Sale فقط Listing/Estimate/Wallet Top-up/Activation
+را مجاز می‌کند. Mutation فقط هنگام Dispatch واقعی و پس از Admin Approval
+بررسی می‌شود. Sale باز با Mutation بسته به معنی Fulfillment دستی کنترل‌شده
+است، نه Provider Healthy یا Provision خودکار.
 
-## Health endpoints
+## Post-deploy read-only checks
 
-- `/api/health` is a lightweight web-container liveness check used by Compose.
-- `/api/readiness` checks the database and the latest provisioning-worker heartbeat.
-  External monitoring should use this endpoint and alert on HTTP 503.
-- `/status` is the public, customer-safe view of the same platform readiness.
+- `/api/health` برای Liveness
+- `/api/readiness` برای Database و Worker heartbeat
+- آخرین `ServiceConnectionCheck` در Admin
+- Arvan Connection Check با GET احرازشده و بدون Mutation
+- Catalog/Rate freshness بدون Auto-publish
+- Operations Center با ۱۲ Queue مالی و عملیاتی
 
-These endpoints report AbrChin platform health. They do not imply per-customer VM
-monitoring, scheduled backups, or operating-system maintenance.
+این Checkها مجوز Public Sale نیستند.
+
+## Founder test
+
+ترتیب Cloud PAYG باید دقیقاً باشد:
+
+```text
+Wallet Top-up
+→ Estimate
+→ Activation Request
+→ Admin Approval 1
+→ Controlled Provision
+→ Provider Confirmation / Billing Start
+→ Admin Verification
+→ Admin Approval 2
+→ Secure Delivery
+→ Wallet Settlement
+→ Reconciliation
+```
+
+Callback شارژ، Wallet Credit، Approval، Provision، Delivery و Settlement باید
+در Retry/Concurrency تکراری نشوند. کمبود موجودی فقط Invoice/Outstanding،
+Notification و Suspension Review می‌سازد؛ Auto-delete/terminate ممنوع است.
+
+## Backup و Rollback
+
+`ops/backup-postgres.sh` پیش از Migration اجرا و نتیجه Restore آن بررسی شود.
+Rollback کد از Image قبلی انجام می‌شود؛ Database و Volume Reset نمی‌شوند.
+Migrationهای Forward-only باقی می‌مانند و نسخه قبلی باید جدول‌های جدید را
+نادیده بگیرد.

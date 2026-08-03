@@ -19,7 +19,7 @@ export function SupportSelector() {
           <span className="level-items">
             <span><Check size={14} aria-hidden="true" /> بررسی سلامت اولیه</span>
             <span><Check size={14} aria-hidden="true" /> تنظیمات قفل‌شده Quote</span>
-            <span><Check size={14} aria-hidden="true" /> بدون Provider Swap بعد از پرداخت</span>
+            <span><Check size={14} aria-hidden="true" /> بدون Provider Swap بعد از درخواست فعال‌سازی</span>
           </span>
           <small>
             پایش، بکاپ و نگه‌داری روزمره تا زمان تعریف Line Item مستقل، بخشی از
@@ -27,7 +27,7 @@ export function SupportSelector() {
           </small>
         </div>
         <Link className="button button-primary" href="/cloud-servers">
-          دیدن سرورهای آماده
+          پیکربندی سرور ابری
           <ArrowLeft size={18} aria-hidden="true" />
         </Link>
       </article>

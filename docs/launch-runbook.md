@@ -10,7 +10,7 @@
 Ready catalog:           https://abrchin.ir/ready-servers
 Arvan cloud catalog:     https://abrchin.ir/cloud-servers
 Wallet top-up:           https://abrchin.ir/account/wallet/topup
-Customer orders:         https://abrchin.ir/account/order
+Customer PAYG requests:  https://abrchin.ir/account/orders
 Customer services:       https://abrchin.ir/account/services
 Admin providers:         https://abrchin.ir/admin/infrastructure/providers
 Admin catalog/inventory: https://abrchin.ir/admin/infrastructure/plans
@@ -48,13 +48,16 @@ ARVAN_ENABLED ARVAN_API_KEY ARVAN_API_BASE_URL ARVAN_API_VERSION
 ARVAN_REGION_CODES ARVAN_PUBLIC_SALE_ENABLED
 ARVAN_READY_PUBLIC_SALE_ENABLED ARVAN_CLOUD_PUBLIC_SALE_ENABLED
 ARVAN_MUTATIONS_ENABLED MANUAL_READY_PUBLIC_SALE_ENABLED
-CATALOG_SYNC_INTERVAL_MS WORKER_POLL_MS WORKER_LEASE_MS
+CATALOG_SYNC_INTERVAL_MS BILLING_WORKER_INTERVAL_MS
+WORKER_POLL_MS WORKER_LEASE_MS
 WORKER_STALE_AFTER_MS WORKER_ID
 ```
 
 واحد پول Canonical دیتابیس `IRR` و نوع مبلغ `BigInt` است. Callback عمومی
 پرداخت باید `PAYMENT_CALLBACK_BASE_URL=https://abrchin.ir` باشد؛ مسیر دقیق
-Zibal یا Zarinpal را Adapter موجود می‌سازد.
+Zibal یا Zarinpal را Adapter موجود می‌سازد. در جریان Cloud PAYG، Callback فقط
+Wallet Top-up را Verify و Credit می‌کند و هیچ Activation یا Provision اجرا
+نمی‌کند.
 
 پیش از تست Founder این مقادیر خاموش بمانند:
 
@@ -143,18 +146,19 @@ curl -fsS http://127.0.0.1:3010/api/readiness
 ## فعال‌سازی مرحله‌ای
 
 1. با همه Sale/Mutation Gateها خاموش، Login OTP، Gateway Production، Health و
-   Readiness را بررسی و از Admin قیمت پرچین، Tax مصوب و Markupها را تأیید کنید.
+   Readiness را بررسی و از Admin Billing Policy، قیمت پرچین و Markupها را
+   تأیید کنید. Tax فقط اگر قرارداد و تنظیم صریح دارد فعال می‌شود.
 2. Manual: SKU واقعی را در Admin Catalog بسازید، قیمت/تعداد را ثبت کنید، سپس
    فقط `MANUAL_READY_PUBLIC_SALE_ENABLED=true` را اعمال و Web/Worker را Recreate
    کنید.
 3. ParsPack: ابتدا فقط `PARSPACK_ENABLED=true` و Contract پول را تنظیم کنید؛
-   Sync و Revalidation Read-only را در Admin بررسی کنید. سپس با تأیید جداگانه
-   `PARSPACK_MUTATIONS_ENABLED=true` و بعد
-   `PARSPACK_PUBLIC_SALE_ENABLED=true` را فعال کنید.
-4. Arvan: ابتدا فقط `ARVAN_ENABLED=true`، Regionها و Sync Read-only را بررسی
-   کنید. پس از تأیید Lifecycle، `ARVAN_MUTATIONS_ENABLED=true` و Master Sale را
-   فعال کنید؛ `ARVAN_READY_PUBLIC_SALE_ENABLED` و
-   `ARVAN_CLOUD_PUBLIC_SALE_ENABLED` را جداگانه باز کنید.
+   Sync و Revalidation Read-only را در Admin بررسی کنید. Sale و Mutation دو
+   تصمیم مستقل‌اند. Sale می‌تواند برای Estimate/Request کنترل‌شده باز شود،
+   درحالی‌که Mutation بسته و Fulfillment دستی است.
+4. Arvan: ابتدا فقط `ARVAN_ENABLED=true` و GET احرازشدهٔ Connection Check را
+   بررسی کنید. Allowlist Region اثبات سلامت نیست. Master/Product Sale را برای
+   Estimate و Activation کنترل‌شده جدا باز کنید. Mutation فقط پس از تأیید
+   Lifecycle و مجوز مستقل Founder باز می‌شود.
 
 هر تغییر Env نیازمند Recreate شدن `web` و `worker` با همان Image/SHA است.
 
@@ -202,9 +206,26 @@ Mutation ParsPack را فقط برای همین تست باز کنید. Quote، 
 Ready و Mutation آروان را باز کنید. خرید باید از `/ready-servers` انجام و همان
 Flavor/Region/Image آروان Provision شود؛ هیچ ParsPack fallback مجاز نیست.
 
-### ۴. Arvan Custom Cloud
+### ۴. Cloud PAYG
 
-در `/cloud-servers` یک Region، Flavor و Image معتبر آروان انتخاب کنید. Quote،
-OTP، شارژ کسری و پرداخت را انجام دهید. Snapshot و Payload Worker باید دقیقاً
-همان Network/Security/Flavor/Image قفل‌شده را استفاده کند. تغییر Availability
-باید به Quote تازه منجر شود، نه جایگزینی Provider یا Plan.
+در `/cloud-servers` یک Region، Flavor و Image معتبر انتخاب کنید:
+
+1. Estimate ساعتی و ۲۴ساعته، Cadence و حداقل اعتبار را بررسی کنید.
+2. Wallet را شارژ کنید. Callback فقط یک Credit می‌سازد و با Quote منقضی رد
+   نمی‌شود.
+3. Activation Request را ثبت کنید. پیش از Admin Approval هیچ Job/Resource و
+   هیچ Debit خرید وجود ندارد.
+4. Approval اول، Provision کنترل‌شده و Confirmation Provider را به‌ترتیب ثبت
+   کنید. `ResourceVersion.effectiveFrom` باید زمان Confirmation باشد.
+5. پیش از Approval دوم Customer نباید IP/Credential ببیند.
+6. Approval دوم و Reveal یک‌بارمصرف را بررسی کنید.
+7. Billing Worker Period بسته را Settlement کند؛ اجرای دوباره Debit دوم نسازد.
+8. تغییر Availability پیش از Activation به Estimate تازه منجر شود، نه
+   جایگزینی Provider/Plan. شارژ موفق Wallet حفظ می‌شود.
+
+### ۵. Low Balance و Dunning
+
+با Wallet کنترل‌شده، Invoice ناقص بسازید. مبلغ کامل مصرف باید در Invoice،
+مبلغ پرداخت‌شده در Ledger و باقی‌مانده در Outstanding ثبت شود. Low Balance و
+Grace فقط Notification/Suspension Review بسازند. Suspend نیازمند Action Admin
+است و Delete/Terminate خودکار مطلقاً نباید اجرا شود.

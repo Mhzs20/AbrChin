@@ -15,7 +15,7 @@ export default function SupportPage() {
       <header className="page-heading centered-heading">
         <div className="eyebrow"><HeartHandshake size={15} aria-hidden="true" /> سطح همراهی</div>
         <h1 id="support-title">هر سرور، همراه با پرچین پایه.</h1>
-        <p>دامنه تحویل امن و مسئولیت‌ها پیش از خرید روشن است؛ قابلیت پنهانی وعده داده نمی‌شود.</p>
+        <p>دامنه تحویل امن، Estimate مصرف و مسئولیت‌ها پیش از فعال‌سازی روشن است؛ قابلیت پنهانی وعده داده نمی‌شود.</p>
       </header>
       <SupportSelector />
     </section>

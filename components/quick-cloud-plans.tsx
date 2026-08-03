@@ -68,8 +68,8 @@ export function QuickCloudPlans({
       <section className="quick-plans-empty" aria-live="polite">
         <Gauge size={24} aria-hidden="true" />
         <div>
-          <strong>چینش‌های آماده در حال به‌روزرسانی‌اند.</strong>
-          <p>برای دریافت قیمت قطعی، چند دقیقه دیگر دوباره این صفحه را بررسی کن.</p>
+          <strong>پیشنهادهای دوره‌ثابت در حال به‌روزرسانی‌اند.</strong>
+          <p>برای Cloud PAYG می‌توانی مستقیماً Configurator سرور ابری را باز کنی.</p>
         </div>
       </section>
     );
@@ -94,12 +94,12 @@ export function QuickCloudPlans({
                 {plan.role ? roleLabels[plan.role] : positionLabels[index] ?? "چینش ابری"}
               </span>
               <span className="quick-plan-mode">
-                همراه ابرچین
+                PREPAID_TERM
               </span>
             </header>
 
             <h3>{plan.title}</h3>
-            <p>{plan.description ?? "سرور ابری آماده‌ی شروع و قابل ارتقا."}</p>
+            <p>{plan.description ?? "VPS دوره‌ثابت با Checkout و تمدید دستی مستقل."}</p>
 
             <div className="quick-plan-resources" aria-label="منابع سرور">
               <span><small>پردازنده</small><strong dir="ltr">{plan.vcpu ?? "—"} vCPU</strong></span>
@@ -109,14 +109,14 @@ export function QuickCloudPlans({
 
             <div className="quick-plan-price">
               <span><strong>{initial}</strong> تومان</span>
-              <small>ماهانه · تمدید فعلی {renewal} تومان</small>
+              <small>دوره ثابت · تمدید دستی فعلی {renewal} تومان</small>
             </div>
 
             <ul>
               <li><Clock3 size={14} aria-hidden="true" /> تحویل حدود {plan.deliveryEstimateMinutes.toLocaleString("fa-IR")} دقیقه</li>
               <li><ShieldCheck size={14} aria-hidden="true" /> {parchinLevelLabel(plan.parchinLevel)}</li>
               <li><Check size={14} aria-hidden="true" /> ظرفیت فعلی موجود و قیمت دوباره‌سنجی‌شده</li>
-              <li><Check size={14} aria-hidden="true" /> قابل ارتقا بدون تغییر مسیر خرید</li>
+              <li><Check size={14} aria-hidden="true" /> بدون Auto-renew یا Auto-charge</li>
             </ul>
 
             <details>
@@ -126,7 +126,7 @@ export function QuickCloudPlans({
                   plan.reasons.map((reason) => <li key={reason}>{reason}</li>)
                 ) : (
                   <>
-                    <li><strong>قیمت:</strong> ماه اول و تمدید جداگانه و شفاف محاسبه شده‌اند.</li>
+                    <li><strong>قیمت:</strong> دوره اولیه و تمدید دستی جداگانه و شفاف محاسبه شده‌اند.</li>
                     <li><strong>عملکرد:</strong> منابع همین کارت مبنای مقایسه‌اند.</li>
                     <li><strong>رشد:</strong> جایگاه چینش با ظرفیت موردنیاز برای ادامه مسیر سنجیده شده است.</li>
                     <li><strong>ریسک:</strong> {parchinPlanSummary(plan.parchinIncluded)}</li>
@@ -148,6 +148,10 @@ export function QuickCloudPlans({
               ) : (
                 "قیمت پس از انتخاب ۱۰ دقیقه قفل می‌شود و پیش از پرداخت دوباره بررسی خواهد شد."
               )}
+            </small>
+            <small className="quick-plan-validity">
+              این کارت PREPAID_TERM است؛ Cloud PAYG از Configurator و Wallet
+              Settlement استفاده می‌کند.
             </small>
           </article>
         );
