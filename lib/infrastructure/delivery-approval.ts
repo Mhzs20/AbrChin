@@ -26,6 +26,14 @@ type Db = PrismaClient | Prisma.TransactionClient;
 
 type ReviewIssue = { code: string; message: string };
 
+const retryableDeliveryIssues = new Set([
+  "provider_power_not_active",
+  "provider_observation_missing",
+  "health_not_succeeded",
+  "delivery_event_missing",
+  "credential_not_ready",
+]);
+
 function owner(order: {
   id: string;
   serviceOrderId: string;
@@ -285,6 +293,42 @@ export async function approveDelivery(params: {
     assertWaitingDeliveryState(order);
     const review = await buildDeliveryApprovalReview(tx, order.id);
     if (!review.canApprove) {
+      const retryable = review.blockingIssues.every((issue) =>
+        retryableDeliveryIssues.has(issue.code),
+      );
+      if (retryable) {
+        const result = {
+          infrastructureOrderId: order.id,
+          status: order.status,
+          productFlowState: order.productFlowState,
+          approved: false,
+          retryable: true,
+          review,
+          containsSecret: false,
+        };
+        await writeAuditLog(
+          {
+            actorUserId: params.adminUserId,
+            action: AuditActions.DELIVERY_APPROVAL_BLOCKED,
+            entityType: "infrastructure_order",
+            entityId: order.id,
+            afterData: {
+              status: order.status,
+              retryable: true,
+              blockingCodes: review.blockingIssues.map(
+                (issue) => issue.code,
+              ),
+              containsSecret: false,
+            },
+            ip: params.ip,
+            userAgent: params.userAgent,
+            idempotencyKey: `audit:delivery-retryable:${order.id}:${review.blockingIssues.map((issue) => issue.code).sort().join(",")}`,
+          },
+          tx,
+        );
+        // Retryable outcomes deliberately do not consume the command receipt.
+        return result;
+      }
       await tx.infrastructureOrder.update({
         where: { id: order.id },
         data: { status: InfrastructureOrderStatus.MANUAL_REVIEW },

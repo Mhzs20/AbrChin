@@ -216,6 +216,8 @@ export async function activateApprovedDeliveryTx(
     include: {
       cloudInstance: { include: { credential: true } },
       serviceOrder: { include: { recommendationQuote: true } },
+      plan: true,
+      activationRequest: true,
     },
   });
   const instance = order.cloudInstance;
@@ -319,24 +321,34 @@ export async function activateApprovedDeliveryTx(
       message: `سرور سفارش ${order.serviceOrder.title} آماده است.`,
     },
   });
-  const periodEnd = addBillingMonth(deliveredAt);
-  await tx.serviceSubscription.upsert({
-    where: { cloudInstanceId: instance.id },
-    update: {},
-    create: {
-      cloudInstanceId: instance.id,
-      sourceOrderId: order.serviceOrderId,
-      userId: order.userId,
-      planId: order.planId,
-      status: SubscriptionStatus.ACTIVE,
-      parchinLevel: order.parchinLevel,
-      renewalPriceRial: renewalPrice(order),
-      currentPeriodStart: deliveredAt,
-      currentPeriodEnd: periodEnd,
-      nextRenewalAt: periodEnd,
-      graceEndsAt: addGracePeriod(periodEnd),
-    },
-  });
+  if (order.plan.billingModel === "PREPAID_TERM") {
+    const periodEnd = addBillingMonth(deliveredAt);
+    await tx.serviceSubscription.upsert({
+      where: { cloudInstanceId: instance.id },
+      update: {},
+      create: {
+        cloudInstanceId: instance.id,
+        sourceOrderId: order.serviceOrderId,
+        userId: order.userId,
+        planId: order.planId,
+        status: SubscriptionStatus.ACTIVE,
+        parchinLevel: order.parchinLevel,
+        renewalPriceRial: renewalPrice(order),
+        currentPeriodStart: deliveredAt,
+        currentPeriodEnd: periodEnd,
+        nextRenewalAt: periodEnd,
+        graceEndsAt: addGracePeriod(periodEnd),
+      },
+    });
+  } else if (order.activationRequest) {
+    await tx.activationRequest.update({
+      where: { id: order.activationRequest.id },
+      data: {
+        status: "ACTIVE",
+        activeAt: deliveredAt,
+      },
+    });
+  }
 }
 
 export async function completeSecureDelivery(

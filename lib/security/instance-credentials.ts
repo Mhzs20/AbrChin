@@ -3,6 +3,7 @@ import {
   InstanceCredentialStatus,
 } from "@prisma/client";
 
+import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { prisma } from "@/lib/db";
 import {
   decryptCredential,
@@ -91,76 +92,122 @@ export async function storeInstanceCredential(params: {
 export async function revealInstanceCredential(params: {
   instanceId: string;
   userId: string;
+  ip?: string | null;
+  userAgent?: string | null;
+  /** Test-only failure point proving audit and secret consumption are atomic. */
+  testInjectFailureAfterAudit?: boolean;
 }) {
-  const credential = await prisma.instanceCredential.findFirst({
-    where: {
-      cloudInstanceId: params.instanceId,
-      cloudInstance: {
-        userId: params.userId,
-        status: CloudInstanceStatus.ACTIVE,
-      },
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`
+        SELECT credential.id
+        FROM "InstanceCredential" credential
+        JOIN "CloudInstance" instance
+          ON instance.id = credential."cloudInstanceId"
+        WHERE instance.id = ${params.instanceId}
+        FOR UPDATE OF credential
+      `;
+      const credential = await tx.instanceCredential.findFirst({
+        where: {
+          cloudInstanceId: params.instanceId,
+          cloudInstance: {
+            userId: params.userId,
+            status: CloudInstanceStatus.ACTIVE,
+            infrastructureOrder: {
+              status: "ACTIVE",
+              productFlowState: "ACTIVE",
+            },
+          },
+        },
+        include: { cloudInstance: true },
+      });
+      if (!credential) {
+        throw new InstanceCredentialError(
+          "not_found",
+          "اطلاعات دسترسی آماده نیست.",
+        );
+      }
+      if (credential.expiresAt.getTime() <= Date.now()) {
+        await tx.instanceCredential.updateMany({
+          where: {
+            id: credential.id,
+            status: InstanceCredentialStatus.READY,
+          },
+          data: {
+            status: InstanceCredentialStatus.EXPIRED,
+            ciphertext: null,
+            iv: null,
+            authTag: null,
+          },
+        });
+        throw new InstanceCredentialError(
+          "expired",
+          "مهلت دریافت اطلاعات دسترسی تمام شده است.",
+        );
+      }
+      if (
+        credential.status !== InstanceCredentialStatus.READY ||
+        !credential.ciphertext ||
+        !credential.iv ||
+        !credential.authTag
+      ) {
+        throw new InstanceCredentialError(
+          "already_revealed",
+          "اطلاعات دسترسی قبلاً نمایش داده شده است.",
+        );
+      }
+      const secret = decryptCredential({
+        ciphertext: credential.ciphertext,
+        iv: credential.iv,
+        authTag: credential.authTag,
+      });
+      await writeAuditLog(
+        {
+          actorUserId: params.userId,
+          action: AuditActions.CREDENTIAL_REVEALED,
+          entityType: "cloud_instance",
+          entityId: params.instanceId,
+          afterData: {
+            credentialId: credential.id,
+            revealed: true,
+            containsSecret: false,
+          },
+          ip: params.ip,
+          userAgent: params.userAgent,
+          idempotencyKey: `credential-revealed:${credential.id}`,
+        },
+        tx,
+      );
+      if (params.testInjectFailureAfterAudit) {
+        throw new Error("test_injected_after_credential_audit");
+      }
+      const claimed = await tx.instanceCredential.updateMany({
+        where: {
+          id: credential.id,
+          status: InstanceCredentialStatus.READY,
+          revealedAt: null,
+        },
+        data: {
+          status: InstanceCredentialStatus.REVEALED,
+          revealedAt: new Date(),
+          ciphertext: null,
+          iv: null,
+          authTag: null,
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new InstanceCredentialError(
+          "already_revealed",
+          "اطلاعات دسترسی قبلاً نمایش داده شده است.",
+        );
+      }
+      return {
+        username: credential.username,
+        secret,
+        ipv4: credential.cloudInstance.ipv4,
+      };
     },
-    include: { cloudInstance: true },
-  });
-
-  if (!credential) {
-    throw new InstanceCredentialError("not_found", "اطلاعات دسترسی آماده نیست.");
-  }
-  if (credential.expiresAt.getTime() <= Date.now()) {
-    await prisma.instanceCredential.updateMany({
-      where: { id: credential.id, status: InstanceCredentialStatus.READY },
-      data: {
-        status: InstanceCredentialStatus.EXPIRED,
-        ciphertext: null,
-        iv: null,
-        authTag: null,
-      },
-    });
-    throw new InstanceCredentialError("expired", "مهلت دریافت اطلاعات دسترسی تمام شده است.");
-  }
-  if (
-    credential.status !== InstanceCredentialStatus.READY ||
-    !credential.ciphertext ||
-    !credential.iv ||
-    !credential.authTag
-  ) {
-    throw new InstanceCredentialError(
-      "already_revealed",
-      "اطلاعات دسترسی قبلاً نمایش داده شده است.",
-    );
-  }
-
-  const secret = decryptCredential({
-    ciphertext: credential.ciphertext,
-    iv: credential.iv,
-    authTag: credential.authTag,
-  });
-  const claimed = await prisma.instanceCredential.updateMany({
-    where: {
-      id: credential.id,
-      status: InstanceCredentialStatus.READY,
-      revealedAt: null,
-    },
-    data: {
-      status: InstanceCredentialStatus.REVEALED,
-      revealedAt: new Date(),
-      ciphertext: null,
-      iv: null,
-      authTag: null,
-    },
-  });
-  if (claimed.count !== 1) {
-    throw new InstanceCredentialError(
-      "already_revealed",
-      "اطلاعات دسترسی قبلاً نمایش داده شده است.",
-    );
-  }
-
-  return {
-    username: credential.username,
-    secret,
-    ipv4: credential.cloudInstance.ipv4,
-  };
+  );
 }
 
 /**

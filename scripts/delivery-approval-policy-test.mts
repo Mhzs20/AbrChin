@@ -42,7 +42,10 @@ test("credentials stay absent from initial customer/admin views and use protecte
   assert.match(adminReveal, /CREDENTIAL_ADMIN_REVIEWED/);
   assert.match(customerRoute, /requireCustomer/);
   assert.match(customerRoute, /credentialRevealLimiter/);
-  assert.match(credentials, /cloudInstance: \{\n        userId: params\.userId,\n        status: CloudInstanceStatus\.ACTIVE/);
+  assert.match(credentials, /userId: params\.userId/);
+  assert.match(credentials, /status: CloudInstanceStatus\.ACTIVE/);
+  assert.match(credentials, /productFlowState: "ACTIVE"/);
+  assert.match(credentials, /writeAuditLog\(/);
   assert.match(credentials, /productFlowState: "WAITING_ADMIN_DELIVERY_APPROVAL"/);
   assert.match(customerPage, /waitingForAdminDelivery/);
   assert.doesNotMatch(adminPage, /ciphertext|authTag|credential\.secret/);

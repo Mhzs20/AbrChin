@@ -1,4 +1,3 @@
-import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { panelApiError, requireCustomer } from "@/lib/auth/guards";
 import { getClientIp, jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 import { credentialRevealLimiter } from "@/lib/rate-limit";
@@ -28,17 +27,10 @@ export async function POST(
         retryAfterSeconds: limit.retryAfterSeconds,
       });
     }
+    const meta = await readRequestMeta(request);
     const credential = await revealInstanceCredential({
       instanceId: id,
       userId: user.id,
-    });
-    const meta = await readRequestMeta(request);
-    await writeAuditLog({
-      actorUserId: user.id,
-      action: AuditActions.CREDENTIAL_REVEALED,
-      entityType: "cloud_instance",
-      entityId: id,
-      afterData: { revealed: true },
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
