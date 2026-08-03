@@ -2,7 +2,6 @@ import {
   InfrastructureOfferSource,
   InfrastructureOrderStatus,
   ProvisioningJobStatus,
-  ServiceOrderStatus,
   type Prisma,
 } from "@prisma/client";
 
@@ -19,6 +18,7 @@ import {
   parseLockedProvisioningSelection,
 } from "@/lib/infrastructure/provisioning-service";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
+import { isServiceReadyForProvision } from "@/lib/orders/service-lifecycle";
 import { WalletError } from "@/lib/wallet/errors";
 
 type DispatchResult =
@@ -64,7 +64,7 @@ async function loadApprovedOrderTx(tx: Prisma.TransactionClient, infrastructureO
   if (
     order.status !== InfrastructureOrderStatus.FUNDING_CONFIRMED ||
     order.productFlowState !== "PROVISION_APPROVED" ||
-    order.serviceOrder.status !== ServiceOrderStatus.PAID
+    !isServiceReadyForProvision(order.serviceOrder.status)
   ) {
     return { order, approvedById: null };
   }

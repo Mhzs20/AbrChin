@@ -7,11 +7,11 @@ import {
   InfrastructureOrderStatus,
   InfrastructureProvider,
   ProvisioningJobStatus,
-  ServiceOrderStatus,
   type Prisma,
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
+import { startInitialUsageBillingTx } from "@/lib/billing/start";
 import {
   customerSafeProviderMessage,
   InfrastructureError,
@@ -33,6 +33,7 @@ import { submitProvisioningOnce } from "@/lib/infrastructure/provisioning-orches
 import {
   transitionProductFlowTx,
 } from "@/lib/product-flow/service";
+import { isServiceReadyForProvision } from "@/lib/orders/service-lifecycle";
 import { getWorkerConfig } from "@/lib/worker/config";
 import {
   assertProvisioningJobFenceTx,
@@ -774,7 +775,7 @@ export async function processProvisioningJob(
     apiVersion: order.providerApiVersion,
   });
   if (
-    order.serviceOrder.status !== ServiceOrderStatus.PAID ||
+    !isServiceReadyForProvision(order.serviceOrder.status) ||
     (providerOverride &&
       (providerOverride.provider !== order.provider ||
         providerOverride.apiVersion !== order.providerApiVersion))
@@ -1165,7 +1166,7 @@ export async function processProvisioningJob(
 
     await prisma.$transaction(async (tx) => {
       await assertProvisioningJobFenceTx(tx, workerFence);
-      await tx.cloudInstance.upsert({
+      const confirmedInstance = await tx.cloudInstance.upsert({
         where: { infrastructureOrderId: order.id },
         create: {
           infrastructureOrderId: order.id,
@@ -1193,6 +1194,15 @@ export async function processProvisioningJob(
           securityId: observedSecurityId,
           providerObservedAt: observed.observedAt,
         },
+      });
+      await startInitialUsageBillingTx(tx, {
+        cloudInstanceId: confirmedInstance.id,
+        providerConfirmedAt: observed.observedAt,
+        providerEventId:
+          taskStatus.actionId ??
+          taskStatus.taskId ??
+          taskStatus.requestId ??
+          `provider-confirmation:${job.id}`,
       });
       const persisted = await tx.provisioningJob.updateMany({
         where: {

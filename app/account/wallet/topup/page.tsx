@@ -4,12 +4,18 @@ import { TopUpForm } from "@/components/topup-form";
 import { requireCustomerPage } from "@/lib/auth/guards";
 import { getPublicDefaultGatewaySummary } from "@/lib/payments";
 import { getTopUpSettingsView } from "@/lib/wallet/topup-settings";
+import { safeCustomerReturnPath } from "@/lib/customer/navigation";
 
 export const metadata: Metadata = { title: "شارژ کیف پول | ابرچین", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
-export default async function TopUpPage() {
+export default async function TopUpPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string }>;
+}) {
   await requireCustomerPage();
+  const { returnTo } = await searchParams;
 
   const topUpSettings = await getTopUpSettingsView();
 
@@ -31,6 +37,7 @@ export default async function TopUpPage() {
         suggestedAmountsToman={topUpSettings.suggestedAmountsToman}
         minTopUpToman={topUpSettings.minTopUpToman}
         maxTopUpToman={topUpSettings.maxTopUpToman}
+        returnTo={safeCustomerReturnPath(returnTo)}
       />
     </section>
   );

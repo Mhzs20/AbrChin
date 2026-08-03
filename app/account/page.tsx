@@ -34,7 +34,7 @@ export default async function AccountOverviewPage() {
         description="خلاصه وضعیت حساب، کیف پول و سرویس‌های شما"
         actions={
           overview.isNewUser ? (
-            <Link href="/account/order" className="product-btn product-btn--primary">
+            <Link href="/cloud-servers" className="product-btn product-btn--primary">
               انتخاب راهکار و شروع
             </Link>
           ) : (
@@ -47,18 +47,73 @@ export default async function AccountOverviewPage() {
 
       <div className="product-stat-grid">
         <StatCard label="موجودی کیف پول" value={<MoneyDisplay amount={formatTomanFa(overview.walletBalanceRial)} />} />
+        <StatCard label="مصرف امروز UTC" value={<MoneyDisplay amount={formatTomanFa(overview.billing.todayUsageRial)} />} />
         <StatCard label="سرویس‌های فعال" value={overview.activeServices.toLocaleString("fa-IR")} />
         <StatCard label="سفارش‌های در جریان" value={overview.pendingOrders.toLocaleString("fa-IR")} />
       </div>
+
+      <SectionCard title="Billing مصرفی">
+        <p>
+          تخمین ساعتی:{" "}
+          <strong>
+            {overview.billing.hourlyEstimateRial == null
+              ? "—"
+              : `${formatTomanFa(overview.billing.hourlyEstimateRial)} تومان`}
+          </strong>
+          {" · "}
+          تخمین ۲۴ ساعت:{" "}
+          <strong>
+            {overview.billing.dailyEstimateRial == null
+              ? "—"
+              : `${formatTomanFa(overview.billing.dailyEstimateRial)} تومان`}
+          </strong>
+        </p>
+        <p>
+          Runway تقریبی:{" "}
+          <strong>
+            {overview.billing.runwaySeconds == null
+              ? "—"
+              : `${Number(overview.billing.runwaySeconds / 3_600n).toLocaleString("fa-IR")} ساعت`}
+          </strong>
+          {" · "}
+          تغییر منابع در انتظار:{" "}
+          <strong>{overview.billing.pendingResourceChanges.toLocaleString("fa-IR")}</strong>
+        </p>
+        <p>
+          بدهی باز:{" "}
+          <strong>{formatTomanFa(overview.billing.outstandingRial)} تومان</strong>
+          {" · "}
+          آخرین Settlement:{" "}
+          <strong>
+            {overview.billing.latestSettlement
+              ? `${new Date(overview.billing.latestSettlement.periodEnd).toLocaleString("fa-IR")} — ${overview.billing.latestSettlement.status}`
+              : "—"}
+          </strong>
+        </p>
+        {overview.billing.currentResources ? (
+          <p>
+            منابع فعلی:{" "}
+            <strong dir="ltr">
+              {overview.billing.currentResources.vcpu} vCPU /{" "}
+              {Math.floor(overview.billing.currentResources.ramMb / 1024)} GB
+              RAM / {overview.billing.currentResources.diskGb} GB Disk
+            </strong>
+          </p>
+        ) : null}
+        <small>
+          Estimate قطعی نیست؛ Traffic و Add-onهای قابل‌اندازه‌گیری پس از دریافت
+          داده معتبر در Invoice نهایی ثبت می‌شوند.
+        </small>
+      </SectionCard>
 
       {overview.isNewUser ? (
         <SectionCard title="شروع کار">
           <EmptyState
             title="هنوز سرویسی ندارید"
-            description="برای شروع، کیف پول خود را شارژ کنید و اولین سرور را سفارش دهید."
+            description="منابع را انتخاب کنید، Estimate را ببینید و در صورت نیاز Wallet را شارژ کنید."
             action={
-              <Link href="/account/wallet/topup" className="product-btn product-btn--primary">
-                شارژ کیف پول
+              <Link href="/cloud-servers" className="product-btn product-btn--primary">
+                انتخاب منابع
               </Link>
             }
           />

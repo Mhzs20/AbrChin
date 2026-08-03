@@ -4,12 +4,17 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { OrderCheckoutPanel } from "@/components/account/order-checkout-panel";
+import { CloudActivationPanel } from "@/components/account/cloud-activation-panel";
 import { QuoteCountdown } from "@/components/quote-countdown";
 import {
   readyServerImageLabel,
   readyServerLocation,
 } from "@/lib/cloud-servers/catalog";
 import { formatTomanFa } from "@/lib/money";
+import { getActivationEstimate } from "@/lib/billing/activation";
+import { getEffectiveBillingPolicy } from "@/lib/billing/policy-service";
+import { calculateMarkupRial } from "@/lib/billing/policy";
+import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 import { parchinBase } from "@/lib/parchin/catalog";
 import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
 import {
@@ -52,6 +57,28 @@ export default async function ReadyServerQuotePage({
       : quoteRecord.plan.imageCode,
   );
   const next = `/cloud-servers/quote/${quote.id}`;
+  const policy =
+    quoteRecord.plan.billingModel === "PAYG_WALLET"
+      ? await getEffectiveBillingPolicy(quoteRecord.plan.id)
+      : null;
+  const activationEstimate =
+    user && quoteRecord.plan.billingModel === "PAYG_WALLET"
+      ? await getActivationEstimate({
+          quoteId: quote.id,
+          userId: user.id,
+          cadence: policy?.defaultCadence ?? "HOURLY",
+        })
+      : null;
+  const wallet = user ? await ensureWalletForUser(user.id) : null;
+  const publicHourlyEstimate =
+    quoteRecord.providerHourlyPriceIrr != null &&
+    quoteRecord.markupBasisPointsSnapshot != null
+      ? quoteRecord.providerHourlyPriceIrr +
+        calculateMarkupRial(
+          quoteRecord.providerHourlyPriceIrr,
+          quoteRecord.markupBasisPointsSnapshot,
+        )
+      : null;
 
   return (
     <section className="ready-quote-page page-view" aria-labelledby="ready-quote-title">
@@ -92,21 +119,49 @@ export default async function ReadyServerQuotePage({
         </article>
 
         <aside className="ready-quote-checkout">
-          <span>مبلغ ماهانه و تمدید فعلی</span>
-          <strong>
-            {formatTomanFa(quoteRecord.amountRial)}
-            <small> تومان</small>
-          </strong>
           <p><QuoteCountdown expiresAt={quote.expiresAt} /></p>
           {user ? (
-            <OrderCheckoutPanel
-              quoteId={quote.id}
-              planTitle={quote.title}
-              priceToman={formatTomanFa(quoteRecord.amountRial)}
-            />
+            activationEstimate ? (
+              <CloudActivationPanel
+                quoteId={quote.id}
+                hourlyEstimateToman={formatTomanFa(
+                  activationEstimate.hourlyEstimateRial,
+                )}
+                dailyEstimateToman={formatTomanFa(
+                  activationEstimate.dailyEstimateRial,
+                )}
+                minimumCreditToman={formatTomanFa(
+                  activationEstimate.minimumCreditRequiredRial,
+                )}
+                walletBalanceToman={formatTomanFa(
+                  wallet?.availableBalance ?? 0n,
+                )}
+                availability={activationEstimate.availability}
+              />
+            ) : (
+              <OrderCheckoutPanel
+                quoteId={quote.id}
+                planTitle={quote.title}
+                priceToman={formatTomanFa(quoteRecord.amountRial)}
+              />
+            )
           ) : (
             <div className="ready-quote-login">
-              <p>Quote ساخته شد. برای پرداخت و ادامه همین انتخاب وارد شو.</p>
+              <p>
+                Estimate ساخته شد. برای مشاهده Wallet و ثبت درخواست فعال‌سازی
+                همین انتخاب وارد شو.
+              </p>
+              {publicHourlyEstimate ? (
+                <p>
+                  تخمین ساعتی:{" "}
+                  <strong>{formatTomanFa(publicHourlyEstimate)} تومان</strong>
+                  <br />
+                  تخمین ۲۴ ساعت:{" "}
+                  <strong>
+                    {formatTomanFa(publicHourlyEstimate * 24n)} تومان
+                  </strong>
+                </p>
+              ) : null}
               <Link
                 className="button button-primary"
                 href={`/login?next=${encodeURIComponent(next)}`}

@@ -6,6 +6,7 @@ export const productFlowStates = [
   "PARCHIN_SELECTED",
   "DELIVERY_CONFIGURED",
   "QUOTED",
+  "ACTIVATION_REQUESTED",
   "AUTH_REQUIRED",
   "AWAITING_PAYMENT",
   "PAID",
@@ -61,6 +62,7 @@ const transitions: Record<ProductFlowState, readonly ProductFlowState[]> = {
     "CANCELLED",
   ],
   QUOTED: [
+    "ACTIVATION_REQUESTED",
     "AUTH_REQUIRED",
     "AWAITING_PAYMENT",
     "QUOTE_EXPIRED",
@@ -70,6 +72,11 @@ const transitions: Record<ProductFlowState, readonly ProductFlowState[]> = {
     "CANCELLED",
   ],
   AUTH_REQUIRED: ["AWAITING_PAYMENT", "QUOTE_EXPIRED", "CANCELLED"],
+  ACTIVATION_REQUESTED: [
+    "PROVISION_APPROVED",
+    "QUOTE_EXPIRED",
+    "CANCELLED",
+  ],
   AWAITING_PAYMENT: [
     "PAID",
     "PAYMENT_REVIEW",

@@ -19,6 +19,7 @@ import { prisma } from "@/lib/db";
 import { activateApprovedDeliveryTx } from "@/lib/infrastructure/health-check-service";
 import { parseLockedProvisioningSelection } from "@/lib/infrastructure/provisioning-service";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
+import { isServiceReadyForProvision } from "@/lib/orders/service-lifecycle";
 import { WalletError } from "@/lib/wallet/errors";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -123,7 +124,7 @@ async function buildDeliveryApprovalReview(
   const instance = order.cloudInstance;
   const health = instance?.healthChecks[0] ?? null;
   const credential = instance?.credential ?? null;
-  if (order.serviceOrder.status !== ServiceOrderStatus.PAID) {
+  if (!isServiceReadyForProvision(order.serviceOrder.status)) {
     block("payment_not_settled", "پرداخت سفارش برای تحویل نهایی معتبر نیست.");
   }
   if (order.status !== InfrastructureOrderStatus.PROVISIONING) {
@@ -248,7 +249,7 @@ function assertWaitingDeliveryState(order: {
   if (
     order.status !== InfrastructureOrderStatus.PROVISIONING ||
     order.productFlowState !== "WAITING_ADMIN_DELIVERY_APPROVAL" ||
-    order.serviceOrder.status !== ServiceOrderStatus.PAID
+    !isServiceReadyForProvision(order.serviceOrder.status)
   ) {
     throw new WalletError("invalid_status", "این سفارش در صف تأیید نهایی تحویل نیست.");
   }

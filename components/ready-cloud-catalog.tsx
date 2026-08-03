@@ -126,15 +126,32 @@ export function ReadyCloudCatalog({
             </div>
 
             <div className="quick-plan-price">
-              <span>
-                <strong>{formatRialAsToman(offer.salePriceRial)}</strong> تومان
-              </span>
-              <small>
-                قیمت ماه اول · تمدید {formatRialAsToman(offer.renewalPriceRial)} تومان
-                {offer.hourlyPriceRial
-                  ? ` · ساعتی ${formatRialAsToman(offer.hourlyPriceRial)} تومان`
-                  : ""}
-              </small>
+              {productPath === "cloud-servers" && offer.hourlyPriceRial ? (
+                <>
+                  <span>
+                    <strong>{formatRialAsToman(offer.hourlyPriceRial)}</strong>{" "}
+                    تومان / ساعت
+                  </span>
+                  <small>
+                    تخمین ۲۴ ساعت:{" "}
+                    {formatRialAsToman(
+                      (BigInt(offer.hourlyPriceRial) * 24n).toString(),
+                    )}{" "}
+                    تومان
+                  </small>
+                </>
+              ) : (
+                <>
+                  <span>
+                    <strong>{formatRialAsToman(offer.salePriceRial)}</strong>{" "}
+                    تومان
+                  </span>
+                  <small>
+                    دوره ثابت · تمدید{" "}
+                    {formatRialAsToman(offer.renewalPriceRial)} تومان
+                  </small>
+                </>
+              )}
             </div>
 
             <ul>

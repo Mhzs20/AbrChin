@@ -91,6 +91,7 @@ enum ControlledRefundStatus {
 
 enum ServiceOrderStatus {
   DRAFT
+  ACTIVATION_REQUESTED
   PENDING_PAYMENT
   PAID
   CANCELED

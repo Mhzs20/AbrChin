@@ -126,6 +126,12 @@ export async function executePayOrderWithWalletTx(
   if (!plan) {
     throw new WalletError("invalid_plan", "پلن سفارش معتبر نیست.");
   }
+  if (plan.billingModel === "PAYG_WALLET") {
+    throw new WalletError(
+      "direct_checkout_not_allowed",
+      "خرید مستقیم سرور ابری PAYG مجاز نیست.",
+    );
+  }
   assertProviderRoute({
     productKind: plan.productKind,
     provider: plan.provider,

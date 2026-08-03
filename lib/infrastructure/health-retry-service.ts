@@ -4,7 +4,6 @@ import {
   InfrastructureOrderStatus,
   Prisma,
   ProvisioningJobStatus,
-  ServiceOrderStatus,
 } from "@prisma/client";
 
 import {
@@ -34,6 +33,7 @@ import {
   type InfrastructureRecoveryAction,
 } from "@/lib/infrastructure/resource-disposition";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
+import { isServiceReadyForProvision } from "@/lib/orders/service-lifecycle";
 import { WalletError } from "@/lib/wallet/errors";
 import {
   assertProvisioningJobFenceTx,
@@ -406,7 +406,7 @@ async function scheduleHealthRetryTx(
     );
   }
   if (
-    order.serviceOrder.status !== ServiceOrderStatus.PAID ||
+    !isServiceReadyForProvision(order.serviceOrder.status) ||
     !order.cloudInstance
   ) {
     throw new WalletError(
@@ -774,7 +774,7 @@ export async function processPendingHealthRetryDispatches(
           return true;
         }
         if (
-          order.serviceOrder.status !== ServiceOrderStatus.PAID ||
+          !isServiceReadyForProvision(order.serviceOrder.status) ||
           !order.cloudInstance ||
           order.productFlowState !== "HEALTH_CHECK_FAILED"
         ) {
@@ -947,7 +947,7 @@ async function fetchLockedProviderObservation(
   });
   if (
     !order ||
-    order.serviceOrder.status !== ServiceOrderStatus.PAID ||
+    !isServiceReadyForProvision(order.serviceOrder.status) ||
     !order.cloudInstance
   ) {
     throw new WalletError(
@@ -1297,7 +1297,7 @@ export async function scheduleManualHealthRecovery(input: {
     if (
       !order ||
       !order.cloudInstance ||
-      order.serviceOrder.status !== ServiceOrderStatus.PAID ||
+      !isServiceReadyForProvision(order.serviceOrder.status) ||
       order.status !== InfrastructureOrderStatus.MANUAL_REVIEW ||
       order.productFlowState !==
         "PROVISIONING_MANUAL_REVIEW"
@@ -1689,7 +1689,7 @@ export async function processHealthCheckRetryJob(
   const order = job.infrastructureOrder;
   const instance = order.cloudInstance;
   if (!instance) throw new Error("provider_resource_not_ready");
-  if (order.serviceOrder.status !== ServiceOrderStatus.PAID) {
+  if (!isServiceReadyForProvision(order.serviceOrder.status)) {
     throw new Error("health_retry_requires_paid_order");
   }
   if (

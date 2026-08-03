@@ -8,6 +8,7 @@ import type {
 
 export const serviceOrderStatusLabel: Record<ServiceOrderStatus, string> = {
   DRAFT: "پیش‌نویس",
+  ACTIVATION_REQUESTED: "درخواست فعال‌سازی",
   PENDING_PAYMENT: "در انتظار پرداخت",
   PAID: "پرداخت‌شده",
   CANCELED: "لغو شده",

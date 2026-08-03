@@ -146,6 +146,7 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
       preprovisionedInventoryItemId: true,
       plan: {
         select: {
+          billingModel: true,
           offerSource: true,
           catalogItem: {
             select: {
@@ -172,6 +173,12 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
     !preflight.externalImageId
   ) {
     throw new WalletError("invalid_quote", "پیشنهاد انتخاب‌شده پیدا نشد.");
+  }
+  if (preflight.plan.billingModel === "PAYG_WALLET") {
+    throw new WalletError(
+      "direct_checkout_not_allowed",
+      "سرور ابری PAYG از Wallet و درخواست فعال‌سازی استفاده می‌کند.",
+    );
   }
   assertPublicSaleEnabled({
     provider: preflight.provider,
@@ -246,6 +253,12 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
     }
     if (!quote.plan.active) {
       throw new WalletError("invalid_plan", "ظرفیت این چینش دیگر فعال نیست.");
+    }
+    if (quote.plan.billingModel === "PAYG_WALLET") {
+      throw new WalletError(
+        "direct_checkout_not_allowed",
+        "سرور ابری PAYG از Wallet و درخواست فعال‌سازی استفاده می‌کند.",
+      );
     }
     assertProviderRoute({
       productKind: quote.plan.productKind,

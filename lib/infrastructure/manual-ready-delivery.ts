@@ -7,11 +7,11 @@ import {
   InfrastructureOrderStatus,
   InstanceCredentialStatus,
   SecureDeliveryStatus,
-  ServiceOrderStatus,
   type Prisma,
 } from "@prisma/client";
 
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
+import { startInitialUsageBillingTx } from "@/lib/billing/start";
 import {
   assertAdminActorTx,
   normalizeAdminCommand,
@@ -21,6 +21,7 @@ import {
 import { prisma } from "@/lib/db";
 import { parseLockedProvisioningSelection } from "@/lib/infrastructure/provisioning-service";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
+import { isServiceReadyForProvision } from "@/lib/orders/service-lifecycle";
 import {
   credentialFingerprint,
   encryptCredential,
@@ -112,6 +113,7 @@ export async function completeManualReadyDelivery(params: {
       include: {
         serviceOrder: { include: { recommendationQuote: true } },
         plan: true,
+        activationRequest: true,
         cloudInstance: true,
         provisioningJobs: true,
       },
@@ -145,7 +147,7 @@ export async function completeManualReadyDelivery(params: {
     });
     if (
       order.plan.offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY ||
-      order.serviceOrder.status !== ServiceOrderStatus.PAID ||
+      !isServiceReadyForProvision(order.serviceOrder.status) ||
       order.status !== InfrastructureOrderStatus.FUNDING_CONFIRMED ||
       order.productFlowState !== "PROVISION_APPROVED" ||
       order.cloudInstance ||
@@ -196,6 +198,11 @@ export async function completeManualReadyDelivery(params: {
         provisionedAt: now,
         healthCheckedAt: now,
       },
+    });
+    await startInitialUsageBillingTx(tx, {
+      cloudInstanceId: instance.id,
+      providerConfirmedAt: now,
+      providerEventId: `manual-confirmation:${order.id}`,
     });
     const encrypted = encryptCredential(params.secret);
     const credential = await tx.instanceCredential.create({
@@ -281,6 +288,14 @@ export async function completeManualReadyDelivery(params: {
         metadata: { credentialId: credential.id, containsSecret: false },
       },
     });
+    if (order.activationRequest) {
+      await tx.activationRequest.update({
+        where: { id: order.activationRequest.id },
+        data: {
+          status: "WAITING_DELIVERY_APPROVAL",
+        },
+      });
+    }
     await writeAuditLog(
       {
         actorUserId: params.adminUserId,

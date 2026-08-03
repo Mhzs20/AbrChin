@@ -33,6 +33,8 @@ export default async function AccountOrderDetailPage({
   const order = await prisma.serviceOrder.findFirst({
     where: { id, userId: user.id },
     include: {
+      plan: true,
+      activationRequest: true,
       infrastructureOrder: {
         include: {
           provisioningJobs: { orderBy: { createdAt: "asc" } },
@@ -66,9 +68,12 @@ export default async function AccountOrderDetailPage({
     },
   });
   if (!order) notFound();
+  const isPayg = order.plan?.billingModel === "PAYG_WALLET";
   const waitingForAdminProvision =
-    order.status === "PAID" &&
-    order.infrastructureOrder?.status === "WAITING_ADMIN_FUNDING";
+    isPayg
+      ? order.activationRequest?.status === "WAITING_ADMIN_APPROVAL"
+      : order.status === "PAID" &&
+        order.infrastructureOrder?.status === "WAITING_ADMIN_FUNDING";
   const waitingForAdminDelivery =
     order.infrastructureOrder?.productFlowState ===
     "WAITING_ADMIN_DELIVERY_APPROVAL";
@@ -78,12 +83,20 @@ export default async function AccountOrderDetailPage({
   });
 
   const timeline = [
-    { id: "created", title: "ثبت سفارش", description: new Date(order.createdAt).toLocaleString("fa-IR"), done: true },
+    { id: "created", title: isPayg ? "ثبت درخواست فعال‌سازی" : "ثبت سفارش", description: new Date(order.createdAt).toLocaleString("fa-IR"), done: true },
     {
       id: "paid",
-      title: "پرداخت",
-      description: order.paidAt ? new Date(order.paidAt).toLocaleString("fa-IR") : "در انتظار پرداخت",
-      done: Boolean(order.paidAt),
+      title: isPayg ? "بررسی حداقل اعتبار Wallet" : "پرداخت",
+      description: isPayg
+        ? order.activationRequest?.status === "CREDIT_REQUIRED"
+          ? "نیازمند شارژ Wallet"
+          : "اعتبار اولیه بررسی شد؛ مبلغی برای خرید کسر نشده است"
+        : order.paidAt
+          ? new Date(order.paidAt).toLocaleString("fa-IR")
+          : "در انتظار پرداخت",
+      done: isPayg
+        ? order.activationRequest?.status !== "CREDIT_REQUIRED"
+        : Boolean(order.paidAt),
     },
     ...(order.infrastructureOrder
       ? [
@@ -91,7 +104,9 @@ export default async function AccountOrderDetailPage({
             id: "infra",
             title: "آماده‌سازی زیرساخت",
             description: waitingForAdminProvision
-              ? "پرداخت موفق؛ منتظر تأیید ساخت"
+              ? isPayg
+                ? "منتظر تأیید اول Admin"
+                : "پرداخت موفق؛ منتظر تأیید ساخت"
               : waitingForAdminDelivery
                 ? "آماده‌سازی کامل شد؛ منتظر تأیید نهایی تحویل"
               : getInfrastructureStage(order.infrastructureOrder.status),
@@ -140,9 +155,25 @@ export default async function AccountOrderDetailPage({
       <PageHeader title={order.title} description={`سفارش ${order.id.slice(-8)}`} />
       <SectionCard title="خلاصه">
         <p>وضعیت: <StatusBadge label={serviceOrderStatusLabel[order.status]} tone="info" /></p>
-        <p>مبلغ: <MoneyDisplay amount={formatTomanFa(order.amount)} /></p>
+        {isPayg ? (
+          <p>
+            مدل مالی: <strong>PAYG از Wallet</strong>
+            {" · "}تخمین روزانه:{" "}
+            <MoneyDisplay
+              amount={formatTomanFa(
+                order.activationRequest?.estimatedDailyRial ?? 0n,
+              )}
+            />
+          </p>
+        ) : (
+          <p>مبلغ: <MoneyDisplay amount={formatTomanFa(order.amount)} /></p>
+        )}
         {waitingForAdminProvision ? (
-          <p role="status">پرداخت موفق؛ منتظر تأیید ساخت</p>
+          <p role="status">
+            {isPayg
+              ? "درخواست ثبت شده و منتظر تأیید اول Admin است؛ Provision هنوز اجرا نشده است."
+              : "پرداخت موفق؛ منتظر تأیید ساخت"}
+          </p>
         ) : waitingForAdminDelivery ? (
           <p role="status">سرور در حال آماده‌سازی نهایی است و پس از تأیید تحویل، اطلاعات دسترسی امن در همین صفحه آماده می‌شود.</p>
         ) : payment === "review" ? (
@@ -176,7 +207,7 @@ export default async function AccountOrderDetailPage({
           </SectionCard>
         </>
       ) : null}
-      {order.infrastructureOrder?.cloudInstance?.subscription ? (
+      {!isPayg && order.infrastructureOrder?.cloudInstance?.subscription ? (
         <SectionCard title="تمدید و چرخه عمر">
           <SubscriptionPanel
             instanceId={order.infrastructureOrder.cloudInstance.id}

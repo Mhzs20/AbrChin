@@ -53,7 +53,10 @@ export default async function AccountOrdersPage() {
       cells: {
         id: <TechnicalValue>{order.id.slice(-8)}</TechnicalValue>,
         title: order.title,
-        amount: <MoneyDisplay amount={formatTomanFa(order.amount)} />,
+        amount:
+          order.status === "ACTIVATION_REQUESTED"
+            ? "PAYG / Wallet"
+            : <MoneyDisplay amount={formatTomanFa(order.amount)} />,
         status: <StatusBadge label={serviceOrderStatusLabel[order.status]} tone={orderTone(order.status)} />,
         stage: infraStatus
           ? getInfrastructureStage(infraStatus)
@@ -72,7 +75,13 @@ export default async function AccountOrdersPage() {
     id: order.id,
     title: order.title,
     fields: [
-      { label: "مبلغ", value: <MoneyDisplay amount={formatTomanFa(order.amount)} /> },
+      {
+        label: "مبلغ",
+        value:
+          order.status === "ACTIVATION_REQUESTED"
+            ? "PAYG / Wallet"
+            : <MoneyDisplay amount={formatTomanFa(order.amount)} />,
+      },
       {
         label: "وضعیت",
         value: <StatusBadge label={serviceOrderStatusLabel[order.status]} tone={orderTone(order.status)} />,

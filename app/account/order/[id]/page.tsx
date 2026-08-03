@@ -23,6 +23,9 @@ export default async function AccountOrderPlanPage({ params }: { params: Promise
 
   const plan = await getActivePlanById(id);
   if (!plan) redirect("/account/order");
+  if (plan.billingModel === "PAYG_WALLET") {
+    redirect("/cloud-servers");
+  }
 
   return (
     <>

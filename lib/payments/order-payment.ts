@@ -59,11 +59,17 @@ export async function createOrderPaymentIntent(input: {
     resolveDefaultPaymentGateway(),
     prisma.serviceOrder.findFirst({
       where: { id: input.orderId, userId: input.userId },
-      include: { orderPayment: true },
+      include: { orderPayment: true, plan: true },
     }),
     ensureWalletForUser(input.userId),
   ]);
   if (!order) throw new WalletError("not_found", "سفارش پیدا نشد.");
+  if (order.plan?.billingModel === "PAYG_WALLET") {
+    throw new WalletError(
+      "direct_checkout_not_allowed",
+      "درگاه بانکی برای سرور ابری فقط Wallet را شارژ می‌کند.",
+    );
+  }
   if (wallet.status !== WalletStatus.ACTIVE) {
     throw new WalletError("wallet_frozen", "حساب پرداخت فعال نیست.");
   }

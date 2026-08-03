@@ -119,6 +119,36 @@ export type ProviderBillingPolicy = {
   };
 };
 
+const unverifiedPaygBillingPolicy = {
+  verificationStatus: "UNVERIFIED",
+  settlementSupported: false,
+  calculationUnit: "UNVERIFIED",
+  minimumChargeSeconds: null,
+  roundingPolicy: "UNVERIFIED",
+  prorationSupported: null,
+  hourlyRateAvailable: true,
+  dailyRateAvailable: false,
+  stopStateBillableComponents: {
+    compute: "UNVERIFIED",
+    disk: "UNVERIFIED",
+    ip: "UNVERIFIED",
+    backup: "UNVERIFIED",
+    traffic: "UNVERIFIED",
+    snapshot: "UNVERIFIED",
+  },
+} as const satisfies ProviderBillingPolicy;
+
+/**
+ * Estimation must not require a configured provider mutation client.
+ * Provider-confirmed terms remain explicitly unverified until a real
+ * read-only billing contract is available.
+ */
+export function providerBillingPolicy(
+  _provider: InfrastructureProvider,
+): ProviderBillingPolicy {
+  return unverifiedPaygBillingPolicy;
+}
+
 export type ValidationResult =
   | { valid: true; checkedAt: Date }
   | {

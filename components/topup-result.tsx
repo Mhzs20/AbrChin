@@ -9,7 +9,15 @@ function ResultInner() {
   const status = params.get("status") || "failed";
   const topUpId = params.get("topUpId");
   const [detail, setDetail] = useState("");
-  const [resumePath, setResumePath] = useState<string | null>(null);
+  const [resumePath, setResumePath] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const stored = window.sessionStorage.getItem(
+      "abrchin.walletTopup.returnTo",
+    );
+    return stored?.startsWith("/") && !stored.startsWith("//")
+      ? stored
+      : null;
+  });
   const [retryable, setRetryable] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [polling, setPolling] = useState(Boolean(params.get("topUpId")));
@@ -104,7 +112,7 @@ function ResultInner() {
         ) : null}
         {resumePath && (status === "success" || detail === "SUCCEEDED") ? (
           <Link className="button button-primary" href={resumePath}>
-            ادامه و پرداخت سفارش
+            ادامه مسیر فعال‌سازی
           </Link>
         ) : null}
         <Link className="button button-primary" href="/account/wallet">کیف پول</Link>

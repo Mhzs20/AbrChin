@@ -30,10 +30,10 @@ export default async function CloudServersPage() {
           <span className="eyebrow">
             <Cloud size={15} aria-hidden="true" /> سرورهای ابری قابل انتخاب
           </span>
-          <h1 id="quick-buy-title">همه ظرفیت‌های قابل خرید، با قیمت زنده.</h1>
+          <h1 id="quick-buy-title">منابع را انتخاب کن؛ مصرف را از Wallet بپرداز.</h1>
           <p>
             موقعیت و منابع را انتخاب کن؛ پلن‌های این صفحه توسط ادمین ابرچین
-            منتشر می‌شوند و پیش از Quote دوباره اعتبارسنجی خواهند شد.
+            منتشر می‌شوند و پیش از Estimate دوباره اعتبارسنجی خواهند شد.
           </p>
         </div>
         <Link className="button button-quiet" href="/compass">
@@ -49,7 +49,7 @@ export default async function CloudServersPage() {
           {checkedAt}
         </span>
         <span>
-          <Zap size={15} aria-hidden="true" /> قیمت قبل از ورود
+          <Zap size={15} aria-hidden="true" /> Estimate ساعتی و روزانه
         </span>
         <span>
           <ShieldCheck size={15} aria-hidden="true" /> همه سرورها با پرچین

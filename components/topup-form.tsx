@@ -10,6 +10,7 @@ type TopUpFormProps = {
   suggestedAmountsToman: number[];
   minTopUpToman: number;
   maxTopUpToman: number;
+  returnTo?: string | null;
 };
 
 export function TopUpForm({
@@ -18,6 +19,7 @@ export function TopUpForm({
   suggestedAmountsToman,
   minTopUpToman,
   maxTopUpToman,
+  returnTo,
 }: TopUpFormProps) {
   const router = useRouter();
   const defaultAmount = suggestedAmountsToman[0] ?? minTopUpToman;
@@ -44,6 +46,12 @@ export function TopUpForm({
         setError(data.error || "ایجاد شارژ ممکن نشد.");
         setLoading(false);
         return;
+      }
+      if (returnTo) {
+        window.sessionStorage.setItem(
+          "abrchin.walletTopup.returnTo",
+          returnTo,
+        );
       }
       window.location.href = data.redirectUrl;
     } catch {
