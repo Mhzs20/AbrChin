@@ -4,14 +4,13 @@ import {
   InfrastructureOrderStatus,
   InfrastructureProvider,
   PrismaClient,
-  ProvisioningJobStatus,
   ServiceOrderStatus,
   WalletStatus,
 } from "@prisma/client";
 
-import { confirmProviderFunding } from "../lib/infrastructure/funding.ts";
 import { FakeCloudProviderAdapter } from "../lib/infrastructure/fake-cloud-provider-adapter.ts";
 import { completeManualReadyDelivery } from "../lib/infrastructure/manual-ready-delivery.ts";
+import { approveProvision } from "../lib/infrastructure/provision-approval.ts";
 import { retryFailedProvisioning } from "../lib/infrastructure/retry.ts";
 import { payOrderWithWallet, refundOrder } from "../lib/orders/service.ts";
 import { getActivePlanByCode, toPlanSnapshot } from "../lib/orders/plans.ts";
@@ -520,8 +519,10 @@ test("two concurrent manual payments cannot oversell one unit", async (t) => {
   }
   const firstMobile = "09128881012";
   const secondMobile = "09128881013";
+  const adminMobile = "09128881016";
   await cleanupMobile(firstMobile);
   await cleanupMobile(secondMobile);
+  await cleanupMobile(adminMobile);
   const first = await createManualOrderFixture(firstMobile);
   const second = await createManualOrderFixture(secondMobile);
   const results = await Promise.allSettled([
@@ -549,8 +550,31 @@ test("two concurrent manual payments cannot oversell one unit", async (t) => {
     }),
     1,
   );
+  const successful =
+    results[0]?.status === "fulfilled" ? first : second;
+  const admin = await prisma.user.create({
+    data: { mobile: adminMobile, role: "ADMIN" },
+  });
+  const refundInput = {
+    orderId: successful.order.id,
+    actorUserId: admin.id,
+    reason: "آزادسازی موجودی رزروشده در Refund تست",
+    idempotencyKey:
+      `manual-inventory-refund-${successful.order.id}`,
+  };
+  await refundOrder(refundInput);
+  await refundOrder(refundInput);
+  assert.equal(
+    (
+      await prisma.providerCatalogItem.findUniqueOrThrow({
+        where: { id: first.plan.catalogItemId! },
+      })
+    ).manualAvailableUnits,
+    1,
+  );
   await cleanupMobile(firstMobile);
   await cleanupMobile(secondMobile);
+  await cleanupMobile(adminMobile);
 });
 
 test("manual ready delivery is idempotent and never creates a provider job", async (t) => {
@@ -565,16 +589,52 @@ test("manual ready delivery is idempotent and never creates a provider job", asy
   const previousCredentialKey = process.env.CREDENTIAL_ENCRYPTION_KEY;
   process.env.CREDENTIAL_ENCRYPTION_KEY = Buffer.alloc(32, 11).toString("base64");
   try {
-    const { user, order } = await createManualOrderFixture(mobile);
+    const { user, plan, order } =
+      await createManualOrderFixture(mobile);
     const paid = await payOrderWithWallet(user.id, order.id);
+    const deliveryConfiguration = {
+      provider: "ARVAN" as const,
+      providerApiVersion: "v1",
+      productKind: "READY_INSTANT_SERVER" as const,
+      region: plan.regionCode,
+      externalPlanId: plan.sizeCode,
+      externalImageId: plan.imageCode,
+      externalNetworkId: "manual-network",
+      externalSecurityId: "manual-security",
+      topologyVerificationMode: "STRICT_OBSERVED",
+      accessMethod: "ONE_TIME_PASSWORD",
+      sshKeyName: null,
+      initScript: null,
+    };
+    await prisma.infrastructureOrder.update({
+      where: { id: paid.infrastructureOrder!.id },
+      data: {
+        providerSelectionSnapshot: {
+          ...deliveryConfiguration,
+          deliveryConfiguration,
+          manualInventoryReserved: true,
+        },
+      },
+    });
     const admin = await prisma.user.create({
       data: { mobile: adminMobile, role: "ADMIN" },
     });
+    const approval = await approveProvision({
+      infrastructureOrderId: paid.infrastructureOrder!.id,
+      adminUserId: admin.id,
+      reason: "تأیید تستی Fulfillment دستی",
+      providerBalanceConfirmed: true,
+      idempotencyKey: `manual-approval-${order.id}`,
+    });
+    assert.equal(approval.approved, true);
     const input = {
       infrastructureOrderId: paid.infrastructureOrder!.id,
       adminUserId: admin.id,
       providerResourceId: `manual-${order.id}`,
       ipv4: "203.0.113.15",
+      region: plan.regionCode,
+      externalPlanId: plan.sizeCode,
+      externalImageId: plan.imageCode,
       username: "root",
       secret: "Founder-Test-Only-123!",
       reason: "تست تحویل دستی سفارش",
@@ -590,24 +650,46 @@ test("manual ready delivery is idempotent and never creates a provider job", asy
         cloudInstance: { include: { credential: true, subscription: true } },
         provisioningJobs: true,
         healthChecks: true,
+        secureDeliveryEvents: true,
       },
     });
-    assert.equal(infrastructure.status, InfrastructureOrderStatus.ACTIVE);
-    assert.equal(infrastructure.productFlowState, "ACTIVE");
-    assert.equal(infrastructure.serviceOrder.productFlowState, "ACTIVE");
+    assert.equal(
+      infrastructure.status,
+      InfrastructureOrderStatus.PROVISIONING,
+    );
+    assert.equal(
+      infrastructure.productFlowState,
+      "WAITING_ADMIN_DELIVERY_APPROVAL",
+    );
+    assert.equal(
+      infrastructure.serviceOrder.productFlowState,
+      "WAITING_ADMIN_DELIVERY_APPROVAL",
+    );
     assert.equal(
       infrastructure.productFlowRevision,
       infrastructure.serviceOrder.productFlowRevision,
     );
-    assert.equal(infrastructure.cloudInstance?.status, "ACTIVE");
+    assert.equal(infrastructure.cloudInstance?.status, "PENDING");
     assert.equal(infrastructure.cloudInstance?.credential?.status, "READY");
     assert.notEqual(
       infrastructure.cloudInstance?.credential?.ciphertext,
       input.secret,
     );
-    assert.equal(infrastructure.cloudInstance?.subscription?.status, "ACTIVE");
+    assert.equal(infrastructure.cloudInstance?.subscription, null);
     assert.equal(infrastructure.provisioningJobs.length, 0);
     assert.equal(infrastructure.healthChecks.length, 1);
+    assert.deepEqual(
+      infrastructure.secureDeliveryEvents.map((event) => ({
+        status: event.status,
+        resultCode: event.resultCode,
+      })),
+      [
+        {
+          status: "PENDING",
+          resultCode: "waiting_admin_delivery_approval",
+        },
+      ],
+    );
   } finally {
     if (previousCredentialKey === undefined) {
       delete process.env.CREDENTIAL_ENCRYPTION_KEY;
@@ -678,7 +760,7 @@ test("payment rejects an expired quote without debiting the wallet", async (t) =
   await cleanupMobile(mobile);
 });
 
-test("funding confirmation supports multiple attempts after provider balance block", async (t) => {
+test("first Admin approval is idempotent and never provisions automatically", async (t) => {
   if (!prisma) {
     t.skip("DATABASE_URL not set");
     return;
@@ -689,55 +771,56 @@ test("funding confirmation supports multiple attempts after provider balance blo
   await cleanupMobile(mobile);
   await cleanupMobile(adminMobile);
 
-  const { user, order } = await createPaidOrderFixture(mobile);
-  const paid = await payOrderWithWallet(user.id, order.id, {
-    providerAdapter: createParsPackPricingAdapter(),
-  });
+  const { user, order } = await createManualOrderFixture(mobile);
+  const paid = await payOrderWithWallet(user.id, order.id);
   const admin = await prisma.user.create({ data: { mobile: adminMobile, role: "ADMIN" } });
   const infraId = paid.infrastructureOrder!.id;
 
-  const first = await confirmProviderFunding({
+  const first = await approveProvision({
     infrastructureOrderId: infraId,
     adminUserId: admin.id,
-    fundedAmountToman: 120_000,
-    idempotencyKey: `test_funding_${infraId}_1`,
+    reason: "تأیید اول ادمین در تست",
+    providerBalanceConfirmed: true,
+    idempotencyKey: `test-approval-${infraId}`,
   });
-  const duplicate = await confirmProviderFunding({
+  const duplicate = await approveProvision({
     infrastructureOrderId: infraId,
     adminUserId: admin.id,
-    fundedAmountToman: 120_000,
-    idempotencyKey: `test_funding_${infraId}_1`,
+    reason: "تأیید اول ادمین در تست",
+    providerBalanceConfirmed: true,
+    idempotencyKey: `test-approval-${infraId}`,
   });
-  assert.equal(first.fundingConfirmation.id, duplicate.fundingConfirmation.id);
-
-  await prisma.infrastructureOrder.update({
-    where: { id: infraId },
-    data: {
-      status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
-      productFlowState: "PROVISIONING_MANUAL_REVIEW",
-    },
-  });
-  await prisma.serviceOrder.update({
-    where: { id: order.id },
-    data: { productFlowState: "PROVISIONING_MANUAL_REVIEW" },
-  });
-  await prisma.provisioningJob.updateMany({
-    where: { infrastructureOrderId: infraId },
-    data: { status: ProvisioningJobStatus.BLOCKED_PROVIDER_BALANCE, finishedAt: new Date() },
-  });
-
-  const second = await confirmProviderFunding({
-    infrastructureOrderId: infraId,
-    adminUserId: admin.id,
-    fundedAmountToman: 150_000,
-    idempotencyKey: `test_funding_${infraId}_2`,
-  });
-  assert.equal(second.fundingConfirmation.attempt, 2);
-
-  const confirmations = await prisma.providerFundingConfirmation.count({
-    where: { infrastructureOrderId: infraId },
-  });
-  assert.equal(confirmations, 2);
+  assert.deepEqual(duplicate, first);
+  assert.equal(first.approved, true);
+  assert.equal(
+    (
+      await prisma.infrastructureOrder.findUniqueOrThrow({
+        where: { id: infraId },
+      })
+    ).status,
+    InfrastructureOrderStatus.FUNDING_CONFIRMED,
+  );
+  assert.equal(
+    await prisma.adminCommandReceipt.count({
+      where: {
+        infrastructureOrderId: infraId,
+        operation: "APPROVE_PROVISION",
+      },
+    }),
+    1,
+  );
+  assert.equal(
+    await prisma.providerFundingConfirmation.count({
+      where: { infrastructureOrderId: infraId },
+    }),
+    0,
+  );
+  assert.equal(
+    await prisma.provisioningJob.count({
+      where: { infrastructureOrderId: infraId },
+    }),
+    0,
+  );
 
   await cleanupMobile(mobile);
   await cleanupMobile(adminMobile);

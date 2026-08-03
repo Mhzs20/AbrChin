@@ -98,7 +98,9 @@ test("ready catalog supports ParsPack, Arvan fixed offers, and manual Admin deli
   assert.match(routing, /InfrastructureProvider\.ARVAN/);
   assert.match(plans, /offerSource === "MANUAL_ADMIN"/);
   assert.match(payment, /manualAvailableUnits: \{ decrement: 1 \}/);
-  assert.match(delivery, /MANUAL_ADMIN_DELIVERY/);
+  assert.match(delivery, /operation: "MANUAL_PROVISION"/);
+  assert.match(delivery, /operation: "APPROVE_PROVISION"/);
+  assert.match(delivery, /WAITING_ADMIN_DELIVERY_APPROVAL/);
   assert.match(delivery, /ONE_TIME_ENCRYPTED_CREDENTIAL/);
   assert.doesNotMatch(delivery, /createServer|createInstance/);
 });

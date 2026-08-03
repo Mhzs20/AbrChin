@@ -392,9 +392,25 @@ export async function claimNextProvisioningJob(workerId?: string) {
         ON infrastructure_order.id = job."infrastructureOrderId"
       WHERE job.status = 'QUEUED'
         AND job."availableAt" <= CURRENT_TIMESTAMP
-        AND infrastructure_order."productFlowState" IN (
-          'PROVISIONING_SUBMITTED',
-          'PROVISIONING'
+        AND (
+          infrastructure_order."productFlowState" IN (
+            'PROVISIONING_SUBMITTED',
+            'PROVISIONING'
+          )
+          OR (
+            (
+              job.operation IN (
+                'health_check_retry',
+                'health_check_manual_recovery'
+              )
+              OR job.phase = 'HEALTH_RESULT_PERSISTED'
+            )
+            AND infrastructure_order."productFlowState" IN (
+              'HEALTH_CHECK_FAILED',
+              'PROVISIONING_MANUAL_REVIEW',
+              'WAITING_ADMIN_DELIVERY_APPROVAL'
+            )
+          )
         )
         AND EXISTS (
           SELECT 1

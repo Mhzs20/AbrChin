@@ -44,7 +44,14 @@ test("admin and customer panels use central role guards", async () => {
   assert.match(guards, /export async function requireCustomer\(/);
   assert.match(adminLayout, /getAdminPageAccess/);
   assert.match(customerLayout, /requireCustomerPage/);
-  assert.match(loginForm, /role === "ADMIN" \? "\/admin" : "\/account"/);
+  assert.match(
+    loginForm,
+    /requestedNext\?\.startsWith\("\/"\) && !requestedNext\.startsWith\("\/\/"\)/,
+  );
+  assert.match(
+    loginForm,
+    /role === "ADMIN" \? "\/admin" : safeNext \?\? "\/account"/,
+  );
 });
 
 test("admin infrastructure action routes exist", async () => {

@@ -296,6 +296,33 @@ export async function executePayOrderWithWalletTx(
       "موجودی رزروشده با Snapshot سفارش یکسان نیست؛ مبلغی برداشت نشد.",
     );
   }
+  if (manualAdmin) {
+    if (!plan.catalogItemId) {
+      throw new WalletError(
+        "inventory_unavailable",
+        "موجودی دستی این سفارش معتبر نیست؛ مبلغی برداشت نشد.",
+      );
+    }
+    const reserved = await tx.providerCatalogItem.updateMany({
+      where: {
+        id: plan.catalogItemId,
+        source: "MANUAL_ADMIN",
+        active: true,
+        status: "ACTIVE",
+        manualAvailableUnits: { gt: 0 },
+        manualPriceValidUntil: { gt: new Date() },
+      },
+      data: {
+        manualAvailableUnits: { decrement: 1 },
+      },
+    });
+    if (reserved.count !== 1) {
+      throw new WalletError(
+        "inventory_unavailable",
+        "ظرفیت دستی این سفارش تمام شده است؛ مبلغی برداشت نشد.",
+      );
+    }
+  }
 
   const amountRial = order.amount;
   const idempotencyKey = `order_pay_${order.id}`;
@@ -397,6 +424,7 @@ export async function executePayOrderWithWalletTx(
         parchinLevel: currentPricing.parchinLevel,
         preprovisionedInventoryItemId: inventory?.id ?? null,
         providerResourceId: inventory?.providerResourceId ?? null,
+        manualInventoryReserved: manualAdmin,
       },
       deliveryMode: plan.deliveryMode,
       // Payment only establishes a paid order. Assignment, resource creation,

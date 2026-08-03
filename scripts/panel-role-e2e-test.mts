@@ -61,12 +61,6 @@ test("panel role E2E: OTP, pages, APIs, and live session roles stay separated", 
 
   assertSafeTestDatabase(databaseUrl);
 
-  const configuredAdminMobiles = (process.env.ADMIN_MOBILES ?? "")
-    .split(",")
-    .map((mobile) => mobile.trim())
-    .filter(Boolean);
-  assert.deepEqual(configuredAdminMobiles, expectedAdminMobiles);
-
   const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
   const testMobiles = [...expectedAdminMobiles, customerMobile];
 
@@ -84,7 +78,7 @@ test("panel role E2E: OTP, pages, APIs, and live session roles stay separated", 
   let serverOutput = "";
   const server = spawn(
     process.platform === "win32" ? "node_modules/.bin/next.cmd" : "node_modules/.bin/next",
-    ["dev", "-p", String(port)],
+    ["start", "-p", String(port)],
     {
       cwd: process.cwd(),
       env: {

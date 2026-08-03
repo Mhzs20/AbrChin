@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import test, { after } from "node:test";
 
 import {
@@ -87,7 +87,7 @@ async function createFixture(input: {
   const prefix = `${runId}-${fixtureCounter}-${input.suffix}`;
   const user = await db.user.create({
     data: {
-      mobile: `098${String(fixtureCounter).padStart(8, "0")}`,
+      mobile: `098${String(randomInt(0, 100_000_000)).padStart(8, "0")}`,
     },
   });
   const wallet = await db.wallet.create({

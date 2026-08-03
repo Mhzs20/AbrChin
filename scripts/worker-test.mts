@@ -53,6 +53,11 @@ async function seedQueuedJob() {
   });
 
   const user = await prisma.user.create({ data: { mobile } });
+  const admin = await prisma.user.upsert({
+    where: { mobile: "09128882999" },
+    update: { role: "ADMIN" },
+    create: { mobile: "09128882999", role: "ADMIN" },
+  });
   const serviceOrder = await prisma.serviceOrder.create({
     data: {
       userId: user.id,
@@ -85,6 +90,19 @@ async function seedQueuedJob() {
       idempotencyKey: `worker_test_${infra.id}_a1`,
       attempt: 1,
       availableAt: new Date(0),
+    },
+  });
+  await prisma.adminCommandReceipt.create({
+    data: {
+      operation: "APPROVE_PROVISION",
+      idempotencyKey: `worker-test-approval-${infra.id}`,
+      requestFingerprint: `worker-test-approval-${infra.id}`,
+      actorUserId: admin.id,
+      infrastructureOrderId: infra.id,
+      resultSnapshot: {
+        approved: true,
+        containsSecret: false,
+      },
     },
   });
   return { job, infra, mobile };

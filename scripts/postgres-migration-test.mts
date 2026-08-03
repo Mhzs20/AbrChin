@@ -68,6 +68,14 @@ const arvanSaleInventoryCredentials =
 const skuMarkupAndManualPublication =
   "20260803113000_sku_markup_and_manual_publication";
 const orderGatewayPayments = "20260803130000_order_gateway_payments";
+const walletPaygBillingCore =
+  "20260803150000_wallet_payg_billing_core";
+const walletPaymentRecovery =
+  "20260803160000_wallet_payment_recovery";
+const usageBillingWorker =
+  "20260803170000_usage_billing_worker";
+const walletFirstActivation =
+  "20260803180000_wallet_first_activation";
 
 async function copyThrough(lastName: string) {
   for (const name of migrationNames.filter((entry) => entry <= lastName)) {
@@ -2073,6 +2081,185 @@ try {
   await deploy();
   await copyThrough(orderGatewayPayments);
   await deploy();
+  await executeStatements(db, `
+    INSERT INTO "InfrastructurePlan" (
+      id, code, title, provider, "providerApiVersion", "productKind",
+      "regionCode", "sizeCode", "imageCode", "deliveryMode",
+      vcpu, "ramGb", "storageGb", "salePriceRial", "renewalPriceRial",
+      "estimatedProviderCostRial", "parchinIncluded", active,
+      "publicationStatus", "updatedAt"
+    ) VALUES (
+      'legacy-active-cloud-plan', 'LEGACY_ACTIVE_CLOUD_PLAN',
+      'Legacy Active Cloud Plan', 'ARVAN', 'v1', 'CLOUD_SERVER',
+      'ir-thr-ba1', 'g2', 'ubuntu', 'MANAGED',
+      2, 2, 40, 2400000, 2400000, 1800000, false, true,
+      'PUBLISHED', CURRENT_TIMESTAMP
+    );
+
+    INSERT INTO "ServiceOrder" (
+      id, "userId", title, amount, currency, status, "planCode", "planId",
+      "planSnapshot", provider, "providerApiVersion", "productKind",
+      "productFlowState", "productFlowRevision", "paidAt", "updatedAt"
+    ) VALUES (
+      'legacy-active-cloud-order', 'migration-user',
+      'Legacy Active Cloud Service', 2400000, 'IRR', 'PAID',
+      'LEGACY_ACTIVE_CLOUD_PLAN', 'legacy-active-cloud-plan',
+      '{"billingCadence":"DAILY","migrationFixture":true}'::jsonb,
+      'ARVAN', 'v1', 'CLOUD_SERVER', 'DELIVERED', 1,
+      TIMESTAMPTZ '2026-08-01 00:00:00+00', CURRENT_TIMESTAMP
+    );
+
+    INSERT INTO "InfrastructureOrder" (
+      id, "serviceOrderId", "userId", "planId", provider,
+      "providerApiVersion", "productKind", "providerSelectionSnapshot",
+      "productFlowState", "productFlowRevision", "deliveryMode", status,
+      "requiredFundingRial", "updatedAt"
+    ) VALUES (
+      'legacy-active-cloud-infrastructure', 'legacy-active-cloud-order',
+      'migration-user', 'legacy-active-cloud-plan', 'ARVAN', 'v1',
+      'CLOUD_SERVER', '{"migrationFixture":true}'::jsonb, 'DELIVERED', 1,
+      'MANAGED', 'ACTIVE', 0, CURRENT_TIMESTAMP
+    );
+
+    INSERT INTO "CloudInstance" (
+      id, "infrastructureOrderId", "userId", provider,
+      "providerApiVersion", "providerInstanceId", name, region, size, image,
+      "deliveryMode", ipv4, "providerState", status, "providerObservedAt",
+      "provisionedAt", "deliveredAt", "updatedAt"
+    ) VALUES (
+      'legacy-active-cloud-instance', 'legacy-active-cloud-infrastructure',
+      'migration-user', 'ARVAN', 'v1', 'legacy-provider-instance',
+      'legacy-active-cloud', 'ir-thr-ba1', 'g2', 'ubuntu', 'MANAGED',
+      '192.0.2.10', 'active', 'ACTIVE',
+      TIMESTAMPTZ '2026-08-01 00:00:00+00',
+      TIMESTAMPTZ '2026-08-01 00:00:00+00',
+      TIMESTAMPTZ '2026-08-01 00:30:00+00', CURRENT_TIMESTAMP
+    )
+  `);
+  const legacyFinancialSnapshot =
+    await db.$queryRawUnsafe<
+      Array<{
+        availableBalance: bigint;
+        ledgerCount: bigint;
+        orderAmount: bigint;
+        orderStatus: string;
+      }>
+    >(`
+      SELECT
+        wallet."availableBalance" AS "availableBalance",
+        count(ledger.id) AS "ledgerCount",
+        orders.amount AS "orderAmount",
+        orders.status::text AS "orderStatus"
+      FROM "Wallet" wallet
+      JOIN "ServiceOrder" orders
+        ON orders.id = 'legacy-active-cloud-order'
+      LEFT JOIN "WalletLedgerEntry" ledger
+        ON ledger."walletId" = wallet.id
+      WHERE wallet.id = 'migration-wallet'
+      GROUP BY wallet."availableBalance", orders.amount, orders.status
+    `);
+
+  await copyThrough(walletPaygBillingCore);
+  await deploy();
+  const paygCoreUpgrade = await db.$queryRawUnsafe<
+    Array<{
+      billingModel: string;
+      globalAvailability: string;
+      globalCadence: string;
+      serviceCadence: string;
+      serviceAvailability: string;
+      resourceVersionCount: bigint;
+      usageIntervalCount: bigint;
+      invoiceCount: bigint;
+    }>
+  >(`
+    SELECT
+      plan."billingModel"::text AS "billingModel",
+      global_policy.availability::text AS "globalAvailability",
+      global_policy."defaultCadence"::text AS "globalCadence",
+      snapshot.cadence::text AS "serviceCadence",
+      service_policy.availability::text AS "serviceAvailability",
+      (SELECT count(*) FROM "ResourceVersion"
+        WHERE "cloudInstanceId" = 'legacy-active-cloud-instance')
+        AS "resourceVersionCount",
+      (SELECT count(*) FROM "UsageInterval"
+        WHERE "cloudInstanceId" = 'legacy-active-cloud-instance')
+        AS "usageIntervalCount",
+      (SELECT count(*) FROM "BillingInvoice") AS "invoiceCount"
+    FROM "InfrastructurePlan" plan
+    JOIN "BillingPolicyVersion" global_policy
+      ON global_policy."policyKey" = 'global'
+      AND global_policy."effectiveTo" IS NULL
+    JOIN "ServiceBillingPolicySnapshot" snapshot
+      ON snapshot."cloudInstanceId" = 'legacy-active-cloud-instance'
+      AND snapshot."effectiveTo" IS NULL
+    JOIN "BillingPolicyVersion" service_policy
+      ON service_policy.id = snapshot."billingPolicyVersionId"
+    WHERE plan.id = 'legacy-active-cloud-plan'
+  `);
+  assert.deepEqual(paygCoreUpgrade, [
+    {
+      billingModel: "PAYG_WALLET",
+      globalAvailability: "HOURLY_ONLY",
+      globalCadence: "HOURLY",
+      serviceCadence: "DAILY",
+      serviceAvailability: "DAILY_ONLY",
+      resourceVersionCount: 1n,
+      usageIntervalCount: 1n,
+      invoiceCount: 0n,
+    },
+  ]);
+
+  await copyThrough(walletPaymentRecovery);
+  await deploy();
+  await copyThrough(usageBillingWorker);
+  await deploy();
+  await copyThrough(walletFirstActivation);
+  await deploy();
+
+  const finalPaygUpgrade =
+    await db.$queryRawUnsafe<
+      Array<{
+        availableBalance: bigint;
+        ledgerCount: bigint;
+        orderAmount: bigint;
+        orderStatus: string;
+        serviceCadence: string;
+        resourcePlanId: string;
+        invoiceCount: bigint;
+      }>
+    >(`
+      SELECT
+        wallet."availableBalance" AS "availableBalance",
+        count(DISTINCT ledger.id) AS "ledgerCount",
+        orders.amount AS "orderAmount",
+        orders.status::text AS "orderStatus",
+        snapshot.cadence::text AS "serviceCadence",
+        resource_version."planId" AS "resourcePlanId",
+        (SELECT count(*) FROM "BillingInvoice") AS "invoiceCount"
+      FROM "Wallet" wallet
+      JOIN "ServiceOrder" orders
+        ON orders.id = 'legacy-active-cloud-order'
+      JOIN "ServiceBillingPolicySnapshot" snapshot
+        ON snapshot."cloudInstanceId" = 'legacy-active-cloud-instance'
+        AND snapshot."effectiveTo" IS NULL
+      JOIN "ResourceVersion" resource_version
+        ON resource_version."cloudInstanceId" = 'legacy-active-cloud-instance'
+        AND resource_version."effectiveTo" IS NULL
+      LEFT JOIN "WalletLedgerEntry" ledger
+        ON ledger."walletId" = wallet.id
+      WHERE wallet.id = 'migration-wallet'
+      GROUP BY wallet."availableBalance", orders.amount, orders.status,
+        snapshot.cadence, resource_version."planId"
+    `);
+  assert.deepEqual(finalPaygUpgrade, [
+    {
+      ...legacyFinancialSnapshot[0]!,
+      serviceCadence: "DAILY",
+      resourcePlanId: "legacy-active-cloud-plan",
+      invoiceCount: 0n,
+    },
+  ]);
   const protectedCommerceAfter = {
     order: await db.serviceOrder.findUniqueOrThrow({
       where: { id: "order-paid" },
@@ -3284,56 +3471,39 @@ try {
       InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
   });
   const fundingKey = "postgres-funding-shared-key";
-  await confirmProviderFunding({
-    infrastructureOrderId: fundingFirst.infrastructureOrder.id,
-    adminUserId: "migration-admin",
-    fundedAmountToman: 500_000,
-    receiptReference: "receipt-a",
-    note: "funding-a",
-    idempotencyKey: fundingKey,
-  });
   await assert.rejects(
     confirmProviderFunding({
       infrastructureOrderId:
-        fundingSecond.infrastructureOrder.id,
+        fundingFirst.infrastructureOrder.id,
       adminUserId: "migration-admin",
       fundedAmountToman: 500_000,
       receiptReference: "receipt-a",
       note: "funding-a",
       idempotencyKey: fundingKey,
     }),
-    /شناسه یکتا|idempotency_conflict/,
-  );
-  await assert.rejects(
-    confirmProviderFunding({
-      infrastructureOrderId:
-        fundingFirst.infrastructureOrder.id,
-      adminUserId: "migration-admin",
-      fundedAmountToman: 600_000,
-      receiptReference: "receipt-a",
-      note: "funding-a",
-      idempotencyKey: fundingKey,
-    }),
-    /شناسه یکتا|idempotency_conflict/,
+    /فقط از مسیر فرمان Provision|route_retired/,
   );
   assert.equal(
     await db.providerFundingConfirmation.count({
       where: { idempotencyKey: fundingKey },
     }),
-    1,
+    0,
   );
-  await db.provisioningJob.updateMany({
-    where: {
-      infrastructureOrderId:
-        fundingFirst.infrastructureOrder.id,
-      status: ProvisioningJobStatus.QUEUED,
+  assert.deepEqual(
+    await db.infrastructureOrder.findUniqueOrThrow({
+      where: { id: fundingFirst.infrastructureOrder.id },
+      select: {
+        status: true,
+        productFlowState: true,
+        provisioningJobs: { select: { id: true } },
+      },
+    }),
+    {
+      status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING,
+      productFlowState: "PAID",
+      provisioningJobs: [],
     },
-    data: {
-      status: ProvisioningJobStatus.FAILED,
-      finishedAt: new Date(),
-      lastErrorCode: "test_cleanup",
-    },
-  });
+  );
 
   await writeAuditLog({
     actorUserId: "migration-admin",
@@ -3445,7 +3615,6 @@ try {
   );
   const {
     claimNextProvisioningJob,
-    processPendingProvisioningNotifications,
     processProvisioningJob,
     reconcileProvisioningDispatches,
     recoverExpiredProvisioningJobs,
@@ -3588,6 +3757,21 @@ try {
         status: CloudInstanceStatus.PENDING,
       },
     });
+    await db.adminCommandReceipt.create({
+      data: {
+        operation: "APPROVE_PROVISION",
+        idempotencyKey:
+          `admin-command:provision-approve:health-${input.id}`,
+        requestFingerprint:
+          `migration-health-approval-${input.id}`,
+        actorUserId: "migration-admin",
+        infrastructureOrderId: `infra-${input.id}`,
+        resultSnapshot: {
+          approved: true,
+          containsSecret: false,
+        },
+      },
+    });
     return `infra-${input.id}`;
   }
 
@@ -3606,8 +3790,28 @@ try {
   });
   assert.deepEqual(parsPackResult, {
     healthy: true,
-    delivered: true,
+    delivered: false,
   });
+  assert.deepEqual(
+    await db.infrastructureOrder.findUniqueOrThrow({
+      where: { id: parsPackSuccess },
+      select: {
+        productFlowState: true,
+        secureDeliveryEvents: {
+          select: { status: true, resultCode: true },
+        },
+      },
+    }),
+    {
+      productFlowState: "WAITING_ADMIN_DELIVERY_APPROVAL",
+      secureDeliveryEvents: [
+        {
+          status: "PENDING",
+          resultCode: "waiting_admin_delivery_approval",
+        },
+      ],
+    },
+  );
   const parsPackCheck =
     await db.infrastructureHealthCheck.findFirstOrThrow({
       where: { infrastructureOrderId: parsPackSuccess },
@@ -3955,13 +4159,29 @@ try {
   const recoveredManually =
     await db.infrastructureOrder.findUniqueOrThrow({
       where: { id: retryInfraId },
-      include: { cloudInstance: true },
+      include: {
+        cloudInstance: true,
+        secureDeliveryEvents: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { status: true, resultCode: true },
+        },
+      },
     });
-  assert.equal(recoveredManually.productFlowState, "ACTIVE");
+  assert.equal(
+    recoveredManually.productFlowState,
+    "WAITING_ADMIN_DELIVERY_APPROVAL",
+  );
   assert.equal(
     recoveredManually.status,
-    InfrastructureOrderStatus.ACTIVE,
+    InfrastructureOrderStatus.PROVISIONING,
   );
+  assert.deepEqual(recoveredManually.secureDeliveryEvents, [
+    {
+      status: "PENDING",
+      resultCode: "waiting_admin_delivery_approval",
+    },
+  ]);
   assert.equal(
     retryAdapter.createCalls.length,
     createCallsBeforeRetry,
@@ -4215,7 +4435,7 @@ try {
         select: { productFlowState: true },
       })
     ).productFlowState,
-    "ACTIVE",
+    "WAITING_ADMIN_DELIVERY_APPROVAL",
   );
   const attachedReplayAfter = await scheduleManualHealthRetry({
     infrastructureOrderId: attachedInfraId,
@@ -4275,8 +4495,8 @@ try {
       },
     });
   assert.deepEqual(activeAfterFinalizeFailure, {
-    status: InfrastructureOrderStatus.ACTIVE,
-    productFlowState: "ACTIVE",
+    status: InfrastructureOrderStatus.PROVISIONING,
+    productFlowState: "WAITING_ADMIN_DELIVERY_APPROVAL",
   });
   const staleClaimToken = finalizeFailure.claimedJob.claimToken;
   await db.provisioningJob.update({
@@ -4316,8 +4536,8 @@ try {
       },
     }),
     {
-      status: InfrastructureOrderStatus.ACTIVE,
-      productFlowState: "ACTIVE",
+      status: InfrastructureOrderStatus.PROVISIONING,
+      productFlowState: "WAITING_ADMIN_DELIVERY_APPROVAL",
     },
   );
   assert.equal(
@@ -4425,8 +4645,8 @@ try {
       },
     }),
     {
-      status: InfrastructureOrderStatus.ACTIVE,
-      productFlowState: "ACTIVE",
+      status: InfrastructureOrderStatus.PROVISIONING,
+      productFlowState: "WAITING_ADMIN_DELIVERY_APPROVAL",
     },
   );
   assert.equal(
@@ -4450,6 +4670,21 @@ try {
         idempotencyKey: `main-provisioning:${input.id}`,
         attempt: 1,
         availableAt: new Date(0),
+      },
+    });
+    await db.adminCommandReceipt.create({
+      data: {
+        operation: "APPROVE_PROVISION",
+        idempotencyKey:
+          `admin-command:provision-approve:main-${input.id}`,
+        requestFingerprint:
+          `migration-main-provision-approval-${input.id}`,
+        actorUserId: "migration-admin",
+        infrastructureOrderId: seeded.infrastructureOrder.id,
+        resultSnapshot: {
+          approved: true,
+          containsSecret: false,
+        },
       },
     });
     return { ...seeded, job };
@@ -4591,7 +4826,7 @@ try {
         where: { id: staleMain.infrastructureOrder.id },
       })
     ).status,
-    InfrastructureOrderStatus.ACTIVE,
+    InfrastructureOrderStatus.PROVISIONING,
   );
 
   const staleDesiredName = await seedMainProvisioning({
@@ -4649,8 +4884,14 @@ try {
       },
     });
   assert.ok(desiredNameFinal.desiredInstanceName);
-  assert.equal(desiredNameFinal.status, InfrastructureOrderStatus.ACTIVE);
-  assert.equal(desiredNameFinal.productFlowState, "ACTIVE");
+  assert.equal(
+    desiredNameFinal.status,
+    InfrastructureOrderStatus.PROVISIONING,
+  );
+  assert.equal(
+    desiredNameFinal.productFlowState,
+    "WAITING_ADMIN_DELIVERY_APPROVAL",
+  );
 
   const staleReconciling = await seedMainProvisioning({
     id: "stale-reconciling-fence",
@@ -4708,8 +4949,8 @@ try {
       select: { status: true, productFlowState: true },
     }),
     {
-      status: InfrastructureOrderStatus.ACTIVE,
-      productFlowState: "ACTIVE",
+      status: InfrastructureOrderStatus.PROVISIONING,
+      productFlowState: "WAITING_ADMIN_DELIVERY_APPROVAL",
     },
   );
   const staleReconcilingTransitions =
@@ -4845,23 +5086,27 @@ try {
     })),
     [
       {
-        states: ["ACTIVE", "ACTIVE", "ACTIVE"],
-        revisions: [4, 4, 4],
-        infrastructureStatus: "ACTIVE",
-        cloudStatus: "ACTIVE",
+        states: [
+          "WAITING_ADMIN_DELIVERY_APPROVAL",
+          "WAITING_ADMIN_DELIVERY_APPROVAL",
+          "WAITING_ADMIN_DELIVERY_APPROVAL",
+        ],
+        revisions: [3, 3, 3],
+        infrastructureStatus: "PROVISIONING",
+        cloudStatus: "PENDING",
         jobStatus: "SUCCEEDED",
       },
     ],
   );
-  const pendingNotification =
-    await db.provisioningNotificationOutbox.findUniqueOrThrow({
+  assert.equal(
+    await db.provisioningNotificationOutbox.count({
       where: {
         idempotencyKey:
           `instance-active:${notificationFailure.infrastructureOrder.id}`,
       },
-    });
-  assert.equal(pendingNotification.status, "PENDING");
-  assert.equal(pendingNotification.attemptCount, 1);
+    }),
+    0,
+  );
   await Promise.all([
     reconcileProvisioningDispatches(),
     reconcileProvisioningDispatches(),
@@ -4873,22 +5118,15 @@ try {
           `instance-active:${notificationFailure.infrastructureOrder.id}`,
       },
     }),
-    1,
+    0,
   );
-  await processPendingProvisioningNotifications();
-  const deliveredNotification =
-    await db.provisioningNotificationOutbox.findUniqueOrThrow({
-      where: { id: pendingNotification.id },
-    });
-  assert.equal(deliveredNotification.status, "SENT");
-  assert.equal(deliveredNotification.attemptCount, 2);
 
   const reconciledActive = await seedMainProvisioning({
-    id: "active-outbox-reconciler",
+    id: "pre-delivery-outbox-reconciler",
   });
   const reconciledActiveClaim = await claimOnly(
     reconciledActive.job.id,
-    "active-outbox-reconciler-worker",
+    "pre-delivery-outbox-reconciler-worker",
   );
   await processProvisioningJob(
     reconciledActiveClaim.id,
@@ -4898,12 +5136,6 @@ try {
       healthProbe: async () => true,
     },
   );
-  await db.provisioningNotificationOutbox.delete({
-    where: {
-      idempotencyKey:
-        `instance-active:${reconciledActive.infrastructureOrder.id}`,
-    },
-  });
   await Promise.all([
     reconcileProvisioningDispatches(),
     reconcileProvisioningDispatches(),
@@ -4915,7 +5147,7 @@ try {
           `instance-active:${reconciledActive.infrastructureOrder.id}`,
       },
     }),
-    1,
+    0,
   );
 
   async function assertFinalizeOnly(input: {
@@ -6014,6 +6246,35 @@ try {
     orderBy: { sizeCode: "asc" },
   });
   assert.equal(parsPackReadyPlans.length, 0);
+  const parsPackPublishedReadyPlan =
+    await db.infrastructurePlan.create({
+      data: {
+        id: "runtime-parspack-ready-plan",
+        code: "READY_PARSPACK_RUNTIME_PRICED",
+        title: "Runtime ParsPack Ready",
+        provider: InfrastructureProvider.PARSPACK,
+        providerApiVersion: "v1",
+        productKind:
+          InfrastructureProductKind.READY_INSTANT_SERVER,
+        regionCode: "runtime-tehran",
+        sizeCode: "runtime-priced",
+        imageCode: "ubuntu24-cloudinit-qcow2",
+        deliveryMode: "MANAGED",
+        vcpu: 2,
+        ramGb: 2,
+        storageGb: 40,
+        salePriceRial: 10_368_000n,
+        renewalPriceRial: 10_368_000n,
+        estimatedProviderCostRial: 8_294_400n,
+        parchinIncluded: true,
+        minimumParchinLevel: ParchinLevel.PARCHIN_START,
+        active: true,
+        publicationStatus: "PUBLISHED",
+        catalogItemId: parsPackPriced.id,
+        catalogMappingStatus: "MAPPED",
+        catalogMappedAt: new Date(),
+      },
+    });
   const parsPackSnapshotBeforeFailure = {
     available: parsPackPriced.available,
     active: parsPackPriced.active,
@@ -7089,17 +7350,10 @@ try {
         freshnessSlaSeconds: 900,
       },
     });
-    const readyPlan = await db.infrastructurePlan.findFirstOrThrow({
-      where: {
-        provider: InfrastructureProvider.PARSPACK,
-        providerApiVersion: "v1",
-        productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
-        regionCode: "runtime-tehran",
-        sizeCode: "runtime-priced",
-        active: true,
-        publicationStatus: "PUBLISHED",
-      },
-    });
+    const readyPlan =
+      await db.infrastructurePlan.findUniqueOrThrow({
+        where: { id: parsPackPublishedReadyPlan.id },
+      });
     const readyImage = await db.providerCatalogAsset.upsert({
       where: {
         provider_apiVersion_regionCode_kind_externalId: {

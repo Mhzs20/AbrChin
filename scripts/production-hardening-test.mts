@@ -85,6 +85,11 @@ async function seedInfra(mobile: string, suffix: string) {
     },
   });
   const user = await db.user.create({ data: { mobile } });
+  const admin = await db.user.upsert({
+    where: { mobile: "09128883999" },
+    update: { role: "ADMIN" },
+    create: { mobile: "09128883999", role: "ADMIN" },
+  });
   const serviceOrder = await db.serviceOrder.create({
     data: {
       userId: user.id,
@@ -129,6 +134,19 @@ async function seedInfra(mobile: string, suffix: string) {
       idempotencyKey: `hardening_${suffix}_a1`,
       attempt: 1,
       availableAt: new Date(0),
+    },
+  });
+  await db.adminCommandReceipt.create({
+    data: {
+      operation: "APPROVE_PROVISION",
+      idempotencyKey: `hardening-approval-${infra.id}`,
+      requestFingerprint: `hardening-approval-${suffix}`,
+      actorUserId: admin.id,
+      infrastructureOrderId: infra.id,
+      resultSnapshot: {
+        approved: true,
+        containsSecret: false,
+      },
     },
   });
   return { user, plan, serviceOrder, infra, job };
@@ -287,7 +305,7 @@ test("refund blocked for active cloud instance", async (t) => {
   await db.user.deleteMany({ where: { mobile: { in: [mobile, adminMobile] } } });
 });
 
-test("funding idempotency key replay returns same confirmation", async (t) => {
+test("retired funding shortcut is fail-closed and creates no confirmation", async (t) => {
   const db = requirePrisma(t);
   if (!db) return;
   const mobile = "09128883006";
@@ -307,22 +325,27 @@ test("funding idempotency key replay returns same confirmation", async (t) => {
     data: { productFlowState: "PAID" },
   });
   await db.provisioningJob.deleteMany({ where: { infrastructureOrderId: infra.id } });
-  const key = "funding-key-replay-1";
-  const first = await confirmProviderFunding({
-    infrastructureOrderId: infra.id,
-    adminUserId: admin.id,
-    fundedAmountToman: 150_000,
-    idempotencyKey: key,
-  });
-  const second = await confirmProviderFunding({
-    infrastructureOrderId: infra.id,
-    adminUserId: admin.id,
-    fundedAmountToman: 150_000,
-    idempotencyKey: key,
-  });
-  assert.equal(first.fundingConfirmation.id, second.fundingConfirmation.id);
+  const key = "funding-key-retired-1";
+  await assert.rejects(
+    confirmProviderFunding({
+      infrastructureOrderId: infra.id,
+      adminUserId: admin.id,
+      fundedAmountToman: 150_000,
+      idempotencyKey: key,
+    }),
+    /فقط از مسیر فرمان Provision|route_retired/,
+  );
+  await assert.rejects(
+    confirmProviderFunding({
+      infrastructureOrderId: infra.id,
+      adminUserId: admin.id,
+      fundedAmountToman: 150_000,
+      idempotencyKey: key,
+    }),
+    /فقط از مسیر فرمان Provision|route_retired/,
+  );
   const count = await db.providerFundingConfirmation.count({ where: { infrastructureOrderId: infra.id } });
-  assert.equal(count, 1);
+  assert.equal(count, 0);
   await db.providerFundingConfirmation.deleteMany({ where: { infrastructureOrderId: infra.id } });
   await db.provisioningJob.deleteMany({ where: { infrastructureOrderId: infra.id } });
   await db.infrastructureOrder.delete({ where: { id: infra.id } });

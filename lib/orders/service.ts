@@ -518,6 +518,12 @@ export async function refundOrder(params: {
       where: { id: params.orderId },
       include: {
         recommendationQuote: { select: { sessionId: true } },
+        plan: {
+          select: {
+            offerSource: true,
+            catalogItemId: true,
+          },
+        },
       },
     });
     if (!order) throw new WalletError("not_found", "سفارش پیدا نشد.");
@@ -784,6 +790,23 @@ export async function refundOrder(params: {
           metadata: { actorUserId: params.actorUserId },
           reversedEntryId: debit.id,
         },
+      });
+    }
+
+    const selection =
+      infra?.providerSelectionSnapshot &&
+      typeof infra.providerSelectionSnapshot === "object" &&
+      !Array.isArray(infra.providerSelectionSnapshot)
+        ? (infra.providerSelectionSnapshot as Record<string, unknown>)
+        : null;
+    if (
+      order.plan?.offerSource === "MANUAL_ADMIN" &&
+      order.plan.catalogItemId &&
+      selection?.manualInventoryReserved === true
+    ) {
+      await tx.providerCatalogItem.update({
+        where: { id: order.plan.catalogItemId },
+        data: { manualAvailableUnits: { increment: 1 } },
       });
     }
 

@@ -210,7 +210,10 @@ test("wallet top-up to estimate, activation and Admin approval stays mutation-fr
     }),
     0,
   );
-  assert.equal(await db.infrastructureOrder.count(), 0);
+  assert.equal(
+    await db.infrastructureOrder.count({ where: { userId: customer.id } }),
+    0,
+  );
   await assert.rejects(
     createServiceOrderFromQuote(customer.id, quote.id),
     /PAYG|Wallet/,
@@ -230,13 +233,28 @@ test("wallet top-up to estimate, activation and Admin approval stays mutation-fr
   });
   assert.deepEqual(replay, approved);
   assert.equal(approved.providerMutationExecuted, false);
-  assert.equal(await db.provisioningJob.count(), 0);
-  assert.equal(await db.cloudInstance.count(), 0);
+  assert.equal(
+    await db.provisioningJob.count({
+      where: { infrastructureOrderId: approved.infrastructureOrderId },
+    }),
+    0,
+  );
+  assert.equal(
+    await db.cloudInstance.count({
+      where: { infrastructureOrderId: approved.infrastructureOrderId },
+    }),
+    0,
+  );
   assert.deepEqual(
     await dispatchApprovedProvision(approved.infrastructureOrderId),
     { state: "MANUAL_FULFILLMENT_REQUIRED" },
   );
-  assert.equal(await db.provisioningJob.count(), 0);
+  assert.equal(
+    await db.provisioningJob.count({
+      where: { infrastructureOrderId: approved.infrastructureOrderId },
+    }),
+    0,
+  );
   const confirmedAt = new Date();
   const instance = await db.cloudInstance.create({
     data: {

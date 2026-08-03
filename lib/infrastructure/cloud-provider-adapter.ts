@@ -144,8 +144,9 @@ const unverifiedPaygBillingPolicy = {
  * read-only billing contract is available.
  */
 export function providerBillingPolicy(
-  _provider: InfrastructureProvider,
+  provider: InfrastructureProvider,
 ): ProviderBillingPolicy {
+  void provider;
   return unverifiedPaygBillingPolicy;
 }
 
