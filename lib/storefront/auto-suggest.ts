@@ -168,22 +168,13 @@ export function buildSuggestedStorefrontAssortment(
     tier: StorefrontChinishTier,
     compare: (a: RankedItem, b: RankedItem) => number,
   ) {
+    // Exclusive capacity bands: never fill نو/استوار/کهکشان from another tier.
+    // Ostovar min = Nu max; Kahkeshan min = Ostovar max (via capacity rules).
     const pool = ranked.filter(
       (row) => !used.has(row.item.id) && row.capacityTier === tier,
     );
-    let primary = diversifyPick(pool, STOREFRONT_PRIMARY_LIMIT, compare);
-    if (primary.length < STOREFRONT_PRIMARY_LIMIT) {
-      const pickedIds = new Set(primary.map((row) => row.item.id));
-      const fallback = diversifyPick(
-        ranked.filter(
-          (row) => !used.has(row.item.id) && !pickedIds.has(row.item.id),
-        ),
-        STOREFRONT_PRIMARY_LIMIT - primary.length,
-        compare,
-      );
-      primary = [...primary, ...fallback];
-    }
-    return slotsFor(primary, ranked, used);
+    const primary = diversifyPick(pool, STOREFRONT_PRIMARY_LIMIT, compare);
+    return slotsFor(primary, pool, used);
   }
 
   return {

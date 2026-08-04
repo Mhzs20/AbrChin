@@ -51,7 +51,11 @@ export function ChinishCloudCatalog({
     if (!tier) return [];
     if (locationFilter === "ALL") return tier.offers;
     return tier.offers.filter(
-      (offer) => storefrontLocationZone(offer.regionCode) === locationFilter,
+      (offer) =>
+        storefrontLocationZone(offer.regionCode, {
+          title: offer.title,
+          locationLabel: offer.locationLabel,
+        }) === locationFilter,
     );
   }, [locationFilter, tier]);
 
@@ -60,8 +64,16 @@ export function ChinishCloudCatalog({
     let iran = 0;
     let abroad = 0;
     for (const offer of offers) {
-      if (storefrontLocationZone(offer.regionCode) === "IRAN") iran += 1;
-      else abroad += 1;
+      if (
+        storefrontLocationZone(offer.regionCode, {
+          title: offer.title,
+          locationLabel: offer.locationLabel,
+        }) === "IRAN"
+      ) {
+        iran += 1;
+      } else {
+        abroad += 1;
+      }
     }
     return { all: offers.length, iran, abroad };
   }, [tier]);

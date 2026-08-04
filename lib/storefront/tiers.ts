@@ -21,12 +21,12 @@ export function storefrontTierLabel(tier: StorefrontChinishTier): string {
 
 export function storefrontTierDescription(tier: StorefrontChinishTier): string {
   if (tier === "NO") {
-    return "شروع قوی با هزینهٔ کنترل‌شده برای سایت، آزمایش و بار روزمره.";
+    return "کمتر از حداقل استوار — شروع کنترل‌شده برای سایت، آزمایش و بار روزمره.";
   }
   if (tier === "OSTOVAR") {
-    return "تعادل قدرت و قیمت برای کسب‌وکارهایی که باید پایدار بمانند.";
+    return "از حداقل استوار تا زیر حداقل کهکشان — تعادل قدرت و قیمت برای کار پایدار.";
   }
-  return "ظرفیت بالاتر برای ترافیک جدی، پردازش بیشتر و رشد سریع.";
+  return "از حداقل کهکشان به بالا — ظرفیت بالاتر برای ترافیک جدی و رشد سریع.";
 }
 
 export function isStorefrontTier(value: unknown): value is StorefrontChinishTier {

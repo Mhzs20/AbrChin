@@ -24,6 +24,11 @@ import {
 } from "@/lib/pricing/plan-pricing";
 import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
 import {
+  classifyStorefrontCapacityTier,
+  DEFAULT_STOREFRONT_CAPACITY_RULES,
+  type StorefrontCapacityRules,
+} from "@/lib/storefront/capacity-rules";
+import {
   isStorefrontDisplayFresh,
   storefrontLocationLabel,
   storefrontParchinForTier,
@@ -352,20 +357,51 @@ function withStorefrontDisplayTitles(offers: PublicPlanOffer[]): PublicPlanOffer
   });
 }
 
+function offerMatchesStorefrontTier(
+  offer: PublicPlanOffer,
+  tier: StorefrontChinishTier,
+  rules: StorefrontCapacityRules,
+) {
+  const vcpu = offer.vcpu ?? 0;
+  const ramGb = offer.ramGb ?? 0;
+  const diskGb = offer.storageGb ?? 0;
+  if (vcpu <= 0 || ramGb <= 0) return false;
+  return (
+    classifyStorefrontCapacityTier({ vcpu, ramGb, diskGb }, rules) === tier
+  );
+}
+
 export async function resolveStorefrontTierOffers(
   tier: StorefrontChinishTier,
 ): Promise<{
   availableCount: number;
   offers: PublicPlanOffer[];
 }> {
-  const [slots, context] = await Promise.all([
+  const [slots, context, settings] = await Promise.all([
     prisma.storefrontAssortmentSlot.findMany({
       where: { tier, enabled: true },
       include: { catalogItem: true },
       orderBy: [{ role: "asc" }, { sortOrder: "asc" }],
     }),
     loadPricingContext(),
+    prisma.storefrontAssortmentSettings.upsert({
+      where: { id: "default" },
+      create: {
+        id: "default",
+        autoSuggestEnabled: false,
+        ...DEFAULT_STOREFRONT_CAPACITY_RULES,
+      },
+      update: {},
+    }),
   ]);
+  const capacityRules: StorefrontCapacityRules = {
+    ostovarMinVcpu: settings.ostovarMinVcpu,
+    ostovarMinRamGb: settings.ostovarMinRamGb,
+    ostovarMinDiskGb: settings.ostovarMinDiskGb,
+    kahkeshanMinVcpu: settings.kahkeshanMinVcpu,
+    kahkeshanMinRamGb: settings.kahkeshanMinRamGb,
+    kahkeshanMinDiskGb: settings.kahkeshanMinDiskGb,
+  };
 
   const primary = slots.filter((slot) => slot.role === "PRIMARY");
   const reserve = slots.filter((slot) => slot.role === "RESERVE");
@@ -376,6 +412,8 @@ export async function resolveStorefrontTierOffers(
   for (const slot of [...primary, ...reserve]) {
     const offer = buildOfferForItem(slot.catalogItem, tier, context);
     if (!offer || !offer.available) continue;
+    // Defense in depth: wrong-tier slots (old auto-suggest fallback) stay hidden.
+    if (!offerMatchesStorefrontTier(offer, tier, capacityRules)) continue;
     const fingerprint = `${offer.vcpu ?? 0}:${offer.ramGb ?? 0}:${offer.storageGb ?? 0}`;
     if (seenResources.has(fingerprint)) continue;
     seenResources.add(fingerprint);

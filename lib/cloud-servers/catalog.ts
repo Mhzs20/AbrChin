@@ -36,6 +36,12 @@ const regionPresentation: Record<
     country: "هلند",
     sortOrder: 11,
   },
+  london: {
+    label: "لندن، بریتانیا",
+    shortLabel: "لندن",
+    country: "بریتانیا",
+    sortOrder: 12,
+  },
   london1: {
     label: "لندن، بریتانیا",
     shortLabel: "لندن",
@@ -59,6 +65,12 @@ const regionPresentation: Record<
     shortLabel: "استکهلم",
     country: "سوئد",
     sortOrder: 15,
+  },
+  toronto: {
+    label: "تورنتو، کانادا",
+    shortLabel: "تورنتو",
+    country: "کانادا",
+    sortOrder: 16,
   },
   toronto2: {
     label: "تورنتو، کانادا",

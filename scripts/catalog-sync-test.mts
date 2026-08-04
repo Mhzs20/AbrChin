@@ -813,6 +813,7 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
     roundUpDisplayTomanFromRial,
     storefrontCityName,
     storefrontLocationLabel,
+    storefrontLocationZone,
     storefrontParchinForTier,
     storefrontServerTitle,
   } = await import("../lib/storefront/presentation.ts");
@@ -822,6 +823,18 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
   assert.equal(storefrontCityName("tehran3"), "تهران");
   assert.equal(storefrontLocationLabel("tehran3"), "تهران ایران");
   assert.equal(storefrontServerTitle({ regionCode: "tehran3", index: 2 }), "ابر ۲ تهران");
+  assert.equal(storefrontLocationZone("tehran3"), "IRAN");
+  assert.equal(storefrontLocationZone("ir-thr-si1"), "IRAN");
+  assert.equal(storefrontLocationZone("toronto2"), "ABROAD");
+  assert.equal(storefrontLocationZone("stockholm"), "ABROAD");
+  assert.equal(storefrontLocationZone("eu-west1-a"), "ABROAD");
+  assert.equal(
+    storefrontLocationZone("unknown-region", {
+      title: "ابر ۱ تورنتو",
+      locationLabel: "تورنتو کانادا",
+    }),
+    "ABROAD",
+  );
   assert.equal(storefrontParchinForTier("NO"), "PARCHIN_START");
   assert.equal(storefrontParchinForTier("OSTOVAR"), "PARCHIN_ACTIVE");
   assert.equal(storefrontParchinForTier("KAHKESHAN"), "PARCHIN_STABLE");
@@ -838,6 +851,30 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
       DEFAULT_STOREFRONT_CAPACITY_RULES,
     ),
     "NO",
+  );
+  assert.equal(
+    classifyStorefrontCapacityTier(
+      { vcpu: 16, ramGb: 32, diskGb: 200 },
+      DEFAULT_STOREFRONT_CAPACITY_RULES,
+    ),
+    "KAHKESHAN",
+  );
+  // Boundary: just below Ostovar floor stays in Nu; Ostovar min is Nu max.
+  assert.equal(
+    classifyStorefrontCapacityTier(
+      {
+        vcpu: DEFAULT_STOREFRONT_CAPACITY_RULES.ostovarMinVcpu - 1,
+        ramGb: DEFAULT_STOREFRONT_CAPACITY_RULES.ostovarMinRamGb,
+        diskGb: DEFAULT_STOREFRONT_CAPACITY_RULES.ostovarMinDiskGb,
+      },
+      DEFAULT_STOREFRONT_CAPACITY_RULES,
+    ),
+    "NO",
+  );
+  assert.match(autoSuggestSource, /capacityTier === tier/);
+  assert.doesNotMatch(
+    autoSuggestSource,
+    /STOREFRONT_PRIMARY_LIMIT - primary\.length/,
   );
   const almostDay = new Date(Date.now() - 23 * 60 * 60 * 1000);
   const overDay = new Date(Date.now() - 25 * 60 * 60 * 1000);
