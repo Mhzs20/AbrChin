@@ -24,8 +24,20 @@ const allowedAnswers: Record<QuestionId, readonly string[]> = {
   dataResidency: ["iran_only", "flexible", "unknown"],
 };
 
-const questionIds = Object.keys(allowedAnswers) as QuestionId[];
+export const RECOMMENDATION_QUESTION_IDS = Object.keys(
+  allowedAnswers,
+) as QuestionId[];
+const questionIds = RECOMMENDATION_QUESTION_IDS;
 const allowedSources: AnswerSource[] = ["user", "estimate", "default"];
+
+export function isRecommendationQuestionId(
+  value: unknown,
+): value is QuestionId {
+  return (
+    typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(allowedAnswers, value)
+  );
+}
 
 export function validateRecommendationAnswer(
   questionId: QuestionId,

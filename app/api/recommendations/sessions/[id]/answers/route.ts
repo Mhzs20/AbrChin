@@ -1,5 +1,6 @@
 import type { QuestionId } from "@/lib/recommendation/types";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
+import { isRecommendationQuestionId } from "@/lib/recommendation/input";
 import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
 import {
   ConversationRevisionConflictError,
@@ -7,19 +8,6 @@ import {
   updateConversationAnswer,
 } from "@/lib/recommendation/session-service";
 import { getCurrentUser } from "@/lib/session";
-
-const questionIds = new Set<QuestionId>([
-  "project",
-  "audience",
-  "stage",
-  "usage",
-  "architecture",
-  "storage",
-  "growth",
-  "downtime",
-  "criticality",
-  "management",
-]);
 
 export async function PATCH(
   request: Request,
@@ -35,10 +23,7 @@ export async function PATCH(
       expectedRevision?: unknown;
       source?: "user" | "estimate" | "default";
     };
-    if (
-      typeof body.questionId !== "string" ||
-      !questionIds.has(body.questionId as QuestionId)
-    ) {
+    if (!isRecommendationQuestionId(body.questionId)) {
       return jsonError("سؤال معتبر نیست.", 400);
     }
     if (

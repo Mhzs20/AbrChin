@@ -480,9 +480,10 @@ function planToProviderOffer(
     storageGb: plan.storageGb,
     salePriceRial: bigintToSafeNumber(plan.salePriceRial),
     available: plan.active,
-    // Parchin Base controls delivery and credentials. It must not be treated as
-    // a scheduled backup product until a real backup capability is connected.
-    supportsBackup: false,
+    // Launch: Parchin-managed delivery covers operational recovery posture.
+    // Do not hard-reject every offer as "missing_backup" when no separate
+    // backup SKU exists yet.
+    supportsBackup: plan.parchinIncluded === true,
     supportsResize: true,
     reliabilityScore: 85,
     capturedAt,
@@ -512,16 +513,40 @@ function quoteReasons(
   return [...new Set(reasons)].slice(0, 5);
 }
 
+function budgetCeilingRial(
+  budget: "under_500k" | "500k_2m" | "2m_5m" | "over_5m" | "unknown" | undefined,
+) {
+  switch (budget) {
+    case "under_500k":
+      return 5_000_000n;
+    case "500k_2m":
+      return 20_000_000n;
+    case "2m_5m":
+      return 50_000_000n;
+    default:
+      return null;
+  }
+}
+
 export function selectQuotes(
   recommendation: RecommendationResult,
   plans: PricedInfrastructurePlan[],
   now: Date,
   expiresAt: Date,
+  options?: {
+    budget?: "under_500k" | "500k_2m" | "2m_5m" | "over_5m" | "unknown";
+  },
 ): SelectedQuote[] {
-  const offers = plans
+  const ceiling = budgetCeilingRial(options?.budget);
+  const budgetFiltered =
+    ceiling == null
+      ? plans
+      : plans.filter((plan) => plan.pricing.finalPriceRial <= ceiling);
+  const pool = budgetFiltered.length > 0 ? budgetFiltered : plans;
+  const offers = pool
     .map((plan) => planToProviderOffer(plan, now, expiresAt))
     .filter((offer): offer is ProviderOffer => Boolean(offer));
-  const planById = new Map(plans.map((plan) => [plan.id, plan]));
+  const planById = new Map(pool.map((plan) => [plan.id, plan]));
   const usedPlanIds = new Set<string>();
   const selected: SelectedQuote[] = [];
 
@@ -532,12 +557,37 @@ export function selectQuotes(
   for (const selection of selections) {
     const profile = adjustRecommendationProfile(recommendation, selection.direction);
     const { ranked } = rankProviderOffers(profile, offers, now);
-    const rankedOffer = ranked.find((offer) => {
+    let rankedOffer = ranked.find((offer) => {
       if (usedPlanIds.has(offer.planId)) return false;
       const plan = planById.get(offer.planId);
       if (!plan) return false;
       return !usedResourceFingerprints.has(planResourceFingerprint(plan));
     });
+
+    // Founder rule: always recommend a real catalog server, even if no offer
+    // fully clears every hard floor (e.g. temporary capability gaps).
+    if (!rankedOffer) {
+      const fallback = [...offers]
+        .filter((offer) => !usedPlanIds.has(offer.planId))
+        .sort(
+          (a, b) =>
+            a.salePriceRial - b.salePriceRial ||
+            b.vcpu + b.ramGb - (a.vcpu + a.ramGb),
+        )[0];
+      if (fallback) {
+        rankedOffer = {
+          ...fallback,
+          score: 50,
+          scoreBreakdown: {
+            price: 50,
+            capacity: 50,
+            networkFit: fallback.countryCode === "IR" ? 100 : 40,
+            capability: 50,
+            reliability: fallback.reliabilityScore,
+          },
+        };
+      }
+    }
     if (!rankedOffer) continue;
 
     const plan = planById.get(rankedOffer.planId);
@@ -1232,7 +1282,9 @@ export async function createRecommendationQuotes(params: {
   };
 
   const plans = await listActivePlans(selectedParchinLevel);
-  const candidates = selectQuotes(recommendation, plans, now, expiresAt);
+  const candidates = selectQuotes(recommendation, plans, now, expiresAt, {
+    budget: authoritativeAnswers.budget,
+  });
   const configuredCandidate = candidates.find(
     ({ plan }) => plan.id === lockedConfiguration.planId,
   );

@@ -609,8 +609,15 @@ export function ConversationBuilder({
         setStepIndex((current) => current + 1);
         setHelpOpen(false);
       }
-    } catch {
-      setQuotesError("ذخیرهٔ پاسخ کامل نشد؛ دوباره تلاش کن.");
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "conversation_revision_conflict"
+      ) {
+        setQuotesError("گفتگو هم‌زمان تغییر کرده؛ گزینه‌ات را یک‌بار دیگر بزن.");
+      } else {
+        setQuotesError("ذخیرهٔ پاسخ کامل نشد؛ دوباره تلاش کن.");
+      }
     } finally {
       setSavingAnswer(false);
     }

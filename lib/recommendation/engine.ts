@@ -284,6 +284,42 @@ export function buildRecommendation(
     reasons.push("رشد سریع به حاشیه‌ی بیشتر و امکان Resize بدون تعویض مسیر خرید نیاز دارد.");
   }
 
+  if (answers.budget === "under_500k") {
+    vcpu = Math.min(vcpu, 2);
+    ramGb = Math.min(ramGb, 4);
+    storageGb = Math.min(storageGb, 80);
+    reasons.push("بودجه سبک است؛ پیشنهاد داخل همان بازه نگه داشته شده.");
+  } else if (answers.budget === "500k_2m") {
+    vcpu = Math.min(vcpu, 4);
+    ramGb = Math.min(ramGb, 8);
+    storageGb = Math.min(storageGb, 160);
+    reasons.push("بودجه متوسط است؛ از چینش پرقدرت غیرضروری پرهیز شده.");
+  } else if (answers.budget === "over_5m") {
+    vcpu += 2;
+    ramGb += 4;
+    reasons.push("بودجه بالاتر اجازهٔ حاشیه ظرفیت واقعی‌تر را می‌دهد.");
+  } else if (answers.budget === "unknown") {
+    assumptions.push({
+      field: "budget",
+      label: "بودجه ماهانه",
+      value: "میانهٔ قابل‌تنظیم",
+      reason: "بودجه قطعی نبود؛ پیشنهاد از میانه‌ی امن شروع می‌شود.",
+      source: "default",
+    });
+  }
+
+  if (answers.dataResidency === "iran_only") {
+    reasons.push("محل داده فقط ایران در نظر گرفته شده است.");
+  } else if (answers.dataResidency === "unknown") {
+    assumptions.push({
+      field: "dataResidency",
+      label: "محل داده",
+      value: "ایران",
+      reason: "محدودیت محل داده مشخص نبود؛ ایران فرض پیش‌فرض است.",
+      source: "default",
+    });
+  }
+
   vcpu = atLeastTier(vcpu, cpuTiers);
   ramGb = atLeastTier(ramGb, ramTiers);
   storageGb = Math.ceil(storageGb / 20) * 20;

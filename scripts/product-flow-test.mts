@@ -145,6 +145,24 @@ test("conversation questions stay chat-core and branch only for migration", () =
   ]);
 });
 
+test("answers API accepts Compass budget/stack questions", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const [answersRoute, inputSource, quoteSource] = await Promise.all([
+    readFile("app/api/recommendations/sessions/[id]/answers/route.ts", "utf8"),
+    readFile("lib/recommendation/input.ts", "utf8"),
+    readFile("lib/recommendation/quote-service.ts", "utf8"),
+  ]);
+  assert.match(answersRoute, /isRecommendationQuestionId/);
+  assert.doesNotMatch(
+    answersRoute,
+    /new Set<QuestionId>\(\[\s*"project"/,
+  );
+  assert.match(inputSource, /budget: \["under_500k"/);
+  assert.match(inputSource, /RECOMMENDATION_QUESTION_IDS/);
+  assert.match(quoteSource, /supportsBackup: plan\.parchinIncluded === true/);
+  assert.match(quoteSource, /always recommend a real catalog server/i);
+});
+
 test("platform readiness fails closed for database and worker outages", () => {
   assert.equal(
     derivePlatformReadinessStatus("healthy", "healthy"),

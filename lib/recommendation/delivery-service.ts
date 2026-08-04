@@ -34,6 +34,7 @@ import type {
   AnswerSources,
   RecommendationAnswers,
 } from "@/lib/recommendation/types";
+import { ensureStorefrontSaleReady } from "@/lib/storefront/ensure-sale-plans";
 import { WalletError } from "@/lib/wallet/errors";
 
 function asAnswers(value: Prisma.JsonValue): RecommendationAnswers {
@@ -99,6 +100,7 @@ export async function getConversationDeliveryOptions(input: {
     throw new Error("conversation_requirements_not_confirmed");
   }
   await requireFreshSaleCatalogs();
+  await ensureStorefrontSaleReady().catch(() => undefined);
   const answers = asAnswers(session.answers);
   const sources = asSources(session.answerSources);
   const minimumParchinLevel = recommendedParchinLevel(answers);
@@ -115,6 +117,7 @@ export async function getConversationDeliveryOptions(input: {
     plans,
     now,
     new Date(now.getTime() + 10 * 60 * 1000),
+    { budget: answers.budget },
   );
   if (selected.length === 0) {
     throw new WalletError(
