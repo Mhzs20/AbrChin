@@ -24,17 +24,6 @@ function formatRialAsToman(value: string) {
     : `${toman.toLocaleString("fa-IR")}٫${remainder.toLocaleString("fa-IR")}`;
 }
 
-
-function formatBasisPoints(value: number) {
-  const whole = Math.floor(value / 100);
-  const fraction = value % 100;
-  return fraction === 0
-    ? whole.toLocaleString("fa-IR")
-    : `${whole.toLocaleString("fa-IR")}٫${String(fraction)
-        .padStart(2, "0")
-        .replace(/0$/, "")}`;
-}
-
 function catalogStatusLabel(status: PublicPlanOffer["catalogStatus"]) {
   if (status === "ACTIVE") return "قیمت و ظرفیت همگام‌شده";
   if (status === "STALE") return "آخرین دادهٔ معتبر؛ نیازمند همگام‌سازی دوباره";
