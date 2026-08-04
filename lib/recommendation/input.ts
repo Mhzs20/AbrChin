@@ -16,7 +16,7 @@ const allowedAnswers: Record<QuestionId, readonly string[]> = {
   growth: ["stable", "campaign", "rapid", "unknown"],
   downtime: ["flexible", "short", "near_zero", "unknown"],
   criticality: ["low", "medium", "high", "severe", "unknown"],
-  management: ["managed", "unknown"],
+  management: ["raw", "managed", "unknown"],
 };
 
 const questionIds = Object.keys(allowedAnswers) as QuestionId[];

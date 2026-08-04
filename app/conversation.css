@@ -122,26 +122,37 @@
 
 .conversation-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 11px;
   padding: 17px;
 }
 
 .conversation-thread {
   display: flex;
-  min-height: 50px;
-  align-items: center;
-  gap: 8px;
-  overflow: hidden;
+  min-height: 220px;
+  max-height: min(62vh, 640px);
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+  padding: 4px 2px 8px;
+  scrollbar-width: thin;
+}
+
+.thread-turn {
+  display: grid;
+  gap: 10px;
+}
+
+.thread-turn--active {
+  gap: 12px;
 }
 
 .thread-message {
   display: flex;
   min-width: 0;
-  align-items: center;
+  align-items: flex-start;
   gap: 9px;
-  border-radius: 14px;
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .thread-message p,
@@ -150,12 +161,24 @@
   margin: 0;
 }
 
-.thread-message--assistant {
-  max-width: 54%;
-  padding: 7px 11px;
+.thread-bubble {
+  display: grid;
+  gap: 4px;
+  max-width: min(100%, 520px);
+  padding: 11px 14px;
+  border-radius: 16px 16px 16px 6px;
   background: var(--blue-50);
-  color: #46617f;
-  line-height: 1.7;
+  color: #365572;
+  line-height: 1.75;
+}
+
+.thread-bubble small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.thread-message--assistant {
+  max-width: 92%;
 }
 
 .thread-avatar {
@@ -170,27 +193,32 @@
 }
 
 .thread-message--user {
-  display: grid;
-  max-width: 23%;
-  gap: 2px;
-  padding: 7px 10px;
-  border: 1px solid rgba(20, 58, 107, 0.09);
-  background: #fff;
-}
-
-.thread-message--user small {
-  overflow: hidden;
-  color: var(--muted-2);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  max-width: min(88%, 420px);
+  margin-right: auto;
+  margin-left: 0;
+  justify-content: flex-end;
+  align-self: flex-end;
 }
 
 .thread-message--user strong {
-  overflow: hidden;
+  display: inline-block;
+  padding: 10px 14px;
+  border: 1px solid rgba(20, 58, 107, 0.08);
+  border-radius: 16px 16px 6px 16px;
+  background: #fff;
   color: var(--navy-900);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.conversation-options--chat {
+  margin-top: 2px;
+}
+
+.question-actions--chat {
+  margin-top: 2px;
 }
 
 .conversation-question-card,
@@ -960,7 +988,7 @@
   }
 
   .conversation-thread {
-    display: none;
+    max-height: min(58vh, 520px);
   }
 
   .conversation-panel {
@@ -1044,18 +1072,15 @@
   }
 
   .conversation-thread {
+    max-height: none;
+    min-height: 0;
     align-items: stretch;
-    flex-direction: column;
   }
 
   .thread-message--assistant,
   .thread-message--user {
     width: 100%;
     max-width: none;
-  }
-
-  .thread-message--user {
-    display: none;
   }
 
   .conversation-question-card,

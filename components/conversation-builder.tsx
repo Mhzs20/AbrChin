@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ConversationCloud } from "@/components/conversation-cloud";
 import { QuickCloudPlans } from "@/components/quick-cloud-plans";
@@ -265,13 +265,7 @@ export function ConversationBuilder({
           }
           setRestored(true);
         } else if (cached) {
-          setAnswers({
-            ...cached.answers,
-            management:
-              cached.answers.management === "raw"
-                ? "managed"
-                : cached.answers.management,
-          });
+          setAnswers(cached.answers);
           setSources(cached.sources);
           const restoredOrder = getRecommendationQuestionOrder(
             cached.answers,
@@ -488,9 +482,12 @@ export function ConversationBuilder({
     () => adjustRecommendationProfile(recommendation, direction),
     [direction, recommendation],
   );
-  const completedAnswers = questionOrder
-    .slice(0, stepIndex)
-    .filter((id) => Boolean(answers[id]));
+  const completedAnswers = questionOrder.filter((id, index) => {
+    if (!answers[id]) return false;
+    if (showResult) return true;
+    if (showUnderstanding) return index === 0;
+    return index < stepIndex;
+  });
   const quotesLoading =
     showResult &&
     deliveryConfigured &&
@@ -555,7 +552,7 @@ export function ConversationBuilder({
 
   function helpMeChoose() {
     const value = getDefaultAssistedAnswer(questionId, answers);
-    choose(value, "estimate");
+    void reply(value, "estimate");
     setHelpOpen(false);
   }
 
@@ -563,22 +560,22 @@ export function ConversationBuilder({
     const explicitUnknown = question.options.find(
       (option) => option.value === "unknown",
     );
-    choose(
+    void reply(
       explicitUnknown?.value ??
         getDefaultAssistedAnswer(questionId, answers),
       "estimate",
     );
   }
 
-  async function next() {
-    if (!selected) return;
+  async function reply(
+    value: string,
+    source: AnswerSources[QuestionId] = "user",
+  ) {
+    if (!value || savingAnswer) return;
+    choose(value, source);
     setSavingAnswer(true);
     try {
-      await persistAnswer(
-        questionId,
-        selected,
-        sources[questionId] ?? "user",
-      );
+      await persistAnswer(questionId, value, source);
       if (stepIndex === 0 && !understandingConfirmed) {
         setShowUnderstanding(true);
       } else if (stepIndex === questionOrder.length - 1) {
@@ -740,6 +737,21 @@ export function ConversationBuilder({
   const transition = reduceMotion
     ? { duration: 0 }
     : { duration: 0.42, ease: [0.2, 0.78, 0.24, 1] as const };
+  const threadEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "end",
+    });
+  }, [
+    completedAnswers.length,
+    questionId,
+    reduceMotion,
+    showUnderstanding,
+    showResult,
+    savingAnswer,
+  ]);
 
   if (!hydrated) {
     return (
@@ -747,7 +759,7 @@ export function ConversationBuilder({
         <span className="conversation-loading-mark">
           <Image src="/assets/abrchin-symbol.svg" alt="" width={72} height={62} />
         </span>
-        <p>داریم ادامه‌ی چینشت رو آماده می‌کنیم…</p>
+        <p>داریم ادامه‌ی گفت‌وگو رو آماده می‌کنیم…</p>
       </section>
     );
   }
@@ -758,41 +770,16 @@ export function ConversationBuilder({
         <div>
           <span className="eyebrow">
             <Sparkles size={15} aria-hidden="true" />
-            گفت‌وگوی ساخت سرور
+            قطب‌نمای ابرچین
           </span>
           <h1 id="conversation-title">
-            {showResult ? recommendation.title : "زیرساختت رو با هم می‌چینیم."}
+            {showResult ? recommendation.title : "با هم حرف می‌زنیم و مسیرت را می‌چینیم."}
           </h1>
           <p>
             {showResult
-              ? "یک پیشنهاد اصلی، با دلیل و فرض‌های روشن."
-              : "هرجا جواب فنی رو ندونی، همون‌جا برات ساده‌اش می‌کنیم."}
+              ? "جمع‌بندی گفت‌وگو با پیشنهاد خدمت و سرور مناسب."
+              : "مرحله‌بندی نیست؛ مثل یک گفت‌وگوی کوتاه پاسخ بده."}
           </p>
-        </div>
-
-        <div className="conversation-progress" aria-label="پیشرفت مکالمه">
-          <span>
-            {showResult
-              ? "پیشنهاد آماده"
-              : showUnderstanding
-                ? "تأیید برداشت"
-              : `سؤال ${stepIndex + 1} از ${questionOrder.length}`}
-          </span>
-          <div>
-            <motion.i
-              initial={false}
-              animate={{
-                width: `${
-                  showResult
-                    ? 100
-                    : showUnderstanding
-                      ? 20
-                    : ((stepIndex + (selected ? 1 : 0)) / questionOrder.length) * 100
-                }%`,
-              }}
-              transition={transition}
-            />
-          </div>
         </div>
       </header>
 
@@ -808,112 +795,66 @@ export function ConversationBuilder({
 
       <div className="conversation-workspace">
         <main className="conversation-panel">
-          <div className="conversation-thread" aria-label="خلاصه‌ی گفت‌وگو">
+          <div className="conversation-thread" aria-label="گفت‌وگوی قطب‌نما">
             <div className="thread-message thread-message--assistant">
               <span className="thread-avatar">
                 <Image src="/assets/abrchin-symbol.svg" alt="" width={30} height={26} />
               </span>
-              <p>
-                {showResult
-                  ? "نیازت رو جمع‌بندی کردم. این انتخاب اصلی منه؛ هر فرضی هم که زدم پایینش نوشته شده."
-                  : showUnderstanding
-                    ? "قبل از سؤال‌های بعدی، برداشتم را با تو چک می‌کنم."
-                  : question.helper}
-              </p>
+              <div className="thread-bubble">
+                <p>
+                  سلام — من قطب‌نمای ابرچینم. بگو چی می‌خوای بسازی یا منتقل کنی تا
+                  خدمت و سرور مناسب را پیشنهاد بدهم.
+                </p>
+              </div>
             </div>
 
-            {completedAnswers.slice(-2).map((id) => {
+            {completedAnswers.map((id) => {
               const value = answers[id] as string;
+              const asked = getRecommendationQuestion(id, answers);
               return (
-                <div className="thread-message thread-message--user" key={id}>
-                  <small>{getRecommendationQuestion(id, answers).prompt}</small>
-                  <strong>{selectedLabel(id, value, answers) ?? value}</strong>
+                <div className="thread-turn" key={id}>
+                  <div className="thread-message thread-message--assistant">
+                    <span className="thread-avatar">
+                      <Image src="/assets/abrchin-symbol.svg" alt="" width={30} height={26} />
+                    </span>
+                    <div className="thread-bubble">
+                      <p>{asked.prompt}</p>
+                    </div>
+                  </div>
+                  <div className="thread-message thread-message--user">
+                    <strong>{selectedLabel(id, value, answers) ?? value}</strong>
+                  </div>
                 </div>
               );
             })}
-          </div>
 
-          <AnimatePresence mode="wait" initial={false}>
-            {showUnderstanding ? (
-              <motion.div
-                key="understanding"
-                className="conversation-question-card"
-                initial={reduceMotion ? false : { opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={reduceMotion ? undefined : { opacity: 0, y: -10 }}
-                transition={transition}
-              >
-                <div className="question-meta">
-                  <span>تأیید برداشت ابرچین</span>
+            {!showResult && !showUnderstanding ? (
+              <div className="thread-turn thread-turn--active">
+                <div className="thread-message thread-message--assistant">
+                  <span className="thread-avatar">
+                    <Image src="/assets/abrchin-symbol.svg" alt="" width={30} height={26} />
+                  </span>
+                  <div className="thread-bubble">
+                    <p>{question.prompt}</p>
+                    <small>{question.helper}</small>
+                  </div>
                 </div>
-                <h2>
-                  برداشت من اینه که برای «
-                  {answers.project
-                    ? selectedLabel("project", answers.project, answers)
-                    : "نیازت"}
-                  » سرور ابری می‌خوای.
-                </h2>
-                <p>
-                  در ادامه فقط چند سؤال مؤثر دربارهٔ مرحله، مصرف، ریسک و یک
-                  نکتهٔ تطبیقی می‌پرسم. این برداشت در هر زمان قابل اصلاح است.
-                </p>
-                <div className="question-actions">
-                  <button
-                    className="button button-quiet"
-                    type="button"
-                    onClick={() => {
-                      setUnderstandingConfirmed(false);
-                      setShowUnderstanding(false);
-                      setStepIndex(0);
-                    }}
-                  >
-                    <ArrowRight size={17} aria-hidden="true" />
-                    اصلاح برداشت
-                  </button>
-                  <button
-                    className="button button-primary"
-                    disabled={savingAnswer}
-                    type="button"
-                    onClick={() => void confirmUnderstanding()}
-                  >
-                    برداشت درسته
-                    <ArrowLeft size={17} aria-hidden="true" />
-                  </button>
-                </div>
-                {quotesError ? <p className="product-error">{quotesError}</p> : null}
-              </motion.div>
-            ) : !showResult ? (
-              <motion.div
-                key={questionId}
-                className="conversation-question-card"
-                initial={reduceMotion ? false : { opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={reduceMotion ? undefined : { opacity: 0, y: -10 }}
-                transition={transition}
-              >
-                <div className="question-meta">
-                  <span>{question.stepLabel}</span>
-                  <button type="button" onClick={() => setHelpOpen(true)}>
-                    <Info size={15} aria-hidden="true" />
-                    این یعنی چی؟
-                  </button>
-                </div>
-
-                <h2>{question.prompt}</h2>
-                <p>{question.helper}</p>
-
-                <div className="conversation-options" role="radiogroup" aria-label={question.prompt}>
+                <div
+                  className="conversation-options conversation-options--chat"
+                  role="radiogroup"
+                  aria-label={question.prompt}
+                >
                   {question.options.map((option) => {
                     const active = selected === option.value;
                     return (
-                      <motion.button
-                        layout={!reduceMotion}
+                      <button
                         key={option.value}
                         type="button"
                         className={active ? "is-selected" : ""}
                         aria-pressed={active}
+                        disabled={savingAnswer}
                         onClick={() =>
-                          choose(
+                          void reply(
                             option.value,
                             option.value === "unknown" ? "estimate" : "user",
                           )
@@ -932,16 +873,16 @@ export function ConversationBuilder({
                           <small>{option.description}</small>
                         </span>
                         <i aria-hidden="true">{active ? <Check size={13} /> : null}</i>
-                      </motion.button>
+                      </button>
                     );
                   })}
                 </div>
-
-                <div className="question-actions">
+                <div className="question-actions question-actions--chat">
                   <div>
                     <button
                       className="question-assist"
                       type="button"
+                      disabled={savingAnswer}
                       onClick={chooseUnknown}
                     >
                       نمی‌دانم
@@ -952,31 +893,84 @@ export function ConversationBuilder({
                       onClick={() => setHelpOpen(true)}
                     >
                       <CircleHelp size={16} aria-hidden="true" />
-                      کمکم کن انتخاب کنم
+                      این یعنی چی؟
                     </button>
                   </div>
-                  <div>
-                    {stepIndex > 0 ? (
-                      <button className="button button-quiet" type="button" onClick={back}>
-                        <ArrowRight size={17} aria-hidden="true" />
-                        قبلی
-                      </button>
-                    ) : null}
-                    <button
-                      className="button button-primary"
-                      type="button"
-                      disabled={!selected || savingAnswer}
-                      onClick={() => void next()}
-                    >
-                      {stepIndex === questionOrder.length - 1
-                        ? "پیشنهاد رو بساز"
-                        : "ادامه"}
-                      <ArrowLeft size={17} aria-hidden="true" />
+                  {stepIndex > 0 ? (
+                    <button className="button button-quiet" type="button" onClick={back}>
+                      <ArrowRight size={17} aria-hidden="true" />
+                      برگشت در گفت‌وگو
                     </button>
+                  ) : null}
+                </div>
+                {quotesError ? <p className="product-error">{quotesError}</p> : null}
+              </div>
+            ) : null}
+
+            {showUnderstanding ? (
+              <div className="thread-turn thread-turn--active">
+                <div className="thread-message thread-message--assistant">
+                  <span className="thread-avatar">
+                    <Image src="/assets/abrchin-symbol.svg" alt="" width={30} height={26} />
+                  </span>
+                  <div className="thread-bubble">
+                    <p>
+                      برداشت من اینه که برای «
+                      {answers.project
+                        ? selectedLabel("project", answers.project, answers)
+                        : "نیازت"}
+                      » می‌خوای ادامه بدیم. درست می‌گم؟
+                    </p>
                   </div>
                 </div>
-              </motion.div>
-            ) : (
+                <div className="conversation-options conversation-options--chat">
+                  <button
+                    type="button"
+                    disabled={savingAnswer}
+                    onClick={() => void confirmUnderstanding()}
+                  >
+                    <span>
+                      <strong>بله، درسته</strong>
+                      <small>ادامه گفت‌وگو</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingAnswer}
+                    onClick={() => {
+                      setUnderstandingConfirmed(false);
+                      setShowUnderstanding(false);
+                      setStepIndex(0);
+                    }}
+                  >
+                    <span>
+                      <strong>نه، اصلاح می‌کنم</strong>
+                      <small>برمی‌گردیم به هدف</small>
+                    </span>
+                  </button>
+                </div>
+                {quotesError ? <p className="product-error">{quotesError}</p> : null}
+              </div>
+            ) : null}
+
+            {showResult ? (
+              <div className="thread-message thread-message--assistant">
+                <span className="thread-avatar">
+                  <Image src="/assets/abrchin-symbol.svg" alt="" width={30} height={26} />
+                </span>
+                <div className="thread-bubble">
+                  <p>
+                    نیازت رو جمع‌بندی کردم. این پیشنهاد اصلیه؛ فرض‌ها و مسیر خدمت
+                    پایین همین گفت‌وگوست.
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            <div ref={threadEndRef} />
+          </div>
+
+          <AnimatePresence mode="wait" initial={false}>
+            {showResult ? (
               <motion.div
                 key="result"
                 className="conversation-result-card"
@@ -1377,7 +1371,7 @@ export function ConversationBuilder({
                   )}
                 </div>
               </motion.div>
-            )}
+            ) : null}
           </AnimatePresence>
         </main>
 
