@@ -59,16 +59,17 @@ Zibal یا Zarinpal را Adapter موجود می‌سازد. در جریان Clo
 Wallet Top-up را Verify و Credit می‌کند و هیچ Activation یا Provision اجرا
 نمی‌کند.
 
-پیش از تست Founder این مقادیر خاموش بمانند:
+برای تست فروش واقعی Founder این مقادیر را در `.env` سرور بگذارید
+(Sale باز، Mutation خاموش):
 
 ```text
-PARSPACK_PUBLIC_SALE_ENABLED=false
+PARSPACK_PUBLIC_SALE_ENABLED=true
 PARSPACK_MUTATIONS_ENABLED=false
-ARVAN_PUBLIC_SALE_ENABLED=false
-ARVAN_READY_PUBLIC_SALE_ENABLED=false
-ARVAN_CLOUD_PUBLIC_SALE_ENABLED=false
+ARVAN_PUBLIC_SALE_ENABLED=true
+ARVAN_READY_PUBLIC_SALE_ENABLED=true
+ARVAN_CLOUD_PUBLIC_SALE_ENABLED=true
 ARVAN_MUTATIONS_ENABLED=false
-MANUAL_READY_PUBLIC_SALE_ENABLED=false
+MANUAL_READY_PUBLIC_SALE_ENABLED=true
 ```
 
 ## Deploy با Termius
@@ -143,22 +144,15 @@ curl -fsS http://127.0.0.1:3010/api/health
 curl -fsS http://127.0.0.1:3010/api/readiness
 ```
 
-## فعال‌سازی مرحله‌ای
+## فعال‌سازی فروش Launch
 
-1. با همه Sale/Mutation Gateها خاموش، Login OTP، Gateway Production، Health و
-   Readiness را بررسی و از Admin Billing Policy، قیمت پرچین و Markupها را
-   تأیید کنید. Tax فقط اگر قرارداد و تنظیم صریح دارد فعال می‌شود.
-2. Manual: SKU واقعی را در Admin Catalog بسازید، قیمت/تعداد را ثبت کنید، سپس
-   فقط `MANUAL_READY_PUBLIC_SALE_ENABLED=true` را اعمال و Web/Worker را Recreate
-   کنید.
-3. ParsPack: ابتدا فقط `PARSPACK_ENABLED=true` و Contract پول را تنظیم کنید؛
-   Sync و Revalidation Read-only را در Admin بررسی کنید. Sale و Mutation دو
-   تصمیم مستقل‌اند. Sale می‌تواند برای Estimate/Request کنترل‌شده باز شود،
-   درحالی‌که Mutation بسته و Fulfillment دستی است.
-4. Arvan: ابتدا فقط `ARVAN_ENABLED=true` و GET احرازشدهٔ Connection Check را
-   بررسی کنید. Allowlist Region اثبات سلامت نیست. Master/Product Sale را برای
-   Estimate و Activation کنترل‌شده جدا باز کنید. Mutation فقط پس از تأیید
-   Lifecycle و مجوز مستقل Founder باز می‌شود.
+1. Login OTP، Gateway Production، Health و Readiness را بررسی کنید.
+2. در `.env` سرور Flagهای Sale بالا را `true` و Mutationها را `false` بگذارید،
+   سپس `web` و `worker` را Recreate کنید.
+3. Admin → زیرساخت → مناطق فروش: هر Region لازم باید «نمایش» (saleEnabled) باشد.
+   بعد از Deploy، مسیر چینش/قطب‌نما خودش Regionهای AV/PP را برای فروش باز می‌کند.
+4. Admin → تنظیمات: «فروش آروان Cloud» و «فروش پارس‌پک» باید «باز» باشند.
+5. Mutation را باز نکنید؛ Fulfillment دستی Admin بعد از دو Gate تأیید است.
 
 هر تغییر Env نیازمند Recreate شدن `web` و `worker` با همان Image/SHA است.
 

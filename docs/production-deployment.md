@@ -52,16 +52,16 @@
 
 ## Gateها
 
-همه Flagها ابتدا خاموش‌اند:
+Launch: Sale باز، Mutation خاموش (Fulfillment دستی Admin):
 
 ```text
-PARSPACK_PUBLIC_SALE_ENABLED=false
+PARSPACK_PUBLIC_SALE_ENABLED=true
 PARSPACK_MUTATIONS_ENABLED=false
-ARVAN_PUBLIC_SALE_ENABLED=false
-ARVAN_READY_PUBLIC_SALE_ENABLED=false
-ARVAN_CLOUD_PUBLIC_SALE_ENABLED=false
+ARVAN_PUBLIC_SALE_ENABLED=true
+ARVAN_READY_PUBLIC_SALE_ENABLED=true
+ARVAN_CLOUD_PUBLIC_SALE_ENABLED=true
 ARVAN_MUTATIONS_ENABLED=false
-MANUAL_READY_PUBLIC_SALE_ENABLED=false
+MANUAL_READY_PUBLIC_SALE_ENABLED=true
 ```
 
 Sale و Mutation مستقل هستند. Sale فقط Listing/Estimate/Wallet Top-up/Activation
