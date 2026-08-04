@@ -28,12 +28,19 @@ function asNumber(value: unknown): number | undefined {
 }
 
 function asDecimalString(value: unknown): string | undefined {
-  const raw =
-    typeof value === "number" && Number.isFinite(value)
-      ? String(value)
-      : typeof value === "string"
-        ? value.trim()
-        : "";
+  const raw = (() => {
+    if (typeof value === "string") return value.trim();
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      return "";
+    }
+    // Above 2^32 a JavaScript number cannot distinguish every 6-decimal
+    // provider amount. Reject that ambiguous representation rather than
+    // silently changing money; string amounts have no such range limit.
+    if (value >= 2 ** 32) return "";
+    const candidate = value.toFixed(6);
+    if (Number(candidate) !== value) return "";
+    return candidate;
+  })();
   if (!/^\d+(?:\.\d+)?$/.test(raw)) return undefined;
   const [whole, fraction] = raw.split(".");
   const normalizedWhole = BigInt(whole).toString();
@@ -46,10 +53,25 @@ function asBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+function asOptionalBoolean(value: unknown): boolean | undefined {
+  if (value == null) return undefined;
+  const parsed = asBoolean(value);
+  if (parsed === undefined) {
+    throw new Error("ParsPack response contains an invalid boolean");
+  }
+  return parsed;
+}
+
 function asStringArray(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
+  if (value == null) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error("ParsPack response contains an invalid string array");
+  }
   const items = value.map(asString).filter(Boolean);
-  return items.length > 0 ? items : [];
+  if (items.length !== value.length) {
+    throw new Error("ParsPack response contains an invalid string array");
+  }
+  return items;
 }
 
 function nestedCode(value: unknown): string {
@@ -127,37 +149,61 @@ export function parseVmList(payload: unknown): ProviderInstance[] {
 }
 
 export function parseParsPackNextPage(payload: unknown): number | null {
-  if (!isRecord(payload) || !isRecord(payload.links) || !isRecord(payload.links.pages)) {
+  if (!isRecord(payload) || payload.links == null) {
     return null;
   }
-  const next = asString(payload.links.pages.next);
-  if (!next) return null;
+  if (!isRecord(payload.links)) {
+    throw new Error("ParsPack response contains invalid pagination");
+  }
+  if (payload.links.pages == null) return null;
+  if (!isRecord(payload.links.pages)) {
+    throw new Error("ParsPack response contains invalid pagination");
+  }
+  const rawNext = payload.links.pages.next;
+  if (rawNext == null || rawNext === "") return null;
+  if (typeof rawNext !== "string") {
+    throw new Error("ParsPack response contains invalid pagination");
+  }
   try {
-    const parsed = new URL(next, "https://parspack.invalid");
-    const page = Number.parseInt(parsed.searchParams.get("page") ?? "", 10);
-    return Number.isInteger(page) && page > 0 ? page : null;
+    const parsed = new URL(rawNext, "https://parspack.invalid");
+    const rawPage = parsed.searchParams.get("page") ?? "";
+    if (!/^\d+$/.test(rawPage)) {
+      throw new Error("ParsPack response contains invalid pagination");
+    }
+    const page = Number(rawPage);
+    if (!Number.isSafeInteger(page) || page <= 0) {
+      throw new Error("ParsPack response contains invalid pagination");
+    }
+    return page;
   } catch {
-    return null;
+    throw new Error("ParsPack response contains invalid pagination");
   }
 }
 
 export function parseParsPackRegions(payload: unknown): ProviderCatalog["regions"] {
-  return listFromEnvelope(payload, ["regions"])
-    .filter(isRecord)
-    .map((item) => ({
+  const values = listFromEnvelope(payload, ["regions"]);
+  if (values.some((item) => !isRecord(item))) {
+    throw new Error("ParsPack response contains an invalid region");
+  }
+  const regions = (values as UnknownRecord[]).map((item) => ({
       code: asString(item.slug) || asString(item.code),
       name: asString(item.name) || asString(item.slug) || asString(item.code),
-      available: asBoolean(item.available),
+      available: asOptionalBoolean(item.available),
       sizeCodes: asStringArray(item.sizes),
       features: asStringArray(item.features),
-    }))
-    .filter((item) => item.code.length > 0);
+    }));
+  if (regions.some((item) => item.code.length === 0)) {
+    throw new Error("ParsPack response contains an invalid region");
+  }
+  return regions;
 }
 
 export function parseParsPackSizes(payload: unknown): ProviderCatalog["sizes"] {
-  return listFromEnvelope(payload, ["sizes"])
-    .filter(isRecord)
-    .map((item) => {
+  const values = listFromEnvelope(payload, ["sizes"]);
+  if (values.some((item) => !isRecord(item))) {
+    throw new Error("ParsPack response contains an invalid size");
+  }
+  const sizes = (values as UnknownRecord[]).map((item) => {
       const regionCodes = asStringArray(item.regions);
       return {
         code: asString(item.slug) || asString(item.code),
@@ -168,7 +214,7 @@ export function parseParsPackSizes(payload: unknown): ProviderCatalog["sizes"] {
           asString(item.code),
         regionCode: regionCodes?.length === 1 ? regionCodes[0] : undefined,
         regionCodes,
-        available: asBoolean(item.available),
+        available: asOptionalBoolean(item.available),
         vcpu: asNumber(item.vcpus),
         memoryMb: asNumber(item.memory),
         diskGb: asNumber(item.disk),
@@ -177,14 +223,19 @@ export function parseParsPackSizes(payload: unknown): ProviderCatalog["sizes"] {
         transfer: asNumber(item.transfer),
         rawUpdatedAt: asString(item.updated_at) || undefined,
       };
-    })
-    .filter((item) => item.code.length > 0);
+    });
+  if (sizes.some((item) => item.code.length === 0)) {
+    throw new Error("ParsPack response contains an invalid size");
+  }
+  return sizes;
 }
 
 export function parseParsPackImages(payload: unknown): ProviderCatalog["images"] {
-  return listFromEnvelope(payload, ["images"])
-    .filter(isRecord)
-    .map((item) => ({
+  const values = listFromEnvelope(payload, ["images"]);
+  if (values.some((item) => !isRecord(item))) {
+    throw new Error("ParsPack response contains an invalid image");
+  }
+  const images = (values as UnknownRecord[]).map((item) => ({
       code: asString(item.slug) || asString(item.id),
       name:
         asString(item.description) ||
@@ -195,8 +246,11 @@ export function parseParsPackImages(payload: unknown): ProviderCatalog["images"]
       regionCodes: asStringArray(item.regions),
       minDiskGb: asNumber(item.min_disk_size),
       status: asString(item.status) || undefined,
-    }))
-    .filter((item) => item.code.length > 0);
+    }));
+  if (images.some((item) => item.code.length === 0)) {
+    throw new Error("ParsPack response contains an invalid image");
+  }
+  return images;
 }
 
 function errorText(body?: ParsPackErrorBody): string {

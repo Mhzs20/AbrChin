@@ -5,6 +5,7 @@ import {
   InfrastructureOfferSource,
   InfrastructureOrderStatus,
   InfrastructureProductKind,
+  InfrastructureProvider,
   Prisma,
   RecommendationFlowStatus,
   RecommendationQuoteStatus,
@@ -245,6 +246,27 @@ export async function requestActivation(input: {
         productKind: quote.plan.productKind,
         offerSource: quote.plan.offerSource,
       });
+      if (
+        quote.plan.provider === InfrastructureProvider.ARVAN &&
+        quote.plan.offerSource === "API_CATALOG"
+      ) {
+        const regionSaleEnabled =
+          await tx.providerRegionConfig.findFirst({
+            where: {
+              provider: quote.plan.provider,
+              apiVersion: quote.plan.providerApiVersion,
+              regionCode: quote.plan.regionCode,
+              saleEnabled: true,
+            },
+            select: { id: true },
+          });
+        if (!regionSaleEnabled) {
+          throw new WalletError(
+            "provider_sale_disabled",
+            "فروش عمومی این موقعیت موقتاً غیرفعال است؛ مبلغی برداشت نشد.",
+          );
+        }
+      }
       const estimate = await estimateForQuote(quote, input.cadence, tx);
       const wallet = await tx.wallet.findUniqueOrThrow({
         where: { userId: input.userId },
@@ -444,6 +466,64 @@ export async function approveActivation(input: {
           "estimate_snapshot_missing",
           "Snapshot فعال‌سازی کامل نیست.",
         );
+      }
+      assertPublicSaleEnabled({
+        provider: activation.plan.provider,
+        productKind: activation.plan.productKind,
+        offerSource: activation.plan.offerSource,
+      });
+      if (activation.plan.offerSource === "API_CATALOG") {
+        const [catalogState, regionSaleEnabled] = await Promise.all([
+          tx.providerCatalogState.findUnique({
+            where: { provider: activation.plan.provider },
+          }),
+          tx.providerRegionConfig.findFirst({
+            where: {
+              provider: activation.plan.provider,
+              apiVersion: activation.plan.providerApiVersion,
+              regionCode: activation.plan.regionCode,
+              saleEnabled: true,
+            },
+            select: { id: true },
+          }),
+        ]);
+        const catalogItem = activation.plan.catalogItem;
+        const lastSync = catalogState?.lastCatalogSync;
+        const fresh =
+          catalogState?.lastSyncStatus === "SUCCEEDED" &&
+          lastSync != null &&
+          Date.now() - lastSync.getTime() <=
+            (catalogState.freshnessSlaSeconds ?? 900) * 1000;
+        if (
+          !regionSaleEnabled ||
+          !fresh ||
+          !catalogItem ||
+          activation.plan.catalogItemId !== quote.catalogItemId ||
+          catalogItem.id !== quote.catalogItemId ||
+          activation.plan.provider !== quote.provider ||
+          activation.plan.providerApiVersion !==
+            quote.providerApiVersion ||
+          activation.plan.productKind !== quote.productKind ||
+          activation.plan.regionCode !== quote.providerRegion ||
+          (catalogItem.externalPlanId ??
+            activation.plan.sizeCode) !== quote.externalPlanId ||
+          catalogItem.status !== "ACTIVE" ||
+          !catalogItem.available ||
+          catalogItem.providerHourlyPriceIrr == null ||
+          catalogItem.providerHourlyPriceIrr <= 0n ||
+          catalogItem.providerMonthlyPriceIrr == null ||
+          catalogItem.providerMonthlyPriceIrr <= 0n ||
+          catalogItem.providerHourlyPriceIrr !==
+            quote.providerHourlyPriceIrr ||
+          catalogItem.providerMonthlyPriceIrr !==
+            quote.providerMonthlyPriceIrr ||
+          catalogItem.payloadHash !== quote.providerPayloadHash
+        ) {
+          throw new WalletError(
+            "quote_revalidation_failed",
+            "قیمت یا وضعیت Provider از زمان Estimate تغییر کرده است؛ تأیید Provision متوقف شد.",
+          );
+        }
       }
       const providerBillingContract = await getEffectiveProviderBillingContract(
         {

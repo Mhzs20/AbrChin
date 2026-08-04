@@ -61,16 +61,6 @@ export async function PATCH(request: Request) {
         updatedById: admin.id,
       },
     });
-    await prisma.providerCatalogState.upsert({
-      where: { provider },
-      update: { enabled: body.enabled },
-      create: {
-        id: `${provider.toLowerCase()}-v1`,
-        provider,
-        apiVersion: "v1",
-        enabled: body.enabled,
-      },
-    });
     await writeAuditLog({
       actorUserId: admin.id,
       action: AuditActions.PLAN_UPDATE,

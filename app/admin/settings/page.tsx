@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { PageHeader, SectionCard, StatusBadge, type BadgeTone } from "@/components/product";
 import { getAdminPageAccess } from "@/lib/auth/guards";
 import { getEnv } from "@/lib/env";
-import { isProviderConfigured } from "@/lib/infrastructure/provider-factory";
+import { isCloudProviderConfigured } from "@/lib/infrastructure/provider-factory";
 
 export const metadata: Metadata = {
   title: "تنظیمات | پنل مدیریت | ابرچین",
@@ -46,8 +46,8 @@ export default async function AdminSettingsPage() {
     },
     {
       label: "ParsPack",
-      status: isProviderConfigured() ? "فعال" : "تنظیم نشده",
-      tone: isProviderConfigured() ? "success" : "warning",
+      status: isCloudProviderConfigured("PARSPACK") ? "فعال" : "تنظیم نشده",
+      tone: isCloudProviderConfigured("PARSPACK") ? "success" : "warning",
     },
     {
       label: "Infrastructure Mode",

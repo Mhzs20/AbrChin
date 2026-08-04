@@ -160,11 +160,9 @@ export function validateProviderEnvironment() {
   if (
     env.parspackEnabled &&
     (!env.parspackApiToken ||
-      !/\/api\/public\/v1\/?$/i.test(env.parspackPublicApiBaseUrl) ||
-      env.parspackPriceCurrency !== "IRR" ||
-      !["RIAL", "TOMAN"].includes(env.parspackPriceAmountUnit))
+      !/\/api\/public\/v1\/?$/i.test(env.parspackPublicApiBaseUrl))
   ) {
-    throw new Error("ParsPack v1 price contract is not fully configured");
+    throw new Error("ParsPack v1 provider configuration is invalid");
   }
   return env;
 }

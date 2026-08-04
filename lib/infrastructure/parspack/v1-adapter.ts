@@ -30,7 +30,73 @@ import {
   decimalToScaledInteger,
   normalizeProviderPriceContract,
   providerAmountToRial,
+  PROVIDER_PRICE_SCALE,
 } from "@/lib/pricing/provider-pricing";
+
+export const PARSPACK_UNSCOPED_REGION_CODE = "__unscoped__";
+
+function parsPackSizeRegions(
+  catalog: ProviderCatalog,
+  size: ProviderCatalog["sizes"][number],
+): string[] {
+  return [
+    ...new Set(
+      [
+        ...(size.regionCodes ?? []),
+        ...(size.regionCode ? [size.regionCode] : []),
+        ...catalog.regions
+          .filter((region) => region.sizeCodes?.includes(size.code))
+          .map((region) => region.code),
+      ].filter(Boolean),
+    ),
+  ];
+}
+
+function validateParsPackCatalogRelationships(catalog: ProviderCatalog): void {
+  const regionCodes = new Set(catalog.regions.map((region) => region.code));
+  const sizeCodes = new Set(catalog.sizes.map((size) => size.code));
+  const imageCodes = new Set(catalog.images.map((image) => image.code));
+  if (
+    regionCodes.size !== catalog.regions.length ||
+    sizeCodes.size !== catalog.sizes.length ||
+    imageCodes.size !== catalog.images.length
+  ) {
+    throw new InfrastructureError(
+      "provider_invalid_response",
+      "ParsPack catalog contains duplicate identities",
+    );
+  }
+  const unknownRegion = (codes?: string[]) =>
+    codes?.some((code) => !regionCodes.has(code)) === true;
+  if (
+    catalog.regions.some((region) =>
+      region.sizeCodes?.some((code) => !sizeCodes.has(code)),
+    ) ||
+    catalog.sizes.some(
+      (size) =>
+        (size.regionCode != null && !regionCodes.has(size.regionCode)) ||
+        unknownRegion(size.regionCodes),
+    ) ||
+    catalog.images.some((image) => unknownRegion(image.regionCodes))
+  ) {
+    throw new InfrastructureError(
+      "provider_invalid_response",
+      "ParsPack catalog relationships are invalid",
+    );
+  }
+}
+
+function parseProviderDate(value?: string): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function positiveInteger(value: number | undefined): number | null {
+  return value != null && Number.isSafeInteger(value) && value > 0
+    ? value
+    : null;
+}
 
 export class ParsPackV1Adapter implements CloudProviderAdapter {
   readonly provider = InfrastructureProvider.PARSPACK;
@@ -63,70 +129,115 @@ export class ParsPackV1Adapter implements CloudProviderAdapter {
 
   private catalog(refresh = false): Promise<ProviderCatalog> {
     if (refresh || !this.catalogPromise) {
-      this.catalogPromise = this.client.syncCatalog();
+      this.catalogPromise = this.client.syncCatalog().then((catalog) => {
+        validateParsPackCatalogRelationships(catalog);
+        return catalog;
+      });
     }
     return this.catalogPromise;
   }
 
   async syncRegions(): Promise<ProviderRegion[]> {
     const catalog = await this.catalog(true);
-    return catalog.regions.map((region) => ({
+    const regions: ProviderRegion[] = catalog.regions.map((region) => ({
       code: region.code,
       name: region.name,
-      available: region.available !== false,
+      available: region.available === true,
       rawPayload: { ...region },
     }));
+    if (
+      catalog.sizes.some(
+        (size) => parsPackSizeRegions(catalog, size).length === 0,
+      )
+    ) {
+      regions.push({
+        code: PARSPACK_UNSCOPED_REGION_CODE,
+        name: "Unscoped provider plans",
+        available: false,
+        rawPayload: {
+          code: PARSPACK_UNSCOPED_REGION_CODE,
+          source: "provider_region_unspecified",
+        },
+      });
+    }
+    if (regions.length === 0) {
+      throw new InfrastructureError(
+        "provider_invalid_response",
+        "ParsPack catalog contains no regions",
+      );
+    }
+    return regions;
   }
 
   async syncPlans(region: string): Promise<ProviderPlan[]> {
     const catalog = await this.catalog();
     const contract = normalizeProviderPriceContract(catalog.priceContract);
     return catalog.sizes
-      .filter(
-        (size) =>
-          size.regionCode === region ||
-          size.regionCodes?.includes(region) ||
-          (!size.regionCode && !size.regionCodes?.length),
-      )
+      .filter((size) => {
+        const regions = parsPackSizeRegions(catalog, size);
+        return region === PARSPACK_UNSCOPED_REGION_CODE
+          ? regions.length === 0
+          : regions.includes(region);
+      })
       .map((size) => {
-        const toIrr = (raw?: string): bigint | null => {
-          if (!raw || !contract) return null;
+        const toSourceAmount = (raw?: string): bigint | null => {
+          if (!raw) return null;
+          try {
+            const amount = decimalToScaledInteger(raw);
+            return amount > 0n ? amount : null;
+          } catch {
+            return null;
+          }
+        };
+        const toIrr = (amount: bigint | null): bigint | null => {
+          if (amount == null || !contract) return null;
           try {
             return providerAmountToRial({
-              scaledAmount: decimalToScaledInteger(raw),
+              scaledAmount: amount,
+              scale: PROVIDER_PRICE_SCALE,
               contract,
             });
           } catch {
             return null;
           }
         };
-        const priceHourlyIrr = toIrr(size.priceHourly);
-        const priceMonthlyIrr = toIrr(size.priceMonthly);
+        const priceHourlyAmount = toSourceAmount(size.priceHourly);
+        const priceMonthlyAmount = toSourceAmount(size.priceMonthly);
+        const priceHourlyIrr = toIrr(priceHourlyAmount);
+        const priceMonthlyIrr = toIrr(priceMonthlyAmount);
+        const vcpu = positiveInteger(size.vcpu);
+        const ramMb = positiveInteger(size.memoryMb);
+        const diskGb = positiveInteger(size.diskGb);
+        const resourceContractValid =
+          vcpu != null &&
+          vcpu > 0 &&
+          ramMb != null &&
+          ramMb > 0 &&
+          diskGb != null &&
+          diskGb > 0;
         return {
           externalPlanId: size.code,
           region,
           name: size.name,
-          vcpu: size.vcpu == null ? null : Math.trunc(size.vcpu),
-          ramMb: size.memoryMb == null ? null : Math.trunc(size.memoryMb),
-          diskGb: size.diskGb == null ? null : Math.trunc(size.diskGb),
-          resourceContractValid:
-            size.vcpu != null &&
-            size.vcpu > 0 &&
-            size.memoryMb != null &&
-            size.memoryMb > 0 &&
-            size.diskGb != null &&
-            size.diskGb > 0,
-          resourceContractError: null,
-          available:
-            size.available !== false &&
-            priceMonthlyIrr != null &&
-            priceMonthlyIrr > 0n,
+          vcpu,
+          ramMb,
+          diskGb,
+          transfer:
+            size.transfer == null ? null : String(size.transfer),
+          resourceContractValid,
+          resourceContractError: resourceContractValid
+            ? null
+            : "invalid_resource_dimensions",
+          available: size.available === true,
+          priceHourlyAmount,
+          priceMonthlyAmount,
+          priceScale: PROVIDER_PRICE_SCALE,
+          currencyCode: contract?.currencyCode ?? null,
+          amountUnit: contract?.amountUnit ?? null,
           priceHourlyIrr,
           priceMonthlyIrr,
           sourceMoneyUnit: contract?.amountUnit ?? "UNCONFIRMED",
-          rawUpdatedAt: size.rawUpdatedAt
-            ? new Date(size.rawUpdatedAt)
-            : null,
+          rawUpdatedAt: parseProviderDate(size.rawUpdatedAt),
           rawPayload: { ...size },
         };
       });
@@ -137,7 +248,9 @@ export class ParsPackV1Adapter implements CloudProviderAdapter {
     return catalog.images
       .filter(
         (image) =>
-          !image.regionCodes?.length || image.regionCodes.includes(region),
+          region === PARSPACK_UNSCOPED_REGION_CODE ||
+          !image.regionCodes?.length ||
+          image.regionCodes.includes(region),
       )
       .map((image) => ({
         externalId: image.code,
@@ -147,7 +260,7 @@ export class ParsPackV1Adapter implements CloudProviderAdapter {
         minDiskGb: image.minDiskGb ?? null,
         minRamMb: null,
         available:
-          !image.status ||
+          image.status != null &&
           ["available", "active", "ready"].includes(
             image.status.toLowerCase(),
           ),

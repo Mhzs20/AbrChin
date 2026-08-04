@@ -116,9 +116,11 @@ ARVAN_MUTATIONS_ENABLED=false
 MANUAL_READY_PUBLIC_SALE_ENABLED=false
 ```
 
-Gate عمومی آروان همراه Gate نوع محصول، Listing، Delivery Options، Estimate و
-Activation Request را کنترل می‌کند و پیش‌فرض `false` است. Admin، Catalog Sync،
-Region Validation و Observation موجودی با خاموش‌بودن آن فعال می‌مانند.
+Gate عمومی آروان همراه Gate نوع محصول، Delivery Options، Estimate و Activation
+Request را کنترل می‌کند و پیش‌فرض `false` است. SKU منتشرشده می‌تواند برای
+مشاهدهٔ قیمت Sync‌شده در Listing باقی بماند، اما CTA با متن «فروش هنوز فعال
+نیست» غیرفعال است. Admin، Catalog Sync، Region Validation و Observation موجودی
+با خاموش‌بودن Gate فعال می‌مانند.
 `API_CATALOG` و `MANUAL_API_BACKED` به Sale Gate، Rate/Availability freshness و
 Revalidation موفق نیاز دارند؛ Mutation Gate فقط هنگام Dispatch واقعی و پس از
 Admin Approval بررسی می‌شود. Sale روشن با Mutation خاموش Estimate، Wallet
@@ -190,6 +192,10 @@ Sync فقط Catalog خام را مالک است و دیگر `InfrastructurePlan`
 می‌کند. بنابراین اضافه‌شدن صدها Flavor در Provider به معنی نمایش خودکار آن‌ها
 به Customer نیست.
 
+Config قیمت Provider و Product تازه با `enabled=false` ساخته می‌شود. Sync
+Markup را فعال نمی‌کند؛ فعال‌سازی و مقدار Markup تصمیم جداگانه و Auditشدهٔ
+Admin است.
+
 منشأ Catalog و قرارداد فروش دو مفهوم جدا هستند. `API_CATALOG` از Sync Provider
 می‌آید و `MANUAL_API_BACKED` فقط اجازه می‌دهد Admin Plan و قیمت را تعریف کند؛
 هر دو برای Estimate و Activation به Revalidation موفق Provider نیاز دارند.
@@ -235,16 +241,31 @@ Persistence کدهای جدا دارند. هر تلاش ParsPack، حتی در �
 `ProviderCatalogSyncRun` و نتیجهٔ Sanitized در `ProviderCatalogState` دارد؛
 Token، Header احراز هویت و Response خام در Log، Audit یا Admin ذخیره نمی‌شود.
 
-Sync دستی از پنل Admin در دسترس است. Worker نیز با
-`CATALOG_SYNC_INTERVAL_MS` (پیش‌فرض پنج دقیقه) Sync امن و Read-only هر
-Provider تنظیم‌شده را اجرا می‌کند؛ شکست یک Provider مانع Sync Provider دیگر
-یا پردازش Provisioning نمی‌شود.
+Sync دستی از پنل Admin در دسترس است. Sync Production همچنین با فرمان مستقل
+داخل Container وب اجرا می‌شود و به چرخه یا Restart شدن Worker Provisioning
+وابسته نیست. Process مستقل `catalog-sync` همین GETها را با
+`CATALOG_SYNC_INTERVAL_MS` زمان‌بندی می‌کند. شکست یک Provider مانع Sync
+Provider دیگر یا پردازش Provisioning نمی‌شود.
+
+ورودی صریح Production از Bundle داخل Image استفاده می‌کند و به Source
+TypeScript یا Resolver تست وابسته نیست:
+
+```text
+npm run sync:catalog:parspack
+npm run sync:catalog:arvan
+npm run sync:catalog:all
+```
+
+هر سه فرمان فقط Adapterهای `CloudProviderAdapter` و Endpointهای GET همین سند
+را فراخوانی می‌کنند. خروجی شامل Provider، زمان شروع/پایان، Status، Countها و
+کد خطای Sanitized است و هیچ Secret یا Response خامی ندارد.
 
 درخواست Customer Full Catalog Sync اجرا نمی‌کند. صفحه Catalog دیتابیس را
-می‌خواند؛ اگر SLA گذشته باشد `syncRequestedAt` برای Worker ثبت می‌شود. دادهٔ
-Last-known-good بنا بر تنظیم Plan می‌تواند صرفاً برای مشاهده باقی بماند و خرید
-Catalog API تا بازیابی ارتباط Fail-closed است. Lease دیتابیسی از Sync همزمان
-جلوگیری می‌کند. Selection قفل‌شدهٔ Catalog API پیش از Quote و Payment با
+می‌خواند؛ اگر SLA گذشته باشد `syncRequestedAt` به‌عنوان سیگنال عملیاتی ثبت
+می‌شود و Scheduler مستقل در چرخهٔ ثابت بعدی Sync می‌کند. دادهٔ Last-known-good
+بنا بر تنظیم Plan می‌تواند صرفاً برای مشاهده باقی بماند و خرید Catalog API تا
+بازیابی ارتباط Fail-closed است. Lease دیتابیسی از Sync همزمان جلوگیری می‌کند.
+Selection قفل‌شدهٔ Catalog API پیش از Quote و Payment با
 GETهای هدفمند Provider دوباره اعتبارسنجی می‌شود؛ قرارداد دستی API-backed نیز
 همین Revalidation را دور نمی‌زند. فقط موجودی ازپیش‌ساختهٔ سالم و تازه که اتمیک
 رزرو شده باشد می‌تواند در قطعی موقت Catalog خریداری شود.
@@ -454,8 +475,10 @@ Mutation Gate پیش‌فرض بسته است و فقط در Dispatch واقعی
 تمام Provider Requestها Timeout دارند. Retry محدود و Exponential Backoff فقط
 برای GETهای امن است. Circuit Breaker جلوی فشار مکرر را می‌گیرد. Authorization،
 API Key، Token، Password، SSH Key و Init Script از Payloadهای Log Redact
-می‌شوند. Customer هیچ نام Provider، Base Price، Raw Payload یا Provider Error
-دریافت نمی‌کند.
+می‌شوند. Customer هیچ نام Provider، Raw Payload یا Provider Error دریافت
+نمی‌کند. صفحه Catalog می‌تواند قیمت پایهٔ نرمال‌شده، Markup و واحد/بازهٔ قیمت
+را برای شفافیت نمایش دهد، اما Secret و دادهٔ خام Provider هرگز به Client
+نمی‌رسد.
 
 ## Migration و Rollback
 

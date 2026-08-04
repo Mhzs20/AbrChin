@@ -29,10 +29,12 @@ export function ReadyServerQuoteButton({
   planId,
   productPath = "cloud-servers",
   disabled = false,
+  disabledReason,
 }: {
   planId: string;
   productPath?: "cloud-servers" | "ready-servers";
   disabled?: boolean;
+  disabledReason?: string;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -218,7 +220,7 @@ export function ReadyServerQuoteButton({
           type="button"
         >
           {disabled ? (
-            "در انتظار بررسی دوبارهٔ ظرفیت"
+            disabledReason ?? "در انتظار بررسی دوبارهٔ ظرفیت"
           ) : loading ? (
             <>
               <LoaderCircle

@@ -2,7 +2,6 @@ import { InfrastructureProvider } from "@prisma/client";
 
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/db";
-import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
 import {
   safeProviderSyncCode,
   settleProviderCatalogSyncTasks,
@@ -10,7 +9,6 @@ import {
 import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
 import {
   isCloudProviderConfigured,
-  isProviderConfigured,
 } from "@/lib/infrastructure/provider-factory";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 
@@ -41,7 +39,7 @@ async function publicState(provider: InfrastructureProvider) {
         ? "Sync ناقص؛ Regionهای سالم حفظ شدند"
         : state.lastError ?? "کاتالوگ و قیمت‌ها ذخیره شدند",
     apiVersion: state.apiVersion,
-    enabled: state.enabled,
+    enabled: pricing?.enabled ?? false,
     lastHealthCheck: state.lastHealthCheck?.toISOString() ?? null,
     lastCatalogSync: state.lastCatalogSync?.toISOString() ?? null,
     regionCount: state.regionCount,
@@ -78,18 +76,15 @@ export async function POST(request: Request) {
     const provider = parseProvider(body.provider);
     if (!provider) return jsonError("Provider معتبر نیست.", 400);
 
-    let promise: Promise<unknown>;
-    if (provider === InfrastructureProvider.ARVAN) {
-      if (!isCloudProviderConfigured(provider)) {
-        return jsonError("آروان‌کلاد تنظیم نشده است.", 400);
-      }
-      promise = refreshMultiProviderCatalog(provider);
-    } else {
-      if (!isProviderConfigured()) {
-        return jsonError("پارس‌پک تنظیم نشده است.", 400);
-      }
-      promise = refreshProviderCatalogForPricing();
+    if (!isCloudProviderConfigured(provider)) {
+      return jsonError(
+        provider === InfrastructureProvider.ARVAN
+          ? "آروان‌کلاد تنظیم نشده است."
+          : "پارس‌پک تنظیم نشده است.",
+        400,
+      );
     }
+    const promise = refreshMultiProviderCatalog(provider);
     const [result] = await settleProviderCatalogSyncTasks(
       [{ provider, apiVersion: "v1", operation: "catalog_sync", promise }],
       undefined,

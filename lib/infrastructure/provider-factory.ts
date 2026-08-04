@@ -28,15 +28,7 @@ export function createInfrastructureProvider(): InfrastructureProviderAdapter {
     if (env.isProduction && mode !== "parspack") {
       throw new InfrastructureError("provider_disabled", "Mock provider is not allowed in production");
     }
-    return new ParsPackProvider({
-      managementBaseUrl: env.parspackApiBaseUrl,
-      publicBaseUrl: env.parspackPublicApiBaseUrl,
-      token: env.parspackApiToken,
-      timeoutMs: env.parspackTimeoutMs,
-      priceCurrencyCode: env.parspackPriceCurrency,
-      priceAmountUnit: env.parspackPriceAmountUnit,
-      mutationsEnabled: env.parspackMutationsEnabled,
-    });
+    return createParsPackProviderClient();
   }
 
   if (env.isProduction) {
@@ -46,7 +38,7 @@ export function createInfrastructureProvider(): InfrastructureProviderAdapter {
   return new MockInfrastructureProvider();
 }
 
-function createParsPackClient(): ParsPackProvider {
+export function createParsPackProviderClient(): ParsPackProvider {
   const env = getEnv();
   if (!env.parspackEnabled || !env.parspackApiToken) {
     throw new InfrastructureError(
@@ -106,7 +98,7 @@ export function createCloudProviderAdapter(
     });
   }
   if (provider === InfrastructureProvider.PARSPACK) {
-    return new ParsPackV1Adapter(createParsPackClient());
+    return new ParsPackV1Adapter(createParsPackProviderClient());
   }
   throw new InfrastructureError(
     "provider_disabled",

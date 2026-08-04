@@ -156,6 +156,36 @@ export async function executePayOrderWithWalletTx(
     productKind: plan.productKind,
     offerSource: plan.offerSource,
   });
+  if (plan.offerSource === "API_CATALOG") {
+    const [catalogState, regionSaleEnabled] = await Promise.all([
+      tx.providerCatalogState.findUnique({
+        where: { provider: plan.provider },
+      }),
+      plan.provider === InfrastructureProvider.ARVAN
+        ? tx.providerRegionConfig.findFirst({
+            where: {
+              provider: plan.provider,
+              apiVersion: plan.providerApiVersion,
+              regionCode: plan.regionCode,
+              saleEnabled: true,
+            },
+            select: { id: true },
+          })
+        : Promise.resolve({ id: "not-required" }),
+    ]);
+    const lastSync = catalogState?.lastCatalogSync;
+    const fresh =
+      catalogState?.lastSyncStatus === "SUCCEEDED" &&
+      lastSync != null &&
+      Date.now() - lastSync.getTime() <=
+        (catalogState.freshnessSlaSeconds ?? 900) * 1000;
+    if (!regionSaleEnabled || !fresh) {
+      throw new WalletError(
+        "quote_unavailable",
+        "قیمت یا ظرفیت این سفارش تازه نیست؛ مبلغی برداشت نشد.",
+      );
+    }
+  }
   const pricingConfig = await tx.providerPricingConfig.findUnique({
     where: { provider: plan.provider },
   });

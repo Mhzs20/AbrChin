@@ -21,6 +21,7 @@ import {
 import {
   getCatalogFreshness,
 } from "@/lib/infrastructure/multi-provider-catalog-service";
+import { isRegionEnabledForSale } from "@/lib/infrastructure/provider-region-config";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import {
   assertPublicSaleEnabled,
@@ -178,13 +179,42 @@ async function requireFreshCatalog(provider: InfrastructureProvider) {
   }
 }
 
+async function requireRegionSaleEnabled(input: {
+  provider: InfrastructureProvider;
+  providerApiVersion: string;
+  productKind: InfrastructureProductKind;
+  offerSource: string;
+  regionCode: string;
+}) {
+  if (
+    input.provider !== InfrastructureProvider.ARVAN ||
+    input.offerSource !== "API_CATALOG"
+  ) {
+    return;
+  }
+  if (
+    !(await isRegionEnabledForSale({
+      provider: input.provider,
+      apiVersion: input.providerApiVersion,
+      regionCode: input.regionCode,
+    }))
+  ) {
+    throw new WalletError(
+      "provider_sale_disabled",
+      "فروش عمومی این موقعیت موقتاً غیرفعال است؛ مبلغی برداشت نشد.",
+    );
+  }
+}
+
 async function lockAndRevalidatePlan(
   plan: PricedInfrastructurePlan,
   delivery: CatalogDeliverySelection,
 ): Promise<{
   configuration: LockedDeliveryConfiguration;
   providerPriceCheckedAt: Date;
+  providerHourlyPriceIrr: bigint | null;
 }> {
+  await requireRegionSaleEnabled(plan);
   assertProviderRoute({
     productKind: plan.productKind,
     provider: plan.provider,
@@ -370,6 +400,9 @@ async function lockAndRevalidatePlan(
   if (
     current.monthlyPriceIrr !==
       plan.pricing.providerBasePriceRial ||
+    (plan.productKind === InfrastructureProductKind.CLOUD_SERVER &&
+      current.hourlyPriceIrr !==
+        plan.catalogItem.providerHourlyPriceIrr) ||
     current.currency !== plan.pricing.currency
   ) {
     throw new WalletError(
@@ -408,6 +441,7 @@ async function lockAndRevalidatePlan(
       configuredAt: current.checkedAt.toISOString(),
     },
     providerPriceCheckedAt: current.checkedAt,
+    providerHourlyPriceIrr: current.hourlyPriceIrr,
   };
 }
 
@@ -602,6 +636,7 @@ async function createCatalogServerQuote(params: {
       providerApiVersion: true,
       productKind: true,
       offerSource: true,
+      regionCode: true,
     },
   });
   if (
@@ -621,6 +656,7 @@ async function createCatalogServerQuote(params: {
     throw new WalletError("quote_unavailable", "این انتخاب معتبر نیست.");
   }
   assertPublicSaleEnabled(route);
+  await requireRegionSaleEnabled(route);
   const existing = await prisma.recommendationSession.findUnique({
     where: {
       catalogCheckoutIdempotencyKey: params.idempotencyKey,
@@ -838,8 +874,7 @@ async function createCatalogServerQuote(params: {
             : plan.pricing.ramGb * 1024,
         diskGbSnapshot: plan.pricing.storageGb,
         operatingSystemSnapshot: locked.configuration.operatingSystem,
-        providerHourlyPriceIrr:
-          plan.catalogItem.providerHourlyPriceIrr,
+        providerHourlyPriceIrr: locked.providerHourlyPriceIrr,
         providerMonthlyPriceIrr:
           plan.pricing.providerBasePriceRial,
         markupAmountIrr: plan.pricing.markupAmountRial,
@@ -929,6 +964,7 @@ export async function getCatalogServerDeliveryOptions(params: {
     productKind: plan.productKind,
     offerSource: plan.offerSource,
   });
+  await requireRegionSaleEnabled(plan);
   if (plan.offerSource === "API_CATALOG") {
     await requireFreshCatalog(plan.provider);
   }
@@ -1114,6 +1150,8 @@ export async function createRecommendationQuotes(params: {
   if (
     current.monthlyPriceIrr !==
       configuredPlan.pricing.providerBasePriceRial ||
+    current.hourlyPriceIrr !==
+      configuredPlan.catalogItem.providerHourlyPriceIrr ||
     current.currency !== configuredPlan.pricing.currency
   ) {
     throw new WalletError(
@@ -1126,6 +1164,7 @@ export async function createRecommendationQuotes(params: {
     role: "RECOMMENDED" as const,
     configuration: lockedConfiguration,
     providerPriceCheckedAt: current.checkedAt,
+    providerHourlyPriceIrr: current.hourlyPriceIrr,
   };
   const comparisons = params.includeComparisons
     ? candidates
@@ -1223,6 +1262,7 @@ export async function createRecommendationQuotes(params: {
             plan,
             configuration,
             providerPriceCheckedAt,
+            providerHourlyPriceIrr,
           }) => ({
           role,
           status: RecommendationQuoteStatus.ACTIVE,
@@ -1258,8 +1298,7 @@ export async function createRecommendationQuotes(params: {
             plan.pricing.ramGb == null ? null : plan.pricing.ramGb * 1024,
           diskGbSnapshot: plan.pricing.storageGb,
           operatingSystemSnapshot: configuration.operatingSystem,
-          providerHourlyPriceIrr:
-            plan.catalogItem.providerHourlyPriceIrr,
+          providerHourlyPriceIrr,
           providerMonthlyPriceIrr: plan.pricing.providerBasePriceRial,
           markupAmountIrr: plan.pricing.markupAmountRial,
           parchinLevel: plan.pricing.parchinLevel,
@@ -1345,6 +1384,11 @@ export async function getActiveRecommendationQuote(
       offerSource: quote.plan.offerSource,
     })
   ) {
+    return null;
+  }
+  try {
+    await requireRegionSaleEnabled(quote.plan);
+  } catch {
     return null;
   }
   try {

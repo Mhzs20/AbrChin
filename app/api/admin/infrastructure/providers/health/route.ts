@@ -5,9 +5,7 @@ import { runServiceConnectionCheck } from "@/lib/admin/service-connections";
 import { toSafeConnectionFailure } from "@/lib/admin/service-connection-safety";
 import { prisma } from "@/lib/db";
 import {
-  createInfrastructureProvider,
   isCloudProviderConfigured,
-  isProviderConfigured,
 } from "@/lib/infrastructure/provider-factory";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 
@@ -29,26 +27,19 @@ export async function POST(request: Request) {
         : null;
     if (!provider) return jsonError("Provider معتبر نیست.", 400);
 
-    const configured =
-      provider === InfrastructureProvider.ARVAN
-        ? isCloudProviderConfigured(provider)
-        : isProviderConfigured();
+    const configured = isCloudProviderConfigured(provider);
     const checkedAt = new Date();
     let ok = false;
     let message = "تنظیم نشده";
     const providerRequestId: string | null = null;
     if (configured) {
-      if (provider === InfrastructureProvider.ARVAN) {
-        const connection = await runServiceConnectionCheck(
-          ServiceConnectionName.ARVAN,
-        );
-        ok = connection.status === "HEALTHY";
-        message = connection.message;
-      } else {
-        const health = await createInfrastructureProvider().checkConnection();
-        ok = health.ok;
-        message = health.message;
-      }
+      const connection = await runServiceConnectionCheck(
+        provider === InfrastructureProvider.ARVAN
+          ? ServiceConnectionName.ARVAN
+          : ServiceConnectionName.PARSPACK,
+      );
+      ok = connection.status === "HEALTHY";
+      message = connection.message;
     }
     const state = await prisma.providerCatalogState.upsert({
       where: { provider },
@@ -75,7 +66,7 @@ export async function POST(request: Request) {
         status: configured ? (ok ? "healthy" : "error") : "unconfigured",
         message,
         apiVersion: state.apiVersion,
-        enabled: state.enabled,
+        enabled: pricing?.enabled ?? false,
         lastHealthCheck: state.lastHealthCheck?.toISOString() ?? null,
         lastCatalogSync: state.lastCatalogSync?.toISOString() ?? null,
         regionCount: state.regionCount,

@@ -18,9 +18,20 @@ export type ProviderPlan = {
   vcpu: number | null;
   ramMb: number | null;
   diskGb: number | null;
+  transfer?: string | null;
   resourceContractValid: boolean;
   resourceContractError?: string | null;
   available: boolean;
+  /**
+   * Exact provider amounts as returned by the documented catalog endpoint.
+   * Decimal providers use an integer plus `priceScale`; normalized IRR values
+   * below are the only amounts used by pricing and billing code.
+   */
+  priceHourlyAmount?: bigint | null;
+  priceMonthlyAmount?: bigint | null;
+  priceScale?: number;
+  currencyCode?: string | null;
+  amountUnit?: string | null;
   priceHourlyIrr: bigint | null;
   priceMonthlyIrr: bigint | null;
   sourceMoneyUnit: string;

@@ -16,7 +16,10 @@ import { isCloudProviderConfigured } from "@/lib/infrastructure/provider-factory
 import { getWorkerHealthStatus } from "@/lib/infrastructure/provisioning-service";
 import { ensureGatewayConfigsSeeded } from "@/lib/payments/gateway-config";
 import { hasServerCredentials } from "@/lib/payments/provider-factory";
-import { catalogItemBasePriceRial } from "@/lib/pricing/plan-pricing";
+import {
+  catalogItemBaseHourlyPriceRial,
+  catalogItemBasePriceRial,
+} from "@/lib/pricing/plan-pricing";
 import { calculateQuotePricing } from "@/lib/pricing/quote-line-items";
 import { assessInfrastructureRecoveryActions } from "@/lib/infrastructure/resource-disposition";
 import { getOperationalAlertConfigurationStatus } from "@/lib/operations/alert-configuration";
@@ -130,7 +133,7 @@ export async function getSystemStatuses() {
     status,
     message,
     apiVersion: state?.apiVersion ?? "v1",
-    enabled: state?.enabled ?? true,
+    enabled: providerPricing?.enabled ?? false,
     lastHealthCheck: state?.lastHealthCheck?.toISOString() ?? null,
     lastCatalogSync: state?.lastCatalogSync?.toISOString() ?? null,
     regionCount: state?.regionCount ?? 0,
@@ -206,6 +209,14 @@ export async function getProviderCatalogAdminView() {
     await Promise.all([
     prisma.providerCatalogItem.findMany({
       where: { active: true },
+      include: {
+        plans: {
+          select: {
+            active: true,
+            publicationStatus: true,
+          },
+        },
+      },
       orderBy: [
         { provider: "asc" },
         { regionCode: "asc" },
@@ -228,6 +239,7 @@ export async function getProviderCatalogAdminView() {
         entry.apiVersion === item.apiVersion &&
         entry.productKind === item.productKind,
     );
+    const baseHourlyPriceRial = catalogItemBaseHourlyPriceRial(item);
     const basePriceRial = catalogItemBasePriceRial(item);
     const finalPriceRial =
       basePriceRial == null ||
@@ -247,6 +259,7 @@ export async function getProviderCatalogAdminView() {
       id: item.id,
       provider: item.provider,
       apiVersion: item.apiVersion,
+      productKind: item.productKind,
       source: item.source,
       status: item.status,
       regionCode: item.regionCode,
@@ -256,8 +269,22 @@ export async function getProviderCatalogAdminView() {
       diskGb: item.diskGb,
       available: item.available,
       priced: basePriceRial != null,
+      baseHourlyPriceRial: baseHourlyPriceRial?.toString() ?? null,
       basePriceRial: basePriceRial?.toString() ?? null,
       finalPriceRial: finalPriceRial?.toString() ?? null,
+      currencyCode: item.currencyCode,
+      amountUnit: item.amountUnit,
+      billingIntervals: [
+        ...(baseHourlyPriceRial == null ? [] : ["HOURLY"]),
+        ...(basePriceRial == null ? [] : ["MONTHLY"]),
+      ],
+      providerMarkupBasisPoints: config?.markupBasisPoints ?? null,
+      productMarkupBasisPoints: product?.markupBasisPoints ?? null,
+      taxBasisPoints: commerce?.taxBps ?? null,
+      publishedSkuCount: item.plans.filter(
+        (plan) =>
+          plan.active && plan.publicationStatus === "PUBLISHED",
+      ).length,
       lastSyncedAt: item.lastSyncedAt.toISOString(),
       manualAvailableUnits: item.manualAvailableUnits,
       manualPriceValidUntil: item.manualPriceValidUntil?.toISOString() ?? null,
@@ -281,6 +308,8 @@ export async function getProviderSyncRunsAdminView() {
     failedRegions: run.failedRegions,
     planCount: run.planCount,
     imageCount: run.imageCount,
+    networkCount: run.networkCount,
+    securityCount: run.securityCount,
     durationMs: run.durationMs,
     report: run.report,
     startedAt: run.startedAt.toISOString(),

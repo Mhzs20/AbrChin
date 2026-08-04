@@ -1,4 +1,7 @@
-import { InfrastructureProvider } from "@prisma/client";
+import {
+  InfrastructureProductKind,
+  InfrastructureProvider,
+} from "@prisma/client";
 
 import type {
   CloudProviderAdapter,
@@ -52,6 +55,14 @@ const MEBIBYTE = 1_048_576;
 const GIBIBYTE = 1_073_741_824;
 const DEFAULT_SECURITY_REAL_NAME = "arDefault";
 const SAFE_RETRY_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const UNAVAILABLE_STATUSES = new Set([
+  "disabled",
+  "down",
+  "error",
+  "inactive",
+  "sold_out",
+  "unavailable",
+]);
 const SECRET_KEYS = new Set([
   "authorization",
   "api_key",
@@ -73,7 +84,12 @@ function asString(value: unknown): string {
 }
 
 function asBoolean(value: unknown, fallback = true): boolean {
-  return typeof value === "boolean" ? value : fallback;
+  if (value == null) return fallback;
+  if (typeof value === "boolean") return value;
+  throw new InfrastructureError(
+    "provider_invalid_response",
+    "Arvan returned an invalid boolean",
+  );
 }
 
 function asInteger(value: unknown): number | null {
@@ -83,6 +99,18 @@ function asInteger(value: unknown): number | null {
     return Number.isSafeInteger(parsed) ? parsed : null;
   }
   return null;
+}
+
+function optionalNonNegativeInteger(value: unknown): number | null {
+  if (value == null) return null;
+  const parsed = asInteger(value);
+  if (parsed == null || parsed < 0) {
+    throw new InfrastructureError(
+      "provider_invalid_response",
+      "Arvan returned an invalid resource constraint",
+    );
+  }
+  return parsed;
 }
 
 function parseDate(value: unknown): Date | null {
@@ -113,6 +141,25 @@ function unwrapRecord(payload: unknown): UnknownRecord {
   if (isRecord(payload.data)) return payload.data;
   if (isRecord(payload.server)) return payload.server;
   return payload;
+}
+
+function providerRecords(payload: unknown, keys: string[]): UnknownRecord[] {
+  let values: unknown[];
+  try {
+    values = unwrapCollection(payload, keys);
+  } catch {
+    throw new InfrastructureError(
+      "provider_invalid_response",
+      "Arvan returned an invalid collection",
+    );
+  }
+  if (values.some((value) => !isRecord(value))) {
+    throw new InfrastructureError(
+      "provider_invalid_response",
+      "Arvan returned an invalid catalog record",
+    );
+  }
+  return values as UnknownRecord[];
 }
 
 export function normalizeArvanV1BaseUrl(value = DEFAULT_ROOT): string {
@@ -227,9 +274,13 @@ export function redactProviderData(value: unknown): unknown {
   if (!isRecord(value)) return value;
   const safe: UnknownRecord = {};
   for (const [key, item] of Object.entries(value)) {
-    safe[key] = SECRET_KEYS.has(key.toLowerCase())
-      ? "[REDACTED]"
-      : redactProviderData(item);
+    const normalizedKey = key.toLowerCase();
+    const publicCapabilityFlag =
+      normalizedKey === "ssh_key" && typeof item === "boolean";
+    safe[key] =
+      SECRET_KEYS.has(normalizedKey) && !publicCapabilityFlag
+        ? "[REDACTED]"
+        : redactProviderData(item);
   }
   return safe;
 }
@@ -539,29 +590,36 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
       "GET",
       `/regions/${encodeURIComponent(region)}/sizes`,
     );
-    return unwrapCollection(response.body, ["sizes", "plans"])
-      .filter(isRecord)
+    const records = providerRecords(response.body, ["sizes", "plans"]);
+    if (records.some((raw) => !asString(raw.id))) {
+      throw new InfrastructureError(
+        "provider_invalid_response",
+        "Arvan returned a plan without an id",
+      );
+    }
+    return records
       .map((raw) => {
         const externalPlanId = asString(raw.id);
         const resources = normalizeArvanPlanResources(raw);
         const vcpu = asInteger(raw.cpu_count);
-        let priceHourlyIrr: bigint | null = null;
-        let priceMonthlyIrr: bigint | null = null;
-        try {
-          priceHourlyIrr = normalizeProviderMoney(
-            this.provider,
-            raw.price_per_hour,
-            "IRR",
-          );
-          priceMonthlyIrr = normalizeProviderMoney(
-            this.provider,
-            raw.price_per_month,
-            "IRR",
-          );
-        } catch {
-          priceHourlyIrr = null;
-          priceMonthlyIrr = null;
-        }
+        const providerAvailable =
+          asBoolean(raw.available, true) &&
+          asBoolean(raw.enabled, true) &&
+          !UNAVAILABLE_STATUSES.has(asString(raw.status).toLowerCase());
+        const normalizePrice = (value: unknown): bigint | null => {
+          try {
+            const amount = normalizeProviderMoney(
+              this.provider,
+              value,
+              "IRR",
+            );
+            return amount > 0n ? amount : null;
+          } catch {
+            return null;
+          }
+        };
+        const priceHourlyIrr = normalizePrice(raw.price_per_hour);
+        const priceMonthlyIrr = normalizePrice(raw.price_per_month);
         return {
           externalPlanId,
           region,
@@ -574,13 +632,18 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
           resourceContractError:
             resources.error ??
             (vcpu == null || vcpu <= 0 ? "invalid_cpu" : null),
-          available:
-            externalPlanId.length > 0 &&
-            resources.valid &&
-            vcpu != null &&
-            vcpu > 0 &&
-            priceMonthlyIrr != null &&
-            priceMonthlyIrr > 0n,
+          available: externalPlanId.length > 0 && providerAvailable,
+          priceHourlyAmount:
+            priceHourlyIrr != null && priceHourlyIrr > 0n
+              ? priceHourlyIrr
+              : null,
+          priceMonthlyAmount:
+            priceMonthlyIrr != null && priceMonthlyIrr > 0n
+              ? priceMonthlyIrr
+              : null,
+          priceScale: 0,
+          currencyCode: "IRR",
+          amountUnit: "RIAL",
           priceHourlyIrr:
             priceHourlyIrr != null && priceHourlyIrr > 0n
               ? priceHourlyIrr
@@ -596,8 +659,7 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
             ? { providerRequestId: response.requestId }
             : {}),
         };
-      })
-      .filter((plan) => plan.externalPlanId.length > 0);
+      });
   }
 
   async syncImages(region: string): Promise<ProviderImage[]> {
@@ -605,18 +667,36 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
       "GET",
       `/regions/${encodeURIComponent(region)}/images?type=distributions`,
     );
-    const groups = unwrapCollection(response.body, ["images", "distributions"]);
+    const groups = providerRecords(response.body, [
+      "images",
+      "distributions",
+    ]);
     const images: ProviderImage[] = [];
     for (const groupValue of groups) {
-      if (!isRecord(groupValue)) continue;
       const group = asString(groupValue.name) || asString(groupValue.group);
       const groupImages = Array.isArray(groupValue.images)
         ? groupValue.images
         : [groupValue];
+      if (groupImages.some((imageValue) => !isRecord(imageValue))) {
+        throw new InfrastructureError(
+          "provider_invalid_response",
+          "Arvan returned an invalid image record",
+        );
+      }
       for (const imageValue of groupImages) {
-        if (!isRecord(imageValue)) continue;
+        if (!isRecord(imageValue)) {
+          throw new InfrastructureError(
+            "provider_invalid_response",
+            "Arvan returned an invalid image record",
+          );
+        }
         const externalId = asString(imageValue.id);
-        if (!externalId) continue;
+        if (!externalId) {
+          throw new InfrastructureError(
+            "provider_invalid_response",
+            "Arvan returned an image without an id",
+          );
+        }
         images.push({
           externalId,
           region,
@@ -626,9 +706,14 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
             asString(imageValue.os_description) ||
             group ||
             null,
-          minDiskGb: asInteger(imageValue.disk),
-          minRamMb: asInteger(imageValue.ram),
-          available: true,
+          minDiskGb: optionalNonNegativeInteger(imageValue.disk),
+          minRamMb: optionalNonNegativeInteger(imageValue.ram),
+          available:
+            asBoolean(imageValue.available, true) &&
+            asBoolean(imageValue.enabled, true) &&
+            !UNAVAILABLE_STATUSES.has(
+              asString(imageValue.status).toLowerCase(),
+            ),
           sshKeySupported:
             typeof imageValue.ssh_key === "boolean"
               ? imageValue.ssh_key
@@ -664,8 +749,20 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
     ]);
     const options = unwrapRecord(optionsResponse.body);
     const defaultNetworkId = asString(options.network_id);
-    return unwrapCollection(response.body, ["networks"])
-      .filter(isRecord)
+    if (!defaultNetworkId) {
+      throw new InfrastructureError(
+        "provider_invalid_response",
+        "Arvan returned no default network",
+      );
+    }
+    const records = providerRecords(response.body, ["networks"]);
+    if (records.some((raw) => !asString(raw.id))) {
+      throw new InfrastructureError(
+        "provider_invalid_response",
+        "Arvan returned a network without an id",
+      );
+    }
+    return records
       .map((raw) => ({
         externalId: asString(raw.id),
         region,
@@ -675,14 +772,15 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
           asString(raw.id) === defaultNetworkId,
         available:
           asBoolean(raw.admin_state_up, true) &&
-          !["down", "error"].includes(asString(raw.status).toLowerCase()),
+          asBoolean(raw.available, true) &&
+          asBoolean(raw.enabled, true) &&
+          !UNAVAILABLE_STATUSES.has(asString(raw.status).toLowerCase()),
         rawUpdatedAt: parseDate(raw.updated_at),
         rawPayload: redactProviderData(raw) as UnknownRecord,
         ...(response.requestId
           ? { providerRequestId: response.requestId }
           : {}),
-      }))
-      .filter((network) => network.externalId.length > 0);
+      }));
   }
 
   async syncSecurity(region: string): Promise<ProviderSecurity[]> {
@@ -690,8 +788,17 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
       "GET",
       `/regions/${encodeURIComponent(region)}/securities`,
     );
-    return unwrapCollection(response.body, ["securities", "security_groups"])
-      .filter(isRecord)
+    const records = providerRecords(response.body, [
+      "securities",
+      "security_groups",
+    ]);
+    if (records.some((raw) => !asString(raw.id))) {
+      throw new InfrastructureError(
+        "provider_invalid_response",
+        "Arvan returned a security group without an id",
+      );
+    }
+    return records
       .map((raw) => ({
         externalId: asString(raw.id),
         region,
@@ -699,14 +806,16 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
         isDefault:
           asString(raw.real_name) === DEFAULT_SECURITY_REAL_NAME ||
           asString(raw.name) === DEFAULT_SECURITY_REAL_NAME,
-        available: asString(raw.status).toLowerCase() !== "error",
+        available:
+          asBoolean(raw.available, true) &&
+          asBoolean(raw.enabled, true) &&
+          !UNAVAILABLE_STATUSES.has(asString(raw.status).toLowerCase()),
         rawUpdatedAt: parseDate(raw.updated_at),
         rawPayload: redactProviderData(raw) as UnknownRecord,
         ...(response.requestId
           ? { providerRequestId: response.requestId }
           : {}),
-      }))
-      .filter((security) => security.externalId.length > 0);
+      }));
   }
 
   async listSshKeys(region: string): Promise<ProviderSshKey[]> {
@@ -801,6 +910,12 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
     if (!plan.priceMonthlyIrr || plan.priceMonthlyIrr <= 0n) {
       return { valid: false, code: "invalid_price", checkedAt: new Date() };
     }
+    if (
+      input.productKind === InfrastructureProductKind.CLOUD_SERVER &&
+      (!plan.priceHourlyIrr || plan.priceHourlyIrr <= 0n)
+    ) {
+      return { valid: false, code: "invalid_price", checkedAt: new Date() };
+    }
     const image = images.find(
       (candidate) => candidate.externalId === input.externalImageId,
     );
@@ -860,7 +975,12 @@ export class ArvanV1Adapter implements CloudProviderAdapter {
     const plan = (await this.syncPlans(input.region)).find(
       (candidate) => candidate.externalPlanId === input.externalPlanId,
     );
-    if (!plan?.available || !plan.priceMonthlyIrr) {
+    if (
+      !plan?.available ||
+      !plan.priceMonthlyIrr ||
+      (input.productKind === InfrastructureProductKind.CLOUD_SERVER &&
+        !plan.priceHourlyIrr)
+    ) {
       throw new InfrastructureError(
         "provider_unavailable",
         "Arvan plan is not sellable",

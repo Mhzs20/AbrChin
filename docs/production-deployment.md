@@ -10,6 +10,8 @@
 - PostgreSQL 16 با Volume پایدار
 - Next.js Web
 - Worker برای Provisioning، Billing Settlement، Dunning و Reconciliation
+- Scheduler مستقل Read-only برای Catalog Sync؛ این Process هیچ Provisioning
+  یا Provider Mutation اجرا نمی‌کند
 
 ## Bootstrap
 
@@ -19,7 +21,8 @@
 3. `docker compose ... config --quiet` را اجرا کنید.
 4. فقط `prisma migrate deploy` مجاز است؛ `migrate dev` یا Reset در Production
    ممنوع است.
-5. پس از Migration، Web و Worker را با همان Image/SHA بالا بیاورید.
+5. پس از Migration، Web، Worker و `catalog-sync` را با همان Image/SHA بالا
+   بیاورید.
 
 ## Secret و Environment
 
@@ -70,12 +73,56 @@ Sale و Mutation مستقل هستند. Sale فقط Listing/Estimate/Wallet Top-
 
 - `/api/health` برای Liveness
 - `/api/readiness` برای Database و Worker heartbeat
+- `docker compose --env-file .env.production -f compose.production.yaml ps
+  catalog-sync` برای Running بودن Scheduler مستقل
 - آخرین `ServiceConnectionCheck` در Admin
 - Arvan Connection Check با GET احرازشده و بدون Mutation
 - Catalog/Rate freshness بدون Auto-publish
 - Operations Center با ۱۲ Queue مالی و عملیاتی
 
 این Checkها مجوز Public Sale نیستند.
+
+```bash
+curl --fail --silent --show-error https://abrchin.ir/api/health
+curl --fail --silent --show-error https://abrchin.ir/api/readiness
+curl --fail --silent --show-error https://abrchin.ir/cloud-servers >/dev/null
+docker compose --env-file .env.production -f compose.production.yaml \
+  ps web worker catalog-sync db
+```
+
+## Catalog Sync خواندنی
+
+Image Production فایل `dist/catalog-sync/catalog-sync.js` را دارد. فرمان‌های
+زیر داخل `abrchin-web` اجرا می‌شوند و به Worker یا فایل‌های تست وابسته نیستند:
+
+```bash
+docker compose --env-file .env.production -f compose.production.yaml \
+  exec -T web npm run sync:catalog:parspack
+
+docker compose --env-file .env.production -f compose.production.yaml \
+  exec -T web npm run sync:catalog:arvan
+
+# اختیاری: هر دو Provider، مستقل و به ترتیب ثابت
+docker compose --env-file .env.production -f compose.production.yaml \
+  exec -T web npm run sync:catalog:all
+```
+
+هر خط نتیجه JSON فقط فیلدهای امن زیر را دارد:
+
+```text
+event, readOnly, ok, provider, apiVersion, status,
+startedAt, completedAt, durationMs, catalogVersion,
+counts, failureCodes | safeError
+```
+
+`counts` شامل Region، Plan، Image، Network، Security، Catalog Item، Priced،
+Unavailable، Stale، Invalid Price و Invalid Resource است. Token، Authorization
+Header، URL دارای Secret و Response خام چاپ یا ذخیره نمی‌شوند. Status غیر
+`SUCCEEDED` Exit Code غیرصفر دارد، اما دادهٔ سالم قبلی حذف نمی‌شود.
+
+سرویس `catalog-sync` همین مسیر را با `CATALOG_SYNC_INTERVAL_MS` اجرا می‌کند.
+فرمان‌های دستی بالا برای Sync فوری هستند و به Restart سرویس
+`abrchin-worker` وابسته نیستند.
 
 ## Founder test
 

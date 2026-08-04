@@ -12,6 +12,7 @@ import {
 
 import { prisma } from "@/lib/db";
 import { assertServerSecrets } from "@/lib/env";
+import { assertPublicSaleEnabled } from "@/lib/infrastructure/public-sale-policy";
 import { executePayOrderWithWalletTx } from "@/lib/orders/pay-order-tx";
 import { PaymentError } from "@/lib/payments/errors";
 import {
@@ -59,7 +60,11 @@ export async function createOrderPaymentIntent(input: {
     resolveDefaultPaymentGateway(),
     prisma.serviceOrder.findFirst({
       where: { id: input.orderId, userId: input.userId },
-      include: { orderPayment: true, plan: true },
+      include: {
+        orderPayment: true,
+        plan: { include: { catalogItem: true } },
+        recommendationQuote: { include: { session: true } },
+      },
     }),
     ensureWalletForUser(input.userId),
   ]);
@@ -70,6 +75,48 @@ export async function createOrderPaymentIntent(input: {
       "درگاه بانکی برای سرور ابری فقط Wallet را شارژ می‌کند.",
     );
   }
+  if (order.plan) {
+    assertPublicSaleEnabled({
+      provider: order.plan.provider,
+      productKind: order.plan.productKind,
+      offerSource: order.plan.offerSource,
+    });
+    if (order.plan.offerSource === "API_CATALOG") {
+      const [catalogState, regionSaleEnabled] = await Promise.all([
+        prisma.providerCatalogState.findUnique({
+          where: { provider: order.plan.provider },
+        }),
+        order.plan.provider === "ARVAN"
+          ? prisma.providerRegionConfig.findFirst({
+              where: {
+                provider: order.plan.provider,
+                apiVersion: order.plan.providerApiVersion,
+                regionCode: order.plan.regionCode,
+                saleEnabled: true,
+              },
+              select: { id: true },
+            })
+          : Promise.resolve({ id: "not-required" }),
+      ]);
+      const lastSync = catalogState?.lastCatalogSync;
+      const fresh =
+        catalogState?.lastSyncStatus === "SUCCEEDED" &&
+        lastSync != null &&
+        Date.now() - lastSync.getTime() <=
+          (catalogState.freshnessSlaSeconds ?? 900) * 1000;
+      if (
+        !fresh ||
+        !regionSaleEnabled ||
+        order.plan.catalogItem?.status !== "ACTIVE" ||
+        !order.plan.catalogItem.available
+      ) {
+        throw new WalletError(
+          "quote_unavailable",
+          "قیمت یا ظرفیت این سفارش تازه نیست؛ ایجاد پرداخت متوقف شد.",
+        );
+      }
+    }
+  }
   if (wallet.status !== WalletStatus.ACTIVE) {
     throw new WalletError("wallet_frozen", "حساب پرداخت فعال نیست.");
   }
@@ -78,6 +125,28 @@ export async function createOrderPaymentIntent(input: {
   }
   if (order.status !== "PENDING_PAYMENT") {
     throw new WalletError("invalid_status", "این سفارش قابل پرداخت نیست.");
+  }
+  const now = new Date();
+  if (order.quoteExpiresAt && order.quoteExpiresAt <= now) {
+    throw new WalletError(
+      "quote_expired",
+      "اعتبار قیمت این سفارش تمام شده است؛ پرداخت ایجاد نشد.",
+    );
+  }
+  if (
+    order.recommendationQuote &&
+    (!["ACTIVE", "SELECTED"].includes(
+      order.recommendationQuote.status,
+    ) ||
+      order.recommendationQuote.expiresAt <= now ||
+      order.recommendationQuote.session.expiresAt <= now ||
+      order.recommendationQuote.amountRial !== order.amount ||
+      order.recommendationQuote.planId !== order.planId)
+  ) {
+    throw new WalletError(
+      "quote_expired",
+      "Estimate قفل‌شده معتبر نیست؛ پرداخت ایجاد نشد.",
+    );
   }
 
   const byKey = await prisma.orderPayment.findUnique({

@@ -17,10 +17,16 @@ import type {
   ProviderSecurity,
 } from "@/lib/infrastructure/cloud-provider-adapter";
 import { prisma } from "@/lib/db";
+import { InfrastructureError } from "@/lib/infrastructure/errors";
 import {
   createCloudProviderAdapter,
   isCloudProviderConfigured,
 } from "@/lib/infrastructure/provider-factory";
+import {
+  ProviderCatalogSyncError,
+  safeProviderSyncCode,
+  safeProviderSyncMessage,
+} from "@/lib/infrastructure/catalog-sync-observability";
 import {
   catalogExternalKey,
   resolveProviderRoute,
@@ -49,6 +55,29 @@ function jsonValue(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
 }
 
+async function assertCatalogSyncLeaseTx(
+  tx: Prisma.TransactionClient,
+  provider: InfrastructureProvider,
+  leaseToken?: string,
+): Promise<void> {
+  if (!leaseToken) return;
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"
+    FROM "ProviderCatalogState"
+    WHERE "provider"::text = ${provider}
+      AND "syncLeaseToken" = ${leaseToken}
+    FOR UPDATE
+  `;
+  if (rows.length !== 1) {
+    throw new ProviderCatalogSyncError({
+      provider,
+      apiVersion: "v1",
+      operation: "catalog_sync",
+      code: "provider_sync_failed",
+    });
+  }
+}
+
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value && typeof value === "object") {
@@ -64,21 +93,21 @@ export function providerPayloadHash(value: unknown): string {
   return createHash("sha256").update(stableJson(value)).digest("hex");
 }
 
-function safeRegionError(error: unknown): { code: string; message: string } {
-  const code =
-    error &&
-    typeof error === "object" &&
-    "code" in error &&
-    typeof error.code === "string"
-      ? error.code.slice(0, 80)
-      : "provider_sync_failed";
+function safeRegionError(error: unknown): {
+  code: ReturnType<typeof safeProviderSyncCode>;
+  message: string;
+} {
+  const code = safeProviderSyncCode(error);
   return {
     code,
-    message: "همگام‌سازی این Region کامل نشد؛ دادهٔ سالم قبلی حفظ شد.",
+    message: safeProviderSyncMessage(code),
   };
 }
 
-function catalogStatus(plan: ProviderPlan): ProviderCatalogStatus {
+export function providerCatalogStatus(
+  plan: ProviderPlan,
+  productKind: InfrastructureProductKind,
+): ProviderCatalogStatus {
   if (
     !plan.resourceContractValid ||
     plan.vcpu == null ||
@@ -91,6 +120,12 @@ function catalogStatus(plan: ProviderPlan): ProviderCatalogStatus {
     return ProviderCatalogStatus.INVALID_RESOURCE;
   }
   if (!plan.priceMonthlyIrr || plan.priceMonthlyIrr <= 0n) {
+    return ProviderCatalogStatus.INVALID_PRICE;
+  }
+  if (
+    productKind === InfrastructureProductKind.CLOUD_SERVER &&
+    (!plan.priceHourlyIrr || plan.priceHourlyIrr <= 0n)
+  ) {
     return ProviderCatalogStatus.INVALID_PRICE;
   }
   return plan.available
@@ -175,7 +210,7 @@ async function upsertAsset(
   });
 }
 
-async function persistSuccessfulRegion(input: {
+export type ProviderCatalogRegionPersistenceInput = {
   adapter: CloudProviderAdapter;
   productKind: InfrastructureProductKind;
   region: {
@@ -191,8 +226,19 @@ async function persistSuccessfulRegion(input: {
   securities: ProviderSecurity[];
   syncedAt: Date;
   catalogVersion: string;
-}) {
-  return prisma.$transaction(async (tx) => {
+  syncDurationMs?: number;
+  leaseToken?: string;
+};
+
+export async function persistProviderCatalogRegion(
+  tx: Prisma.TransactionClient,
+  input: ProviderCatalogRegionPersistenceInput,
+) {
+    await assertCatalogSyncLeaseTx(
+      tx,
+      input.adapter.provider,
+      input.leaseToken,
+    );
     await tx.providerCatalogRegionState.upsert({
       where: {
         provider_apiVersion_regionCode: {
@@ -211,6 +257,7 @@ async function persistSuccessfulRegion(input: {
         lastSuccessfulSyncAt: input.syncedAt,
         lastError: null,
         providerRequestId: input.region.providerRequestId ?? null,
+        syncDurationMs: input.syncDurationMs ?? null,
         rawPayload: jsonValue(input.region.rawPayload),
       },
       create: {
@@ -226,6 +273,7 @@ async function persistSuccessfulRegion(input: {
         lastSyncedAt: input.syncedAt,
         lastSuccessfulSyncAt: input.syncedAt,
         providerRequestId: input.region.providerRequestId ?? null,
+        syncDurationMs: input.syncDurationMs ?? null,
         rawPayload: jsonValue(input.region.rawPayload),
       },
     });
@@ -270,7 +318,7 @@ async function persistSuccessfulRegion(input: {
       });
       const images = compatibleImages(plan, input.images);
       const status = input.region.available
-        ? catalogStatus(plan)
+        ? providerCatalogStatus(plan, input.productKind)
         : ProviderCatalogStatus.UNAVAILABLE;
       await tx.providerCatalogItem.upsert({
         where: {
@@ -298,6 +346,7 @@ async function persistSuccessfulRegion(input: {
           vcpu: plan.vcpu,
           ramMb: plan.ramMb,
           diskGb: plan.diskGb,
+          transfer: plan.transfer ?? null,
           available:
             status === ProviderCatalogStatus.ACTIVE && images.length > 0,
           active: true,
@@ -305,11 +354,19 @@ async function persistSuccessfulRegion(input: {
             status === ProviderCatalogStatus.ACTIVE && images.length === 0
               ? ProviderCatalogStatus.UNAVAILABLE
               : status,
-          priceHourlyAmount: plan.priceHourlyIrr,
-          priceMonthlyAmount: plan.priceMonthlyIrr,
-          priceScale: 0,
-          currencyCode: "IRR",
-          amountUnit: "RIAL",
+          priceHourlyAmount:
+            plan.priceHourlyAmount === undefined
+              ? plan.priceHourlyIrr
+              : plan.priceHourlyAmount,
+          priceMonthlyAmount:
+            plan.priceMonthlyAmount === undefined
+              ? plan.priceMonthlyIrr
+              : plan.priceMonthlyAmount,
+          priceScale: plan.priceScale ?? 0,
+          currencyCode:
+            plan.currencyCode === undefined ? "IRR" : plan.currencyCode,
+          amountUnit:
+            plan.amountUnit === undefined ? "RIAL" : plan.amountUnit,
           providerHourlyPriceIrr: plan.priceHourlyIrr,
           providerMonthlyPriceIrr: plan.priceMonthlyIrr,
           lastSeenAt: input.syncedAt,
@@ -337,6 +394,7 @@ async function persistSuccessfulRegion(input: {
           vcpu: plan.vcpu,
           ramMb: plan.ramMb,
           diskGb: plan.diskGb,
+          transfer: plan.transfer ?? null,
           available:
             status === ProviderCatalogStatus.ACTIVE && images.length > 0,
           active: true,
@@ -344,11 +402,19 @@ async function persistSuccessfulRegion(input: {
             status === ProviderCatalogStatus.ACTIVE && images.length === 0
               ? ProviderCatalogStatus.UNAVAILABLE
               : status,
-          priceHourlyAmount: plan.priceHourlyIrr,
-          priceMonthlyAmount: plan.priceMonthlyIrr,
-          priceScale: 0,
-          currencyCode: "IRR",
-          amountUnit: "RIAL",
+          priceHourlyAmount:
+            plan.priceHourlyAmount === undefined
+              ? plan.priceHourlyIrr
+              : plan.priceHourlyAmount,
+          priceMonthlyAmount:
+            plan.priceMonthlyAmount === undefined
+              ? plan.priceMonthlyIrr
+              : plan.priceMonthlyAmount,
+          priceScale: plan.priceScale ?? 0,
+          currencyCode:
+            plan.currencyCode === undefined ? "IRR" : plan.currencyCode,
+          amountUnit:
+            plan.amountUnit === undefined ? "RIAL" : plan.amountUnit,
           providerHourlyPriceIrr: plan.priceHourlyIrr,
           providerMonthlyPriceIrr: plan.priceMonthlyIrr,
           lastSeenAt: input.syncedAt,
@@ -408,12 +474,20 @@ async function persistSuccessfulRegion(input: {
     // an explicit Admin decision and must never be created or overwritten by
     // a catalog refresh.
     return items.length;
-  });
+}
+
+async function persistSuccessfulRegion(
+  input: ProviderCatalogRegionPersistenceInput,
+) {
+  return prisma.$transaction((tx) =>
+    persistProviderCatalogRegion(tx, input),
+  );
 }
 
 async function syncMultiProviderCatalogUnlocked(
   adapter: CloudProviderAdapter,
   now = new Date(),
+  leaseToken?: string,
 ) {
   const route =
     adapter.provider === InfrastructureProvider.ARVAN
@@ -439,23 +513,27 @@ async function syncMultiProviderCatalogUnlocked(
     regions = await adapter.syncRegions();
   } catch (error) {
     const safe = safeRegionError(error);
-    await prisma.$transaction([
-      prisma.providerCatalogSyncRun.update({
+    await prisma.$transaction(async (tx) => {
+      await assertCatalogSyncLeaseTx(tx, adapter.provider, leaseToken);
+      await tx.providerCatalogSyncRun.update({
         where: { id: syncRun.id },
         data: {
           status: ProviderSyncStatus.FAILED,
+          failedRegions: 1,
           report: jsonValue({ root: safe }),
           finishedAt: new Date(),
           durationMs: Date.now() - startedMs,
         },
-      }),
-      prisma.providerCatalogState.upsert({
+      });
+      await tx.providerCatalogState.upsert({
         where: { provider: adapter.provider },
         update: {
           apiVersion: adapter.apiVersion,
           lastCatalogSync: now,
           lastSyncStatus: ProviderSyncStatus.FAILED,
           lastSyncDurationMs: Date.now() - startedMs,
+          syncRequestedAt: null,
+          regionErrors: jsonValue([{ region: null, ...safe }]),
           lastError: safe.message,
         },
         create: {
@@ -465,11 +543,17 @@ async function syncMultiProviderCatalogUnlocked(
           lastCatalogSync: now,
           lastSyncStatus: ProviderSyncStatus.FAILED,
           lastSyncDurationMs: Date.now() - startedMs,
+          regionErrors: jsonValue([{ region: null, ...safe }]),
           lastError: safe.message,
         },
-      }),
-    ]);
-    throw error;
+      });
+    });
+    throw new ProviderCatalogSyncError({
+      provider: adapter.provider,
+      apiVersion: adapter.apiVersion,
+      operation: "catalog_sync",
+      code: safe.code,
+    });
   }
 
   const failures: RegionFailure[] = [];
@@ -478,6 +562,7 @@ async function syncMultiProviderCatalogUnlocked(
   let imageCount = 0;
   let networkCount = 0;
   let securityCount = 0;
+  const sourceMoneyUnits = new Set<string>();
   let lastProviderRequestId =
     regions.find((region) => region.providerRequestId)?.providerRequestId ??
     null;
@@ -491,6 +576,28 @@ async function syncMultiProviderCatalogUnlocked(
         adapter.syncNetworks(region.code),
         adapter.syncSecurity(region.code),
       ]);
+      if (
+        adapter.topologyVerificationMode === "STRICT_OBSERVED" &&
+        (!networks.some(
+          (network) => network.available && network.isDefault,
+        ) ||
+          !securities.some(
+            (security) => security.available && security.isDefault,
+          ))
+      ) {
+        throw new InfrastructureError(
+          "provider_default_selection_missing",
+          "Provider default topology is unavailable",
+        );
+      }
+      for (const plan of plans) {
+        if (
+          plan.sourceMoneyUnit &&
+          plan.sourceMoneyUnit !== "UNCONFIRMED"
+        ) {
+          sourceMoneyUnits.add(plan.sourceMoneyUnit);
+        }
+      }
       const regionRequestId =
         [...securities, ...networks, ...images, ...plans]
           .reverse()
@@ -513,52 +620,92 @@ async function syncMultiProviderCatalogUnlocked(
         securities,
         syncedAt: now,
         catalogVersion,
+        syncDurationMs: Date.now() - regionStarted,
+        leaseToken,
       });
       successfulRegions += 1;
       planCount += plans.length;
       imageCount += images.length;
       networkCount += networks.length;
       securityCount += securities.length;
-      await prisma.providerCatalogRegionState.update({
-        where: {
-          provider_apiVersion_regionCode: {
-            provider: adapter.provider,
-            apiVersion: adapter.apiVersion,
-            regionCode: region.code,
-          },
-        },
-        data: { syncDurationMs: Date.now() - regionStarted },
-      });
     } catch (error) {
       const safe = safeRegionError(error);
       failures.push({ region: region.code, ...safe });
-      await prisma.providerCatalogRegionState.upsert({
-        where: {
-          provider_apiVersion_regionCode: {
+      await prisma.$transaction(async (tx) => {
+        await assertCatalogSyncLeaseTx(tx, adapter.provider, leaseToken);
+        await tx.providerCatalogRegionState.upsert({
+          where: {
+            provider_apiVersion_regionCode: {
+              provider: adapter.provider,
+              apiVersion: adapter.apiVersion,
+              regionCode: region.code,
+            },
+          },
+          update: {
+            lastSyncedAt: now,
+            lastError: safe.message,
+            syncDurationMs: Date.now() - regionStarted,
+            status: ProviderCatalogStatus.STALE,
+            available: false,
+          },
+          create: {
+            id: randomUUID(),
             provider: adapter.provider,
             apiVersion: adapter.apiVersion,
             regionCode: region.code,
+            lastSyncedAt: now,
+            lastError: safe.message,
+            syncDurationMs: Date.now() - regionStarted,
+            status: ProviderCatalogStatus.STALE,
+            available: false,
           },
-        },
-        update: {
-          lastSyncedAt: now,
-          lastError: safe.message,
-          syncDurationMs: Date.now() - regionStarted,
-        },
-        create: {
-          id: randomUUID(),
-          provider: adapter.provider,
-          apiVersion: adapter.apiVersion,
-          regionCode: region.code,
-          lastSyncedAt: now,
-          lastError: safe.message,
-          syncDurationMs: Date.now() - regionStarted,
-          status: ProviderCatalogStatus.STALE,
-          available: false,
-        },
+        });
       });
     }
   }
+
+  const seenRegionCodes = regions.map((region) => region.code);
+  await prisma.$transaction(async (tx) => {
+    await assertCatalogSyncLeaseTx(tx, adapter.provider, leaseToken);
+    await tx.providerCatalogRegionState.updateMany({
+      where: {
+        provider: adapter.provider,
+        apiVersion: adapter.apiVersion,
+        regionCode: { notIn: seenRegionCodes },
+        status: { not: ProviderCatalogStatus.DISABLED },
+      },
+      data: {
+        available: false,
+        status: ProviderCatalogStatus.STALE,
+      },
+    });
+    await tx.providerCatalogItem.updateMany({
+      where: {
+        provider: adapter.provider,
+        apiVersion: adapter.apiVersion,
+        source: "API_CATALOG",
+        regionCode: { notIn: seenRegionCodes },
+        status: { not: ProviderCatalogStatus.DISABLED },
+      },
+      data: {
+        available: false,
+        status: ProviderCatalogStatus.STALE,
+        unavailableAt: now,
+      },
+    });
+    await tx.providerCatalogAsset.updateMany({
+      where: {
+        provider: adapter.provider,
+        apiVersion: adapter.apiVersion,
+        regionCode: { notIn: seenRegionCodes },
+        status: { not: ProviderCatalogStatus.DISABLED },
+      },
+      data: {
+        available: false,
+        status: ProviderCatalogStatus.STALE,
+      },
+    });
+  });
 
   const status =
     failures.length === 0
@@ -615,8 +762,11 @@ async function syncMultiProviderCatalogUnlocked(
     }),
   ]);
   const durationMs = Date.now() - startedMs;
-  await prisma.$transaction([
-    prisma.providerCatalogSyncRun.update({
+  const sourceMoneyUnit =
+    sourceMoneyUnits.size === 1 ? [...sourceMoneyUnits][0] : null;
+  await prisma.$transaction(async (tx) => {
+    await assertCatalogSyncLeaseTx(tx, adapter.provider, leaseToken);
+    await tx.providerCatalogSyncRun.update({
       where: { id: syncRun.id },
       data: {
         status,
@@ -631,11 +781,12 @@ async function syncMultiProviderCatalogUnlocked(
         finishedAt: new Date(),
         durationMs,
       },
-    }),
-    prisma.providerCatalogState.upsert({
+    });
+    await tx.providerCatalogState.upsert({
       where: { provider: adapter.provider },
       update: {
         apiVersion: adapter.apiVersion,
+        enabled: true,
         lastCatalogSync: now,
         regionCount: regions.length,
         sizeCount: planCount,
@@ -663,6 +814,7 @@ async function syncMultiProviderCatalogUnlocked(
         id: `${adapter.provider.toLowerCase()}-${adapter.apiVersion}`,
         provider: adapter.provider,
         apiVersion: adapter.apiVersion,
+        enabled: true,
         lastCatalogSync: now,
         regionCount: regions.length,
         sizeCount: planCount,
@@ -685,24 +837,23 @@ async function syncMultiProviderCatalogUnlocked(
             ? `${failures.length.toLocaleString("fa-IR")} Region کامل Sync نشد.`
             : null,
       },
-    }),
-    prisma.providerPricingConfig.upsert({
+    });
+    await tx.providerPricingConfig.upsert({
       where: { provider: adapter.provider },
       update: {
         apiVersion: adapter.apiVersion,
-        sourceMoneyUnit:
-          adapter.provider === InfrastructureProvider.ARVAN ? "IRR" : undefined,
+        ...(successfulRegions > 0 ? { sourceMoneyUnit } : {}),
       },
       create: {
         id: `${adapter.provider.toLowerCase()}-${adapter.apiVersion}`,
         provider: adapter.provider,
         apiVersion: adapter.apiVersion,
-        sourceMoneyUnit:
-          adapter.provider === InfrastructureProvider.ARVAN ? "IRR" : null,
+        sourceMoneyUnit,
         markupBasisPoints: 0,
+        enabled: false,
       },
-    }),
-    prisma.productPricingConfig.upsert({
+    });
+    await tx.productPricingConfig.upsert({
       where: {
         provider_apiVersion_productKind: {
           provider: adapter.provider,
@@ -716,9 +867,10 @@ async function syncMultiProviderCatalogUnlocked(
         apiVersion: adapter.apiVersion,
         productKind: route.productKind,
         markupBasisPoints: 0,
+        enabled: false,
       },
-    }),
-  ]);
+    });
+  });
 
   return {
     provider: adapter.provider,
@@ -773,8 +925,57 @@ async function acquireCatalogSyncLease(
       syncLeaseExpiresAt: new Date(now.getTime() + CATALOG_SYNC_LEASE_MS),
     },
   });
-  if (acquired.count !== 1) throw new Error("catalog_sync_already_running");
+  if (acquired.count !== 1) {
+    throw new ProviderCatalogSyncError({
+      provider,
+      apiVersion,
+      operation: "catalog_sync",
+      code: "catalog_sync_already_running",
+    });
+  }
+  try {
+    await prisma.providerCatalogSyncRun.updateMany({
+      where: {
+        provider,
+        apiVersion,
+        status: ProviderSyncStatus.RUNNING,
+        startedAt: {
+          lt: new Date(now.getTime() - CATALOG_SYNC_LEASE_MS),
+        },
+      },
+      data: {
+        status: ProviderSyncStatus.FAILED,
+        report: jsonValue({
+          root: {
+            code: "provider_sync_failed",
+            message:
+              "اجرای قبلی پیش از ثبت نتیجه متوقف شد؛ دادهٔ سالم قبلی حفظ شد.",
+          },
+        }),
+        finishedAt: now,
+      },
+    });
+  } catch (error) {
+    await prisma.providerCatalogState.updateMany({
+      where: { provider, syncLeaseToken: token },
+      data: { syncLeaseToken: null, syncLeaseExpiresAt: null },
+    });
+    throw error;
+  }
   return token;
+}
+
+async function renewCatalogSyncLease(
+  provider: InfrastructureProvider,
+  token: string,
+): Promise<boolean> {
+  const renewed = await prisma.providerCatalogState.updateMany({
+    where: { provider, syncLeaseToken: token },
+    data: {
+      syncLeaseExpiresAt: new Date(Date.now() + CATALOG_SYNC_LEASE_MS),
+    },
+  });
+  return renewed.count === 1;
 }
 
 async function releaseCatalogSyncLease(
@@ -791,20 +992,99 @@ export async function syncMultiProviderCatalog(
   adapter: CloudProviderAdapter,
   now = new Date(),
 ) {
-  return withCatalogSyncLease(adapter.provider, adapter.apiVersion, () =>
-    syncMultiProviderCatalogUnlocked(adapter, now),
+  const invokedAtMs = Date.now();
+  return withCatalogSyncLease(
+    adapter.provider,
+    adapter.apiVersion,
+    async (leaseToken) => {
+    try {
+      return await syncMultiProviderCatalogUnlocked(
+        adapter,
+        now,
+        leaseToken,
+      );
+    } catch (error) {
+      const code =
+        error instanceof ProviderCatalogSyncError
+          ? error.code
+          : "provider_persistence_failed";
+      const message = safeProviderSyncMessage(code);
+      const finishedAt = new Date();
+      try {
+        await prisma.$transaction(async (tx) => {
+          await assertCatalogSyncLeaseTx(
+            tx,
+            adapter.provider,
+            leaseToken,
+          );
+          await tx.providerCatalogSyncRun.updateMany({
+            where: {
+              provider: adapter.provider,
+              apiVersion: adapter.apiVersion,
+              status: ProviderSyncStatus.RUNNING,
+            },
+            data: {
+              status: ProviderSyncStatus.FAILED,
+              report: jsonValue({
+                root: { code, message },
+              }),
+              finishedAt,
+              durationMs: Math.max(Date.now() - invokedAtMs, 0),
+            },
+          });
+          await tx.providerCatalogState.upsert({
+            where: { provider: adapter.provider },
+            update: {
+              apiVersion: adapter.apiVersion,
+              lastCatalogSync: now,
+              lastSyncStatus: ProviderSyncStatus.FAILED,
+              lastSyncDurationMs: Math.max(Date.now() - invokedAtMs, 0),
+              syncRequestedAt: null,
+              regionErrors: jsonValue([{ region: null, code, message }]),
+              lastError: message,
+            },
+            create: {
+              id: `${adapter.provider.toLowerCase()}-${adapter.apiVersion}`,
+              provider: adapter.provider,
+              apiVersion: adapter.apiVersion,
+              lastCatalogSync: now,
+              lastSyncStatus: ProviderSyncStatus.FAILED,
+              lastSyncDurationMs: Math.max(Date.now() - invokedAtMs, 0),
+              regionErrors: jsonValue([{ region: null, code, message }]),
+              lastError: message,
+            },
+          });
+        });
+      } catch {
+        // A database outage can also prevent recording its own failure. The
+        // caller still receives only the sanitized persistence code.
+      }
+      throw new ProviderCatalogSyncError({
+        provider: adapter.provider,
+        apiVersion: adapter.apiVersion,
+        operation: "catalog_sync",
+        code,
+      });
+    }
+    },
   );
 }
 
 export async function withCatalogSyncLease<T>(
   provider: InfrastructureProvider,
   apiVersion: string,
-  operation: () => Promise<T>,
+  operation: (leaseToken: string) => Promise<T>,
 ): Promise<T> {
   const token = await acquireCatalogSyncLease(provider, apiVersion);
+  const renewal = setInterval(() => {
+    void renewCatalogSyncLease(provider, token)
+      .catch(() => undefined);
+  }, Math.floor(CATALOG_SYNC_LEASE_MS / 3));
+  renewal.unref();
   try {
-    return await operation();
+    return await operation(token);
   } finally {
+    clearInterval(renewal);
     await releaseCatalogSyncLease(provider, token);
   }
 }
@@ -828,8 +1108,7 @@ export async function getCatalogFreshness(
   const lastSync = state?.lastCatalogSync ?? null;
   const slaSeconds = state?.freshnessSlaSeconds ?? 900;
   const fresh =
-    state?.enabled === true &&
-    state.lastSyncStatus === ProviderSyncStatus.SUCCEEDED &&
+    state?.lastSyncStatus === ProviderSyncStatus.SUCCEEDED &&
     lastSync != null &&
     now.getTime() - lastSync.getTime() <= slaSeconds * 1000;
   return { fresh, lastSync, slaSeconds, state };
@@ -839,13 +1118,28 @@ export async function refreshMultiProviderCatalog(
   provider: InfrastructureProvider,
 ) {
   if (!isCloudProviderConfigured(provider)) {
-    throw new Error("provider_not_configured");
+    throw new ProviderCatalogSyncError({
+      provider,
+      apiVersion: "v1",
+      operation: "catalog_sync",
+      code: "provider_disabled",
+    });
   }
-  const regionCodes = await listProviderSyncRegionCodes(provider, "v1");
-  if (regionCodes.length === 0) {
-    throw new Error("provider_regions_not_configured");
+  if (provider === InfrastructureProvider.ARVAN) {
+    const regionCodes = await listProviderSyncRegionCodes(provider, "v1");
+    if (regionCodes.length === 0) {
+      throw new ProviderCatalogSyncError({
+        provider,
+        apiVersion: "v1",
+        operation: "catalog_sync",
+        code: "provider_disabled",
+      });
+    }
+    return syncMultiProviderCatalog(
+      createCloudProviderAdapter(provider, "v1", { regionCodes }),
+    );
   }
   return syncMultiProviderCatalog(
-    createCloudProviderAdapter(provider, "v1", { regionCodes }),
+    createCloudProviderAdapter(provider, "v1"),
   );
 }

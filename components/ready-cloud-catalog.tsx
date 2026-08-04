@@ -16,7 +16,35 @@ import type { PublicPlanOffer } from "@/lib/orders/plans";
 import { parchinLevelLabel } from "@/lib/parchin/catalog";
 
 function formatRialAsToman(value: string) {
-  return (BigInt(value) / 10n).toLocaleString("fa-IR");
+  const rial = BigInt(value);
+  const toman = rial / 10n;
+  const remainder = rial % 10n;
+  return remainder === 0n
+    ? toman.toLocaleString("fa-IR")
+    : `${toman.toLocaleString("fa-IR")}٫${remainder.toLocaleString("fa-IR")}`;
+}
+
+function formatRial(value: string) {
+  return BigInt(value).toLocaleString("fa-IR");
+}
+
+function formatBasisPoints(value: number) {
+  const whole = Math.floor(value / 100);
+  const fraction = value % 100;
+  return fraction === 0
+    ? whole.toLocaleString("fa-IR")
+    : `${whole.toLocaleString("fa-IR")}٫${String(fraction)
+        .padStart(2, "0")
+        .replace(/0$/, "")}`;
+}
+
+function catalogStatusLabel(status: PublicPlanOffer["catalogStatus"]) {
+  if (status === "ACTIVE") return "قیمت و ظرفیت همگام‌شده";
+  if (status === "STALE") return "آخرین دادهٔ معتبر؛ نیازمند Sync دوباره";
+  if (status === "INVALID_PRICE") return "قیمت در دسترس نیست";
+  if (status === "INVALID_RESOURCE") return "مشخصات منابع نامعتبر است";
+  if (status === "UNAVAILABLE") return "در حال حاضر ناموجود";
+  return "نمایش غیرفعال";
 }
 
 export function ReadyCloudCatalog({
@@ -54,9 +82,8 @@ export function ReadyCloudCatalog({
         <div>
           <strong>فروش این سرورها موقتاً متوقف است.</strong>
           <p>
-            هیچ SKU منتشرشده‌ای با قیمت، موجودی و Sale Gate معتبر در دسترس
-            نیست. پس از بررسی و انتشار دوبارهٔ Admin، فقط ظرفیت معتبر نمایش
-            داده می‌شود.
+            هیچ SKU منتشرشده و متصل به کاتالوگ همگام‌شده در دسترس نیست.
+            فعال‌بودن فروش شرط نمایش کاتالوگ نیست.
           </p>
         </div>
       </section>
@@ -88,7 +115,7 @@ export function ReadyCloudCatalog({
       </div>
 
       <p className="ready-cloud-result-count" aria-live="polite">
-        {visibleOffers.length.toLocaleString("fa-IR")} سرور ابری موجود
+        {visibleOffers.length.toLocaleString("fa-IR")} پلن همگام‌شده
       </p>
 
       <div className="ready-cloud-grid">
@@ -126,20 +153,43 @@ export function ReadyCloudCatalog({
             </div>
 
             <div className="quick-plan-price">
-              {productPath === "cloud-servers" && offer.hourlyPriceRial ? (
-                <>
-                  <span>
-                    <strong>{formatRialAsToman(offer.hourlyPriceRial)}</strong>{" "}
-                    تومان / ساعت
-                  </span>
-                  <small>
-                    تخمین ۲۴ ساعت:{" "}
-                    {formatRialAsToman(
-                      (BigInt(offer.hourlyPriceRial) * 24n).toString(),
-                    )}{" "}
-                    تومان
-                  </small>
-                </>
+              {productPath === "cloud-servers" ? (
+                offer.hourlyPriceRial &&
+                offer.providerBaseHourlyPriceRial ? (
+                  <>
+                    <span>
+                      <strong>
+                        {formatRialAsToman(offer.hourlyPriceRial)}
+                      </strong>{" "}
+                      تومان / ساعت
+                    </span>
+                    <small>
+                      قیمت پایه زیرساخت:{" "}
+                      {formatRial(offer.providerBaseHourlyPriceRial)} ریال /
+                      ساعت
+                    </small>
+                    <small>
+                      تخمین ۲۴ ساعت پس از Markup و پیش از Line Itemهای Quote:{" "}
+                      {formatRialAsToman(
+                        (BigInt(offer.hourlyPriceRial) * 24n).toString(),
+                      )}{" "}
+                      تومان
+                    </small>
+                    <small>
+                      نرخ نمایشی پس از Markup{" "}
+                      {formatBasisPoints(offer.markupBasisPoints)}٪ و پیش از
+                      Line Itemهای Quote است. مالیات تنظیم‌شده:{" "}
+                      {formatBasisPoints(offer.taxBasisPoints)}٪.
+                    </small>
+                  </>
+                ) : (
+                  <>
+                    <span>
+                      <strong>قیمت ساعتی در دسترس نیست</strong>
+                    </span>
+                    <small>هیچ مبلغی تخمین زده یا جایگزین نشده است.</small>
+                  </>
+                )
               ) : (
                 <>
                   <span>
@@ -152,12 +202,17 @@ export function ReadyCloudCatalog({
                   </small>
                 </>
               )}
+              <small dir="ltr">
+                Source: {offer.sourceCurrencyCode ?? "UNKNOWN"} /{" "}
+                {offer.sourceAmountUnit ?? "UNKNOWN"} · Normalized:{" "}
+                {offer.normalizedCurrencyCode} / {offer.normalizedAmountUnit}
+              </small>
             </div>
 
             <ul>
               <li>
                 <Check size={14} aria-hidden="true" />
-                قیمت و ظرفیت پیش از ساخت Quote دوباره بررسی می‌شوند
+                {catalogStatusLabel(offer.catalogStatus)}
               </li>
               <li>
                 <Check size={14} aria-hidden="true" />
@@ -177,6 +232,17 @@ export function ReadyCloudCatalog({
               planId={offer.id}
               productPath={productPath}
               disabled={!offer.purchasable}
+              disabledReason={
+                offer.purchaseState === "SALE_DISABLED"
+                  ? "فروش هنوز فعال نیست"
+                  : offer.purchaseState === "REGION_SALE_DISABLED"
+                    ? "فروش این موقعیت هنوز فعال نیست"
+                  : offer.purchaseState === "CATALOG_STALE"
+                    ? "در انتظار Sync دوبارهٔ کاتالوگ"
+                    : offer.purchaseState === "UNAVAILABLE"
+                      ? "در حال حاضر ناموجود"
+                    : undefined
+              }
             />
             <small className="quick-plan-validity">
               بعد از انتخاب، قیمت و ظرفیت دوباره بررسی و برای ۱۰ دقیقه قفل می‌شود.

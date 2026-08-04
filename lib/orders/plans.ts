@@ -16,6 +16,7 @@ import { getEnv } from "@/lib/env";
 import {
   getCatalogFreshness,
 } from "@/lib/infrastructure/multi-provider-catalog-service";
+import { resolveCatalogOfferAccess } from "@/lib/infrastructure/catalog-visibility";
 import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
 import { countAvailableInventoryByPlan } from "@/lib/infrastructure/preprovisioned-inventory";
 import { isPublicSaleEnabled } from "@/lib/infrastructure/public-sale-policy";
@@ -98,13 +99,35 @@ export type PublicPlanOffer = {
   ramGb: number | null;
   storageGb: number | null;
   transferTb: string | null;
+  providerBaseHourlyPriceRial: string | null;
+  providerBaseMonthlyPriceRial: string;
   hourlyPriceRial: string | null;
   salePriceRial: string;
   renewalPriceRial: string;
+  sourceCurrencyCode: string | null;
+  sourceAmountUnit: string | null;
+  normalizedCurrencyCode: "IRR";
+  normalizedAmountUnit: "RIAL";
+  billingIntervals: Array<"HOURLY" | "MONTHLY">;
+  markupBasisPoints: number;
+  taxBasisPoints: number;
+  catalogStatus:
+    | "ACTIVE"
+    | "STALE"
+    | "UNAVAILABLE"
+    | "INVALID_RESOURCE"
+    | "INVALID_PRICE"
+    | "DISABLED";
+  purchaseState:
+    | "PURCHASABLE"
+    | "SALE_DISABLED"
+    | "REGION_SALE_DISABLED"
+    | "CATALOG_STALE"
+    | "UNAVAILABLE";
   deliveryEstimateMinutes: number;
   parchinIncluded: boolean;
   checkedAt: string;
-  available: true;
+  available: boolean;
   instantDelivery: boolean;
   purchasable: boolean;
 };
@@ -213,9 +236,27 @@ export function toPublicPlanOffer(plan: PricedInfrastructurePlan): PublicPlanOff
     ramGb: plan.pricing.ramGb,
     storageGb: plan.pricing.storageGb,
     transferTb: plan.catalogItem.transfer,
+    providerBaseHourlyPriceRial:
+      hourlyBasePriceRial?.toString() ?? null,
+    providerBaseMonthlyPriceRial:
+      plan.pricing.providerBasePriceRial.toString(),
     hourlyPriceRial: hourlyPriceRial?.toString() ?? null,
     salePriceRial: plan.pricing.finalPriceRial.toString(),
     renewalPriceRial: plan.pricing.finalPriceRial.toString(),
+    sourceCurrencyCode: plan.catalogItem.currencyCode,
+    sourceAmountUnit: plan.catalogItem.amountUnit,
+    normalizedCurrencyCode: "IRR",
+    normalizedAmountUnit: "RIAL",
+    billingIntervals: [
+      ...(hourlyBasePriceRial == null ? [] : (["HOURLY"] as const)),
+      ...(plan.pricing.providerBasePriceRial > 0n
+        ? (["MONTHLY"] as const)
+        : []),
+    ],
+    markupBasisPoints: plan.pricing.markupBasisPoints,
+    taxBasisPoints: plan.pricing.taxBasisPoints,
+    catalogStatus: plan.catalogItem.status,
+    purchaseState: "PURCHASABLE",
     deliveryEstimateMinutes: plan.deliveryEstimateMinutes,
     parchinIncluded: plan.parchinIncluded,
     checkedAt: plan.pricing.providerPriceCheckedAt.toISOString(),
@@ -323,24 +364,32 @@ export async function getActivePlanById(id: string) {
 export async function listActivePlans(
   requestedParchinLevel?: ParchinLevel,
 ): Promise<PricedInfrastructurePlan[]> {
-  const [plans, configs] = await Promise.all([
-    prisma.infrastructurePlan.findMany({
-      where: {
-        active: true,
-        publicationStatus: "PUBLISHED",
-        catalogMappingStatus: "MAPPED",
-        deliveryMode: "MANAGED",
-        parchinIncluded: true,
-        provider: "ARVAN",
-        providerApiVersion: "v1",
-        productKind: "CLOUD_SERVER",
-        offerSource: "API_CATALOG",
-      },
-      include: { catalogItem: true },
-      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+  const [saleRegions, configs] = await Promise.all([
+    listProviderRegionConfigs({
+      provider: "ARVAN",
+      apiVersion: "v1",
+      purpose: "SALE",
     }),
     pricingConfigs(),
   ]);
+  const plans = await prisma.infrastructurePlan.findMany({
+    where: {
+      active: true,
+      publicationStatus: "PUBLISHED",
+      catalogMappingStatus: "MAPPED",
+      deliveryMode: "MANAGED",
+      parchinIncluded: true,
+      provider: "ARVAN",
+      providerApiVersion: "v1",
+      productKind: "CLOUD_SERVER",
+      offerSource: "API_CATALOG",
+      regionCode: {
+        in: saleRegions.map((region) => region.regionCode),
+      },
+    },
+    include: { catalogItem: true },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+  });
   return plans.flatMap((plan) => {
     if (
       !isPublicSaleEnabled({
@@ -387,22 +436,17 @@ export async function listReadyServerPlans(): Promise<PricedInfrastructurePlan[]
     pricingConfigs(),
   ]);
   return plans.flatMap((plan) => {
-    if (!isPublicSaleEnabled({
-      provider: plan.provider,
-      productKind: plan.productKind,
-      offerSource: plan.offerSource,
-    })) return [];
     const pricing = resolveConfiguredPlanPricing(plan, configs);
     return pricing ? [withEffectivePricing(plan, pricing)] : [];
   });
 }
 
 export async function listCloudServerPlans(): Promise<PricedInfrastructurePlan[]> {
-  const [saleRegions, configs] = await Promise.all([
+  const [configuredRegions, configs] = await Promise.all([
     listProviderRegionConfigs({
       provider: "ARVAN",
       apiVersion: "v1",
-      purpose: "SALE",
+      purpose: "ALL",
     }),
     pricingConfigs(),
   ]);
@@ -412,7 +456,9 @@ export async function listCloudServerPlans(): Promise<PricedInfrastructurePlan[]
       providerApiVersion: "v1",
       productKind: "CLOUD_SERVER",
       offerSource: "API_CATALOG",
-      regionCode: { in: saleRegions.map((region) => region.regionCode) },
+      regionCode: {
+        in: configuredRegions.map((region) => region.regionCode),
+      },
       active: true,
       publicationStatus: "PUBLISHED",
       catalogMappingStatus: "MAPPED",
@@ -445,11 +491,22 @@ export async function listPublicPlanOffers() {
 
 export async function listLiveReadyServerOffers() {
   try {
-    const [plans, parsPackResult, arvanResult] = await Promise.all([
+    const [plans, parsPackResult, arvanResult, arvanRegions] = await Promise.all([
       listReadyServerPlans(),
       getCatalogFreshness("PARSPACK").catch(() => null),
       getCatalogFreshness("ARVAN").catch(() => null),
+      listProviderRegionConfigs({
+        provider: "ARVAN",
+        apiVersion: "v1",
+        purpose: "ALL",
+      }).catch(() => []),
     ]);
+    const arvanRegionSale = new Map(
+      arvanRegions.map((region) => [
+        region.regionCode,
+        region.saleEnabled,
+      ]),
+    );
     const inventoryCounts = await countAvailableInventoryByPlan(
       plans.filter((plan) => plan.offerSource === "PREPROVISIONED_INVENTORY")
         .map((plan) => plan.id),
@@ -460,17 +517,43 @@ export async function listLiveReadyServerOffers() {
       const freshness = plan.provider === "PARSPACK" ? parsPackResult : arvanResult;
       const inventoryCount = inventoryCounts.get(plan.id) ?? 0;
       const manualUnits = plan.catalogItem.manualAvailableUnits ?? 0;
-      const purchasable = isPublicSaleEnabled({
-        provider: plan.provider,
-        productKind: plan.productKind,
-        offerSource: plan.offerSource,
-      }) && (manual ? manualUnits > 0 : preprovisioned ? inventoryCount > 0 : freshness?.fresh === true);
-      // A customer never sees stale API Catalog data. Admin can inspect
-      // last-known-good records separately and choose when to sync again.
-      if (!purchasable) return [];
+      const apiCatalog = !manual && !preprovisioned;
+      const catalogFresh = apiCatalog
+        ? freshness?.fresh === true
+        : true;
+      const access = resolveCatalogOfferAccess({
+        catalogFresh,
+        displayDuringProviderOutage: plan.displayDuringProviderOutage,
+        publicSaleEnabled: isPublicSaleEnabled({
+          provider: plan.provider,
+          productKind: plan.productKind,
+          offerSource: plan.offerSource,
+        }),
+        regionSaleEnabled:
+          plan.provider !== "ARVAN" ||
+          arvanRegionSale.get(plan.regionCode) === true,
+      });
+      if (!access.visible) return [];
+      const capacityAvailable = manual
+        ? manualUnits > 0
+        : preprovisioned
+          ? inventoryCount > 0
+          : true;
+      const purchasable = access.purchasable && capacityAvailable;
       return [{
         ...toPublicPlanOffer(plan),
+        available: catalogFresh && capacityAvailable,
+        catalogStatus:
+          apiCatalog && !catalogFresh
+            ? ("STALE" as const)
+            : !capacityAvailable
+              ? ("UNAVAILABLE" as const)
+              : plan.catalogItem.status,
         purchasable,
+        purchaseState:
+          !purchasable && access.purchasable
+            ? ("UNAVAILABLE" as const)
+            : access.purchaseState,
       }];
     });
     const freshStates = [parsPackResult, arvanResult].filter(Boolean);
@@ -494,45 +577,52 @@ export async function listLiveReadyServerOffers() {
 export async function listLiveCloudServerOffers() {
   try {
     const freshness = await getCatalogFreshness("ARVAN");
-    const [plans, saleRegions] = await Promise.all([
+    const [plans, configuredRegions] = await Promise.all([
       listCloudServerPlans(),
       listProviderRegionConfigs({
         provider: "ARVAN",
         apiVersion: "v1",
-        purpose: "SALE",
+        purpose: "ALL",
       }),
     ]);
     const displayNames = new Map(
-      saleRegions.map((region) => [region.regionCode, region.displayName]),
+      configuredRegions.map((region) => [
+        region.regionCode,
+        region.displayName,
+      ]),
     );
-    const inventoryCounts = await countAvailableInventoryByPlan(
-      plans
-        .filter(
-          (plan) =>
-            plan.offerSource === "PREPROVISIONED_INVENTORY",
-        )
-        .map((plan) => plan.id),
+    const regionSale = new Map(
+      configuredRegions.map((region) => [
+        region.regionCode,
+        region.saleEnabled,
+      ]),
     );
-    const offers = plans
-      .filter(() => freshness.fresh)
-      .map((plan) => {
-        const inventoryCount = inventoryCounts.get(plan.id) ?? 0;
-        return {
-        ...toPublicPlanOffer(plan),
-        locationLabel:
-          displayNames.get(plan.regionCode) ?? plan.regionCode,
-        purchasable:
-          isPublicSaleEnabled({
-            provider: plan.provider,
-            productKind: plan.productKind,
-            offerSource: plan.offerSource,
-          }) &&
-          (plan.offerSource === "PREPROVISIONED_INVENTORY"
-            ? inventoryCount > 0
-            : freshness.fresh),
-      };
-      })
-      .filter((offer) => offer.purchasable);
+    const offers = plans.flatMap((plan) => {
+      const access = resolveCatalogOfferAccess({
+        catalogFresh: freshness.fresh,
+        displayDuringProviderOutage: plan.displayDuringProviderOutage,
+        publicSaleEnabled: isPublicSaleEnabled({
+          provider: plan.provider,
+          productKind: plan.productKind,
+          offerSource: plan.offerSource,
+        }),
+        regionSaleEnabled: regionSale.get(plan.regionCode) === true,
+      });
+      if (!access.visible) return [];
+      return [
+        {
+          ...toPublicPlanOffer(plan),
+          locationLabel:
+            displayNames.get(plan.regionCode) ?? plan.regionCode,
+          catalogStatus: freshness.fresh
+            ? plan.catalogItem.status
+            : ("STALE" as const),
+          available: freshness.fresh && plan.catalogItem.available,
+          purchasable: access.purchasable,
+          purchaseState: access.purchaseState,
+        },
+      ];
+    });
     return {
       live: freshness.fresh,
       degraded: !freshness.fresh,

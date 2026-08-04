@@ -165,7 +165,15 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
       );
       items.push(...asProviderResponse(parser, data));
 
-      const nextPage = parseParsPackNextPage(data);
+      let nextPage: number | null;
+      try {
+        nextPage = parseParsPackNextPage(data);
+      } catch {
+        throw new InfrastructureError(
+          "provider_invalid_response",
+          "ParsPack returned invalid pagination links",
+        );
+      }
       if (nextPage == null) return items;
       if (nextPage <= page) {
         throw new InfrastructureError(

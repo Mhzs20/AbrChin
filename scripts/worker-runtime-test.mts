@@ -25,6 +25,10 @@ function loadEnvFile() {
 loadEnvFile();
 
 const workerBundle = resolve("dist/worker/provisioning-worker.js");
+const catalogSyncBundle = resolve("dist/catalog-sync/catalog-sync.js");
+const catalogSyncSchedulerBundle = resolve(
+  "dist/catalog-sync/catalog-sync-scheduler.js",
+);
 const entrypoint = resolve("scripts/worker-entrypoint.sh");
 
 test("worker bundle exists after build", () => {
@@ -39,6 +43,88 @@ test("worker entrypoint references compiled bundle", () => {
   assert.match(script, /dist\/worker\/provisioning-worker\.js/);
   assert.equal(script.includes("provisioning-worker.mts"), false);
   assert.equal(script.includes("experimental-strip-types"), false);
+});
+
+test("production catalog sync commands use a compiled runtime bundle", () => {
+  assert.equal(existsSync(catalogSyncBundle), true);
+  assert.equal(existsSync(catalogSyncSchedulerBundle), true);
+  const bundle = readFileSync(catalogSyncBundle, "utf8");
+  const schedulerBundle = readFileSync(catalogSyncSchedulerBundle, "utf8");
+  const packageJson = readFileSync("package.json", "utf8");
+  const dockerfile = readFileSync("Dockerfile", "utf8");
+  const compose = readFileSync("compose.production.yaml", "utf8");
+  assert.equal(bundle.includes("test-resolve-hook"), false);
+  assert.equal(bundle.includes("@/"), false);
+  assert.equal(schedulerBundle.includes("test-resolve-hook"), false);
+  assert.equal(schedulerBundle.includes("@/"), false);
+  assert.equal(schedulerBundle.includes("runProvisioningWorkerCycle"), false);
+  assert.match(
+    packageJson,
+    /"sync:catalog:parspack": "node dist\/catalog-sync\/catalog-sync\.js parspack"/,
+  );
+  assert.match(
+    packageJson,
+    /"sync:catalog:arvan": "node dist\/catalog-sync\/catalog-sync\.js arvan"/,
+  );
+  assert.match(
+    packageJson,
+    /"integration:parspack": "npm run sync:catalog:parspack"/,
+  );
+  assert.match(dockerfile, /\/app\/dist\/catalog-sync \.\/dist\/catalog-sync/);
+  assert.match(
+    compose,
+    /catalog-sync:[\s\S]*command: \["node", "dist\/catalog-sync\/catalog-sync-scheduler\.js"\]/,
+  );
+});
+
+test("compiled catalog sync fails safely before network access when unconfigured", async () => {
+  await new Promise<void>((resolvePromise, reject) => {
+    const child = spawn("node", [catalogSyncBundle, "parspack"], {
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        DATABASE_URL:
+          "postgresql://runtime:runtime@127.0.0.1:1/runtime",
+        PARSPACK_ENABLED: "false",
+        PARSPACK_API_TOKEN: "",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", reject);
+    child.on("exit", (code) => {
+      try {
+        assert.equal(code, 1);
+        assert.equal(stdout, "");
+        const jsonLine = stderr
+          .trim()
+          .split("\n")
+          .findLast((line) => line.trim().startsWith("{"));
+        assert.ok(jsonLine);
+        const output = JSON.parse(jsonLine) as Record<string, unknown>;
+        assert.equal(output.readOnly, true);
+        assert.equal(output.ok, false);
+        assert.equal(output.provider, "PARSPACK");
+        assert.equal(output.status, "FAILED");
+        assert.deepEqual(output.safeError, {
+          code: "provider_disabled",
+          message:
+            "ارائه‌دهنده در محیط Server به‌طور کامل تنظیم نشده است.",
+        });
+        assert.equal(stderr.includes("PARSPACK_API_TOKEN"), false);
+        resolvePromise();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
 });
 
 test("successful idle cycles update the healthy heartbeat before branching", () => {

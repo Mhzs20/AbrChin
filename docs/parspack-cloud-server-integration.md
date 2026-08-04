@@ -65,16 +65,30 @@ PARSPACK_PRICE_AMOUNT_UNIT=
 توکن فقط باید در Secret Store محیط اجرا قرار بگیرد و نباید در Git، پنل ادمین،
 API پاسخ‌گویی یا لاگ‌ها نمایش داده شود.
 
-## تست اتصال بدون ساخت سرور
+## Probe توسعه و Sync واقعی Production
 
-پس از قراردادن توکن در محیط محلی یا Staging:
+دستور زیر فقط در Checkout کامل Source برای توسعه یا Staging است. این Probe
+از Resolver تست برای اجرای TypeScript خام استفاده می‌کند، در Image Production
+وجود ندارد و چیزی در Database ذخیره نمی‌کند:
 
 ```bash
-npm run integration:parspack
+npm run probe:parspack:source
 ```
 
-این Probe فقط اتصال و کاتالوگ را می‌خواند، VM ایجاد یا حذف نمی‌کند و توکن را
-چاپ نمی‌کند.
+Sync واقعی Production از Bundle مستقل، بدون Test Hook و داخل Container وب
+اجرا می‌شود:
+
+```bash
+docker compose --env-file .env.production -f compose.production.yaml \
+  exec -T web npm run sync:catalog:parspack
+```
+
+نام قدیمی `npm run integration:parspack` اکنون Alias همین Sync Production است
+تا دیگر به فایل حذف‌شدهٔ Test Resolver در Image وابسته نباشد.
+
+این دستور فقط GETهای Catalog را اجرا، نتیجه را به‌صورت idempotent در Database
+ذخیره و JSON خلاصهٔ Sanitized چاپ می‌کند. Token، Header و Response خام چاپ
+نمی‌شوند.
 
 ## Persist و Availability
 
@@ -92,19 +106,18 @@ npm run integration:parspack
 Planهای قدیمی فقط با تطبیق دقیق Provider/Region/Size و Image سازگار Mapping
 می‌شوند. Plan بدون تطبیق غیرفعال و در Admin با وضعیت `UNMAPPED` دیده می‌شود.
 
-در هر Sync، برای هر ترکیب قابل فروش Region×Size یک Plan داخلی با پیشوند
-`READY_PARSPACK_` به‌صورت idempotent ساخته یا به‌روز می‌شود. Size مشترک میان
-چند Region برای هر Region یک انتخاب مستقل دارد. Image از فهرست Linux
-Cloud-init کنترل‌شده انتخاب می‌شود؛ Windows، MikroTik و Control Panelها در این
-مسیر فروخته نمی‌شوند. Plan تولیدشده همیشه `MANAGED` و دارای پرچین پایه است.
-رکورد فاقد Price Contract معتبر یا Availability در همان Sync غیرفعال و حفظ
-می‌شود.
+Sync هیچ `InfrastructurePlan`ی ایجاد، منتشر، متوقف یا Reprice نمی‌کند. Admin
+از Catalog خام، Region/Size/Image منتخب را به SKU با وضعیت `DRAFT` Map می‌کند
+و فقط با Action جداگانه آن را `PUBLISHED` می‌کند. Size مشترک میان چند Region
+برای هر Region یک Catalog Item مستقل دارد. رکورد فاقد Price Contract معتبر یا
+Availability حفظ و با وضعیت صریح غیرقابل‌خرید ثبت می‌شود.
 
 صفحه `/ready-servers` با `no-store` در هر Render فقط Catalog تازهٔ دیتابیس را
-می‌خواند. Sync کامل فقط در Worker یا Admin اجرا می‌شود؛ اگر Freshness SLA
-گذشته باشد صفحه Fail-closed و Sync برای Worker علامت‌گذاری می‌شود. پیش از
-Quote و Payment فقط Region/Size/Image همان انتخاب با GET هدفمند Provider
-دوباره بررسی می‌شود.
+می‌خواند. Sync کامل فقط در Scheduler مستقل، فرمان Production یا Admin اجرا
+می‌شود؛ Worker Provisioning این کار را انجام نمی‌دهد. اگر Freshness SLA گذشته
+باشد خرید Fail-closed می‌ماند تا چرخهٔ بعدی Scheduler یا Sync دستی کامل شود.
+پیش از Quote و Payment فقط Region/Size/Image همان انتخاب با GET هدفمند
+Provider دوباره بررسی می‌شود.
 
 `parchinIncluded` در پلن فعلی فقط «پرچین پایه» یعنی کنترل تحویل و دسترسی
 یک‌بارمصرف را نشان می‌دهد. این مقدار نباید به‌عنوان قابلیت Backup یا Monitoring
@@ -163,7 +176,7 @@ update، خاموش‌کردن `autoRenew=true` قدیمی است تا پس از
 ندهد. Rollback اپلیکیشن می‌تواند ستون‌های قدیمی را بخواند؛ rollback دیتابیس
 نیازی به پاک‌کردن داده جدید ندارد.
 
-ساخت Planهای `READY_PARSPACK_` به Migration جدید نیاز ندارد و روی Schema
-additive موجود انجام می‌شود. Rollback کد می‌تواند این Planهای تولیدشده را
-نادیده بگیرد یا غیرفعال کند، بدون اینکه Quote، Order، Ledger یا Snapshot
-پرداخت‌شده تغییر کند.
+Catalog Sync به Migration تازه نیاز ندارد؛ جدول‌های Catalog و Sync Run موجود
+تمام فیلدهای لازم را دارند. Rollback کد می‌تواند رکوردهای Catalog جدید را
+نادیده بگیرد، بدون اینکه Quote، Order، Ledger یا Snapshot پرداخت‌شده تغییر
+کند.

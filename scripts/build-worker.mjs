@@ -4,23 +4,42 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const outfile = resolve(root, "dist/worker/provisioning-worker.js");
-
-mkdirSync(dirname(outfile), { recursive: true });
-
-await esbuild.build({
-  entryPoints: [resolve(root, "scripts/provisioning-worker-entry.ts")],
-  bundle: true,
-  platform: "node",
-  target: "node22",
-  format: "esm",
-  outfile,
-  alias: {
-    "@": root,
+const targets = [
+  {
+    entry: "scripts/provisioning-worker-entry.ts",
+    outfile: "dist/worker/provisioning-worker.js",
+    label: "worker",
   },
-  packages: "external",
-  sourcemap: true,
-  logLevel: "info",
-});
+  {
+    entry: "scripts/catalog-sync-entry.ts",
+    outfile: "dist/catalog-sync/catalog-sync.js",
+    label: "catalog-sync",
+  },
+  {
+    entry: "scripts/catalog-sync-scheduler-entry.ts",
+    outfile: "dist/catalog-sync/catalog-sync-scheduler.js",
+    label: "catalog-sync-scheduler",
+  },
+];
 
-console.log(`[build-worker] wrote ${outfile}`);
+for (const target of targets) {
+  const outfile = resolve(root, target.outfile);
+  mkdirSync(dirname(outfile), { recursive: true });
+
+  await esbuild.build({
+    entryPoints: [resolve(root, target.entry)],
+    bundle: true,
+    platform: "node",
+    target: "node22",
+    format: "esm",
+    outfile,
+    alias: {
+      "@": root,
+    },
+    packages: "external",
+    sourcemap: true,
+    logLevel: "info",
+  });
+
+  console.log(`[build-runtime] wrote ${target.label}: ${outfile}`);
+}

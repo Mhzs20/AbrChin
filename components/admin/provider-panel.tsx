@@ -4,6 +4,44 @@ import { useState } from "react";
 
 import { PageHeader, SectionCard, StatCard, StatusBadge } from "@/components/product";
 
+function formatRialAsToman(value: string | null): string {
+  if (!value) return "در دسترس نیست";
+  const rial = BigInt(value);
+  const toman = rial / 10n;
+  const remainder = rial % 10n;
+  const amount =
+    remainder === 0n
+      ? toman.toLocaleString("fa-IR")
+      : `${toman.toLocaleString("fa-IR")}٫${remainder.toLocaleString("fa-IR")}`;
+  return `${amount} تومان`;
+}
+
+function formatBasisPoints(value: number | null): string {
+  if (value == null) return "—";
+  const whole = Math.floor(value / 100);
+  const fraction = value % 100;
+  return fraction === 0
+    ? `${whole.toLocaleString("fa-IR")}٪`
+    : `${whole.toLocaleString("fa-IR")}٫${String(fraction)
+        .padStart(2, "0")
+        .replace(/0$/, "")}٪`;
+}
+
+function catalogStateLabel(item: {
+  status: string;
+  available: boolean;
+  priced: boolean;
+}) {
+  if (item.status === "INVALID_RESOURCE") return "منابع نامعتبر";
+  if (item.status === "STALE") return "Stale";
+  if (item.status === "UNAVAILABLE" || !item.available) return "ناموجود";
+  if (item.status === "DISABLED") return "غیرفعال";
+  if (item.status === "INVALID_PRICE" || !item.priced) {
+    return "قیمت در دسترس نیست";
+  }
+  return "Sync فعال و قیمت‌دار";
+}
+
 export function ProviderPanel({
   provider,
   title,
@@ -44,6 +82,7 @@ export function ProviderPanel({
     id: string;
     provider: "ARVAN" | "PARSPACK";
     apiVersion: string;
+    productKind: "CLOUD_SERVER" | "READY_INSTANT_SERVER";
     source:
       | "API_CATALOG"
       | "MANUAL_API_BACKED"
@@ -57,8 +96,16 @@ export function ProviderPanel({
     diskGb: number | null;
     available: boolean;
     priced: boolean;
+    baseHourlyPriceRial: string | null;
     basePriceRial: string | null;
     finalPriceRial: string | null;
+    currencyCode: string | null;
+    amountUnit: string | null;
+    billingIntervals: string[];
+    providerMarkupBasisPoints: number | null;
+    productMarkupBasisPoints: number | null;
+    taxBasisPoints: number | null;
+    publishedSkuCount: number;
     lastSyncedAt: string;
     manualAvailableUnits: number | null;
     manualPriceValidUntil: string | null;
@@ -74,6 +121,8 @@ export function ProviderPanel({
     failedRegions: number;
     planCount: number;
     imageCount: number;
+    networkCount: number;
+    securityCount: number;
     durationMs: number | null;
     report: unknown;
     startedAt: string;
@@ -100,6 +149,10 @@ export function ProviderPanel({
       const data = await response.json();
       if (!response.ok) {
         setError(data.error || "عملیات ناموفق بود.");
+        return;
+      }
+      if (action === "sync") {
+        window.location.reload();
         return;
       }
       setState(data.state);
@@ -180,12 +233,16 @@ export function ProviderPanel({
         />
       </div>
       <SectionCard title="عملیات">
+        <p>
+          Sync فقط Endpointهای مستند GET را می‌خواند و Catalog خام را Upsert
+          می‌کند؛ هیچ SKU، Order یا Resource ساخته نمی‌شود.
+        </p>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <button type="button" className="product-btn product-btn--primary" disabled={loading !== null} onClick={() => run("health")}>
             بررسی اتصال
           </button>
-          <button type="button" className="product-btn product-btn--quiet" disabled={loading !== null} onClick={() => run("sync")}>
-            Sync Catalog
+          <button type="button" className="product-btn product-btn--quiet" disabled={loading !== null || !state.configured} onClick={() => run("sync")}>
+            Sync Catalog (GET only)
           </button>
         </div>
         {state.lastError ? <p style={{ color: "#a83224", marginTop: 12 }}>{state.lastError}</p> : null}
@@ -209,7 +266,7 @@ export function ProviderPanel({
               onChange={(event) => setProviderEnabled(event.target.checked)}
               type="checkbox"
             />
-            Provider برای فروش فعال باشد
+            محاسبهٔ قیمت نهایی برای این Provider فعال باشد
           </label>
           <label>
             درصد Markup
@@ -231,10 +288,12 @@ export function ProviderPanel({
           </button>
         </div>
       </SectionCard>
+      <div id="catalog">
       <SectionCard title="کاتالوگ قیمت">
         <p>
           قیمت نهایی شامل Markup ارائه‌دهنده، Markup نوع محصول، پرچین شروع و
-          مالیات فعلی است.
+          مالیات فعلی است. «Sync فعال» به معنی منتشر یا قابل‌خریدبودن SKU
+          نیست.
         </p>
         <div style={{ overflowX: "auto" }}>
           <table className="product-table">
@@ -242,9 +301,10 @@ export function ProviderPanel({
               <tr>
                 <th>Region / Size</th>
                 <th>منابع</th>
-                <th>قیمت پایه</th>
-                <th>قیمت نهایی</th>
-                <th>وضعیت</th>
+                <th>قیمت پایه Provider</th>
+                <th>قیمت نمایشی</th>
+                <th>قرارداد قیمت</th>
+                <th>Availability / انتشار</th>
                 <th>آخرین Sync</th>
               </tr>
             </thead>
@@ -267,9 +327,49 @@ export function ProviderPanel({
                     </small>
                   </td>
                   <td>{item.vcpu ?? "—"} vCPU · {item.ramMb ?? "—"} MB · {item.diskGb ?? "—"} GB</td>
-                  <td>{item.basePriceRial ? `${(BigInt(item.basePriceRial) / 10n).toLocaleString("fa-IR")} تومان` : "تأیید نشده"}</td>
-                  <td>{item.finalPriceRial ? `${(BigInt(item.finalPriceRial) / 10n).toLocaleString("fa-IR")} تومان` : "—"}</td>
-                  <td>{item.status === "ACTIVE" && item.available && item.priced ? "قابل فروش" : item.status}</td>
+                  <td>
+                    {item.baseHourlyPriceRial ? (
+                      <>
+                        {formatRialAsToman(item.baseHourlyPriceRial)} / ساعت
+                        <br />
+                      </>
+                    ) : null}
+                    {formatRialAsToman(item.basePriceRial)} / ماه
+                  </td>
+                  <td>
+                    {item.productKind === "CLOUD_SERVER"
+                      ? "در Estimate نسخه‌دار SKU محاسبه می‌شود"
+                      : `${formatRialAsToman(item.finalPriceRial)} / ماه`}
+                    <br />
+                    <small>
+                      تنظیم پیش‌فرض: Markup Provider{" "}
+                      {formatBasisPoints(item.providerMarkupBasisPoints)} ·
+                      Product{" "}
+                      {formatBasisPoints(item.productMarkupBasisPoints)} · مالیات{" "}
+                      {formatBasisPoints(item.taxBasisPoints)}
+                      {item.productKind === "CLOUD_SERVER"
+                        ? " · Billing Policy و SKU override در این Preview اعمال نشده‌اند"
+                        : " · SKU override می‌تواند متفاوت باشد"}
+                    </small>
+                  </td>
+                  <td className="product-tech">
+                    {item.currencyCode ?? "UNKNOWN"} /{" "}
+                    {item.amountUnit ?? "UNKNOWN"}
+                    <br />
+                    <small>
+                      {item.billingIntervals.length > 0
+                        ? item.billingIntervals.join(" + ")
+                        : "PRICE UNAVAILABLE"}
+                    </small>
+                  </td>
+                  <td>
+                    {catalogStateLabel(item)}
+                    <br />
+                    <small>
+                      {item.publishedSkuCount.toLocaleString("fa-IR")} SKU
+                      منتشرشده
+                    </small>
+                  </td>
                   <td>{new Date(item.lastSyncedAt).toLocaleString("fa-IR")}</td>
                 </tr>
               ))}
@@ -277,6 +377,7 @@ export function ProviderPanel({
           </table>
         </div>
       </SectionCard>
+      </div>
       <SectionCard title="گزارش آخرین Syncها">
         <div style={{ overflowX: "auto" }}>
           <table className="product-table">
@@ -285,8 +386,9 @@ export function ProviderPanel({
                 <th>شروع</th>
                 <th>نتیجه</th>
                 <th>Region</th>
-                <th>Plan / Image</th>
+                <th>Plan / Image / Network / Security</th>
                 <th>مدت</th>
+                <th>پایان</th>
                 <th>گزارش Sanitized</th>
               </tr>
             </thead>
@@ -303,12 +405,19 @@ export function ProviderPanel({
                     </td>
                     <td>
                       {run.planCount.toLocaleString("fa-IR")} /{" "}
-                      {run.imageCount.toLocaleString("fa-IR")}
+                      {run.imageCount.toLocaleString("fa-IR")} /{" "}
+                      {run.networkCount.toLocaleString("fa-IR")} /{" "}
+                      {run.securityCount.toLocaleString("fa-IR")}
                     </td>
                     <td>
                       {run.durationMs == null
                         ? "—"
                         : `${run.durationMs.toLocaleString("fa-IR")} ms`}
+                    </td>
+                    <td>
+                      {run.finishedAt
+                        ? new Date(run.finishedAt).toLocaleString("fa-IR")
+                        : "در حال اجرا"}
                     </td>
                     <td>
                       {run.report ? (

@@ -12,6 +12,7 @@ const SAFE_PROVIDER_SYNC_CODES = new Set([
   "provider_unavailable",
   "provider_disabled",
   "provider_persistence_failed",
+  "catalog_sync_already_running",
   "provider_sync_failed",
 ]);
 
@@ -22,6 +23,7 @@ export type SafeProviderSyncCode =
   | "provider_unavailable"
   | "provider_disabled"
   | "provider_persistence_failed"
+  | "catalog_sync_already_running"
   | "provider_sync_failed";
 
 const SAFE_MESSAGES: Record<SafeProviderSyncCode, string> = {
@@ -37,6 +39,8 @@ const SAFE_MESSAGES: Record<SafeProviderSyncCode, string> = {
     "ارائه‌دهنده در محیط Server به‌طور کامل تنظیم نشده است.",
   provider_persistence_failed:
     "ذخیره‌سازی نتیجهٔ Sync کامل نشد؛ بررسی عملیاتی لازم است.",
+  catalog_sync_already_running:
+    "همگام‌سازی دیگری برای این ارائه‌دهنده در حال اجرا است.",
   provider_sync_failed:
     "همگام‌سازی کاتالوگ کامل نشد؛ دادهٔ سالم قبلی حفظ شد.",
 };

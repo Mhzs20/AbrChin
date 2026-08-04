@@ -2046,7 +2046,7 @@ model ProviderPricingConfig {
   id                String                 @id @default("parspack")
   provider          InfrastructureProvider @unique
   apiVersion        String                 @default("v1")
-  enabled           Boolean                @default(true)
+  enabled           Boolean                @default(false)
   sourceMoneyUnit   String?
   markupBasisPoints Int                    @default(0)
   updatedAt         DateTime               @updatedAt
@@ -2060,7 +2060,7 @@ model ProductPricingConfig {
   apiVersion        String                    @default("v1")
   productKind       InfrastructureProductKind
   markupBasisPoints Int                       @default(0)
-  enabled           Boolean                   @default(true)
+  enabled           Boolean                   @default(false)
   updatedById       String?
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt

@@ -43,6 +43,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/scripts/docker-entrypoint.sh ./sc
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/worker-entrypoint.sh ./scripts/worker-entrypoint.sh
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/worker-healthcheck.mjs ./scripts/worker-healthcheck.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/dist/worker ./dist/worker
+COPY --from=builder --chown=nextjs:nodejs /app/dist/catalog-sync ./dist/catalog-sync
 
 RUN chmod +x ./scripts/docker-entrypoint.sh ./scripts/worker-entrypoint.sh
 

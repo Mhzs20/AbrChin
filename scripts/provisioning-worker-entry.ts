@@ -1,17 +1,5 @@
 #!/usr/bin/env node
-import { InfrastructureProvider } from "@prisma/client";
-
 import { validateProviderEnvironment } from "@/lib/env";
-import { refreshProviderCatalogForPricing } from "@/lib/infrastructure/catalog-service";
-import {
-  settleProviderCatalogSyncTasks,
-  type ProviderCatalogSyncTask,
-} from "@/lib/infrastructure/catalog-sync-observability";
-import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
-import {
-  isCloudProviderConfigured,
-  isProviderConfigured,
-} from "@/lib/infrastructure/provider-factory";
 import { runProvisioningWorkerCycle, touchWorkerHeartbeat } from "@/lib/infrastructure/provisioning-service";
 import { processSubscriptionLifecycle } from "@/lib/subscriptions/service";
 import { getWorkerConfig } from "@/lib/worker/config";
@@ -26,10 +14,6 @@ import { enqueueExpiredDunningForSuspensionReview } from "@/lib/billing/dunning"
 const config = getWorkerConfig();
 validateProviderEnvironment();
 const SUBSCRIPTION_LIFECYCLE_INTERVAL_MS = 60_000;
-const CATALOG_SYNC_INTERVAL_MS = Math.max(
-  Number.parseInt(process.env.CATALOG_SYNC_INTERVAL_MS ?? "300000", 10),
-  60_000,
-);
 const BILLING_WORKER_INTERVAL_MS = Math.max(
   Number.parseInt(
     process.env.BILLING_WORKER_INTERVAL_MS ?? "60000",
@@ -62,7 +46,6 @@ async function main() {
   console.log(`[abrchin-worker] provisioning worker started id=${config.workerId}`);
   let idleRounds = 0;
   let nextSubscriptionLifecycleAt = 0;
-  let nextCatalogSyncAt = 0;
   let nextBillingAt = 0;
 
   while (!stopping) {
@@ -73,31 +56,6 @@ async function main() {
         await processSubscriptionLifecycle();
         nextSubscriptionLifecycleAt =
           Date.now() + SUBSCRIPTION_LIFECYCLE_INTERVAL_MS;
-      }
-      if (Date.now() >= nextCatalogSyncAt) {
-        const syncTasks: ProviderCatalogSyncTask[] = [];
-        if (isCloudProviderConfigured(InfrastructureProvider.ARVAN)) {
-          syncTasks.push({
-            provider: InfrastructureProvider.ARVAN,
-            apiVersion: "v1",
-            operation: "catalog_sync",
-            promise: refreshMultiProviderCatalog(
-              InfrastructureProvider.ARVAN,
-            ),
-          });
-        }
-        if (isProviderConfigured()) {
-          syncTasks.push({
-            provider: InfrastructureProvider.PARSPACK,
-            apiVersion: "v1",
-            operation: "catalog_sync",
-            promise: refreshProviderCatalogForPricing(),
-          });
-        }
-        await settleProviderCatalogSyncTasks(syncTasks, undefined, {
-          persistIncidents: true,
-        });
-        nextCatalogSyncAt = Date.now() + CATALOG_SYNC_INTERVAL_MS;
       }
       if (Date.now() >= nextBillingAt) {
         const billingNow = new Date();

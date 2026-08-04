@@ -70,6 +70,8 @@ export async function revalidateLockedSelection(
   if (
     !price.available ||
     price.monthlyPriceIrr <= 0n ||
+    (input.productKind === "CLOUD_SERVER" &&
+      (price.hourlyPriceIrr == null || price.hourlyPriceIrr <= 0n)) ||
     price.currency !== "IRR"
   ) {
     throw new InfrastructureError(

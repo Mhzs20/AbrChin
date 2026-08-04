@@ -274,11 +274,10 @@ test("catalog persistence upserts raw rows idempotently and never creates sellab
   const firstId = [...fake.items.values()][0]?.id;
   assert.equal(first.catalogItemCount, 1);
   assert.equal(first.pricedItemCount, 1);
-  assert.equal(first.mappedPlanCount, 1);
-  assert.equal(first.unmappedPlanCount, 1);
+  assert.equal(first.mappedPlanCount, 0);
+  assert.equal(first.unmappedPlanCount, 0);
   assert.equal(first.readyPlanCount, 0);
-  assert.equal(fake.planUpdates.get("plan-exact")?.catalogMappingStatus, "MAPPED");
-  assert.equal(fake.planUpdates.get("plan-do-not-guess")?.active, false);
+  assert.equal(fake.planUpdates.size, 0);
 
   await persistProviderCatalog(fake.tx as never, catalog(), syncedAt);
   assert.equal(fake.items.size, 1);
