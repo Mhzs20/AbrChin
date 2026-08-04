@@ -159,6 +159,18 @@ test("cross-origin mutating requests are rejected", () => {
   assert.equal(isSameOriginRequest(behindProxy), true);
 });
 
+test("login OTP request serializes per mobile before SMS delivery", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const [authService, loginForm] = await Promise.all([
+    readFile("lib/auth-service.ts", "utf8"),
+    readFile("components/login-form.tsx", "utf8"),
+  ]);
+  assert.match(authService, /pg_advisory_xact_lock/);
+  assert.match(authService, /otp:\$\{OtpPurpose\.LOGIN\}:\$\{mobile\}/);
+  assert.match(authService, /hashtextextended/);
+  assert.match(loginForm, /otpRequestInFlight/);
+});
+
 test("console SMS fails closed in production and never logs OTP", async () => {
   const provider = new ConsoleSmsProvider();
   const previous = process.env.NODE_ENV;

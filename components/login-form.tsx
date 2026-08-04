@@ -22,6 +22,7 @@ export function LoginForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [resendIn, setResendIn] = useState(0);
+  const otpRequestInFlight = useRef(false);
 
   useEffect(() => {
     if (step === "mobile") mobileRef.current?.focus();
@@ -35,6 +36,8 @@ export function LoginForm() {
   }, [resendIn]);
 
   async function requestOtp(nextMobile = mobile) {
+    if (otpRequestInFlight.current || loading) return false;
+    otpRequestInFlight.current = true;
     setLoading(true);
     setError("");
     try {
@@ -62,6 +65,7 @@ export function LoginForm() {
       setError("ارتباط با سرور برقرار نشد.");
       return false;
     } finally {
+      otpRequestInFlight.current = false;
       setLoading(false);
     }
   }

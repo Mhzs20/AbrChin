@@ -87,12 +87,20 @@ export async function processLifecycleNotices(now = new Date()) {
 
   let reminders = 0;
   for (const subscription of dueSoon) {
-    if (subscription.lastReminderSentAt) {
-      const sameCycle =
-        subscription.lastReminderSentAt.getTime() >=
-        subscription.currentPeriodStart.getTime();
-      if (sameCycle) continue;
-    }
+    // Claim the reminder slot before SMS so concurrent workers cannot double-send.
+    const claimed = await prisma.serviceSubscription.updateMany({
+      where: {
+        id: subscription.id,
+        status: SubscriptionStatus.ACTIVE,
+        OR: [
+          { lastReminderSentAt: null },
+          { lastReminderSentAt: { lt: subscription.currentPeriodStart } },
+        ],
+      },
+      data: { lastReminderSentAt: now },
+    });
+    if (claimed.count !== 1) continue;
+
     const daysLeft = Math.max(
       1,
       Math.ceil(
@@ -114,10 +122,6 @@ export async function processLifecycleNotices(now = new Date()) {
         error instanceof Error ? error.message : "unknown",
       );
     }
-    await prisma.serviceSubscription.update({
-      where: { id: subscription.id },
-      data: { lastReminderSentAt: now },
-    });
     await prisma.adminNotification.create({
       data: {
         type: AdminNotificationType.RENEWAL_DUE,

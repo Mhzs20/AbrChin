@@ -166,3 +166,47 @@ test("integration: SMS failure deletes challenge so it is not consumable", async
   });
   assert.equal(leftover, null);
 });
+
+test("integration: concurrent OTP requests deliver only one SMS", async (t) => {
+  if (!prisma) {
+    t.skip("DATABASE_URL not set — skipping DB integration tests");
+    return;
+  }
+  if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 16) {
+    process.env.SESSION_SECRET = sessionSecret;
+  }
+
+  const mobile = "09120008877";
+  await cleanup(mobile);
+  t.after(async () => {
+    await cleanup(mobile);
+  });
+
+  let sendCount = 0;
+  const smsProvider = {
+    name: "test-counting",
+    async sendOtp() {
+      sendCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    },
+  };
+
+  const { requestLoginOtp } = await import("../lib/auth-service.ts");
+  const [first, second] = await Promise.all([
+    requestLoginOtp(mobile, { smsProvider }),
+    requestLoginOtp(mobile, { smsProvider }),
+  ]);
+
+  const successes = [first, second].filter((result) => result.ok);
+  const rejected = [first, second].find((result) => !result.ok);
+  assert.equal(successes.length, 1);
+  assert.ok(rejected);
+  assert.equal(typeof rejected.retryAfterSeconds, "number");
+  assert.ok((rejected.retryAfterSeconds ?? 0) > 0);
+  assert.equal(sendCount, 1);
+
+  const openChallenges = await prisma.otpChallenge.findMany({
+    where: { mobile, purpose: OtpPurpose.LOGIN, consumedAt: null },
+  });
+  assert.equal(openChallenges.length, 1);
+});

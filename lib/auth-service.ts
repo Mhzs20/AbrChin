@@ -3,7 +3,6 @@ import { OtpPurpose, UserRole } from "@prisma/client";
 import { generateOtpCode, hashWithSecret, safeEqualHex } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { assertServerSecrets, isAdminMobile } from "@/lib/env";
-import { createThenDeliverOtpChallenge } from "@/lib/otp-delivery";
 import {
   OTP_MAX_ATTEMPTS,
   canAttemptOtp,
@@ -32,45 +31,77 @@ export async function requestLoginOtp(
   options?: { smsProvider?: SmsProvider },
 ): Promise<RequestOtpResult> {
   const env = assertServerSecrets();
-
-  const recent = await prisma.otpChallenge.findFirst({
-    where: { mobile, purpose: OtpPurpose.LOGIN, consumedAt: null },
-    orderBy: { createdAt: "desc" },
-  });
-
-  if (recent) {
-    const wait = secondsUntilResend(recent.createdAt);
-    if (wait > 0) {
-      return {
-        ok: false,
-        error: `لطفاً ${wait} ثانیه دیگر برای ارسال مجدد صبر کنید.`,
-        retryAfterSeconds: wait,
-      };
-    }
-  }
-
   const sms = options?.smsProvider ?? createSmsProvider();
   const code = generateOtpCode();
   const codeHash = hashWithSecret(code, env.sessionSecret);
   const expiresAt = new Date(Date.now() + env.otpTtlSeconds * 1000);
 
-  await createThenDeliverOtpChallenge(
-    () =>
-      prisma.otpChallenge.create({
-        data: {
-          mobile,
-          codeHash,
-          purpose: OtpPurpose.LOGIN,
-          expiresAt,
-        },
-      }),
-    async () => {
-      await sms.sendOtp({ mobile, code, purpose: OtpPurpose.LOGIN });
-    },
-    async (challenge) => {
-      await prisma.otpChallenge.delete({ where: { id: challenge.id } });
-    },
-  );
+  // Serialize OTP issue per mobile so double-clicks / parallel requests cannot
+  // both pass the resend cooldown and deliver two SMS back-to-back.
+  const reserved = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended(${`otp:${OtpPurpose.LOGIN}:${mobile}`}, 0)
+      )::text AS locked
+    `;
+
+    const recent = await tx.otpChallenge.findFirst({
+      where: { mobile, purpose: OtpPurpose.LOGIN, consumedAt: null },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (recent) {
+      const wait = secondsUntilResend(recent.createdAt);
+      if (wait > 0) {
+        return {
+          ok: false as const,
+          error: `لطفاً ${wait} ثانیه دیگر برای ارسال مجدد صبر کنید.`,
+          retryAfterSeconds: wait,
+        };
+      }
+    }
+
+    const challenge = await tx.otpChallenge.create({
+      data: {
+        mobile,
+        codeHash,
+        purpose: OtpPurpose.LOGIN,
+        expiresAt,
+      },
+    });
+
+    // Keep only the freshly reserved challenge consumable.
+    await tx.otpChallenge.deleteMany({
+      where: {
+        mobile,
+        purpose: OtpPurpose.LOGIN,
+        consumedAt: null,
+        id: { not: challenge.id },
+      },
+    });
+
+    return { ok: true as const, challenge };
+  });
+
+  if (!reserved.ok) {
+    return {
+      ok: false,
+      error: reserved.error,
+      retryAfterSeconds: reserved.retryAfterSeconds,
+    };
+  }
+
+  try {
+    await sms.sendOtp({ mobile, code, purpose: OtpPurpose.LOGIN });
+  } catch (error) {
+    // Failed delivery must not leave a consumable OTP behind.
+    try {
+      await prisma.otpChallenge.delete({ where: { id: reserved.challenge.id } });
+    } catch {
+      // Prefer the original delivery error; cleanup failure is secondary.
+    }
+    throw error;
+  }
 
   return { ok: true, resendAvailableIn: 60 };
 }
