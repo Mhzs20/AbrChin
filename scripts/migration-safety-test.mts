@@ -18,6 +18,8 @@ const providerBillingContractMigrationPath =
   "prisma/migrations/20260803190000_provider_billing_contract_gate/migration.sql";
 const billingRuntimeSafetyMigrationPath =
   "prisma/migrations/20260803200000_billing_runtime_safety/migration.sql";
+const launchParchinLifecycleMigrationPath =
+  "prisma/migrations/20260804180000_launch_parchin_lifecycle/migration.sql";
 
 test("catalog pricing migration is additive and preserves financial history", async () => {
   const migration = await readFile(migrationPath, "utf8");
@@ -166,4 +168,22 @@ test("billing runtime safety migrations are additive and non-retroactive", async
     assert.doesNotMatch(migration, /UPDATE "Wallet"/);
     assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
   }
+});
+
+test("launch parchin lifecycle migration is additive and keeps financial history", async () => {
+  const migration = await readFile(launchParchinLifecycleMigrationPath, "utf8");
+  assert.match(migration, /ADD COLUMN "reminderDaysBeforeDue"/);
+  assert.match(migration, /ADD COLUMN "suspendGraceDaysAfterZero"/);
+  assert.match(migration, /ADD COLUMN "deleteDaysAfterSuspend"/);
+  assert.match(migration, /"taxBps" = 1000/);
+  assert.match(migration, /"priceRial" = 5000000/);
+  assert.match(migration, /"priceRial" = 15000000/);
+  assert.match(migration, /"priceRial" = 50000000/);
+  assert.doesNotMatch(migration, /\bDROP\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM/i);
+  assert.doesNotMatch(migration, /UPDATE "ServiceOrder"/);
+  assert.doesNotMatch(migration, /UPDATE "Wallet"/);
+  assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
+  assert.doesNotMatch(migration, /UPDATE "Payment/);
 });

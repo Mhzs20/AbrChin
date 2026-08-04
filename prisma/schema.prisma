@@ -2123,10 +2123,13 @@ model ProductPricingConfig {
 }
 
 model CommercePricingConfig {
-  id          String   @id @default("default")
-  taxBps      Int      @default(1000)
-  updatedById String?
-  updatedAt   DateTime @updatedAt
+  id                         String   @id @default("default")
+  taxBps                     Int      @default(1000)
+  reminderDaysBeforeDue      Int      @default(7)
+  suspendGraceDaysAfterZero  Int      @default(7)
+  deleteDaysAfterSuspend     Int      @default(7)
+  updatedById                String?
+  updatedAt                  DateTime @updatedAt
 }
 
 model ParchinPricingConfig {

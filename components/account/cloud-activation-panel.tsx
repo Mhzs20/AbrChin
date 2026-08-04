@@ -120,7 +120,7 @@ export function CloudActivationPanel({
       <small>
         این مبلغ Estimate است؛ Invoice نهایی می‌تواند Traffic یا Add-onهای
         قابل‌اندازه‌گیری و تأییدشده را جداگانه نشان دهد. ثبت درخواست هیچ مبلغی
-        از Wallet کم نمی‌کند و هیچ Provider Mutation اجرا نمی‌شود.
+        از Wallet کم نمی‌کند و تا تأیید تیم ابرچین هیچ ساخت خودکاری اجرا نمی‌شود.
       </small>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
         <button

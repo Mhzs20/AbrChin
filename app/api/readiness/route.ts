@@ -4,8 +4,16 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const readiness = await getPlatformReadiness();
+  // Never expose provider identities or contract internals publicly.
+  const publicBody = {
+    status: readiness.status,
+    severity: readiness.severity,
+    components: readiness.components,
+    workerLastSeenAt: readiness.workerLastSeenAt,
+    checkedAt: readiness.checkedAt,
+  };
 
-  return Response.json(readiness, {
+  return Response.json(publicBody, {
     status: readiness.status === "operational" ? 200 : 503,
     headers: {
       "Cache-Control": "no-store",

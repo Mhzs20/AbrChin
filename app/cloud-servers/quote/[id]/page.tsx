@@ -56,6 +56,20 @@ export default async function ReadyServerQuotePage({
       ? snapshot.imageCode
       : quoteRecord.plan.imageCode,
   );
+  const deliveryConfiguration =
+    quoteRecord.deliveryConfigurationSnapshot &&
+    typeof quoteRecord.deliveryConfigurationSnapshot === "object" &&
+    !Array.isArray(quoteRecord.deliveryConfigurationSnapshot)
+      ? (quoteRecord.deliveryConfigurationSnapshot as Record<string, unknown>)
+      : null;
+  const serverName =
+    typeof deliveryConfiguration?.serverName === "string"
+      ? deliveryConfiguration.serverName
+      : null;
+  const lockedOsLabel =
+    typeof deliveryConfiguration?.operatingSystem === "string"
+      ? deliveryConfiguration.operatingSystem
+      : image;
   const next = `/cloud-servers/quote/${quote.id}`;
   const policy =
     quoteRecord.plan.billingModel === "PAYG_WALLET"
@@ -123,7 +137,10 @@ export default async function ReadyServerQuotePage({
             <span><small>پردازنده</small><strong dir="ltr">{quote.vcpu ?? "—"} vCPU</strong></span>
             <span><small>حافظه</small><strong dir="ltr">{quote.ramGb ?? "—"} GB</strong></span>
             <span><small>فضای دیسک</small><strong dir="ltr">{quote.storageGb ?? "—"} GB</strong></span>
-            <span><small>سیستم‌عامل</small><strong dir="ltr">{image}</strong></span>
+            <span><small>سیستم‌عامل</small><strong dir="ltr">{lockedOsLabel}</strong></span>
+            {serverName ? (
+              <span><small>نام سرور</small><strong dir="ltr">{serverName}</strong></span>
+            ) : null}
           </div>
 
           <ul>

@@ -144,8 +144,9 @@ function toPublicOffer(input: {
       input.item.ramMb == null ? null : Math.ceil(input.item.ramMb / 1024),
     storageGb: input.item.diskGb,
     transferTb: input.item.transfer,
-    providerBaseHourlyPriceRial: hourlyBasePriceRial?.toString() ?? null,
-    providerBaseMonthlyPriceRial: monthlyBasePriceRial.toString(),
+    // Never expose supplier economics on the customer storefront payload.
+    providerBaseHourlyPriceRial: null,
+    providerBaseMonthlyPriceRial: "0",
     hourlyPriceRial: hourlyPriceRial?.toString() ?? null,
     salePriceRial: monthlyPriceRial.toString(),
     renewalPriceRial: monthlyPriceRial.toString(),
@@ -171,11 +172,21 @@ function toPublicOffer(input: {
 }
 
 async function loadPricingContext() {
-  const [providers, products, commerce, arvanFreshness, parsPackFreshness, arvanRegions, parsPackRegions, publishedPlans] =
-    await Promise.all([
+  const [
+    providers,
+    products,
+    commerce,
+    parchinRows,
+    arvanFreshness,
+    parsPackFreshness,
+    arvanRegions,
+    parsPackRegions,
+    publishedPlans,
+  ] = await Promise.all([
       prisma.providerPricingConfig.findMany(),
       prisma.productPricingConfig.findMany({ where: { enabled: true } }),
       prisma.commercePricingConfig.findUnique({ where: { id: "default" } }),
+      prisma.parchinPricingConfig.findMany({ where: { active: true } }),
       getCatalogFreshness("ARVAN").catch(() => null),
       getCatalogFreshness("PARSPACK").catch(() => null),
       listProviderRegionConfigs({
@@ -224,10 +235,14 @@ async function loadPricingContext() {
       .filter((plan) => plan.catalogItemId)
       .map((plan) => [plan.catalogItemId!, plan]),
   );
+  const parchinByLevel = new Map(
+    parchinRows.map((row) => [row.level, row.priceRial]),
+  );
   return {
     providers,
     products,
     commerce,
+    parchinByLevel,
     freshnessByProvider,
     regionSale,
     publishedByCatalogItemId,
@@ -262,15 +277,18 @@ function buildOfferForItem(
       config.apiVersion === item.apiVersion &&
       config.productKind === item.productKind,
   );
+  const parchinLevel = storefrontParchinForTier(tier);
   const priced =
     providerPricing && productPricing
       ? resolveCatalogItemPricing(item, providerPricing, {
           productMarkupBasisPoints: productPricing.markupBasisPoints,
-          taxBasisPoints: context.commerce?.taxBps ?? 0,
+          taxBasisPoints: context.commerce?.taxBps ?? 1000,
+          parchinLevel,
+          parchinPriceRial: context.parchinByLevel.get(parchinLevel) ?? 0n,
         })
       : null;
   const markupBasisPoints = priced?.markupBasisPoints ?? 0;
-  const taxBasisPoints = priced?.taxBasisPoints ?? 0;
+  const taxBasisPoints = priced?.taxBasisPoints ?? context.commerce?.taxBps ?? 1000;
 
   if (published) {
     const access = resolveCatalogOfferAccess({

@@ -108,7 +108,17 @@ export type CatalogDeliverySelection = {
   imageAssetId: string;
   accessMethod: "ONE_TIME_PASSWORD" | "SSH_KEY" | "WINDOWS_PASSWORD";
   sshKeyName?: string | null;
+  /** Customer-chosen display/hostname for the AbrChin server. */
+  serverName: string;
 };
+
+export function normalizeCustomerServerName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().replace(/\s+/g, "-");
+  if (trimmed.length < 2 || trimmed.length > 64) return null;
+  if (!/^[\p{L}\p{N}][\p{L}\p{N}-]*$/u.test(trimmed)) return null;
+  return trimmed;
+}
 
 function parseLockedDeliveryConfiguration(
   value: Prisma.JsonValue | null,
@@ -616,6 +626,7 @@ function catalogCheckoutRequestHash(input: {
         imageAssetId: input.delivery.imageAssetId,
         accessMethod: input.delivery.accessMethod,
         sshKeyName: input.delivery.sshKeyName?.trim() || null,
+        serverName: input.delivery.serverName,
       }),
     )
     .digest("hex");
@@ -635,7 +646,18 @@ async function createCatalogServerQuote(params: {
       "شناسه یکتای درخواست معتبر نیست.",
     );
   }
-  const requestHash = catalogCheckoutRequestHash(params);
+  const serverName = normalizeCustomerServerName(params.delivery.serverName);
+  if (!serverName) {
+    throw new WalletError(
+      "invalid_server_name",
+      "نام سرور معتبر نیست؛ حداقل ۲ کاراکتر حرف یا عدد باشد.",
+    );
+  }
+  const delivery = { ...params.delivery, serverName };
+  const requestHash = catalogCheckoutRequestHash({
+    ...params,
+    delivery,
+  });
   const guestCredential = params.userId
     ? null
     : createCatalogGuestSessionCredential(params.idempotencyKey);
@@ -711,7 +733,7 @@ async function createCatalogServerQuote(params: {
       "این سرور دیگر قیمت یا ظرفیت معتبر ندارد.",
     );
   }
-  const locked = await lockAndRevalidatePlan(plan, params.delivery);
+  const locked = await lockAndRevalidatePlan(plan, delivery);
 
   const now = params.now ?? new Date();
   const expiresAt = new Date(now.getTime() + RECOMMENDATION_QUOTE_VALIDITY_MS);
@@ -777,14 +799,17 @@ async function createCatalogServerQuote(params: {
             now,
           })
         : null;
-    const effectiveConfiguration = inventory
-      ? {
-          ...locked.configuration,
-          externalNetworkId: inventory.observedNetworkId,
-          externalSecurityId: inventory.observedSecurityId,
-          configuredAt: inventory.lastObservedAt.toISOString(),
-        }
-      : locked.configuration;
+    const effectiveConfiguration = {
+      ...(inventory
+        ? {
+            ...locked.configuration,
+            externalNetworkId: inventory.observedNetworkId,
+            externalSecurityId: inventory.observedSecurityId,
+            configuredAt: inventory.lastObservedAt.toISOString(),
+          }
+        : locked.configuration),
+      serverName,
+    };
     const created = await tx.recommendationSession.create({
       data: {
         userId: params.userId ?? null,
@@ -1193,6 +1218,11 @@ export async function createRecommendationQuotes(params: {
         imageAssetId: lockedConfiguration.imageAssetId!,
         accessMethod: lockedConfiguration.accessMethod,
         sshKeyName: lockedConfiguration.sshKeyName,
+        serverName:
+          typeof (lockedConfiguration as { serverName?: string }).serverName ===
+          "string"
+            ? (lockedConfiguration as { serverName: string }).serverName
+            : configuredPlan.title.slice(0, 64),
       })),
     })),
   );
@@ -1482,6 +1512,10 @@ export async function refreshRecommendationQuote(params: {
             | "ONE_TIME_PASSWORD"
             | "SSH_KEY"
             | "WINDOWS_PASSWORD",
+          serverName:
+            typeof delivery.serverName === "string"
+              ? delivery.serverName
+              : "abrchin-server",
           sshKeyName:
             typeof delivery.sshKeyName === "string"
               ? delivery.sshKeyName
@@ -1514,6 +1548,10 @@ export async function refreshRecommendationQuote(params: {
             | "ONE_TIME_PASSWORD"
             | "SSH_KEY"
             | "WINDOWS_PASSWORD",
+          serverName:
+            typeof delivery.serverName === "string"
+              ? delivery.serverName
+              : "abrchin-server",
           sshKeyName:
             typeof delivery.sshKeyName === "string"
               ? delivery.sshKeyName

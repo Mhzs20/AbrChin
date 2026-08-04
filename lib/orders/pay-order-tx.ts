@@ -35,6 +35,24 @@ export type PayOrderTxOptions = {
   testInjectFailureAfterDebit?: boolean;
 };
 
+function resolveDesiredInstanceName(input: {
+  orderId: string;
+  deliveryConfiguration: Prisma.JsonValue | null;
+}) {
+  if (
+    input.deliveryConfiguration &&
+    typeof input.deliveryConfiguration === "object" &&
+    !Array.isArray(input.deliveryConfiguration)
+  ) {
+    const serverName = (input.deliveryConfiguration as Record<string, unknown>)
+      .serverName;
+    if (typeof serverName === "string" && serverName.trim().length >= 2) {
+      return serverName.trim().slice(0, 64);
+    }
+  }
+  return `abrchin-${input.orderId.slice(-12)}-1`;
+}
+
 const PAYABLE_QUOTE_STATUSES: RecommendationQuoteStatus[] = [
   RecommendationQuoteStatus.ACTIVE,
   RecommendationQuoteStatus.SELECTED,
@@ -463,7 +481,11 @@ export async function executePayOrderWithWalletTx(
       requiredFundingRial: manualAdmin || preprovisioned
         ? 0n
         : currentPricing.providerBasePriceRial,
-      desiredInstanceName: `abrchin-${order.id.slice(-12)}-1`,
+      desiredInstanceName: resolveDesiredInstanceName({
+        orderId: order.id,
+        deliveryConfiguration:
+          order.recommendationQuote?.deliveryConfigurationSnapshot ?? null,
+      }),
       productFlowState: "AWAITING_PAYMENT",
       productFlowRevision: order.productFlowRevision,
       preprovisionedInventoryItemId: inventory?.id ?? null,

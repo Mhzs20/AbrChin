@@ -68,11 +68,9 @@ export function assertPublicSaleEnabled(route: SaleRoute) {
   if (decision.allowed) return;
   throw new WalletError(
     decision.code,
-    route.provider === InfrastructureProvider.PARSPACK
-      ? "فروش عمومی سرورهای فوری موقتاً غیرفعال است؛ مبلغی برداشت نشد."
-      : route.offerSource === InfrastructureOfferSource.MANUAL_ADMIN ||
-          route.offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY
-        ? "فروش عمومی موجودی آمادهٔ ابرچین موقتاً غیرفعال است؛ مبلغی برداشت نشد."
-        : "فروش عمومی این مسیر آروان موقتاً غیرفعال است؛ مبلغی برداشت نشد.",
+    route.offerSource === InfrastructureOfferSource.MANUAL_ADMIN ||
+      route.offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY
+      ? "فروش عمومی موجودی آمادهٔ ابرچین موقتاً غیرفعال است؛ مبلغی برداشت نشد."
+      : "فروش عمومی این راهکار موقتاً غیرفعال است؛ مبلغی برداشت نشد.",
   );
 }

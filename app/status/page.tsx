@@ -45,7 +45,7 @@ export default async function StatusPage() {
     },
     {
       title: "پردازش سفارش",
-      description: "صف تأمین و آماده‌سازی سرور",
+      description: "صف ساخت و آماده‌سازی سرور",
       status: readiness.components.provisioningWorker,
       icon: Workflow,
     },
@@ -56,8 +56,8 @@ export default async function StatusPage() {
       icon: Activity,
     },
     {
-      title: "قراردادهای Billing Provider",
-      description: "نسخه و تأیید قراردادهای آروان و پارس‌پک",
+      title: "قراردادهای Billing",
+      description: "نسخه و تأیید قراردادهای Billing ابرچین",
       status: readiness.components.billingContracts,
       icon: CheckCircle2,
     },

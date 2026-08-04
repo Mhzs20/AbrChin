@@ -24,9 +24,6 @@ function formatRialAsToman(value: string) {
     : `${toman.toLocaleString("fa-IR")}٫${remainder.toLocaleString("fa-IR")}`;
 }
 
-function formatRial(value: string) {
-  return BigInt(value).toLocaleString("fa-IR");
-}
 
 function formatBasisPoints(value: number) {
   const whole = Math.floor(value / 100);
@@ -154,8 +151,7 @@ export function ReadyCloudCatalog({
 
             <div className="quick-plan-price">
               {productPath === "cloud-servers" ? (
-                offer.hourlyPriceRial &&
-                offer.providerBaseHourlyPriceRial ? (
+                offer.hourlyPriceRial ? (
                   <>
                     <span>
                       <strong>
@@ -164,22 +160,11 @@ export function ReadyCloudCatalog({
                       تومان در ساعت
                     </span>
                     <small>
-                      قیمت پایه تأمین‌کننده:{" "}
-                      {formatRial(offer.providerBaseHourlyPriceRial)} ریال در
-                      ساعت
-                    </small>
-                    <small>
-                      برآورد ۲۴ ساعت پس از سود{" "}
-                      {formatBasisPoints(offer.markupBasisPoints)}٪ و پیش از
-                      اقلام برآورد:{" "}
+                      برآورد ۲۴ ساعت:{" "}
                       {formatRialAsToman(
                         (BigInt(offer.hourlyPriceRial) * 24n).toString(),
                       )}{" "}
                       تومان
-                    </small>
-                    <small>
-                      مالیات تنظیم‌شده:{" "}
-                      {formatBasisPoints(offer.taxBasisPoints)}٪
                     </small>
                   </>
                 ) : (

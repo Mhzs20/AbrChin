@@ -72,9 +72,12 @@ export async function POST(request: Request) {
       typeof record.accessMethod === "string"
         ? record.accessMethod
         : "";
+    const serverName =
+      typeof record.serverName === "string" ? record.serverName.trim() : "";
     if (
       !planId ||
       !imageAssetId ||
+      !serverName ||
       !["ONE_TIME_PASSWORD", "SSH_KEY", "WINDOWS_PASSWORD"].includes(
         accessMethod,
       )
@@ -93,6 +96,7 @@ export async function POST(request: Request) {
           | "ONE_TIME_PASSWORD"
           | "SSH_KEY"
           | "WINDOWS_PASSWORD",
+        serverName,
         sshKeyName:
           typeof record.sshKeyName === "string"
             ? record.sshKeyName

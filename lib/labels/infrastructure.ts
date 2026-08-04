@@ -16,30 +16,29 @@ export const serviceOrderStatusLabel: Record<ServiceOrderStatus, string> = {
 };
 
 export const infrastructureOrderStatusLabel: Record<InfrastructureOrderStatus, string> = {
-  WAITING_ADMIN_FUNDING: "منتظر تأیید ساخت",
-  FUNDING_CONFIRMED: "تأیید ساخت ثبت شد",
-  QUEUED: "در صف آماده‌سازی",
-  PROVISIONING: "در حال آماده‌سازی",
+  WAITING_ADMIN_FUNDING: "در حال ساخت سرور",
+  FUNDING_CONFIRMED: "در حال ساخت سرور",
+  QUEUED: "در حال ساخت سرور",
+  PROVISIONING: "در حال ساخت سرور",
   ACTIVE: "فعال",
-  BLOCKED_PROVIDER_BALANCE: "نیاز به بررسی تأمین",
-  NEEDS_RECONCILIATION: "نیاز به بررسی",
-  MANUAL_REVIEW: "بررسی دستی سلامت",
+  BLOCKED_PROVIDER_BALANCE: "در حال بررسی توسط پشتیبانی",
+  NEEDS_RECONCILIATION: "در حال بررسی توسط پشتیبانی",
+  MANUAL_REVIEW: "در حال بررسی توسط پشتیبانی",
   FAILED: "ناموفق",
   CANCELED: "لغو شده",
   REFUNDED: "بازگشت وجه",
 };
 
 export const infrastructureOrderCustomerMessage: Record<InfrastructureOrderStatus, string> = {
-  WAITING_ADMIN_FUNDING: "پرداخت شما انجام شد و سفارش منتظر تأیید ساخت است.",
-  FUNDING_CONFIRMED: "تأیید ساخت ثبت شد و آماده‌سازی کنترل‌شده ادامه می‌یابد.",
-  QUEUED: "سفارش برای آماده‌سازی در صف قرار گرفت.",
-  PROVISIONING: "سرور شما در حال آماده‌سازی است.",
+  WAITING_ADMIN_FUNDING: "پرداخت انجام شد؛ سرور شما در حال ساخت است.",
+  FUNDING_CONFIRMED: "سرور شما در حال ساخت است.",
+  QUEUED: "سرور شما در صف ساخت قرار گرفت.",
+  PROVISIONING: "سرور شما در حال ساخت است.",
   ACTIVE: "سرور آماده استفاده است.",
-  BLOCKED_PROVIDER_BALANCE: "تأمین زیرساخت نیاز به بررسی دارد و تیم پشتیبانی در حال پیگیری است.",
+  BLOCKED_PROVIDER_BALANCE: "ساخت سرور نیاز به بررسی پشتیبانی دارد.",
   NEEDS_RECONCILIATION: "سفارش شما در حال بررسی توسط پشتیبانی است.",
-  MANUAL_REVIEW:
-    "سرور ساخته شده و پشتیبانی در حال تطبیق Provider یا اجرای بررسی سلامت پس از اصلاح است.",
-  FAILED: "آماده‌سازی با مشکل مواجه شده و توسط پشتیبانی در حال بررسی است.",
+  MANUAL_REVIEW: "سرور ثبت شده و پشتیبانی در حال تکمیل تحویل است.",
+  FAILED: "ساخت با مشکل مواجه شده و پشتیبانی در حال بررسی است.",
   CANCELED: "سفارش لغو شده است.",
   REFUNDED: "مبلغ سفارش به کیف پول شما بازگشت داده شد.",
 };
@@ -49,12 +48,12 @@ export const provisioningJobStatusLabel: Record<ProvisioningJobStatus, string> =
   RUNNING: "در حال اجرا",
   SUCCEEDED: "موفق",
   FAILED: "ناموفق",
-  BLOCKED_PROVIDER_BALANCE: "مسدود — اعتبار تأمین‌کننده",
-  NEEDS_RECONCILIATION: "نیاز به تطبیق",
+  BLOCKED_PROVIDER_BALANCE: "مسدود — نیاز به بررسی پشتیبانی",
+  NEEDS_RECONCILIATION: "نیاز به بررسی پشتیبانی",
 };
 
 export const cloudInstanceStatusLabel: Record<CloudInstanceStatus, string> = {
-  PENDING: "در حال آماده‌سازی",
+  PENDING: "در حال ساخت",
   ACTIVE: "فعال",
   FAILED: "ناموفق",
   TERMINATED: "خاتمه‌یافته",

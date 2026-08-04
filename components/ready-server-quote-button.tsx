@@ -44,6 +44,7 @@ export function ReadyServerQuoteButton({
   const [accessMethod, setAccessMethod] =
     useState<AccessMethod | "">("");
   const [sshKeyName, setSshKeyName] = useState("");
+  const [serverName, setServerName] = useState("");
   const requestKeyRef = useRef<{
     fingerprint: string;
     key: string;
@@ -83,6 +84,10 @@ export function ReadyServerQuoteButton({
       setError("سیستم‌عامل و روش دسترسی را انتخاب کن.");
       return;
     }
+    if (!serverName.trim()) {
+      setError("نام سرور را وارد کن.");
+      return;
+    }
     if (accessMethod === "SSH_KEY" && !sshKeyName.trim()) {
       setError("نام کلید SSH ثبت‌شده را وارد کن.");
       return;
@@ -94,6 +99,7 @@ export function ReadyServerQuoteButton({
         planId,
         imageAssetId,
         accessMethod,
+        serverName: serverName.trim(),
         sshKeyName:
           accessMethod === "SSH_KEY" ? sshKeyName.trim() : null,
       });
@@ -114,6 +120,7 @@ export function ReadyServerQuoteButton({
           planId,
           imageAssetId,
           accessMethod,
+          serverName: serverName.trim(),
           sshKeyName: accessMethod === "SSH_KEY" ? sshKeyName.trim() : null,
         }),
       });
@@ -173,6 +180,15 @@ export function ReadyServerQuoteButton({
               </select>
             </label>
           ) : null}
+          <label>
+            نام سرور
+            <input
+              maxLength={64}
+              placeholder="مثلاً shop-main"
+              value={serverName}
+              onChange={(event) => setServerName(event.target.value)}
+            />
+          </label>
           {accessMethod === "SSH_KEY" ? (
             <label>
               نام کلید SSH ثبت‌شده
@@ -185,13 +201,12 @@ export function ReadyServerQuoteButton({
             </label>
           ) : null}
           <small>
-            {productPath === "cloud-servers"
-              ? "شبکه و Security Group پیش‌فرض همین Region پیش از Quote بررسی و قفل می‌شوند."
-              : "تنظیمات شبکهٔ سرور آماده توسط زیرساخت تحویل مدیریت می‌شود."}
+            سیستم‌عامل و نام سرور قبل از پرداخت قفل می‌شوند و پس از ساخت همان
+            مشخصات در پنل «ابرچین‌ها» دیده می‌شود.
           </small>
           <button
             className="button button-primary"
-            disabled={loading || !imageAssetId || !accessMethod}
+            disabled={loading || !imageAssetId || !accessMethod || !serverName.trim()}
             onClick={createQuote}
             type="button"
           >

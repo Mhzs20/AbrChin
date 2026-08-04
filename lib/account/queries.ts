@@ -190,6 +190,69 @@ export async function getUserServices(userId: string) {
   });
 }
 
+/** AbrChin servers list: live instances + paid orders still being built. */
+export async function getUserAbrchinServers(userId: string) {
+  const [instances, buildingOrders] = await Promise.all([
+    getUserServices(userId),
+    prisma.infrastructureOrder.findMany({
+      where: {
+        userId,
+        cloudInstance: null,
+        status: {
+          in: [
+            "WAITING_ADMIN_FUNDING",
+            "FUNDING_CONFIRMED",
+            "QUEUED",
+            "PROVISIONING",
+            "MANUAL_REVIEW",
+            "NEEDS_RECONCILIATION",
+            "BLOCKED_PROVIDER_BALANCE",
+          ],
+        },
+        serviceOrder: { status: "PAID" },
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        plan: true,
+        serviceOrder: true,
+      },
+    }),
+  ]);
+
+  return {
+    instances,
+    building: buildingOrders.map((order) => {
+      const delivery =
+        order.providerSelectionSnapshot &&
+        typeof order.providerSelectionSnapshot === "object" &&
+        !Array.isArray(order.providerSelectionSnapshot)
+          ? (order.providerSelectionSnapshot as Record<string, unknown>)
+              .deliveryConfiguration
+          : null;
+      const deliveryRecord =
+        delivery && typeof delivery === "object" && !Array.isArray(delivery)
+          ? (delivery as Record<string, unknown>)
+          : null;
+      const operatingSystem =
+        typeof deliveryRecord?.operatingSystem === "string"
+          ? deliveryRecord.operatingSystem
+          : order.plan.imageCode;
+      return {
+        id: `building-${order.id}`,
+        name: order.desiredInstanceName || order.plan.title,
+        status: "PENDING" as const,
+        ipv4: null as string | null,
+        region: order.plan.regionCode,
+        size: order.plan.sizeCode,
+        image: operatingSystem,
+        deliveryMode: order.deliveryMode,
+        createdAt: order.createdAt,
+        infrastructureOrder: order,
+      };
+    }),
+  };
+}
+
 export async function getUserTransactions(userId: string, take = 50) {
   return prisma.walletLedgerEntry.findMany({
     where: { wallet: { userId } },

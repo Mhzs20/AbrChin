@@ -24,6 +24,13 @@ function money(value: unknown): bigint {
   return BigInt(value);
 }
 
+function positiveDays(value: unknown): number {
+  if (!Number.isInteger(value) || Number(value) < 1 || Number(value) > 90) {
+    throw new Error("invalid_lifecycle_days");
+  }
+  return Number(value);
+}
+
 export async function PATCH(request: Request) {
   const rejected = rejectCrossOrigin(request);
   if (rejected) return rejected;
@@ -33,10 +40,18 @@ export async function PATCH(request: Request) {
     const meta = await readRequestMeta(request);
     const body = (await request.json()) as {
       taxBps?: unknown;
+      reminderDaysBeforeDue?: unknown;
+      suspendGraceDaysAfterZero?: unknown;
+      deleteDaysAfterSuspend?: unknown;
       productMarkups?: Array<Record<string, unknown>>;
       parchin?: Array<Record<string, unknown>>;
     };
     const taxBps = bps(body.taxBps, 10_000);
+    const reminderDaysBeforeDue = positiveDays(body.reminderDaysBeforeDue);
+    const suspendGraceDaysAfterZero = positiveDays(
+      body.suspendGraceDaysAfterZero,
+    );
+    const deleteDaysAfterSuspend = positiveDays(body.deleteDaysAfterSuspend);
     const products = (body.productMarkups ?? []).map((config) => {
       if (
         !Object.values(InfrastructureProvider).includes(
@@ -90,8 +105,21 @@ export async function PATCH(request: Request) {
     await prisma.$transaction(async (tx) => {
       await tx.commercePricingConfig.upsert({
         where: { id: "default" },
-        update: { taxBps, updatedById: admin.id },
-        create: { id: "default", taxBps, updatedById: admin.id },
+        update: {
+          taxBps,
+          reminderDaysBeforeDue,
+          suspendGraceDaysAfterZero,
+          deleteDaysAfterSuspend,
+          updatedById: admin.id,
+        },
+        create: {
+          id: "default",
+          taxBps,
+          reminderDaysBeforeDue,
+          suspendGraceDaysAfterZero,
+          deleteDaysAfterSuspend,
+          updatedById: admin.id,
+        },
       });
       for (const config of products) {
         await tx.productPricingConfig.upsert({
@@ -133,6 +161,9 @@ export async function PATCH(request: Request) {
           entityId: "default",
           afterData: {
             taxBps,
+            reminderDaysBeforeDue,
+            suspendGraceDaysAfterZero,
+            deleteDaysAfterSuspend,
             products,
             parchin: parchin.map((item) => ({
               ...item,
@@ -151,9 +182,13 @@ export async function PATCH(request: Request) {
     if (adminError) return jsonError(adminError.message, adminError.status);
     if (
       error instanceof Error &&
-      ["invalid_bps", "invalid_money", "invalid_product_pricing", "invalid_parchin"].includes(
-        error.message,
-      )
+      [
+        "invalid_bps",
+        "invalid_money",
+        "invalid_product_pricing",
+        "invalid_parchin",
+        "invalid_lifecycle_days",
+      ].includes(error.message)
     ) {
       return jsonError("تنظیم مالی معتبر نیست.", 400);
     }

@@ -141,7 +141,7 @@ export default async function AccountOrderDetailPage({
       title: transition.toState,
       description:
         transition.toState === "PROVISIONING_RECONCILING"
-          ? "در حال تطبیق با Provider؛ ساخت تکراری انجام نمی‌شود"
+          ? "در حال تکمیل تحویل توسط ابرچین"
           : transition.toState === "PROVISIONING_RETRYABLE" ||
               transition.toState === "DELIVERY_RETRYABLE"
             ? "قابل تلاش دوباره یا ارجاع به پشتیبانی"

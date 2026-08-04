@@ -328,6 +328,9 @@ export async function getCommercePricingAdminView() {
   ]);
   return {
     taxBps: commerce?.taxBps ?? 1000,
+    reminderDaysBeforeDue: commerce?.reminderDaysBeforeDue ?? 7,
+    suspendGraceDaysAfterZero: commerce?.suspendGraceDaysAfterZero ?? 7,
+    deleteDaysAfterSuspend: commerce?.deleteDaysAfterSuspend ?? 7,
     productMarkups: productMarkups.map((config) => ({
       provider: config.provider,
       apiVersion: config.apiVersion,

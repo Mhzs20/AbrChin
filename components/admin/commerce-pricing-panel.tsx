@@ -6,6 +6,9 @@ import { SectionCard } from "@/components/product";
 
 type PricingState = {
   taxBps: number;
+  reminderDaysBeforeDue: number;
+  suspendGraceDaysAfterZero: number;
+  deleteDaysAfterSuspend: number;
   productMarkups: Array<{
     provider: "ARVAN" | "PARSPACK";
     apiVersion: string;
@@ -49,10 +52,10 @@ export function CommercePricingPanel({ initial }: { initial: PricingState }) {
     <SectionCard title="مالیات، Product Markup و پرچین">
       <p>
         همهٔ مبالغ IRR و مستقل از هزینه Provider هستند. ۱۰۰ basis point برابر
-        ۱٪ است.
+        ۱٪ است. قیمت پرچین صفر یا غیرفعال کردن سطح، از همین‌جا ممکن است.
       </p>
       <label>
-        Tax BPS
+        Tax BPS (۱۰٪ = ۱۰۰۰)
         <input
           min={0}
           max={10000}
@@ -66,6 +69,54 @@ export function CommercePricingPanel({ initial }: { initial: PricingState }) {
           value={state.taxBps}
         />
       </label>
+      <fieldset style={{ display: "grid", gap: 8, border: 0, padding: 0 }}>
+        <legend>یادآوری و چرخه تعلیق / حذف (روز)</legend>
+        <label>
+          روزهای SMS قبل از سررسید
+          <input
+            min={1}
+            max={90}
+            onChange={(event) =>
+              setState((current) => ({
+                ...current,
+                reminderDaysBeforeDue: Number(event.target.value),
+              }))
+            }
+            type="number"
+            value={state.reminderDaysBeforeDue}
+          />
+        </label>
+        <label>
+          روز فرصت تمدید پس از صفر شدن کیف پول (تعلیق)
+          <input
+            min={1}
+            max={90}
+            onChange={(event) =>
+              setState((current) => ({
+                ...current,
+                suspendGraceDaysAfterZero: Number(event.target.value),
+              }))
+            }
+            type="number"
+            value={state.suspendGraceDaysAfterZero}
+          />
+        </label>
+        <label>
+          روز تا حذف پس از تعلیق
+          <input
+            min={1}
+            max={90}
+            onChange={(event) =>
+              setState((current) => ({
+                ...current,
+                deleteDaysAfterSuspend: Number(event.target.value),
+              }))
+            }
+            type="number"
+            value={state.deleteDaysAfterSuspend}
+          />
+        </label>
+      </fieldset>
       {state.productMarkups.map((config, index) => (
         <div key={`${config.provider}:${config.productKind}`}>
           <label>
@@ -145,7 +196,7 @@ export function CommercePricingPanel({ initial }: { initial: PricingState }) {
             />
           </label>
           <label>
-            قیمت IRR
+            قیمت IRR (صفر = رایگان در صورتحساب)
             <input
               inputMode="numeric"
               onChange={(event) =>
