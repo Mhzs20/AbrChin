@@ -697,6 +697,22 @@ test("catalog remains visible while every commercial gate stays fail-closed", as
   }
 });
 
+test("cloud-servers lists synced catalog before SKU publish while purchase stays closed", async () => {
+  const [plansSource, catalogUi, cloudPage] = await Promise.all([
+    readFile("lib/orders/plans.ts", "utf8"),
+    readFile("components/ready-cloud-catalog.tsx", "utf8"),
+    readFile("app/cloud-servers/page.tsx", "utf8"),
+  ]);
+  assert.match(plansSource, /providerCatalogItem\.findMany/);
+  assert.match(plansSource, /SKU_UNPUBLISHED/);
+  assert.match(plansSource, /purchasable: false/);
+  assert.match(catalogUi, /هنوز برای فروش منتشر نشده/);
+  assert.match(cloudPage, /کیف پول/);
+  assert.doesNotMatch(cloudPage, /\bWallet\b/);
+  assert.doesNotMatch(catalogUi, /\bMarkup\b/);
+  assert.doesNotMatch(catalogUi, /\bSource:\b/);
+});
+
 test("new pricing configuration defaults fail closed outside catalog sync", async () => {
   const [schema, migration, syncSource] = await Promise.all([
     readFile("prisma/schema.prisma", "utf8"),

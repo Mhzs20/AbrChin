@@ -40,7 +40,7 @@ function formatBasisPoints(value: number) {
 
 function catalogStatusLabel(status: PublicPlanOffer["catalogStatus"]) {
   if (status === "ACTIVE") return "قیمت و ظرفیت همگام‌شده";
-  if (status === "STALE") return "آخرین دادهٔ معتبر؛ نیازمند Sync دوباره";
+  if (status === "STALE") return "آخرین دادهٔ معتبر؛ نیازمند همگام‌سازی دوباره";
   if (status === "INVALID_PRICE") return "قیمت در دسترس نیست";
   if (status === "INVALID_RESOURCE") return "مشخصات منابع نامعتبر است";
   if (status === "UNAVAILABLE") return "در حال حاضر ناموجود";
@@ -80,10 +80,10 @@ export function ReadyCloudCatalog({
       <section className="quick-plans-empty" aria-live="polite">
         <Database size={24} aria-hidden="true" />
         <div>
-          <strong>فروش این سرورها موقتاً متوقف است.</strong>
+          <strong>هنوز پلن همگام‌شده‌ای برای نمایش نیست.</strong>
           <p>
-            هیچ SKU منتشرشده و متصل به کاتالوگ همگام‌شده در دسترس نیست.
-            فعال‌بودن فروش شرط نمایش کاتالوگ نیست.
+            پس از همگام‌سازی موفق کاتالوگ، پلن‌های قیمت‌دار اینجا دیده می‌شوند.
+            خرید جدا از نمایش است و تا انتشار محصول و فعال‌شدن فروش بسته می‌ماند.
           </p>
         </div>
       </section>
@@ -161,25 +161,25 @@ export function ReadyCloudCatalog({
                       <strong>
                         {formatRialAsToman(offer.hourlyPriceRial)}
                       </strong>{" "}
-                      تومان / ساعت
+                      تومان در ساعت
                     </span>
                     <small>
-                      قیمت پایه زیرساخت:{" "}
-                      {formatRial(offer.providerBaseHourlyPriceRial)} ریال /
+                      قیمت پایه تأمین‌کننده:{" "}
+                      {formatRial(offer.providerBaseHourlyPriceRial)} ریال در
                       ساعت
                     </small>
                     <small>
-                      تخمین ۲۴ ساعت پس از Markup و پیش از Line Itemهای Quote:{" "}
+                      برآورد ۲۴ ساعت پس از سود{" "}
+                      {formatBasisPoints(offer.markupBasisPoints)}٪ و پیش از
+                      اقلام برآورد:{" "}
                       {formatRialAsToman(
                         (BigInt(offer.hourlyPriceRial) * 24n).toString(),
                       )}{" "}
                       تومان
                     </small>
                     <small>
-                      نرخ نمایشی پس از Markup{" "}
-                      {formatBasisPoints(offer.markupBasisPoints)}٪ و پیش از
-                      Line Itemهای Quote است. مالیات تنظیم‌شده:{" "}
-                      {formatBasisPoints(offer.taxBasisPoints)}٪.
+                      مالیات تنظیم‌شده:{" "}
+                      {formatBasisPoints(offer.taxBasisPoints)}٪
                     </small>
                   </>
                 ) : (
@@ -202,10 +202,19 @@ export function ReadyCloudCatalog({
                   </small>
                 </>
               )}
-              <small dir="ltr">
-                Source: {offer.sourceCurrencyCode ?? "UNKNOWN"} /{" "}
-                {offer.sourceAmountUnit ?? "UNKNOWN"} · Normalized:{" "}
-                {offer.normalizedCurrencyCode} / {offer.normalizedAmountUnit}
+              <small>
+                واحد مبدأ:{" "}
+                <span dir="ltr">
+                  {offer.sourceCurrencyCode ?? "نامشخص"} /{" "}
+                  {offer.sourceAmountUnit ?? "نامشخص"}
+                </span>
+                {" · "}
+                واحد نمایش:{" "}
+                <span dir="ltr">
+                  {offer.normalizedCurrencyCode === "IRR"
+                    ? "ریال"
+                    : offer.normalizedCurrencyCode}
+                </span>
               </small>
             </div>
 
@@ -233,12 +242,14 @@ export function ReadyCloudCatalog({
               productPath={productPath}
               disabled={!offer.purchasable}
               disabledReason={
-                offer.purchaseState === "SALE_DISABLED"
+                offer.purchaseState === "SKU_UNPUBLISHED"
+                  ? "هنوز برای فروش منتشر نشده"
+                  : offer.purchaseState === "SALE_DISABLED"
                   ? "فروش هنوز فعال نیست"
                   : offer.purchaseState === "REGION_SALE_DISABLED"
                     ? "فروش این موقعیت هنوز فعال نیست"
                   : offer.purchaseState === "CATALOG_STALE"
-                    ? "در انتظار Sync دوبارهٔ کاتالوگ"
+                    ? "در انتظار همگام‌سازی دوبارهٔ کاتالوگ"
                     : offer.purchaseState === "UNAVAILABLE"
                       ? "در حال حاضر ناموجود"
                     : undefined
