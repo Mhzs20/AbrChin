@@ -63,8 +63,15 @@ export async function PATCH(
     const forbidden =
       error instanceof Error &&
       error.message === "conversation_session_forbidden";
+    const invalidAnswer =
+      error instanceof Error &&
+      error.message.startsWith("invalid_recommendation_answer:");
     return jsonError(
-      forbidden ? "دسترسی به این گفتگو مجاز نیست." : "ذخیره پاسخ ممکن نیست.",
+      forbidden
+        ? "دسترسی به این گفتگو مجاز نیست."
+        : invalidAnswer
+          ? "این گزینه برای این سؤال معتبر نیست؛ دوباره انتخاب کن."
+          : "ذخیره پاسخ ممکن نیست.",
       forbidden ? 403 : 400,
     );
   }

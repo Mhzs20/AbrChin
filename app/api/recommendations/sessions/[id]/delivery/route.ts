@@ -11,6 +11,7 @@ import {
   getConversationSession,
 } from "@/lib/recommendation/session-service";
 import { getCurrentUser } from "@/lib/session";
+import { WalletError } from "@/lib/wallet/errors";
 
 const accessMethods = new Set([
   "ONE_TIME_PASSWORD",
@@ -22,6 +23,23 @@ function parseParchinLevel(value: unknown): ParchinLevel | undefined {
   return Object.values(ParchinLevel).includes(value as ParchinLevel)
     ? (value as ParchinLevel)
     : undefined;
+}
+
+function deliveryErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof WalletError) return error.message;
+  if (
+    error instanceof Error &&
+    error.message === "conversation_requirements_not_confirmed"
+  ) {
+    return "ابتدا برداشت ابرچین از نیازت را تأیید کن، بعد پیشنهاد سرور می‌آید.";
+  }
+  if (
+    error instanceof Error &&
+    error.message === "conversation_session_forbidden"
+  ) {
+    return "دسترسی به این گفتگو مجاز نیست.";
+  }
+  return fallback;
 }
 
 export async function GET(
@@ -48,9 +66,10 @@ export async function GET(
       error instanceof Error &&
       error.message === "conversation_session_forbidden";
     return jsonError(
-      forbidden
-        ? "دسترسی به این گفتگو مجاز نیست."
-        : "تنظیمات معتبر تحویل فعلاً در دسترس نیست.",
+      deliveryErrorMessage(
+        error,
+        "تنظیمات معتبر تحویل فعلاً در دسترس نیست.",
+      ),
       forbidden ? 403 : 409,
     );
   }
@@ -119,15 +138,13 @@ export async function PATCH(
         "ssh_key_name_required",
         "ssh_key_not_found",
         "invalid_access_method_for_image",
-      ].includes(
-        error.message,
-      );
+      ].includes(error.message);
     return jsonError(
       forbidden
         ? "دسترسی به این گفتگو مجاز نیست."
         : invalidAccess
           ? "روش دسترسی با سیستم‌عامل انتخاب‌شده سازگار نیست."
-          : "ثبت تنظیمات تحویل ممکن نیست.",
+          : deliveryErrorMessage(error, "ثبت تنظیمات تحویل ممکن نیست."),
       forbidden ? 403 : 409,
     );
   }

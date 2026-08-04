@@ -55,16 +55,23 @@ async function requireFreshSaleCatalogs() {
     getCatalogFreshness(InfrastructureProvider.PARSPACK),
   ]);
   if (!arvan.fresh) {
-    await requestCatalogSync(InfrastructureProvider.ARVAN);
+    await requestCatalogSync(InfrastructureProvider.ARVAN).catch(() => undefined);
   }
   if (!parspack.fresh) {
-    await requestCatalogSync(InfrastructureProvider.PARSPACK);
-  }
-  if (!arvan.fresh && !parspack.fresh) {
-    throw new WalletError(
-      "quote_unavailable",
-      "کاتالوگ در حال به‌روزرسانی است؛ کمی بعد دوباره تلاش کن.",
+    await requestCatalogSync(InfrastructureProvider.PARSPACK).catch(
+      () => undefined,
     );
+  }
+  // Soft freshness: block only when every provider catalog is stale AND no
+  // published sale plans exist yet. Partial freshness must not blank Compass.
+  if (!arvan.fresh && !parspack.fresh) {
+    const published = await listActivePlans().catch(() => []);
+    if (published.length === 0) {
+      throw new WalletError(
+        "quote_unavailable",
+        "کاتالوگ در حال به‌روزرسانی است؛ کمی بعد دوباره تلاش کن.",
+      );
+    }
   }
 }
 
@@ -99,8 +106,15 @@ export async function getConversationDeliveryOptions(input: {
   ) {
     throw new Error("conversation_requirements_not_confirmed");
   }
+  try {
+    await ensureStorefrontSaleReady();
+  } catch (error) {
+    console.error(
+      "[compass:ensure-sale]",
+      error instanceof Error ? error.message : "unknown",
+    );
+  }
   await requireFreshSaleCatalogs();
-  await ensureStorefrontSaleReady().catch(() => undefined);
   const answers = asAnswers(session.answers);
   const sources = asSources(session.answerSources);
   const minimumParchinLevel = recommendedParchinLevel(answers);
@@ -143,19 +157,50 @@ export async function getConversationDeliveryOptions(input: {
       ),
     ),
   ];
-  const images = await prisma.providerCatalogAsset.findMany({
-    where: {
-      provider: {
-        in: [InfrastructureProvider.ARVAN, InfrastructureProvider.PARSPACK],
+  const regionKeys = [
+    ...new Set(
+      selected.map(
+        ({ plan }) => `${plan.provider}:${plan.regionCode}`,
+      ),
+    ),
+  ];
+  const [matchedImages, regionImages] = await Promise.all([
+    imageCodes.length > 0
+      ? prisma.providerCatalogAsset.findMany({
+          where: {
+            provider: {
+              in: [
+                InfrastructureProvider.ARVAN,
+                InfrastructureProvider.PARSPACK,
+              ],
+            },
+            apiVersion: "v1",
+            kind: "IMAGE",
+            externalId: { in: imageCodes },
+            status: "ACTIVE",
+            available: true,
+          },
+          orderBy: [{ regionCode: "asc" }, { name: "asc" }],
+        })
+      : Promise.resolve([]),
+    prisma.providerCatalogAsset.findMany({
+      where: {
+        OR: regionKeys.map((key) => {
+          const [provider, regionCode] = key.split(":");
+          return {
+            provider: provider as InfrastructureProvider,
+            apiVersion: "v1",
+            regionCode,
+            kind: "IMAGE" as const,
+            status: "ACTIVE" as const,
+            available: true,
+          };
+        }),
       },
-      apiVersion: "v1",
-      kind: "IMAGE",
-      externalId: { in: imageCodes },
-      status: "ACTIVE",
-      available: true,
-    },
-    orderBy: [{ regionCode: "asc" }, { name: "asc" }],
-  });
+      orderBy: [{ name: "asc" }],
+      take: 200,
+    }),
+  ]);
   const itemById = new Map(catalogItems.map((item) => [item.id, item]));
 
   return {
@@ -171,12 +216,25 @@ export async function getConversationDeliveryOptions(input: {
             (code): code is string => typeof code === "string",
           )
         : [];
-      const planImages = images.filter(
+      let planImages = matchedImages.filter(
         (image) =>
           image.provider === plan.provider &&
           image.regionCode === plan.regionCode &&
           allowedCodes.includes(image.externalId),
       );
+      // Catalog image-code drift must not blank OS selection for a valid plan.
+      if (planImages.length === 0) {
+        const regional = regionImages.filter(
+          (image) =>
+            image.provider === plan.provider &&
+            image.regionCode === plan.regionCode,
+        );
+        const linuxFirst = [
+          ...regional.filter((image) => !/windows/i.test(image.name)),
+          ...regional.filter((image) => /windows/i.test(image.name)),
+        ];
+        planImages = linuxFirst.slice(0, 12);
+      }
       return {
         id: plan.id,
         role,
@@ -232,6 +290,14 @@ export async function configureConversationDelivery(input: {
   ) {
     throw new Error("ssh_key_name_required");
   }
+  try {
+    await ensureStorefrontSaleReady();
+  } catch (error) {
+    console.error(
+      "[compass:ensure-sale]",
+      error instanceof Error ? error.message : "unknown",
+    );
+  }
   await requireFreshSaleCatalogs();
   const plan = (await listActivePlans(input.parchinLevel)).find(
     (candidate) => candidate.id === input.planId,
@@ -258,14 +324,9 @@ export async function configureConversationDelivery(input: {
       available: true,
     },
   });
-  const compatible = Array.isArray(
-    plan.catalogItem.compatibleImageCodes,
-  )
-    ? plan.catalogItem.compatibleImageCodes.filter(
-        (code): code is string => typeof code === "string",
-      )
-    : [];
-  if (!image || !compatible.includes(image.externalId)) {
+  // Image query already scopes provider/region/ACTIVE. Compatible-code lists
+  // from sync are often incomplete; do not blank Launch delivery on drift.
+  if (!image) {
     throw new WalletError(
       "quote_unavailable",
       "سیستم‌عامل انتخاب‌شده با این سرور سازگار نیست.",
@@ -288,12 +349,26 @@ export async function configureConversationDelivery(input: {
   ) {
     throw new Error("invalid_access_method_for_image");
   }
-  const defaults = await resolveProviderSelectionDefaults({
-    provider: plan.provider,
-    providerApiVersion: plan.providerApiVersion,
-    productKind: plan.productKind,
-    region: plan.regionCode,
-  });
+  let defaults: Awaited<ReturnType<typeof resolveProviderSelectionDefaults>>;
+  try {
+    defaults = await resolveProviderSelectionDefaults({
+      provider: plan.provider,
+      providerApiVersion: plan.providerApiVersion,
+      productKind: plan.productKind,
+      region: plan.regionCode,
+    });
+  } catch {
+    // Launch path keeps mutations off; quote can lock catalog defaults and
+    // Admin rechecks live provider state before Provision.
+    defaults = {
+      region: plan.regionCode,
+      externalNetworkId: null,
+      externalSecurityId: null,
+      topologyVerificationMode: "PROVIDER_MANAGED",
+      checkedAt: new Date(),
+      providerRequestIds: [],
+    };
+  }
   const lockedSshKey =
     input.accessMethod === "SSH_KEY"
       ? (
@@ -308,25 +383,43 @@ export async function configureConversationDelivery(input: {
   }
   const externalPlanId =
     plan.catalogItem.externalPlanId ?? plan.sizeCode;
-  const currentPrice = await revalidateLockedSelection({
-    provider: plan.provider,
-    providerApiVersion: plan.providerApiVersion,
-    productKind: plan.productKind,
-    region: plan.regionCode,
-    externalPlanId,
-    externalImageId: image.externalId,
-    externalNetworkId: defaults.externalNetworkId,
-    externalSecurityId: defaults.externalSecurityId,
-  });
-  if (
-    currentPrice.monthlyPriceIrr !==
-    plan.pricing.providerBasePriceRial
-  ) {
-    await requestCatalogSync(plan.provider);
-    throw new WalletError(
-      "quote_revalidation_failed",
-      "قیمت تغییر کرده و کاتالوگ در حال به‌روزرسانی است.",
-    );
+  let currentPrice: Awaited<ReturnType<typeof revalidateLockedSelection>>;
+  try {
+    currentPrice = await revalidateLockedSelection({
+      provider: plan.provider,
+      providerApiVersion: plan.providerApiVersion,
+      productKind: plan.productKind,
+      region: plan.regionCode,
+      externalPlanId,
+      externalImageId: image.externalId,
+      externalNetworkId: defaults.externalNetworkId,
+      externalSecurityId: defaults.externalSecurityId,
+    });
+    if (
+      currentPrice.monthlyPriceIrr !==
+      plan.pricing.providerBasePriceRial
+    ) {
+      await requestCatalogSync(plan.provider).catch(() => undefined);
+      throw new WalletError(
+        "quote_revalidation_failed",
+        "قیمت تغییر کرده و کاتالوگ در حال به‌روزرسانی است.",
+      );
+    }
+  } catch (error) {
+    if (error instanceof WalletError) throw error;
+    currentPrice = {
+      provider: plan.provider,
+      apiVersion: plan.providerApiVersion,
+      productKind: plan.productKind,
+      region: plan.regionCode,
+      externalPlanId,
+      available: true,
+      currency: "IRR",
+      monthlyPriceIrr: plan.pricing.providerBasePriceRial,
+      hourlyPriceIrr: null,
+      checkedAt: new Date(),
+      rawPayload: { source: "catalog_fallback" },
+    };
   }
   const configuration = {
     provider: plan.provider,

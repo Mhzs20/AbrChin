@@ -162,6 +162,8 @@ export function ConversationBuilder({
   const [sshKeyName, setSshKeyName] = useState("");
   const [deliveryConfigured, setDeliveryConfigured] = useState(false);
   const [savingDelivery, setSavingDelivery] = useState(false);
+  const [deliveryRetry, setDeliveryRetry] = useState(0);
+  const autoDeliveryAttempted = useRef(false);
   const [termMonths, setTermMonths] = useState<1 | 3 | 6 | 12>(1);
   const [couponCode, setCouponCode] = useState("");
   const [servicePackages, setServicePackages] = useState<
@@ -251,23 +253,30 @@ export function ConversationBuilder({
               : firstMissing,
           );
           const state = databaseSession.productFlowState;
-          setUnderstandingConfirmed(state !== "DRAFT");
-          setShowUnderstanding(false);
-          setShowResult(
-            [
-              "REQUIREMENTS_COMPLETE",
-              "RECOMMENDED",
-              "PARCHIN_SELECTED",
-              "DELIVERY_CONFIGURED",
-              "QUOTED",
-              "QUOTE_EXPIRED",
-            ].includes(state),
-          );
-          setDeliveryConfigured(
-            ["DELIVERY_CONFIGURED", "QUOTED", "QUOTE_EXPIRED"].includes(
-              state,
-            ),
-          );
+          if (state === "DRAFT") {
+            setUnderstandingConfirmed(false);
+            setShowUnderstanding(Boolean(restoredAnswers.project));
+            setShowResult(false);
+            setDeliveryConfigured(false);
+          } else {
+            setUnderstandingConfirmed(true);
+            setShowUnderstanding(false);
+            setShowResult(
+              [
+                "REQUIREMENTS_COMPLETE",
+                "RECOMMENDED",
+                "PARCHIN_SELECTED",
+                "DELIVERY_CONFIGURED",
+                "QUOTED",
+                "QUOTE_EXPIRED",
+              ].includes(state),
+            );
+            setDeliveryConfigured(
+              ["DELIVERY_CONFIGURED", "QUOTED", "QUOTE_EXPIRED"].includes(
+                state,
+              ),
+            );
+          }
           if (
             databaseSession.selectedParchinLevel &&
             parchinLevels.includes(databaseSession.selectedParchinLevel)
@@ -278,33 +287,36 @@ export function ConversationBuilder({
           }
           setRestored(true);
         } else if (cached) {
+          // Answers/sources may restore locally, but flow gates must follow
+          // server state. Cached understanding/result/delivery can desync to a
+          // DRAFT session and blank Compass delivery/quotes.
           setAnswers(cached.answers);
           setSources(cached.sources);
           const restoredOrder = getRecommendationQuestionOrder(
             cached.answers,
           );
+          const firstMissing = restoredOrder.findIndex(
+            (questionId) => !cached.answers[questionId],
+          );
           setStepIndex(
-            Math.max(
-              0,
-              Math.min(cached.stepIndex, restoredOrder.length - 1),
-            ),
+            firstMissing < 0
+              ? 0
+              : Math.max(0, Math.min(firstMissing, restoredOrder.length - 1)),
           );
-          setShowResult(cached.showResult);
-          setShowUnderstanding(cached.showUnderstanding ?? false);
-          setUnderstandingConfirmed(
-            cached.understandingConfirmed ?? false,
-          );
+          setShowResult(false);
+          setShowUnderstanding(Boolean(cached.answers.project));
+          setUnderstandingConfirmed(false);
           setShowComparisons(cached.showComparisons ?? false);
           setDirection(cached.direction ?? "balanced");
-          setDeliveryConfigured(cached.deliveryConfigured ?? false);
+          setDeliveryConfigured(false);
           if (
             cached.parchinLevel &&
             parchinLevels.includes(cached.parchinLevel)
           ) {
             setRequestedParchinLevel(cached.parchinLevel);
           }
-          setSessionId(cached.sessionId ?? null);
-          setRevision(cached.revision ?? 0);
+          setSessionId(null);
+          setRevision(0);
           setRestored(true);
         }
         setHydrated(true);
@@ -470,26 +482,36 @@ export function ConversationBuilder({
           options.find((option) => option.role === "RECOMMENDED") ??
           options[0];
         setSelectedDeliveryPlanId(preferred?.id ?? "");
-        const image = preferred?.images[0];
+        const image =
+          preferred?.images.find((item) => !item.windows) ??
+          preferred?.images[0];
         setSelectedImageAssetId(image?.id ?? "");
         setAccessMethod(
           image?.windows ? "WINDOWS_PASSWORD" : "ONE_TIME_PASSWORD",
         );
+        setQuotesError(null);
         setDeliveryOptionsResolved(true);
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setQuotesError(
+        const message =
           error instanceof Error
             ? error.message
-            : "گزینه‌های تحویل در دسترس نیستند.",
-        );
+            : "گزینه‌های تحویل در دسترس نیستند.";
+        setQuotesError(message);
+        setDeliveryOptions([]);
         setDeliveryOptionsResolved(true);
+        if (message.includes("برداشت ابرچین")) {
+          setUnderstandingConfirmed(false);
+          setShowResult(false);
+          setShowUnderstanding(true);
+        }
       });
     return () => controller.abort();
   }, [
     deliveryConfigured,
     deliveryOptionsResolved,
+    deliveryRetry,
     revision,
     selectedParchinLevel,
     sessionId,
@@ -525,14 +547,30 @@ export function ConversationBuilder({
     (image) => image.id === selectedImageAssetId,
   );
 
+  async function ensureSession() {
+    if (sessionId) return { id: sessionId, nextRevision: revision };
+    const response = await fetch("/api/recommendations/sessions", {
+      method: "POST",
+    });
+    if (!response.ok) throw new Error("conversation_session_not_ready");
+    const body = (await response.json()) as {
+      sessionId?: string;
+      revision?: number;
+    };
+    if (!body.sessionId) throw new Error("conversation_session_not_ready");
+    setSessionId(body.sessionId);
+    setRevision(body.revision ?? 0);
+    return { id: body.sessionId, nextRevision: body.revision ?? 0 };
+  }
+
   async function persistAnswer(
     id: QuestionId,
     value: string,
     source: AnswerSources[QuestionId] = "user",
   ) {
-    if (!sessionId) throw new Error("conversation_session_not_ready");
+    const session = await ensureSession();
     const response = await fetch(
-      `/api/recommendations/sessions/${sessionId}/answers`,
+      `/api/recommendations/sessions/${session.id}/answers`,
       {
         method: "PATCH",
         headers: {
@@ -541,7 +579,7 @@ export function ConversationBuilder({
         body: JSON.stringify({
           questionId: id,
           answer: value,
-          expectedRevision: revision,
+          expectedRevision: session.nextRevision,
           source: source ?? "user",
         }),
       },
@@ -549,6 +587,7 @@ export function ConversationBuilder({
     const body = (await response.json()) as {
       revision?: number;
       current?: ResumedConversation | null;
+      error?: string;
     };
     if (response.status === 409 && body.current) {
       setAnswers(body.current.answers);
@@ -556,8 +595,10 @@ export function ConversationBuilder({
       setRevision(body.current.revision);
       throw new Error("conversation_revision_conflict");
     }
-    if (!response.ok) throw new Error("conversation_answer_not_saved");
-    setRevision(body.revision ?? revision + 1);
+    if (!response.ok) {
+      throw new Error(body.error ?? "conversation_answer_not_saved");
+    }
+    setRevision(body.revision ?? session.nextRevision + 1);
   }
 
   function choose(value: string, source: AnswerSources[QuestionId] = "user") {
@@ -570,6 +611,7 @@ export function ConversationBuilder({
     setDeliveryConfigured(false);
     setDeliveryOptions([]);
     setDeliveryOptionsResolved(false);
+    autoDeliveryAttempted.current = false;
     if (questionId === "project") {
       setUnderstandingConfirmed(false);
     }
@@ -615,8 +657,17 @@ export function ConversationBuilder({
         error.message === "conversation_revision_conflict"
       ) {
         setQuotesError("گفتگو هم‌زمان تغییر کرده؛ گزینه‌ات را یک‌بار دیگر بزن.");
+      } else if (
+        error instanceof Error &&
+        error.message === "conversation_session_not_ready"
+      ) {
+        setQuotesError("نشست گفتگو هنوز آماده نیست؛ دوباره تلاش کن.");
       } else {
-        setQuotesError("ذخیرهٔ پاسخ کامل نشد؛ دوباره تلاش کن.");
+        setQuotesError(
+          error instanceof Error && error.message && !error.message.startsWith("conversation_")
+            ? error.message
+            : "ذخیرهٔ پاسخ کامل نشد؛ دوباره تلاش کن.",
+        );
       }
     } finally {
       setSavingAnswer(false);
@@ -706,15 +757,18 @@ export function ConversationBuilder({
     setAccessMethod("ONE_TIME_PASSWORD");
     setSshKeyName("");
     setDeliveryConfigured(false);
+    autoDeliveryAttempted.current = false;
+    setDeliveryRetry(0);
     window.sessionStorage.removeItem(storageKey);
   }
 
-  async function confirmDelivery() {
-    if (
-      !sessionId ||
-      !selectedDeliveryPlanId ||
-      !selectedImageAssetId
-    ) {
+  async function confirmDeliveryWith(input: {
+    planId: string;
+    imageAssetId: string;
+    accessMethod: "ONE_TIME_PASSWORD" | "SSH_KEY" | "WINDOWS_PASSWORD";
+    sshKeyName?: string;
+  }) {
+    if (!sessionId || !input.planId || !input.imageAssetId) {
       setQuotesError("یک Region، سرور و سیستم‌عامل معتبر انتخاب کن.");
       return;
     }
@@ -728,11 +782,14 @@ export function ConversationBuilder({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             expectedRevision: revision,
-            planId: selectedDeliveryPlanId,
-            imageAssetId: selectedImageAssetId,
+            planId: input.planId,
+            imageAssetId: input.imageAssetId,
             parchinLevel: selectedParchinLevel,
-            accessMethod,
-            sshKeyName: accessMethod === "SSH_KEY" ? sshKeyName : null,
+            accessMethod: input.accessMethod,
+            sshKeyName:
+              input.accessMethod === "SSH_KEY"
+                ? (input.sshKeyName ?? sshKeyName)
+                : null,
           }),
         },
       );
@@ -761,10 +818,59 @@ export function ConversationBuilder({
           ? error.message
           : "ثبت تنظیمات تحویل ممکن نیست.",
       );
+      autoDeliveryAttempted.current = false;
     } finally {
       setSavingDelivery(false);
     }
   }
+
+  async function confirmDelivery() {
+    await confirmDeliveryWith({
+      planId: selectedDeliveryPlanId,
+      imageAssetId: selectedImageAssetId,
+      accessMethod,
+      sshKeyName,
+    });
+  }
+
+  useEffect(() => {
+    if (
+      !showResult ||
+      deliveryConfigured ||
+      !deliveryOptionsResolved ||
+      savingDelivery ||
+      autoDeliveryAttempted.current
+    ) {
+      return;
+    }
+    const preferred =
+      deliveryOptions.find((option) => option.role === "RECOMMENDED") ??
+      deliveryOptions[0];
+    const image =
+      preferred?.images.find((item) => !item.windows) ??
+      preferred?.images[0];
+    if (!sessionId || !preferred?.id || !image?.id) return;
+    autoDeliveryAttempted.current = true;
+    setSelectedDeliveryPlanId(preferred.id);
+    setSelectedImageAssetId(image.id);
+    setAccessMethod(
+      image.windows ? "WINDOWS_PASSWORD" : "ONE_TIME_PASSWORD",
+    );
+    void confirmDeliveryWith({
+      planId: preferred.id,
+      imageAssetId: image.id,
+      accessMethod: image.windows
+        ? "WINDOWS_PASSWORD"
+        : "ONE_TIME_PASSWORD",
+    });
+  }, [
+    deliveryConfigured,
+    deliveryOptions,
+    deliveryOptionsResolved,
+    savingDelivery,
+    sessionId,
+    showResult,
+  ]);
 
   const transition = reduceMotion
     ? { duration: 0 }
@@ -1110,6 +1216,8 @@ export function ConversationBuilder({
                           setQuotes([]);
                           setQuotesResolved(false);
                           setQuotesError(null);
+                          autoDeliveryAttempted.current = false;
+                          setDeliveryRetry((current) => current + 1);
                         }}
                       >
                         {level === "PARCHIN_START"
@@ -1175,9 +1283,22 @@ export function ConversationBuilder({
                         <ShieldCheck size={22} aria-hidden="true" />
                         <div>
                           <strong>
-                            در حال حاضر چینش معتبر و تازه‌ای برای این نیاز
-                            وجود ندارد.
+                            {quotesError ??
+                              "در حال حاضر چینش معتبر و تازه‌ای برای این نیاز وجود ندارد."}
                           </strong>
+                          <button
+                            className="button button-quiet"
+                            type="button"
+                            onClick={() => {
+                              setQuotesError(null);
+                              setDeliveryOptionsResolved(false);
+                              autoDeliveryAttempted.current = false;
+                              setDeliveryRetry((current) => current + 1);
+                            }}
+                          >
+                            <RefreshCw size={15} aria-hidden="true" />
+                            تلاش دوباره
+                          </button>
                         </div>
                       </div>
                     ) : (

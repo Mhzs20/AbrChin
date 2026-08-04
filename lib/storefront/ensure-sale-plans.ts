@@ -1,16 +1,19 @@
 import {
   DeliveryMode,
   InfrastructurePlanPublicationStatus,
+  InfrastructureProvider,
   ParchinLevel,
+  ProviderRegionConfigSource,
   type ProviderCatalogItem,
 } from "@prisma/client";
 
+import { readyServerLocation } from "@/lib/cloud-servers/catalog";
+import { selectReadyServerImage } from "@/lib/cloud-servers/catalog";
 import { prisma } from "@/lib/db";
 import {
   compatibleImageCodes,
   resolveCatalogItemPricing,
 } from "@/lib/pricing/plan-pricing";
-import { selectReadyServerImage } from "@/lib/cloud-servers/catalog";
 import { storefrontProviderCode } from "@/lib/storefront/provider-codes";
 import { storefrontServerTitle } from "@/lib/storefront/presentation";
 
@@ -89,7 +92,6 @@ async function ensurePublishedPlanForCatalogItem(item: ProviderCatalogItem) {
         renewalPriceRial: priced?.finalPriceRial ?? existing.renewalPriceRial,
         estimatedProviderCostRial:
           priced?.providerBasePriceRial ?? existing.estimatedProviderCostRial,
-        // Launch path: prepaid term + Admin fulfillment (mutations stay off).
         billingModel: "PREPAID_TERM",
         billingPolicyVersionId: null,
         parchinIncluded: true,
@@ -167,20 +169,76 @@ async function ensurePublishedPlanForCatalogItem(item: ProviderCatalogItem) {
   });
 }
 
+async function ensureRegionsForCatalogItems(items: ProviderCatalogItem[]) {
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (
+      item.provider !== InfrastructureProvider.ARVAN &&
+      item.provider !== InfrastructureProvider.PARSPACK
+    ) {
+      continue;
+    }
+    const key = `${item.provider}:${item.apiVersion}:${item.regionCode}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const location = readyServerLocation(item.regionCode);
+    await prisma.providerRegionConfig.upsert({
+      where: {
+        provider_apiVersion_regionCode: {
+          provider: item.provider,
+          apiVersion: item.apiVersion,
+          regionCode: item.regionCode,
+        },
+      },
+      create: {
+        provider: item.provider,
+        apiVersion: item.apiVersion,
+        regionCode: item.regionCode,
+        displayName: location.label,
+        source: ProviderRegionConfigSource.ADMIN,
+        syncEnabled: true,
+        saleEnabled: true,
+        sortOrder: location.sortOrder,
+      },
+      update: {
+        saleEnabled: true,
+        syncEnabled: true,
+        displayName: location.label,
+      },
+    });
+  }
+}
+
 /**
- * Makes every enabled storefront assortment slot purchasable:
- * publish mapped SKUs, open region sale, enable pricing configs.
+ * Makes curated storefront slots (and a Compass fallback catalog slice)
+ * purchasable: publish mapped SKUs, open region sale, enable pricing configs.
  * Does not open provider Mutation gates.
  */
 export async function ensureStorefrontSaleReady() {
-  const [slots, pricingConfigs, productConfigs] = await Promise.all([
-    prisma.storefrontAssortmentSlot.findMany({
-      where: { enabled: true },
-      include: { catalogItem: true },
-    }),
-    prisma.providerPricingConfig.findMany(),
-    prisma.productPricingConfig.findMany(),
-  ]);
+  const [slots, pricingConfigs, productConfigs, fallbackCatalog] =
+    await Promise.all([
+      prisma.storefrontAssortmentSlot.findMany({
+        where: { enabled: true },
+        include: { catalogItem: true },
+      }),
+      prisma.providerPricingConfig.findMany(),
+      prisma.productPricingConfig.findMany(),
+      prisma.providerCatalogItem.findMany({
+        where: {
+          provider: { in: ["ARVAN", "PARSPACK"] },
+          source: "API_CATALOG",
+          active: true,
+          available: true,
+          status: "ACTIVE",
+          OR: [
+            { providerHourlyPriceIrr: { gt: 0n } },
+            { providerMonthlyPriceIrr: { gt: 0n } },
+          ],
+        },
+        orderBy: [{ provider: "asc" }, { vcpu: "asc" }, { ramMb: "asc" }],
+        take: 48,
+      }),
+    ]);
 
   for (const config of pricingConfigs) {
     if (!config.enabled) {
@@ -199,20 +257,28 @@ export async function ensureStorefrontSaleReady() {
     }
   }
 
+  // Open every known region for sale — Founder wants listed inventory sellable.
   await prisma.providerRegionConfig.updateMany({
     where: {
       provider: { in: ["ARVAN", "PARSPACK"] },
-      syncEnabled: true,
       saleEnabled: false,
     },
     data: { saleEnabled: true },
   });
 
+  const slotItems = slots
+    .map((slot) => slot.catalogItem)
+    .filter((item): item is ProviderCatalogItem => item != null);
+  // Publish curated slots and a Compass/storefront fallback slice so an empty
+  // or partial assortment cannot leave the site with nothing purchasable.
+  const publishPool = [...slotItems, ...fallbackCatalog];
+
+  await ensureRegionsForCatalogItems(publishPool);
+
   let published = 0;
   const seen = new Set<string>();
-  for (const slot of slots) {
-    const item = slot.catalogItem;
-    if (!item || seen.has(item.id)) continue;
+  for (const item of publishPool) {
+    if (seen.has(item.id)) continue;
     if (!item.active || !item.available || item.status !== "ACTIVE") continue;
     seen.add(item.id);
     await ensurePublishedPlanForCatalogItem(item);
