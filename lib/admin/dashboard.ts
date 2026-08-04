@@ -222,7 +222,8 @@ export async function getProviderCatalogAdminView() {
         { regionCode: "asc" },
         { sizeCode: "asc" },
       ],
-      take: 500,
+      // Full provider catalogs for Founder review (Arvan + ParsPack).
+      take: 5000,
     }),
     prisma.providerPricingConfig.findMany(),
     prisma.productPricingConfig.findMany(),

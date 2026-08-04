@@ -6,15 +6,16 @@ test("cloud and ready purchase routes stay provider-separated before login", asy
   const cloudPage = await readFile("app/cloud-servers/page.tsx", "utf8");
   const readyPage = await readFile("app/ready-servers/page.tsx", "utf8");
   const chinish = await readFile("components/chinish-cloud-catalog.tsx", "utf8");
-  const cards = await readFile("components/ready-cloud-catalog.tsx", "utf8");
+  const siteShell = await readFile("components/site-shell.tsx", "utf8");
   const quoteButton = await readFile("components/ready-server-quote-button.tsx", "utf8");
 
   assert.match(cloudPage, /سرور ابری ابرچین/);
   assert.match(cloudPage, /listPublicStorefrontTiers/);
   assert.doesNotMatch(cloudPage, /listLiveReadyServerOffers/);
-  assert.match(readyPage, /سرورهای آماده/);
-  assert.match(readyPage, /listLiveReadyServerOffers/);
-  assert.doesNotMatch(readyPage, /listLiveCloudServerOffers/);
+  assert.match(readyPage, /redirect\("\/cloud-servers"\)/);
+  assert.match(siteShell, /راهکار فوری/);
+  assert.doesNotMatch(siteShell, /\/ready-servers/);
+  assert.doesNotMatch(siteShell, /shortLabel: "فوری"/);
   assert.match(chinish, /چینش نو|چینش استوار|چینش کهکشان/);
   assert.match(chinish, /تومان در ساعت/);
   assert.match(chinish, /چینش فنی/);
@@ -23,7 +24,6 @@ test("cloud and ready purchase routes stay provider-separated before login", asy
   assert.doesNotMatch(chinish, /قیمت پایه تأمین‌کننده/);
   assert.doesNotMatch(chinish, /همگام‌شده/);
   assert.doesNotMatch(chinish, /سیستم‌عامل‌های مجاز/);
-  assert.match(cards, /دوره ثابت · تمدید/);
   assert.match(quoteButton, /دریافت Quote/);
   assert.match(chinish, /امن و آمادهٔ راه‌اندازی با پرچین/);
   assert.match(chinish, /زمان تحویل تقریبی: فوری/);

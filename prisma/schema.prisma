@@ -2099,7 +2099,8 @@ model ProviderPricingConfig {
   apiVersion        String                 @default("v1")
   enabled           Boolean                @default(false)
   sourceMoneyUnit   String?
-  markupBasisPoints Int                    @default(0)
+  /// Launch default ~233.33% over cost ⇒ ~30% cost / ~70% profit pre-tax.
+  markupBasisPoints Int                    @default(23333)
   updatedAt         DateTime               @updatedAt
   updatedById       String?
   updatedBy         User?                  @relation("ProviderPricingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
@@ -2110,6 +2111,7 @@ model ProductPricingConfig {
   provider          InfrastructureProvider
   apiVersion        String                    @default("v1")
   productKind       InfrastructureProductKind
+  /// Keep product markup at 0 by default so provider markup alone owns the 30/70 split.
   markupBasisPoints Int                       @default(0)
   enabled           Boolean                   @default(false)
   updatedById       String?

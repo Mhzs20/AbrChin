@@ -3,7 +3,6 @@ import type { MetadataRoute } from "next";
 const routes = [
   "",
   "/cloud-servers",
-  "/ready-servers",
   "/compass",
   "/solutions",
   "/support",
@@ -17,6 +16,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     url: `https://abrchin.ir${route}`,
     lastModified: new Date(),
     changeFrequency: route === "" ? "weekly" : "monthly",
-    priority: route === "" ? 1 : route === "/cloud-servers" ? 0.9 : route === "/compass" ? 0.8 : 0.7,
+    priority:
+      route === "" ? 1 : route === "/cloud-servers" ? 0.9 : route === "/compass" ? 0.8 : 0.7,
   }));
 }

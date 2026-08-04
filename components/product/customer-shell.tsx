@@ -29,7 +29,7 @@ import type { PublicUser } from "@/lib/session";
 
 const mainNav: NavItem[] = [
   { href: "/account", label: "نمای کلی", icon: Home, shortLabel: "خانه" },
-  { href: "/cloud-servers", label: "خرید راهکار", icon: ShoppingBag, shortLabel: "خرید" },
+  { href: "/cloud-servers", label: "راهکار فوری", icon: ShoppingBag, shortLabel: "راهکار فوری" },
   { href: "/account/services", label: "سرویس‌های من", icon: Server, shortLabel: "سرویس" },
   { href: "/account/orders", label: "سفارش‌های من", icon: ShoppingBag, shortLabel: "سفارش" },
   { href: "/account/wallet", label: "کیف پول", icon: Wallet, shortLabel: "کیف" },

@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import type { ProviderCatalog } from "@/lib/infrastructure/types";
 import {
   decimalToScaledInteger,
+  DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
   normalizeProviderPriceContract,
   providerAmountToRial,
   PROVIDER_PRICE_SCALE,
@@ -192,7 +193,7 @@ export async function persistProviderCatalog(
       provider: InfrastructureProvider.PARSPACK,
       apiVersion: "v1",
       sourceMoneyUnit: contract?.amountUnit ?? null,
-      markupBasisPoints: 0,
+      markupBasisPoints: DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
       enabled: false,
     },
   });

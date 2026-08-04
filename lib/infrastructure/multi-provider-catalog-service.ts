@@ -32,6 +32,7 @@ import {
   resolveProviderRoute,
 } from "@/lib/infrastructure/provider-routing";
 import { listProviderSyncRegionCodes } from "@/lib/infrastructure/provider-region-config";
+import { DEFAULT_LAUNCH_MARKUP_BASIS_POINTS } from "@/lib/pricing/provider-pricing";
 
 const CATALOG_SYNC_LEASE_MS = 10 * 60 * 1000;
 
@@ -849,7 +850,7 @@ async function syncMultiProviderCatalogUnlocked(
         provider: adapter.provider,
         apiVersion: adapter.apiVersion,
         sourceMoneyUnit,
-        markupBasisPoints: 0,
+        markupBasisPoints: DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
         enabled: false,
       },
     });

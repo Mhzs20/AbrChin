@@ -24,6 +24,7 @@ import {
 } from "@/lib/pricing/plan-pricing";
 import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
 import {
+  isStorefrontDisplayFresh,
   storefrontLocationLabel,
   storefrontParchinForTier,
   storefrontServerTitle,
@@ -240,7 +241,8 @@ function buildOfferForItem(
 ): PublicPlanOffer | null {
   const freshness = context.freshnessByProvider[item.provider];
   if (!freshness) return null;
-  const catalogFresh = freshness.fresh === true;
+  // Display path uses 24h freshness; purchase/quote still use provider SLA.
+  const catalogFresh = isStorefrontDisplayFresh(freshness.lastSync);
   if (!isCatalogItemDisplayable(item, catalogFresh)) return null;
 
   const published = context.publishedByCatalogItemId.get(item.id);
@@ -352,9 +354,13 @@ export async function resolveStorefrontTierOffers(
   const selected: PublicPlanOffer[] = [];
   let availableCount = 0;
 
+  const seenResources = new Set<string>();
   for (const slot of [...primary, ...reserve]) {
     const offer = buildOfferForItem(slot.catalogItem, tier, context);
     if (!offer || !offer.available) continue;
+    const fingerprint = `${offer.vcpu ?? 0}:${offer.ramGb ?? 0}:${offer.storageGb ?? 0}`;
+    if (seenResources.has(fingerprint)) continue;
+    seenResources.add(fingerprint);
     availableCount += 1;
     if (selected.length < STOREFRONT_DISPLAY_LIMIT) {
       selected.push(offer);
@@ -391,7 +397,8 @@ export async function listPublicStorefrontTiers(): Promise<{
   ]);
   const freshStates = [arvanFreshness, parsPackFreshness].filter(Boolean);
   const allFresh =
-    freshStates.length > 0 && freshStates.every((state) => state!.fresh);
+    freshStates.length > 0 &&
+    freshStates.every((state) => isStorefrontDisplayFresh(state!.lastSync));
   const checkedAt =
     resolved.flatMap((tier) => tier.offers)[0]?.checkedAt ??
     arvanFreshness?.lastSync?.toISOString() ??
@@ -558,12 +565,12 @@ export async function listStorefrontCatalogCandidates() {
     prisma.providerCatalogItem.findMany({
       where: { ...candidateWhere, provider: "ARVAN" },
       orderBy: [{ regionCode: "asc" }, { vcpu: "asc" }, { ramMb: "asc" }],
-      take: 800,
+      take: 5000,
     }),
     prisma.providerCatalogItem.findMany({
       where: { ...candidateWhere, provider: "PARSPACK" },
       orderBy: [{ regionCode: "asc" }, { vcpu: "asc" }, { ramMb: "asc" }],
-      take: 800,
+      take: 5000,
     }),
   ]);
   return [...arvanItems, ...parsPackItems].map((item) => ({

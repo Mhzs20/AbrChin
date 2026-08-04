@@ -257,7 +257,9 @@ export function ProviderPanel({
       <SectionCard title="Markup سراسری">
         <p>
           قیمت پایه Read-only است. واحد منبع: {state.sourceMoneyUnit ?? "تأیید نشده"}.
-          مالیات و پرچین Line Item مستقل هستند.
+          پیش‌فرض لانچ: حدود ۳۰٪ هزینه تأمین و ۷۰٪ سود (مارکاپ ۲۳۳٫۳۳٪ روی قیمت
+          پایه). تغییر Markup فقط فروش‌های بعدی را عوض می‌کند؛ Snapshot خریدهای
+          قبلی دست نمی‌خورد. مالیات و پرچین Line Item مستقل هستند.
         </p>
         <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
           <label>
@@ -269,13 +271,14 @@ export function ProviderPanel({
             محاسبهٔ قیمت نهایی برای این Provider فعال باشد
           </label>
           <label>
-            درصد Markup
+            درصد Markup روی هزینه Provider
             <input
               type="text"
               inputMode="decimal"
               value={markupPercent}
               onChange={(event) => setMarkupPercent(event.target.value)}
               style={{ display: "block", marginTop: 6, maxWidth: 180 }}
+              placeholder="233.33"
             />
           </label>
           <button
@@ -301,8 +304,8 @@ export function ProviderPanel({
               <tr>
                 <th>Region / Size</th>
                 <th>منابع</th>
-                <th>قیمت پایه Provider</th>
-                <th>قیمت نمایشی</th>
+                <th>هزینه Provider</th>
+                <th>سود / قیمت فروش</th>
                 <th>قرارداد قیمت</th>
                 <th>Availability / انتشار</th>
                 <th>آخرین Sync</th>
@@ -337,19 +340,30 @@ export function ProviderPanel({
                     {formatRialAsToman(item.basePriceRial)} / ماه
                   </td>
                   <td>
-                    {item.productKind === "CLOUD_SERVER"
-                      ? "در Estimate نسخه‌دار SKU محاسبه می‌شود"
-                      : `${formatRialAsToman(item.finalPriceRial)} / ماه`}
+                    {item.finalPriceRial && item.basePriceRial ? (
+                      <>
+                        سود تقریبی:{" "}
+                        {formatRialAsToman(
+                          (
+                            BigInt(item.finalPriceRial) - BigInt(item.basePriceRial)
+                          ).toString(),
+                        )}{" "}
+                        / ماه
+                        <br />
+                        فروش: {formatRialAsToman(item.finalPriceRial)} / ماه
+                      </>
+                    ) : item.productKind === "CLOUD_SERVER" ? (
+                      "در Estimate نسخه‌دار SKU محاسبه می‌شود"
+                    ) : (
+                      "قیمت نهایی پس از فعال‌سازی Markup"
+                    )}
                     <br />
                     <small>
-                      تنظیم پیش‌فرض: Markup Provider{" "}
+                      Markup Provider{" "}
                       {formatBasisPoints(item.providerMarkupBasisPoints)} ·
                       Product{" "}
                       {formatBasisPoints(item.productMarkupBasisPoints)} · مالیات{" "}
                       {formatBasisPoints(item.taxBasisPoints)}
-                      {item.productKind === "CLOUD_SERVER"
-                        ? " · Billing Policy و SKU override در این Preview اعمال نشده‌اند"
-                        : " · SKU override می‌تواند متفاوت باشد"}
                     </small>
                   </td>
                   <td className="product-tech">

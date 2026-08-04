@@ -15,8 +15,8 @@ server.stderr.on("data", (chunk) => { serverLog += chunk.toString(); });
 
 const checks = [
   ["/", "زیرساختت رو سوار بر ابرها بساز"],
-  ["/cloud-servers", "سرورهای ابری قابل انتخاب"],
-  ["/ready-servers", "سرورهای آماده و تحویل فوری"],
+  ["/cloud-servers", "سرور ابری"],
+  ["/ready-servers", "سرور ابری"],
   ["/compass", "چی می‌سازی یا می‌خواهی منتقل کنی؟"],
   ["/compass?project=commerce", "چی می‌سازی یا می‌خواهی منتقل کنی؟"],
   ["/solutions", "هر پروژه، چینش خودش رو می‌خواد"],

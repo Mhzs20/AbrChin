@@ -510,16 +510,26 @@ export function selectQuotes(
   const usedPlanIds = new Set<string>();
   const selected: SelectedQuote[] = [];
 
+  const usedResourceFingerprints = new Set<string>();
+  function planResourceFingerprint(plan: PricedInfrastructurePlan) {
+    return `${plan.pricing.vcpu ?? plan.vcpu ?? 0}:${plan.pricing.ramGb ?? plan.ramGb ?? 0}:${plan.pricing.storageGb ?? plan.storageGb ?? 0}`;
+  }
   for (const selection of selections) {
     const profile = adjustRecommendationProfile(recommendation, selection.direction);
     const { ranked } = rankProviderOffers(profile, offers, now);
-    const rankedOffer = ranked.find((offer) => !usedPlanIds.has(offer.planId));
+    const rankedOffer = ranked.find((offer) => {
+      if (usedPlanIds.has(offer.planId)) return false;
+      const plan = planById.get(offer.planId);
+      if (!plan) return false;
+      return !usedResourceFingerprints.has(planResourceFingerprint(plan));
+    });
     if (!rankedOffer) continue;
 
     const plan = planById.get(rankedOffer.planId);
     if (!plan) continue;
 
     usedPlanIds.add(plan.id);
+    usedResourceFingerprints.add(planResourceFingerprint(plan));
     selected.push({
       role: selection.role,
       profile,

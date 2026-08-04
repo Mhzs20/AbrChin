@@ -784,6 +784,7 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
   assert.match(presentation, /storefrontLocationLabel/);
   assert.match(presentation, /roundUpDisplayTomanFromRial/);
   assert.match(presentation, /STOREFRONT_TOMAN_ROUND_STEP = 500n/);
+  assert.match(presentation, /STOREFRONT_DISPLAY_FRESHNESS_SECONDS/);
   assert.match(presentation, /storefrontParchinForTier/);
   assert.match(presentation, /PARCHIN_ACTIVE/);
   assert.match(presentation, /PARCHIN_STABLE/);
@@ -792,11 +793,23 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
   assert.match(capacityMigration, /ostovarMinRamGb/);
   assert.match(capacityMigration, /kahkeshanMinDiskGb/);
 
+  const autoSuggestSource = await readFile(
+    "lib/storefront/auto-suggest.ts",
+    "utf8",
+  );
+  assert.match(autoSuggestSource, /STOREFRONT_AUTO_SUGGEST_INTERVAL_MS/);
+  assert.match(autoSuggestSource, /resourceFingerprint/);
+  assert.match(
+    await readFile("lib/pricing/provider-pricing.ts", "utf8"),
+    /DEFAULT_LAUNCH_MARKUP_BASIS_POINTS = 23_333/,
+  );
+
   const {
     classifyStorefrontCapacityTier,
     DEFAULT_STOREFRONT_CAPACITY_RULES,
   } = await import("../lib/storefront/capacity-rules.ts");
   const {
+    isStorefrontDisplayFresh,
     roundUpDisplayTomanFromRial,
     storefrontCityName,
     storefrontLocationLabel,
@@ -826,6 +839,10 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
     ),
     "NO",
   );
+  const almostDay = new Date(Date.now() - 23 * 60 * 60 * 1000);
+  const overDay = new Date(Date.now() - 25 * 60 * 60 * 1000);
+  assert.equal(isStorefrontDisplayFresh(almostDay), true);
+  assert.equal(isStorefrontDisplayFresh(overDay), false);
 });
 
 test("new pricing configuration defaults fail closed outside catalog sync", async () => {

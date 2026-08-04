@@ -73,6 +73,10 @@ function toRanked(item: ProviderCatalogItem): RankedItem | null {
   };
 }
 
+function resourceFingerprint(row: RankedItem) {
+  return `${row.vcpu}:${row.ramGb}:${row.diskGb}`;
+}
+
 function diversifyPick(
   ranked: RankedItem[],
   limit: number,
@@ -81,26 +85,29 @@ function diversifyPick(
   const sorted = [...ranked].sort(compare);
   const picked: RankedItem[] = [];
   const regionCounts = new Map<string, number>();
-  const sizeCounts = new Map<string, number>();
+  const seenResources = new Set<string>();
 
   for (const candidate of sorted) {
     if (picked.length >= limit) break;
     const regionKey = `${candidate.item.provider}:${candidate.item.regionCode}`;
-    const sizeKey = `${candidate.item.provider}:${candidate.item.sizeCode}`;
+    const resourcesKey = resourceFingerprint(candidate);
     const regionCount = regionCounts.get(regionKey) ?? 0;
-    const sizeCount = sizeCounts.get(sizeKey) ?? 0;
-    // Keep some geographic/size diversity inside each tier.
-    if (regionCount >= 6 || sizeCount >= 2) continue;
+    // Manual-sell storefront: never repeat the same vCPU/RAM/Disk shape.
+    if (seenResources.has(resourcesKey)) continue;
+    if (regionCount >= 6) continue;
     picked.push(candidate);
+    seenResources.add(resourcesKey);
     regionCounts.set(regionKey, regionCount + 1);
-    sizeCounts.set(sizeKey, sizeCount + 1);
   }
 
   if (picked.length < limit) {
     for (const candidate of sorted) {
       if (picked.length >= limit) break;
       if (picked.some((row) => row.item.id === candidate.item.id)) continue;
+      const resourcesKey = resourceFingerprint(candidate);
+      if (seenResources.has(resourcesKey)) continue;
       picked.push(candidate);
+      seenResources.add(resourcesKey);
     }
   }
   return picked;
@@ -343,10 +350,20 @@ export async function applySuggestedStorefrontAssortment(input: {
   };
 }
 
+/** Public راهکار فوری list refreshes at most once per day when auto-suggest is on. */
+export const STOREFRONT_AUTO_SUGGEST_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
 export async function maybeAutoApplyStorefrontAssortment() {
   const settings = await getStorefrontAssortmentSettings();
   if (!settings.autoSuggestEnabled) {
     return { applied: false as const, reason: "disabled" as const };
+  }
+  if (
+    settings.lastAutoAppliedAt &&
+    Date.now() - settings.lastAutoAppliedAt.getTime() <
+      STOREFRONT_AUTO_SUGGEST_INTERVAL_MS
+  ) {
+    return { applied: false as const, reason: "interval" as const };
   }
   const result = await applySuggestedStorefrontAssortment({
     actorUserId: null,

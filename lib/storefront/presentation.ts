@@ -7,6 +7,20 @@ export type StorefrontLocationZone = "IRAN" | "ABROAD";
 /** Ceiling step for customer-facing تومان display (1453 → 1500, 1320 → 1500). */
 export const STOREFRONT_TOMAN_ROUND_STEP = 500n;
 
+/** Public storefront treats catalog sync as fresh for a full day. */
+export const STOREFRONT_DISPLAY_FRESHNESS_SECONDS = 24 * 60 * 60;
+
+export function isStorefrontDisplayFresh(
+  lastSync: Date | null | undefined,
+  now = new Date(),
+) {
+  if (!lastSync) return false;
+  return (
+    now.getTime() - lastSync.getTime() <=
+    STOREFRONT_DISPLAY_FRESHNESS_SECONDS * 1000
+  );
+}
+
 export function storefrontCityName(regionCode: string): string {
   const location = readyServerLocation(regionCode);
   const haystack = `${location.label} ${location.shortLabel}`.toLowerCase();
