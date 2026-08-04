@@ -436,16 +436,30 @@ export async function replaceStorefrontTierSlots(input: {
     await tx.storefrontAssortmentSlot.deleteMany({
       where: { tier: input.tier },
     });
-    if (input.slots.length === 0) return;
-    await tx.storefrontAssortmentSlot.createMany({
-      data: input.slots.map((slot) => ({
-        tier: input.tier,
-        role: slot.role,
-        sortOrder: slot.sortOrder,
-        catalogItemId: slot.catalogItemId,
-        enabled: slot.enabled !== false,
+    if (input.slots.length > 0) {
+      await tx.storefrontAssortmentSlot.createMany({
+        data: input.slots.map((slot) => ({
+          tier: input.tier,
+          role: slot.role,
+          sortOrder: slot.sortOrder,
+          catalogItemId: slot.catalogItemId,
+          enabled: slot.enabled !== false,
+          updatedById: input.actorUserId,
+        })),
+      });
+    }
+    // Manual edits pause auto-suggest so the next sync does not overwrite them.
+    await tx.storefrontAssortmentSettings.upsert({
+      where: { id: "default" },
+      create: {
+        id: "default",
+        autoSuggestEnabled: false,
         updatedById: input.actorUserId,
-      })),
+      },
+      update: {
+        autoSuggestEnabled: false,
+        updatedById: input.actorUserId,
+      },
     });
   });
 }

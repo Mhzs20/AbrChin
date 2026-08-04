@@ -7,6 +7,7 @@ import {
   getStorefrontAssortmentAdminView,
   listStorefrontCatalogCandidates,
 } from "@/lib/storefront/assortment-service";
+import { getStorefrontAssortmentSettings } from "@/lib/storefront/auto-suggest";
 
 export const metadata: Metadata = {
   title: "چینش فروشگاهی | پنل مدیریت | ابرچین",
@@ -19,20 +20,25 @@ export default async function AdminStorefrontAssortmentPage() {
   const access = await getAdminPageAccess();
   if (!access.allowed) return null;
 
-  const [tiers, candidates] = await Promise.all([
+  const [tiers, candidates, settings] = await Promise.all([
     getStorefrontAssortmentAdminView(),
     listStorefrontCatalogCandidates(),
+    getStorefrontAssortmentSettings(),
   ]);
 
   return (
     <section className="page-view">
       <PageHeader
         title="چینش فروشگاهی سرور ابری"
-        description="برای هر سطح حداکثر ۲۴ پلن اصلی و ۱۲ پلن رزرو از کاتالوگ آروان و پارس‌پک انتخاب کنید. اگر موجودی یک چینش زیر ۱۲ برسد، با پیامک عملیاتی خبر می‌گیرید."
+        description="می‌توانید پیشنهاد خودکار را روشن کنید تا برای چینش نو، استوار و کهکشان پلن‌های اصلی و رزرو انتخاب شوند؛ یا خودتان ویرایش و ذخیره کنید."
       />
       <StorefrontAssortmentPanel
         initialTiers={tiers}
         candidates={candidates}
+        initialSettings={{
+          autoSuggestEnabled: settings.autoSuggestEnabled,
+          lastAutoAppliedAt: settings.lastAutoAppliedAt?.toISOString() ?? null,
+        }}
       />
     </section>
   );

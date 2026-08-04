@@ -13,6 +13,11 @@ import {
   listStorefrontCatalogCandidates,
   replaceStorefrontTierSlots,
 } from "@/lib/storefront/assortment-service";
+import {
+  applySuggestedStorefrontAssortment,
+  getStorefrontAssortmentSettings,
+  setStorefrontAutoSuggestEnabled,
+} from "@/lib/storefront/auto-suggest";
 import { isStorefrontTier } from "@/lib/storefront/tiers";
 
 export const dynamic = "force-dynamic";
@@ -20,11 +25,19 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     await requireAdminUser();
-    const [tiers, candidates] = await Promise.all([
+    const [tiers, candidates, settings] = await Promise.all([
       getStorefrontAssortmentAdminView(),
       listStorefrontCatalogCandidates(),
+      getStorefrontAssortmentSettings(),
     ]);
-    return jsonOk({ tiers, candidates });
+    return jsonOk({
+      tiers,
+      candidates,
+      settings: {
+        autoSuggestEnabled: settings.autoSuggestEnabled,
+        lastAutoAppliedAt: settings.lastAutoAppliedAt?.toISOString() ?? null,
+      },
+    });
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);
@@ -33,6 +46,102 @@ export async function GET() {
       error instanceof Error ? error.message : "unknown",
     );
     return jsonError("دریافت چینش فروشگاهی ممکن نیست.", 500);
+  }
+}
+
+export async function POST(request: Request) {
+  const rejected = rejectCrossOrigin(request);
+  if (rejected) return rejected;
+
+  try {
+    const admin = await requireAdminUser();
+    const body = (await request.json()) as {
+      action?: unknown;
+      enabled?: unknown;
+    };
+    const meta = await readRequestMeta(request);
+
+    if (body.action === "apply_suggestions") {
+      const enableAuto = body.enabled === true;
+      const applied = await applySuggestedStorefrontAssortment({
+        actorUserId: admin.id,
+        enableAuto,
+      });
+      await writeAuditLog({
+        actorUserId: admin.id,
+        action: AuditActions.STOREFRONT_ASSORTMENT_UPDATE,
+        entityType: "storefront_assortment",
+        entityId: "auto_suggest",
+        afterData: {
+          action: "apply_suggestions",
+          enableAuto,
+          tiers: applied.tiers,
+        },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+      const [tiers, settings] = await Promise.all([
+        getStorefrontAssortmentAdminView(),
+        getStorefrontAssortmentSettings(),
+      ]);
+      return jsonOk({
+        tiers,
+        settings: {
+          autoSuggestEnabled: settings.autoSuggestEnabled,
+          lastAutoAppliedAt: settings.lastAutoAppliedAt?.toISOString() ?? null,
+        },
+      });
+    }
+
+    if (body.action === "set_auto_suggest") {
+      if (typeof body.enabled !== "boolean") {
+        return jsonError("وضعیت پیشنهاد خودکار معتبر نیست.", 400);
+      }
+      if (body.enabled) {
+        await applySuggestedStorefrontAssortment({
+          actorUserId: admin.id,
+          enableAuto: true,
+        });
+      } else {
+        await setStorefrontAutoSuggestEnabled({
+          enabled: false,
+          actorUserId: admin.id,
+        });
+      }
+      await writeAuditLog({
+        actorUserId: admin.id,
+        action: AuditActions.STOREFRONT_ASSORTMENT_UPDATE,
+        entityType: "storefront_assortment",
+        entityId: "auto_suggest_toggle",
+        afterData: {
+          action: "set_auto_suggest",
+          enabled: body.enabled,
+        },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+      const [tiers, settings] = await Promise.all([
+        getStorefrontAssortmentAdminView(),
+        getStorefrontAssortmentSettings(),
+      ]);
+      return jsonOk({
+        tiers,
+        settings: {
+          autoSuggestEnabled: settings.autoSuggestEnabled,
+          lastAutoAppliedAt: settings.lastAutoAppliedAt?.toISOString() ?? null,
+        },
+      });
+    }
+
+    return jsonError("عملیات معتبر نیست.", 400);
+  } catch (error) {
+    const adminError = adminApiError(error);
+    if (adminError) return jsonError(adminError.message, adminError.status);
+    console.error(
+      "[admin/storefront-assortment/post]",
+      error instanceof Error ? error.message : "unknown",
+    );
+    return jsonError("اجرای پیشنهاد خودکار ممکن نیست.", 500);
   }
 }
 
@@ -99,13 +208,23 @@ export async function PUT(request: Request) {
         slotCount: slots.length,
         primaryCount: slots.filter((slot) => slot.role === "PRIMARY").length,
         reserveCount: slots.filter((slot) => slot.role === "RESERVE").length,
+        autoSuggestDisabled: true,
       },
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
 
-    const tiers = await getStorefrontAssortmentAdminView();
-    return jsonOk({ tiers });
+    const [tiers, settings] = await Promise.all([
+      getStorefrontAssortmentAdminView(),
+      getStorefrontAssortmentSettings(),
+    ]);
+    return jsonOk({
+      tiers,
+      settings: {
+        autoSuggestEnabled: settings.autoSuggestEnabled,
+        lastAutoAppliedAt: settings.lastAutoAppliedAt?.toISOString() ?? null,
+      },
+    });
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);

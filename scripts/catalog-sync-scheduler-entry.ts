@@ -9,6 +9,7 @@ import {
 import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
 import { isCloudProviderConfigured } from "@/lib/infrastructure/provider-factory";
 import { processOperationalAlertOutbox } from "@/lib/operations/alert-worker";
+import { maybeAutoApplyStorefrontAssortment } from "@/lib/storefront/auto-suggest";
 import { checkStorefrontLowStockAlerts } from "@/lib/storefront/low-stock-alerts";
 
 const intervalMs = Math.max(
@@ -47,6 +48,15 @@ async function runCycle() {
   );
   await settleProviderCatalogSyncTasks(tasks, undefined, {
     persistIncidents: true,
+  });
+  await maybeAutoApplyStorefrontAssortment().catch((error) => {
+    console.error(
+      JSON.stringify({
+        event: "storefront_auto_suggest_failed",
+        readOnly: true,
+        safeErrorCode: safeProviderSyncCode(error),
+      }),
+    );
   });
   await checkStorefrontLowStockAlerts().catch((error) => {
     console.error(

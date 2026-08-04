@@ -698,15 +698,30 @@ test("catalog remains visible while every commercial gate stays fail-closed", as
 });
 
 test("cloud-servers uses curated چینش assortment with purchase still closed", async () => {
-  const [assortment, tiers, cloudPage, catalogUi, scheduler, migration] =
-    await Promise.all([
+  const [
+    assortment,
+    tiers,
+    autoSuggest,
+    cloudPage,
+    catalogUi,
+    adminPanel,
+    scheduler,
+    migration,
+    autoMigration,
+  ] = await Promise.all([
       readFile("lib/storefront/assortment-service.ts", "utf8"),
       readFile("lib/storefront/tiers.ts", "utf8"),
+      readFile("lib/storefront/auto-suggest.ts", "utf8"),
       readFile("app/cloud-servers/page.tsx", "utf8"),
       readFile("components/chinish-cloud-catalog.tsx", "utf8"),
+      readFile("components/admin/storefront-assortment-panel.tsx", "utf8"),
       readFile("scripts/catalog-sync-scheduler-entry.ts", "utf8"),
       readFile(
         "prisma/migrations/20260804140000_storefront_chinish_assortment/migration.sql",
+        "utf8",
+      ),
+      readFile(
+        "prisma/migrations/20260804150000_storefront_auto_suggest/migration.sql",
         "utf8",
       ),
     ]);
@@ -719,14 +734,21 @@ test("cloud-servers uses curated چینش assortment with purchase still closed"
   assert.match(assortment, /replaceStorefrontTierSlots/);
   assert.match(assortment, /resolveStorefrontTierOffers/);
   assert.match(assortment, /SKU_UNPUBLISHED/);
+  assert.match(assortment, /autoSuggestEnabled: false/);
+  assert.match(autoSuggest, /buildSuggestedStorefrontAssortment/);
+  assert.match(autoSuggest, /maybeAutoApplyStorefrontAssortment/);
+  assert.match(adminPanel, /روشن کردن پیشنهاد خودکار/);
+  assert.match(adminPanel, /خاموش کردن/);
   assert.match(cloudPage, /listPublicStorefrontTiers/);
   assert.match(cloudPage, /چینش نو/);
   assert.match(cloudPage, /کیف پول/);
   assert.match(catalogUi, /فروش این پلن‌ها به‌زودی فعال می‌شود/);
   assert.match(scheduler, /checkStorefrontLowStockAlerts/);
+  assert.match(scheduler, /maybeAutoApplyStorefrontAssortment/);
   assert.match(scheduler, /processOperationalAlertOutbox/);
   assert.match(migration, /StorefrontAssortmentSlot/);
   assert.match(migration, /STOREFRONT_ASSORTMENT_LOW/);
+  assert.match(autoMigration, /StorefrontAssortmentSettings/);
 });
 
 test("new pricing configuration defaults fail closed outside catalog sync", async () => {

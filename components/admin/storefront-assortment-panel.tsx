@@ -48,14 +48,22 @@ function formatRial(value: string | null | undefined) {
   return BigInt(value).toLocaleString("fa-IR");
 }
 
+type SettingsView = {
+  autoSuggestEnabled: boolean;
+  lastAutoAppliedAt: string | null;
+};
+
 export function StorefrontAssortmentPanel({
   initialTiers,
   candidates,
+  initialSettings,
 }: {
   initialTiers: TierView[];
   candidates: Candidate[];
+  initialSettings: SettingsView;
 }) {
   const [tiers, setTiers] = useState(initialTiers);
+  const [settings, setSettings] = useState(initialSettings);
   const [activeTier, setActiveTier] = useState<TierView["tier"]>("NO");
   const [draftPrimary, setDraftPrimary] = useState<string[]>(
     initialTiers[0]?.primary.map((row) => row.catalogItemId) ?? [],
@@ -68,6 +76,24 @@ export function StorefrontAssortmentPanel({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  function applyServerState(payload: {
+    tiers?: TierView[];
+    settings?: SettingsView;
+  }) {
+    if (payload.tiers) {
+      setTiers(payload.tiers);
+      const refreshed =
+        payload.tiers.find((tier) => tier.tier === activeTier) ??
+        payload.tiers[0];
+      if (refreshed) {
+        setActiveTier(refreshed.tier);
+        setDraftPrimary(refreshed.primary.map((row) => row.catalogItemId));
+        setDraftReserve(refreshed.reserve.map((row) => row.catalogItemId));
+      }
+    }
+    if (payload.settings) setSettings(payload.settings);
+  }
 
   const active = tiers.find((tier) => tier.tier === activeTier) ?? tiers[0];
 
@@ -175,22 +201,65 @@ export function StorefrontAssortmentPanel({
       const payload = (await response.json()) as {
         error?: string;
         tiers?: TierView[];
+        settings?: SettingsView;
       };
       if (!response.ok) {
         throw new Error(payload.error || "ذخیره انجام نشد.");
       }
-      if (payload.tiers) {
-        setTiers(payload.tiers);
-        const refreshed = payload.tiers.find((tier) => tier.tier === active.tier);
-        if (refreshed) {
-          setDraftPrimary(refreshed.primary.map((row) => row.catalogItemId));
-          setDraftReserve(refreshed.reserve.map((row) => row.catalogItemId));
-        }
-      }
-      setMessage("چینش ذخیره شد.");
+      applyServerState(payload);
+      setMessage(
+        "چینش ذخیره شد. پیشنهاد خودکار خاموش شد تا ویرایش دستی شما حفظ شود.",
+      );
     } catch (saveError) {
       setError(
         saveError instanceof Error ? saveError.message : "ذخیره ممکن نیست.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runAutoAction(
+    action: "apply_suggestions" | "set_auto_suggest",
+    enabled?: boolean,
+  ) {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await fetch(
+        "/api/admin/infrastructure/storefront-assortment",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action, enabled }),
+        },
+      );
+      const payload = (await response.json()) as {
+        error?: string;
+        tiers?: TierView[];
+        settings?: SettingsView;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || "عملیات انجام نشد.");
+      }
+      applyServerState(payload);
+      if (action === "apply_suggestions") {
+        setMessage(
+          enabled
+            ? "پیشنهاد اعمال شد و بعد از هر Sync دوباره به‌روز می‌شود."
+            : "پیشنهاد اصلی و رزرو برای هر سه چینش اعمال شد.",
+        );
+      } else {
+        setMessage(
+          enabled
+            ? "پیشنهاد خودکار روشن شد و چینش‌ها تازه پر شدند."
+            : "پیشنهاد خودکار خاموش شد. از این به بعد فقط ویرایش دستی اعمال می‌شود.",
+        );
+      }
+    } catch (autoError) {
+      setError(
+        autoError instanceof Error ? autoError.message : "عملیات ممکن نیست.",
       );
     } finally {
       setBusy(false);
@@ -205,6 +274,62 @@ export function StorefrontAssortmentPanel({
 
   return (
     <section className="admin-stack" style={{ display: "grid", gap: 16 }}>
+      <div
+        style={{
+          border: "1px solid var(--product-border, #ddd)",
+          borderRadius: 12,
+          padding: 16,
+          display: "grid",
+          gap: 12,
+        }}
+      >
+        <div>
+          <strong>پیشنهاد خودکار چینش</strong>
+          <p style={{ margin: "8px 0 0", color: "var(--product-muted)" }}>
+            وقتی روشن باشد، برای چینش نو / استوار / کهکشان خودش ۲۴ اصلی و ۱۲ رزرو
+            پیشنهاد می‌کند و بعد از هر Sync کاتالوگ دوباره تنظیم می‌شود. با
+            ذخیرهٔ دستی، خودکار خاموش می‌شود تا ویرایش شما حفظ شود.
+          </p>
+          <p style={{ margin: "8px 0 0" }}>
+            وضعیت:{" "}
+            <strong>
+              {settings.autoSuggestEnabled ? "روشن" : "خاموش"}
+            </strong>
+            {settings.lastAutoAppliedAt
+              ? ` · آخرین اعمال: ${new Date(
+                  settings.lastAutoAppliedAt,
+                ).toLocaleString("fa-IR")}`
+              : ""}
+          </p>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <button
+            type="button"
+            className="product-btn"
+            disabled={busy}
+            onClick={() => void runAutoAction("set_auto_suggest", true)}
+          >
+            روشن کردن پیشنهاد خودکار
+          </button>
+          <button
+            type="button"
+            className="product-btn product-btn--quiet"
+            disabled={busy}
+            onClick={() => void runAutoAction("set_auto_suggest", false)}
+          >
+            خاموش کردن
+          </button>
+          <button
+            type="button"
+            className="product-btn product-btn--quiet"
+            disabled={busy}
+            onClick={() => void runAutoAction("apply_suggestions", false)}
+          >
+            یک‌بار پیشنهاد بده (بدون روشن ماندن)
+          </button>
+        </div>
+      </div>
+
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {tiers.map((tier) => (
           <button

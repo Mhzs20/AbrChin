@@ -568,6 +568,7 @@ model User {
   providerRegionsUpdated      ProviderRegionConfig[]              @relation("ProviderRegionUpdatedBy")
   catalogItemsManuallyUpdated ProviderCatalogItem[]               @relation("CatalogItemManualUpdatedBy")
   storefrontSlotsUpdated      StorefrontAssortmentSlot[]          @relation("StorefrontSlotUpdatedBy")
+  storefrontSettingsUpdated   StorefrontAssortmentSettings[]      @relation("StorefrontSettingsUpdatedBy")
   inventoryItemsCreated       PreprovisionedInventoryItem[]       @relation("InventoryCreatedBy")
   inventoryItemsUpdated       PreprovisionedInventoryItem[]       @relation("InventoryUpdatedBy")
   inventoryCredentialsCreated PreprovisionedInventoryCredential[] @relation("InventoryCredentialCreatedBy")
@@ -1978,6 +1979,17 @@ model StorefrontAssortmentSlot {
   @@unique([tier, catalogItemId])
   @@index([tier, role, sortOrder])
   @@index([catalogItemId])
+  @@index([updatedById])
+}
+
+model StorefrontAssortmentSettings {
+  id                String   @id @default("default")
+  autoSuggestEnabled Boolean @default(false)
+  lastAutoAppliedAt DateTime?
+  updatedAt         DateTime @updatedAt
+  updatedById       String?
+  updatedBy         User?    @relation("StorefrontSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
   @@index([updatedById])
 }
 
