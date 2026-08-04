@@ -84,17 +84,29 @@ export default async function ReadyServerQuotePage({
         </article>
 
         <aside className="ready-quote-checkout">
-          <span>مبلغ ماهانه و تمدید فعلی</span>
+          <span>
+            مبلغ {quote.termMonths.toLocaleString("fa-IR")} ماهه
+            {quote.termDiscountBps > 0
+              ? ` با تخفیف ${Math.round(quote.termDiscountBps / 100).toLocaleString("fa-IR")}٪`
+              : ""}
+          </span>
           <strong>
             {formatTomanFa(record.amountRial)}
             <small> تومان</small>
           </strong>
+          <p>
+            تمدید دستی فعلی: {formatTomanFa(record.renewalAmountRial)} تومان
+          </p>
           <p><QuoteCountdown expiresAt={quote.expiresAt} /></p>
           {user ? (
             <OrderCheckoutPanel
               quoteId={quote.id}
               planTitle={quote.title}
               priceToman={formatTomanFa(record.amountRial)}
+              termMonths={quote.termMonths}
+              termDiscountBps={quote.termDiscountBps}
+              couponCode={quote.couponCode}
+              lineItems={quote.lineItems}
             />
           ) : (
             <div className="ready-quote-login">

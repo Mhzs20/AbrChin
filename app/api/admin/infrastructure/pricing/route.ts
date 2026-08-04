@@ -43,6 +43,7 @@ export async function PATCH(request: Request) {
       reminderDaysBeforeDue?: unknown;
       suspendGraceDaysAfterZero?: unknown;
       deleteDaysAfterSuspend?: unknown;
+      compassServicePrices?: Record<string, unknown>;
       productMarkups?: Array<Record<string, unknown>>;
       parchin?: Array<Record<string, unknown>>;
     };
@@ -52,6 +53,18 @@ export async function PATCH(request: Request) {
       body.suspendGraceDaysAfterZero,
     );
     const deleteDaysAfterSuspend = positiveDays(body.deleteDaysAfterSuspend);
+    const serviceCodes = [
+      "SITE_MIGRATION",
+      "INITIAL_SETUP",
+      "DOMAIN_SSL",
+      "BACKUP_RESTORE",
+      "ARCHITECTURE_LIGHT",
+    ] as const;
+    const compassServicePrices: Record<string, string> = {};
+    for (const code of serviceCodes) {
+      const raw = body.compassServicePrices?.[code];
+      compassServicePrices[code] = money(raw ?? "0").toString();
+    }
     const products = (body.productMarkups ?? []).map((config) => {
       if (
         !Object.values(InfrastructureProvider).includes(
@@ -110,6 +123,7 @@ export async function PATCH(request: Request) {
           reminderDaysBeforeDue,
           suspendGraceDaysAfterZero,
           deleteDaysAfterSuspend,
+          compassServicePrices,
           updatedById: admin.id,
         },
         create: {
@@ -118,6 +132,7 @@ export async function PATCH(request: Request) {
           reminderDaysBeforeDue,
           suspendGraceDaysAfterZero,
           deleteDaysAfterSuspend,
+          compassServicePrices,
           updatedById: admin.id,
         },
       });
@@ -164,6 +179,7 @@ export async function PATCH(request: Request) {
             reminderDaysBeforeDue,
             suspendGraceDaysAfterZero,
             deleteDaysAfterSuspend,
+            compassServicePrices,
             products,
             parchin: parchin.map((item) => ({
               ...item,

@@ -40,6 +40,8 @@ type TopUpIntentOptions = {
   idempotencyKey?: string;
   purchaseOrderId?: string;
   requestFingerprint?: string;
+  couponCode?: string | null;
+  bonusRialSnapshot?: bigint | null;
 };
 
 type VerificationDependencies = {
@@ -315,7 +317,8 @@ async function createTopUpIntentRial(
       replay.walletId !== wallet.id ||
       replay.amount !== amountRial ||
       replay.purchaseOrderId !== (options.purchaseOrderId ?? null) ||
-      replay.requestFingerprint !== (options.requestFingerprint ?? null)
+      replay.requestFingerprint !== (options.requestFingerprint ?? null) ||
+      replay.couponCode !== (options.couponCode ?? null)
     ) {
       throw new WalletError(
         "idempotency_conflict",
@@ -356,6 +359,8 @@ async function createTopUpIntentRial(
         idempotencyKey,
         purchaseOrderId: options.purchaseOrderId,
         requestFingerprint: options.requestFingerprint,
+        couponCode: options.couponCode ?? null,
+        bonusRialSnapshot: options.bonusRialSnapshot ?? null,
         callbackTokenHash,
         gatewayConfigSnapshot: resolved.snapshot,
         expiresAt,
@@ -392,6 +397,7 @@ async function createTopUpIntentRial(
 export async function createTopUpIntent(
   userId: string,
   amountTomanRaw: unknown,
+  options: { couponCode?: string | null } = {},
 ) {
   const amountToman = assertPositiveIntegerToman(amountTomanRaw);
   if (amountToman < MIN_TOPUP_TOMAN || amountToman > MAX_TOPUP_TOMAN) {
@@ -400,7 +406,27 @@ export async function createTopUpIntent(
       `مبلغ شارژ باید بین ${MIN_TOPUP_TOMAN.toLocaleString("fa-IR")} تا ${MAX_TOPUP_TOMAN.toLocaleString("fa-IR")} تومان باشد.`,
     );
   }
-  return createTopUpIntentRial(userId, tomanToRial(amountToman));
+  const amountRial = tomanToRial(amountToman);
+  let couponCode: string | null = null;
+  let bonusRialSnapshot: bigint | null = null;
+  if (options.couponCode) {
+    const { normalizeCouponCode, resolveWalletBonusCoupon } = await import(
+      "@/lib/coupons/service"
+    );
+    couponCode = normalizeCouponCode(options.couponCode);
+    if (couponCode) {
+      const coupon = await resolveWalletBonusCoupon({
+        code: couponCode,
+        userId,
+        depositRial: amountRial,
+      });
+      bonusRialSnapshot = coupon.bonusRial;
+    }
+  }
+  return createTopUpIntentRial(userId, amountRial, {
+    couponCode,
+    bonusRialSnapshot,
+  });
 }
 
 export async function createPurchaseShortfallTopUpIntent(input: {
@@ -806,6 +832,52 @@ async function settleVerifiedAttempt(
               },
             },
           });
+          if (
+            attempt.walletTopUp.couponCode &&
+            attempt.walletTopUp.bonusRialSnapshot &&
+            attempt.walletTopUp.bonusRialSnapshot > 0n
+          ) {
+            const bonusWallet = await tx.wallet.update({
+              where: { id: wallet.id },
+              data: {
+                availableBalance: {
+                  increment: attempt.walletTopUp.bonusRialSnapshot,
+                },
+              },
+            });
+            await tx.walletLedgerEntry.create({
+              data: {
+                walletId: wallet.id,
+                direction: "CREDIT",
+                type: LedgerType.TOP_UP_BONUS,
+                amount: attempt.walletTopUp.bonusRialSnapshot,
+                status: "COMPLETED",
+                referenceType: "wallet_topup_bonus",
+                referenceId: attempt.walletTopUpId,
+                idempotencyKey: `topup_bonus_${attempt.walletTopUpId}`,
+                balanceAfter: bonusWallet.availableBalance,
+                description: "افزایش اعتبار کد تخفیف",
+                metadata: {
+                  couponCode: attempt.walletTopUp.couponCode,
+                },
+              },
+            });
+            const { recordCouponRedemptionTx } = await import(
+              "@/lib/coupons/service"
+            );
+            const coupon = await tx.coupon.findUnique({
+              where: { code: attempt.walletTopUp.couponCode },
+            });
+            if (coupon) {
+              await recordCouponRedemptionTx(tx, {
+                couponId: coupon.id,
+                userId: wallet.userId,
+                walletTopUpId: attempt.walletTopUpId,
+                bonusRial: attempt.walletTopUp.bonusRialSnapshot,
+                idempotencyKey: `coupon-topup:${attempt.walletTopUpId}`,
+              });
+            }
+          }
           credited = true;
         }
 

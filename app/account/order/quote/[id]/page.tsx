@@ -52,11 +52,18 @@ export default async function RecommendationQuoteCheckoutPage({
           {quote.ramGb ? <span className="product-tech">{quote.ramGb} GB RAM</span> : null}
           {quote.storageGb ? <span className="product-tech">{quote.storageGb} GB فضا</span> : null}
           <span className="product-tech">
-            ماه اول {formatTomanFa(quoteRecord.amountRial)} تومان
+            {quote.termMonths.toLocaleString("fa-IR")} ماهه{" "}
+            {formatTomanFa(quoteRecord.amountRial)} تومان
           </span>
           <span className="product-tech">
-            تمدید {formatTomanFa(quoteRecord.renewalAmountRial)} تومان
+            تمدید دستی {formatTomanFa(quoteRecord.renewalAmountRial)} تومان
           </span>
+          {quote.termDiscountBps > 0 ? (
+            <span className="product-tech">
+              تخفیف {Math.round(quote.termDiscountBps / 100).toLocaleString("fa-IR")}٪
+              {quote.couponCode ? ` (${quote.couponCode})` : ""}
+            </span>
+          ) : null}
           <span className="product-tech">
             {parchinPlanLabel(quote.parchinIncluded)}
           </span>
@@ -73,6 +80,10 @@ export default async function RecommendationQuoteCheckoutPage({
         quoteId={quote.id}
         planTitle={quote.title}
         priceToman={formatTomanFa(quoteRecord.amountRial)}
+        termMonths={quote.termMonths}
+        termDiscountBps={quote.termDiscountBps}
+        couponCode={quote.couponCode}
+        lineItems={quote.lineItems}
       />
     </>
   );

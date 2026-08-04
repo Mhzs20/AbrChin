@@ -9,6 +9,8 @@ import {
 } from "@/lib/http";
 import { readyServerQuoteIpLimiter } from "@/lib/rate-limit";
 import { setRecommendationGuestCookie } from "@/lib/recommendation/guest-session-cookie";
+import { isBillingTermMonths } from "@/lib/billing/lifecycle-policy";
+import { normalizeCouponCode } from "@/lib/coupons/service";
 import {
   createReadyServerQuote,
   getCatalogServerDeliveryOptions,
@@ -75,10 +77,14 @@ export async function POST(request: Request) {
         : "";
     const serverName =
       typeof record.serverName === "string" ? record.serverName.trim() : "";
+    const termMonthsRaw = Number(record.termMonths ?? 1);
+    const termMonths = isBillingTermMonths(termMonthsRaw) ? termMonthsRaw : null;
+    const couponCode = normalizeCouponCode(record.couponCode);
     if (
       !planId ||
       !imageAssetId ||
       !serverName ||
+      !termMonths ||
       !["ONE_TIME_PASSWORD", "SSH_KEY", "WINDOWS_PASSWORD"].includes(
         accessMethod,
       )
@@ -91,6 +97,8 @@ export async function POST(request: Request) {
       planId,
       idempotencyKey,
       userId: user?.id ?? null,
+      termMonths,
+      couponCode,
       delivery: {
         imageAssetId,
         accessMethod: accessMethod as

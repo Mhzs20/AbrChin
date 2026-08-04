@@ -162,6 +162,19 @@ export function ConversationBuilder({
   const [sshKeyName, setSshKeyName] = useState("");
   const [deliveryConfigured, setDeliveryConfigured] = useState(false);
   const [savingDelivery, setSavingDelivery] = useState(false);
+  const [termMonths, setTermMonths] = useState<1 | 3 | 6 | 12>(1);
+  const [couponCode, setCouponCode] = useState("");
+  const [servicePackages, setServicePackages] = useState<
+    Array<{
+      code: string;
+      title: string;
+      description: string;
+      priceRial: string;
+      priceTomanFa: string;
+    }>
+  >([]);
+  const [serviceRequesting, setServiceRequesting] = useState<string | null>(null);
+  const [serviceMessage, setServiceMessage] = useState<string | null>(null);
   const questionOrder = useMemo(() => getRecommendationQuestionOrder(answers), [answers]);
   const minimumParchinLevel = recommendedParchinLevel(answers);
   const selectedParchinLevel =
@@ -376,12 +389,21 @@ export function ConversationBuilder({
             sessionId,
             includeComparisons: showComparisons,
             parchinLevel: selectedParchinLevel,
+            termMonths,
+            couponCode: couponCode.trim() || null,
           }),
           signal: controller.signal,
         });
         const body = (await response.json()) as {
           quotes?: PublicRecommendationQuote[];
           quoteNotice?: string | null;
+          servicePackages?: Array<{
+            code: string;
+            title: string;
+            description: string;
+            priceRial: string;
+            priceTomanFa: string;
+          }>;
           error?: string;
         };
         if (!response.ok) {
@@ -389,6 +411,7 @@ export function ConversationBuilder({
         }
         setQuotes(body.quotes ?? []);
         setQuotesNotice(body.quoteNotice ?? null);
+        setServicePackages(body.servicePackages ?? []);
         setQuotesResolved(true);
       } catch (error: unknown) {
         if (controller.signal.aborted) return;
@@ -404,6 +427,7 @@ export function ConversationBuilder({
     return () => controller.abort();
   }, [
     answers,
+    couponCode,
     quotesRetry,
     sessionId,
     selectedParchinLevel,
@@ -411,6 +435,7 @@ export function ConversationBuilder({
     showResult,
     sources,
     deliveryConfigured,
+    termMonths,
   ]);
 
   useEffect(() => {
@@ -1292,6 +1317,50 @@ export function ConversationBuilder({
                           : "ظرفیت‌های معتبر موجود نمایش داده شده‌اند"}
                     </strong>
                   </div>
+                  {deliveryConfigured ? (
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 10,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <label>
+                        دوره شارژ
+                        <select
+                          value={termMonths}
+                          onChange={(event) => {
+                            setTermMonths(
+                              Number(event.target.value) as 1 | 3 | 6 | 12,
+                            );
+                            setQuotesResolved(false);
+                            setQuotes([]);
+                          }}
+                        >
+                          <option value={1}>۱ ماه</option>
+                          <option value={3}>۳ ماه · ۵٪ تخفیف</option>
+                          <option value={6}>۶ ماه · ۱۰٪ تخفیف</option>
+                          <option value={12}>۱۲ ماه · ۲۰٪ تخفیف</option>
+                        </select>
+                      </label>
+                      <label>
+                        کد تخفیف سرور (اختیاری)
+                        <input
+                          value={couponCode}
+                          onChange={(event) =>
+                            setCouponCode(event.target.value.toUpperCase())
+                          }
+                          onBlur={() => {
+                            setQuotesResolved(false);
+                            setQuotes([]);
+                            setQuotesRetry((current) => current + 1);
+                          }}
+                          placeholder="مثلاً LAUNCH20"
+                          maxLength={32}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
                   {!deliveryConfigured ? (
                     <section className="quick-plans-empty" role="status">
                       <Info size={24} aria-hidden="true" />
@@ -1349,6 +1418,86 @@ export function ConversationBuilder({
                         </div>
                       ) : null}
                       <QuickCloudPlans quotes={quotes} signedIn={signedIn} compact />
+                      {servicePackages.length > 0 ? (
+                        <section
+                          aria-labelledby="compass-services-title"
+                          style={{ marginTop: 20 }}
+                        >
+                          <h3 id="compass-services-title" style={{ marginBottom: 8 }}>
+                            خدمات همراه (جدا از خرید سرور)
+                          </h3>
+                          <p style={{ marginTop: 0 }}>
+                            این مسیر خدمت‌محور است؛ اجرا پس از بررسی Admin انجام
+                            می‌شود. سرور پیشنهادی بالا از فهرست واقعی ابرچین است.
+                          </p>
+                          <ul style={{ display: "grid", gap: 12, padding: 0, listStyle: "none" }}>
+                            {servicePackages.map((pack) => (
+                              <li key={pack.code}>
+                                <strong>{pack.title}</strong>
+                                <p style={{ margin: "4px 0 8px" }}>{pack.description}</p>
+                                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                                  <span>{pack.priceTomanFa} تومان</span>
+                                  <button
+                                    type="button"
+                                    className="button button-quiet"
+                                    disabled={serviceRequesting === pack.code}
+                                    onClick={() => {
+                                      if (!sessionId) return;
+                                      if (!signedIn) {
+                                        setServiceMessage("برای ثبت درخواست خدمت وارد شو.");
+                                        return;
+                                      }
+                                      setServiceRequesting(pack.code);
+                                      setServiceMessage(null);
+                                      void fetch(
+                                        `/api/recommendations/sessions/${sessionId}/service-requests`,
+                                        {
+                                          method: "POST",
+                                          headers: {
+                                            "Content-Type": "application/json",
+                                          },
+                                          body: JSON.stringify({
+                                            packageCode: pack.code,
+                                          }),
+                                        },
+                                      )
+                                        .then(async (response) => {
+                                          const data = (await response.json()) as {
+                                            error?: string;
+                                            alreadyRequested?: boolean;
+                                          };
+                                          if (!response.ok) {
+                                            throw new Error(
+                                              data.error ?? "ثبت درخواست ممکن نیست.",
+                                            );
+                                          }
+                                          setServiceMessage(
+                                            data.alreadyRequested
+                                              ? "این درخواست قبلاً ثبت شده و منتظر Admin است."
+                                              : `درخواست «${pack.title}» ثبت شد؛ Admin بررسی می‌کند.`,
+                                          );
+                                        })
+                                        .catch((error: unknown) => {
+                                          setServiceMessage(
+                                            error instanceof Error
+                                              ? error.message
+                                              : "ثبت درخواست ممکن نیست.",
+                                          );
+                                        })
+                                        .finally(() => setServiceRequesting(null));
+                                    }}
+                                  >
+                                    {serviceRequesting === pack.code
+                                      ? "در حال ثبت..."
+                                      : "درخواست این خدمت"}
+                                  </button>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                          {serviceMessage ? <p role="status">{serviceMessage}</p> : null}
+                        </section>
+                      ) : null}
                     </>
                   )}
                 </div>
@@ -1358,17 +1507,10 @@ export function ConversationBuilder({
                     <ArrowRight size={17} aria-hidden="true" />
                     یک چیز رو عوض کنیم
                   </button>
-                  {recommendation.architectureEscalation ? (
-                    <Link className="button button-primary" href="/help">
-                      با همراهی ادامه بده
-                      <ArrowLeft size={17} aria-hidden="true" />
-                    </Link>
-                  ) : (
-                    <Link className="button button-primary" href="/cloud-servers">
-                      همه سرورهای ابری
-                      <ArrowLeft size={17} aria-hidden="true" />
-                    </Link>
-                  )}
+                  <Link className="button button-primary" href="/cloud-servers">
+                    همه سرورهای ابری
+                    <ArrowLeft size={17} aria-hidden="true" />
+                  </Link>
                 </div>
               </motion.div>
             ) : null}

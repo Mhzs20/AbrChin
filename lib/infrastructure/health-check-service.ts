@@ -19,7 +19,11 @@ import {
   WorkerLeaseLostError,
 } from "@/lib/infrastructure/worker-fence";
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
-import { addBillingMonth, addGracePeriod } from "@/lib/subscriptions/period";
+import { getLifecyclePolicy } from "@/lib/billing/lifecycle-policy";
+import {
+  addBillingMonths,
+  addGracePeriod,
+} from "@/lib/subscriptions/period";
 
 const CONNECT_TIMEOUT_MS = 3_000;
 const MAX_CONNECT_ATTEMPTS = 3;
@@ -322,7 +326,14 @@ export async function activateApprovedDeliveryTx(
     },
   });
   if (order.plan.billingModel === "PREPAID_TERM") {
-    const periodEnd = addBillingMonth(deliveredAt);
+    const termMonths =
+      order.serviceOrder.termMonths === 3 ||
+      order.serviceOrder.termMonths === 6 ||
+      order.serviceOrder.termMonths === 12
+        ? order.serviceOrder.termMonths
+        : 1;
+    const periodEnd = addBillingMonths(deliveredAt, termMonths);
+    const policy = await getLifecyclePolicy();
     await tx.serviceSubscription.upsert({
       where: { cloudInstanceId: instance.id },
       update: {},
@@ -333,11 +344,15 @@ export async function activateApprovedDeliveryTx(
         planId: order.planId,
         status: SubscriptionStatus.ACTIVE,
         parchinLevel: order.parchinLevel,
+        termMonths,
         renewalPriceRial: renewalPrice(order),
         currentPeriodStart: deliveredAt,
         currentPeriodEnd: periodEnd,
         nextRenewalAt: periodEnd,
-        graceEndsAt: addGracePeriod(periodEnd),
+        graceEndsAt: addGracePeriod(
+          periodEnd,
+          policy.suspendGraceDaysAfterZero,
+        ),
       },
     });
   } else if (order.activationRequest) {

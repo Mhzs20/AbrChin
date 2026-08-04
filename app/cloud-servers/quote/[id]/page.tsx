@@ -187,6 +187,10 @@ export default async function ReadyServerQuotePage({
                 quoteId={quote.id}
                 planTitle={quote.title}
                 priceToman={formatTomanFa(quoteRecord.amountRial)}
+                termMonths={quote.termMonths}
+                termDiscountBps={quote.termDiscountBps}
+                couponCode={quote.couponCode}
+                lineItems={quote.lineItems}
               />
             )
           ) : (

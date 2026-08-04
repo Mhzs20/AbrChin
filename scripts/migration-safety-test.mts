@@ -20,6 +20,8 @@ const billingRuntimeSafetyMigrationPath =
   "prisma/migrations/20260803200000_billing_runtime_safety/migration.sql";
 const launchParchinLifecycleMigrationPath =
   "prisma/migrations/20260804180000_launch_parchin_lifecycle/migration.sql";
+const launchTermCouponsMigrationPath =
+  "prisma/migrations/20260804190000_launch_term_coupons_lifecycle/migration.sql";
 
 test("catalog pricing migration is additive and preserves financial history", async () => {
   const migration = await readFile(migrationPath, "utf8");
@@ -186,4 +188,31 @@ test("launch parchin lifecycle migration is additive and keeps financial history
   assert.doesNotMatch(migration, /UPDATE "Wallet"/);
   assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
   assert.doesNotMatch(migration, /UPDATE "Payment/);
+});
+
+test("launch term coupons lifecycle migration is additive", async () => {
+  const migration = await readFile(launchTermCouponsMigrationPath, "utf8");
+  assert.match(migration, /ADD VALUE IF NOT EXISTS 'TOP_UP_BONUS'/);
+  assert.match(migration, /ADD VALUE IF NOT EXISTS 'TERM_DISCOUNT'/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "Coupon"/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "termMonths"/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "lastReminderSentAt"/);
+  assert.doesNotMatch(migration, /\bDROP TABLE\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM/i);
+  assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
+});
+
+test("compass service prices migration is additive", async () => {
+  const migration = await readFile(
+    new URL(
+      "../prisma/migrations/20260804200000_compass_service_prices/migration.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "compassServicePrices"/);
+  assert.doesNotMatch(migration, /\bDROP\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM/i);
 });

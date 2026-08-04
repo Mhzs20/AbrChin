@@ -109,7 +109,18 @@ export function QuickCloudPlans({
 
             <div className="quick-plan-price">
               <span><strong>{initial}</strong> تومان</span>
-              <small>دوره ثابت · تمدید دستی فعلی {renewal} تومان</small>
+              <small>
+                {"termMonths" in plan && typeof plan.termMonths === "number"
+                  ? `${plan.termMonths.toLocaleString("fa-IR")} ماهه`
+                  : "دوره ثابت"}
+                {" · "}
+                تمدید دستی فعلی {renewal} تومان
+                {"termDiscountBps" in plan &&
+                typeof plan.termDiscountBps === "number" &&
+                plan.termDiscountBps > 0
+                  ? ` · تخفیف ${Math.round(plan.termDiscountBps / 100).toLocaleString("fa-IR")}٪`
+                  : ""}
+              </small>
             </div>
 
             <ul>

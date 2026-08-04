@@ -57,6 +57,11 @@ import type {
 } from "@/lib/recommendation/types";
 import { WalletError } from "@/lib/wallet/errors";
 import { serializeQuoteLineItems } from "@/lib/pricing/quote-line-items";
+import { isBillingTermMonths } from "@/lib/billing/lifecycle-policy";
+import {
+  normalizeCouponCode,
+  resolveServerPurchaseCoupon,
+} from "@/lib/coupons/service";
 import {
   createCatalogGuestSessionCredential,
   requireConversationAccess,
@@ -563,10 +568,41 @@ export function toPublicRecommendationQuote(quote: {
   reasons: Prisma.JsonValue;
   planSnapshot: Prisma.JsonValue;
   expiresAt: Date;
+  termMonths?: number | null;
+  termDiscountBps?: number | null;
+  couponCodeSnapshot?: string | null;
+  couponDiscountBpsSnapshot?: number | null;
+  lineItemsSnapshot?: Prisma.JsonValue | null;
 }): PublicRecommendationQuote {
   const snapshot = quote.planSnapshot as Record<string, unknown>;
   const reasons = Array.isArray(quote.reasons)
     ? quote.reasons.filter((reason): reason is string => typeof reason === "string")
+    : [];
+  const termMonths =
+    quote.termMonths === 3 ||
+    quote.termMonths === 6 ||
+    quote.termMonths === 12
+      ? quote.termMonths
+      : 1;
+  const lineItems = Array.isArray(quote.lineItemsSnapshot)
+    ? quote.lineItemsSnapshot.flatMap((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+        const row = item as Record<string, unknown>;
+        if (
+          typeof row.type !== "string" ||
+          typeof row.label !== "string" ||
+          (typeof row.amountIrr !== "string" && typeof row.amountIrr !== "number")
+        ) {
+          return [];
+        }
+        return [
+          {
+            type: row.type,
+            label: row.label,
+            amountRial: String(row.amountIrr),
+          },
+        ];
+      })
     : [];
 
   return {
@@ -580,6 +616,12 @@ export function toPublicRecommendationQuote(quote: {
     storageGb: typeof snapshot.storageGb === "number" ? snapshot.storageGb : null,
     amountRial: quote.amountRial.toString(),
     renewalAmountRial: quote.renewalAmountRial.toString(),
+    termMonths,
+    termDiscountBps:
+      typeof quote.termDiscountBps === "number" ? quote.termDiscountBps : 0,
+    couponCode: quote.couponCodeSnapshot ?? null,
+    couponDiscountBps: quote.couponDiscountBpsSnapshot ?? null,
+    lineItems,
     deliveryEstimateMinutes:
       typeof snapshot.deliveryEstimateMinutes === "number"
         ? snapshot.deliveryEstimateMinutes
@@ -617,6 +659,8 @@ function catalogCheckoutRequestHash(input: {
   planId: string;
   expectedProductKind: InfrastructureProductKind;
   delivery: CatalogDeliverySelection;
+  termMonths: 1 | 3 | 6 | 12;
+  couponCode: string | null;
 }) {
   return createHash("sha256")
     .update(
@@ -627,6 +671,8 @@ function catalogCheckoutRequestHash(input: {
         accessMethod: input.delivery.accessMethod,
         sshKeyName: input.delivery.sshKeyName?.trim() || null,
         serverName: input.delivery.serverName,
+        termMonths: input.termMonths,
+        couponCode: input.couponCode,
       }),
     )
     .digest("hex");
@@ -639,6 +685,8 @@ async function createCatalogServerQuote(params: {
   expectedProductKind: InfrastructureProductKind;
   delivery: CatalogDeliverySelection;
   idempotencyKey: string;
+  termMonths?: 1 | 3 | 6 | 12;
+  couponCode?: string | null;
 }) {
   if (!/^[A-Za-z0-9._:-]{16,128}$/.test(params.idempotencyKey)) {
     throw new WalletError(
@@ -654,9 +702,22 @@ async function createCatalogServerQuote(params: {
     );
   }
   const delivery = { ...params.delivery, serverName };
+  const termMonths = isBillingTermMonths(params.termMonths) ? params.termMonths : 1;
+  const couponCode = normalizeCouponCode(params.couponCode);
+  let couponDiscountBps: number | null = null;
+  if (couponCode) {
+    const coupon = await resolveServerPurchaseCoupon({
+      code: couponCode,
+      userId: params.userId,
+      termMonths,
+    });
+    couponDiscountBps = coupon.discountBps;
+  }
   const requestHash = catalogCheckoutRequestHash({
     ...params,
     delivery,
+    termMonths,
+    couponCode,
   });
   const guestCredential = params.userId
     ? null
@@ -722,11 +783,16 @@ async function createCatalogServerQuote(params: {
   if (route.offerSource === "API_CATALOG") {
     await requireFreshCatalog(route.provider);
   }
+  const termPricing = {
+    termMonths,
+    couponDiscountBps,
+    couponCode,
+  };
   const plan =
     params.expectedProductKind ===
     InfrastructureProductKind.READY_INSTANT_SERVER
-      ? await getActiveReadyServerPlanById(params.planId)
-      : await getActivePlanById(params.planId);
+      ? await getActiveReadyServerPlanById(params.planId, termPricing)
+      : await getActivePlanById(params.planId, termPricing);
   if (!plan) {
     throw new WalletError(
       "quote_unavailable",
@@ -885,7 +951,11 @@ async function createCatalogServerQuote(params: {
           expiresAt,
         }) as Prisma.InputJsonValue,
         amountRial: plan.pricing.finalPriceRial,
-        renewalAmountRial: plan.pricing.finalPriceRial,
+        renewalAmountRial: plan.pricing.renewalPriceRial,
+        termMonths: plan.pricing.termMonths,
+        termDiscountBps: plan.pricing.termDiscountBps,
+        couponCodeSnapshot: couponCode,
+        couponDiscountBpsSnapshot: couponDiscountBps,
         catalogItemId: plan.pricing.catalogItemId,
         providerBasePriceRialSnapshot:
           plan.pricing.providerBasePriceRial,
@@ -956,6 +1026,8 @@ export async function createReadyServerQuote(params: {
   idempotencyKey: string;
   userId?: string | null;
   now?: Date;
+  termMonths?: 1 | 3 | 6 | 12;
+  couponCode?: string | null;
 }) {
   return createCatalogServerQuote({
     ...params,
@@ -970,6 +1042,8 @@ export async function createCloudServerQuote(params: {
   idempotencyKey: string;
   userId?: string | null;
   now?: Date;
+  termMonths?: 1 | 3 | 6 | 12;
+  couponCode?: string | null;
 }) {
   return createCatalogServerQuote({
     ...params,
@@ -1078,12 +1152,9 @@ export async function createRecommendationQuotes(params: {
   sessionId?: string;
   guestToken?: string | null;
   requestedParchinLevel?: ParchinLevel;
+  termMonths?: 1 | 3 | 6 | 12;
+  couponCode?: string | null;
 }) {
-  assertPublicSaleEnabled({
-    provider: InfrastructureProvider.ARVAN,
-    productKind: "CLOUD_SERVER",
-    offerSource: "API_CATALOG",
-  });
   if (!params.sessionId) {
     throw new Error("conversation_session_required");
   }
@@ -1102,7 +1173,11 @@ export async function createRecommendationQuotes(params: {
   ) {
     throw new Error("conversation_requirements_not_confirmed");
   }
-  await requireFreshCatalog(InfrastructureProvider.ARVAN);
+  // Recommendation always draws from live AbrChin catalog (Arvan + ParsPack).
+  await Promise.allSettled([
+    requireFreshCatalog(InfrastructureProvider.ARVAN),
+    requireFreshCatalog(InfrastructureProvider.PARSPACK),
+  ]);
   const lockedConfiguration = parseLockedDeliveryConfiguration(
     existingSession.deliveryConfiguration,
   );
@@ -1132,33 +1207,29 @@ export async function createRecommendationQuotes(params: {
     throw new Error("conversation_delivery_not_configured");
   }
 
-  if (recommendation.architectureEscalation) {
-    const session = await prisma.recommendationSession.update({
-      where: { id: existingSession.id },
-      data: {
-        userId: params.userId ?? null,
-        status: RecommendationFlowStatus.ESCALATED,
-        answers: authoritativeAnswers as Prisma.InputJsonValue,
-        answerSources: authoritativeSources as Prisma.InputJsonValue,
-        profile: {
-          ...recommendation.profile,
-          workloadClassification: recommendation.workloadClassification,
-        } as Prisma.InputJsonValue,
-        confidence: recommendation.confidence,
-        architectureEscalation: true,
-        expiresAt,
-        revision: { increment: 1 },
-      },
+  const assistedNotice = recommendation.architectureEscalation
+    ? "این نیاز همراهی معماری/مهاجرت هم می‌خواهد؛ با این حال یک سرور واقعی از فهرست ابرچین هم پیشنهاد می‌شود."
+    : null;
+
+  const termMonths = isBillingTermMonths(params.termMonths)
+    ? params.termMonths
+    : 1;
+  const couponCode = normalizeCouponCode(params.couponCode);
+  let couponDiscountBps: number | null = null;
+  if (couponCode) {
+    const coupon = await resolveServerPurchaseCoupon({
+      code: couponCode,
+      userId: params.userId,
+      termMonths,
+      now,
     });
-    return {
-      sessionId: session.id,
-      recommendation,
-      quotes: [],
-      quoteNotice:
-        "این نیاز از خرید خودکار یک سرور عبور کرده؛ پاسخ‌ها حفظ شدند تا معماری و مسیر بازگشت با همراهی بررسی شوند.",
-      expiresAt,
-    };
+    couponDiscountBps = coupon.discountBps;
   }
+  const termPricing = {
+    termMonths,
+    couponDiscountBps,
+    couponCode,
+  };
 
   const plans = await listActivePlans(selectedParchinLevel);
   const candidates = selectQuotes(recommendation, plans, now, expiresAt);
@@ -1171,7 +1242,17 @@ export async function createRecommendationQuotes(params: {
       "چینش انتخاب‌شده دیگر حداقل‌های این نیاز را پوشش نمی‌دهد.",
     );
   }
-  const configuredPlan = configuredCandidate.plan;
+  const pricedConfigured = await getActivePlanById(
+    configuredCandidate.plan.id,
+    termPricing,
+  );
+  if (!pricedConfigured) {
+    throw new WalletError(
+      "quote_unavailable",
+      "چینش انتخاب‌شده دیگر قابل فروش نیست.",
+    );
+  }
+  const configuredPlan = pricedConfigured;
   const current = await revalidateLockedSelection({
     provider: lockedConfiguration.provider,
     providerApiVersion: lockedConfiguration.providerApiVersion,
@@ -1194,8 +1275,15 @@ export async function createRecommendationQuotes(params: {
       "قیمت یا ظرفیت انتخاب تغییر کرده است؛ Quote تازه دریافت کن.",
     );
   }
+  const lockedServerName =
+    lockedConfiguration &&
+    typeof (lockedConfiguration as unknown as { serverName?: string })
+      .serverName === "string"
+      ? (lockedConfiguration as unknown as { serverName: string }).serverName
+      : configuredPlan.title.slice(0, 64);
   const main = {
     ...configuredCandidate,
+    plan: configuredPlan,
     role: "RECOMMENDED" as const,
     configuration: lockedConfiguration,
     providerPriceCheckedAt: current.checkedAt,
@@ -1212,19 +1300,20 @@ export async function createRecommendationQuotes(params: {
         .slice(0, 2)
     : [];
   const validatedComparisons = await Promise.allSettled(
-    comparisons.map(async (selected) => ({
-      ...selected,
-      ...(await lockAndRevalidatePlan(selected.plan, {
-        imageAssetId: lockedConfiguration.imageAssetId!,
-        accessMethod: lockedConfiguration.accessMethod,
-        sshKeyName: lockedConfiguration.sshKeyName,
-        serverName:
-          typeof (lockedConfiguration as { serverName?: string }).serverName ===
-          "string"
-            ? (lockedConfiguration as { serverName: string }).serverName
-            : configuredPlan.title.slice(0, 64),
-      })),
-    })),
+    comparisons.map(async (selected) => {
+      const priced = await getActivePlanById(selected.plan.id, termPricing);
+      if (!priced) throw new WalletError("quote_unavailable", "پلن در دسترس نیست.");
+      return {
+        ...selected,
+        plan: priced,
+        ...(await lockAndRevalidatePlan(priced, {
+          imageAssetId: lockedConfiguration.imageAssetId!,
+          accessMethod: lockedConfiguration.accessMethod,
+          sshKeyName: lockedConfiguration.sshKeyName,
+          serverName: lockedServerName,
+        })),
+      };
+    }),
   );
   const selected = [
     main,
@@ -1261,7 +1350,7 @@ export async function createRecommendationQuotes(params: {
         workloadClassification: recommendation.workloadClassification,
       } as Prisma.InputJsonValue,
       confidence: recommendation.confidence,
-      architectureEscalation: false,
+      architectureEscalation: recommendation.architectureEscalation,
       expiresAt,
       revision: { increment: 1 },
       },
@@ -1317,7 +1406,11 @@ export async function createRecommendationQuotes(params: {
           } as Prisma.InputJsonValue,
           planSnapshot: toPlanSnapshot(plan, { createdAt: now, expiresAt }) as Prisma.InputJsonValue,
           amountRial: plan.pricing.finalPriceRial,
-          renewalAmountRial: plan.pricing.finalPriceRial,
+          renewalAmountRial: plan.pricing.renewalPriceRial,
+          termMonths: plan.pricing.termMonths,
+          termDiscountBps: plan.pricing.termDiscountBps,
+          couponCodeSnapshot: couponCode,
+          couponDiscountBpsSnapshot: couponDiscountBps,
           catalogItemId: plan.pricing.catalogItemId,
           providerBasePriceRialSnapshot: plan.pricing.providerBasePriceRial,
           markupBasisPointsSnapshot: plan.pricing.markupBasisPoints,
@@ -1371,7 +1464,7 @@ export async function createRecommendationQuotes(params: {
       },
     });
   });
-  const quoteNotice =
+  const capacityNotice =
     selected.length === 0
       ? recommendation.profile.backupPolicy === "DAILY"
         ? "نیازت بکاپ واقعی می‌خواهد، اما هیچ پلن فعال فعلی این قابلیت را به‌طور قابل اثبات پوشش نمی‌دهد؛ خرید خودکار متوقف شد."
@@ -1379,6 +1472,23 @@ export async function createRecommendationQuotes(params: {
       : selected.length < 3
         ? `فعلاً فقط ${selected.length.toLocaleString("fa-IR")} چینش معتبر همه‌ی حداقل‌ها را پوشش می‌دهد.`
         : null;
+  const quoteNotice = [assistedNotice, capacityNotice]
+    .filter(Boolean)
+    .join(" ");
+
+  const {
+    listCompassServicePackages,
+    selectCompassServicePackages,
+    serializeCompassServicePackages,
+  } = await import("@/lib/recommendation/service-packages");
+  const allServices = await listCompassServicePackages();
+  const servicePackages = serializeCompassServicePackages(
+    selectCompassServicePackages(
+      authoritativeAnswers,
+      allServices,
+      recommendation.architectureEscalation,
+    ),
+  );
 
   return {
     sessionId: session.id,
@@ -1391,6 +1501,7 @@ export async function createRecommendationQuotes(params: {
       )
       .map(toPublicRecommendationQuote),
     quoteNotice,
+    servicePackages,
     expiresAt,
   };
 }

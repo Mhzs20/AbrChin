@@ -5,16 +5,28 @@ import { useRef, useState } from "react";
 
 import { useToast } from "@/components/product/toast";
 
+function formatRialAsToman(value: string) {
+  return (BigInt(value) / 10n).toLocaleString("fa-IR");
+}
+
 export function OrderCheckoutPanel({
   planId,
   quoteId,
   planTitle,
   priceToman,
+  termMonths = 1,
+  termDiscountBps = 0,
+  couponCode = null,
+  lineItems = [],
 }: {
   planId?: string;
   quoteId?: string;
   planTitle: string;
   priceToman: string;
+  termMonths?: 1 | 3 | 6 | 12;
+  termDiscountBps?: number;
+  couponCode?: string | null;
+  lineItems?: Array<{ type: string; label: string; amountRial: string }>;
 }) {
   const router = useRouter();
   const { showToast } = useToast();
@@ -71,11 +83,42 @@ export function OrderCheckoutPanel({
     }
   }
 
+  const discountPercent = Math.round(termDiscountBps / 100);
+
   return (
     <section className="product-card" style={{ marginTop: 16 }}>
       <h2 style={{ marginTop: 0 }}>ثبت سفارش</h2>
-      <p>مبلغ قابل پرداخت: <strong>{priceToman} تومان</strong></p>
-      <button type="button" className="product-btn product-btn--primary" disabled={loading} onClick={handlePurchase}>
+      <p>
+        دوره شارژ: <strong>{termMonths.toLocaleString("fa-IR")} ماه</strong>
+        {discountPercent > 0 ? (
+          <>
+            {" "}
+            · تخفیف{" "}
+            <strong>
+              {discountPercent.toLocaleString("fa-IR")}٪
+              {couponCode ? ` (کد ${couponCode})` : " دوره‌ای"}
+            </strong>
+          </>
+        ) : null}
+      </p>
+      {lineItems.length > 0 ? (
+        <ul style={{ margin: "0 0 12px", paddingInlineStart: 18 }}>
+          {lineItems.map((item) => (
+            <li key={`${item.type}:${item.label}`}>
+              {item.label}: {formatRialAsToman(item.amountRial)} تومان
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p>
+        مبلغ قابل پرداخت: <strong>{priceToman} تومان</strong>
+      </p>
+      <button
+        type="button"
+        className="product-btn product-btn--primary"
+        disabled={loading}
+        onClick={handlePurchase}
+      >
         {loading ? "در حال پردازش..." : "خرید و ثبت سفارش"}
       </button>
     </section>

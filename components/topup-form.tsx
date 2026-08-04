@@ -25,6 +25,7 @@ export function TopUpForm({
   const defaultAmount = suggestedAmountsToman[0] ?? minTopUpToman;
   const [amount, setAmount] = useState(defaultAmount);
   const [custom, setCustom] = useState("");
+  const [couponCode, setCouponCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -39,7 +40,10 @@ export function TopUpForm({
       const response = await fetch("/api/wallet/topups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amountToman: selected }),
+        body: JSON.stringify({
+          amountToman: selected,
+          couponCode: couponCode.trim() || null,
+        }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -103,6 +107,19 @@ export function TopUpForm({
           value={custom}
           disabled={!gatewayAvailable}
           onChange={(e) => setCustom(e.target.value.replace(/\D/g, ""))}
+        />
+      </label>
+
+      <label className="auth-field" htmlFor="coupon-code">
+        <span>کد افزایش اعتبار (اختیاری)</span>
+        <input
+          id="coupon-code"
+          dir="ltr"
+          maxLength={32}
+          placeholder="مثلاً BONUS50"
+          value={couponCode}
+          disabled={!gatewayAvailable}
+          onChange={(e) => setCouponCode(e.target.value)}
         />
       </label>
 

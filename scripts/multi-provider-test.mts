@@ -810,7 +810,7 @@ test("customer quote serialization never exposes provider or base price", () => 
   assert.equal(serialized.includes("providerBasePrice"), false);
 });
 
-test("conversation discovery stays chat-core between five and six questions", () => {
+test("conversation discovery stays chat-core with optional follow-ups", () => {
   for (const answers of [
     {},
     { project: "migration" as const, stage: "migration" as const },
@@ -818,8 +818,8 @@ test("conversation discovery stays chat-core between five and six questions", ()
     { project: "commerce" as const, stage: "growing" as const },
   ]) {
     const order = getRecommendationQuestionOrder(answers);
-    assert.ok(order.length >= 5);
-    assert.ok(order.length <= 6);
+    assert.ok(order.length >= 7);
+    assert.ok(order.length <= 11);
   }
 });
 

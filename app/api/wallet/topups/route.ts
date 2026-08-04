@@ -51,6 +51,12 @@ export async function POST(request: Request) {
       typeof (body as { orderId?: unknown }).orderId === "string"
         ? String((body as { orderId: string }).orderId).trim()
         : "";
+    const couponCode =
+      typeof body === "object" &&
+      body &&
+      typeof (body as { couponCode?: unknown }).couponCode === "string"
+        ? String((body as { couponCode: string }).couponCode)
+        : null;
 
     try {
       await resolveDefaultPaymentGateway();
@@ -68,7 +74,7 @@ export async function POST(request: Request) {
           idempotencyKey:
             readIdempotencyKey(request) ?? "",
         })
-      : await createTopUpIntent(user.id, amountToman);
+      : await createTopUpIntent(user.id, amountToman, { couponCode });
     return jsonOk({
       topUp: {
         id: result.topUp.id,

@@ -14,7 +14,9 @@ import {
   resolvePlanPricing,
   samePriceSnapshot,
 } from "@/lib/pricing/plan-pricing";
+import { getLifecyclePolicy } from "@/lib/billing/lifecycle-policy";
 import { addBillingMonth, addGracePeriod } from "@/lib/subscriptions/period";
+import { processLifecycleNotices } from "@/lib/subscriptions/lifecycle-notices";
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 import { WalletError } from "@/lib/wallet/errors";
 import {
@@ -430,18 +432,25 @@ export async function payRenewalQuote(params: {
 async function markSubscriptionPastDue(
   subscription: {
     id: string;
+    currentPeriodEnd: Date;
+    user?: { mobile: string | null } | null;
     cloudInstance: { infrastructureOrderId: string; name: string };
   },
   now: Date,
+  graceDays: number,
 ) {
-  return prisma.$transaction(async (tx) => {
+  const ok = await prisma.$transaction(async (tx) => {
     const changed = await tx.serviceSubscription.updateMany({
       where: {
         id: subscription.id,
         status: SubscriptionStatus.ACTIVE,
         currentPeriodEnd: { lte: now },
       },
-      data: { status: SubscriptionStatus.PAST_DUE, autoRenew: false },
+      data: {
+        status: SubscriptionStatus.PAST_DUE,
+        autoRenew: false,
+        graceEndsAt: addGracePeriod(subscription.currentPeriodEnd, graceDays),
+      },
     });
     if (changed.count !== 1) return false;
 
@@ -456,23 +465,46 @@ async function markSubscriptionPastDue(
     });
     return true;
   });
+  if (ok && subscription.user?.mobile) {
+    try {
+      const { sendLifecycleSms } = await import(
+        "@/lib/subscriptions/lifecycle-notices"
+      );
+      await sendLifecycleSms({
+        mobile: subscription.user.mobile,
+        serverName: subscription.cloudInstance.name,
+        kind: "past_due",
+      });
+    } catch (error) {
+      console.error(
+        "[lifecycle:past-due-sms]",
+        error instanceof Error ? error.message : "unknown",
+      );
+    }
+  }
+  return ok;
 }
 
 async function markSubscriptionSuspended(
   subscription: {
     id: string;
+    user?: { mobile: string | null } | null;
     cloudInstance: { infrastructureOrderId: string; name: string };
   },
   now: Date,
 ) {
-  return prisma.$transaction(async (tx) => {
+  const ok = await prisma.$transaction(async (tx) => {
     const changed = await tx.serviceSubscription.updateMany({
       where: {
         id: subscription.id,
         status: SubscriptionStatus.PAST_DUE,
         graceEndsAt: { lte: now },
       },
-      data: { status: SubscriptionStatus.SUSPENDED, autoRenew: false },
+      data: {
+        status: SubscriptionStatus.SUSPENDED,
+        autoRenew: false,
+        suspendedAt: now,
+      },
     });
     if (changed.count !== 1) return false;
 
@@ -487,15 +519,37 @@ async function markSubscriptionSuspended(
     });
     return true;
   });
+  if (ok && subscription.user?.mobile) {
+    try {
+      const { sendLifecycleSms } = await import(
+        "@/lib/subscriptions/lifecycle-notices"
+      );
+      await sendLifecycleSms({
+        mobile: subscription.user.mobile,
+        serverName: subscription.cloudInstance.name,
+        kind: "suspended",
+      });
+    } catch (error) {
+      console.error(
+        "[lifecycle:suspend-sms]",
+        error instanceof Error ? error.message : "unknown",
+      );
+    }
+  }
+  return ok;
 }
 
 export async function processSubscriptionLifecycle(now = new Date()) {
+  const policy = await getLifecyclePolicy();
+  const notices = await processLifecycleNotices(now);
+
   const due = await prisma.serviceSubscription.findMany({
     where: {
       status: SubscriptionStatus.ACTIVE,
       currentPeriodEnd: { lte: now },
     },
     include: {
+      user: { select: { mobile: true } },
       cloudInstance: {
         select: { infrastructureOrderId: true, name: true },
       },
@@ -506,7 +560,15 @@ export async function processSubscriptionLifecycle(now = new Date()) {
 
   let pastDue = 0;
   for (const subscription of due) {
-    if (await markSubscriptionPastDue(subscription, now)) pastDue += 1;
+    if (
+      await markSubscriptionPastDue(
+        subscription,
+        now,
+        policy.suspendGraceDaysAfterZero,
+      )
+    ) {
+      pastDue += 1;
+    }
   }
 
   const graceExpired = await prisma.serviceSubscription.findMany({
@@ -515,6 +577,7 @@ export async function processSubscriptionLifecycle(now = new Date()) {
       graceEndsAt: { lte: now },
     },
     include: {
+      user: { select: { mobile: true } },
       cloudInstance: {
         select: { infrastructureOrderId: true, name: true },
       },
@@ -528,5 +591,11 @@ export async function processSubscriptionLifecycle(now = new Date()) {
     if (await markSubscriptionSuspended(subscription, now)) suspended += 1;
   }
 
-  return { renewed: 0, pastDue, suspended };
+  return {
+    renewed: 0,
+    pastDue,
+    suspended,
+    reminders: notices.reminders,
+    deleteReviews: notices.deleteReviews,
+  };
 }

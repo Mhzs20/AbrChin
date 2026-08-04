@@ -29,8 +29,11 @@ export type EffectivePlanPricing = {
   parchinPriceRial: bigint;
   taxBasisPoints: number;
   taxAmountRial: bigint;
+  termMonths: 1 | 3 | 6 | 12;
+  termDiscountBps: number;
   lineItems: QuoteLineItem[];
   finalPriceRial: bigint;
+  renewalPriceRial: bigint;
   currency: "IRR";
   providerPriceCheckedAt: Date;
   vcpu: number | null;
@@ -44,6 +47,9 @@ export type PlanPricingOptions = {
   taxBasisPoints?: number;
   parchinLevel?: ParchinLevel;
   parchinPriceRial?: bigint;
+  termMonths?: 1 | 3 | 6 | 12;
+  couponDiscountBps?: number | null;
+  couponCode?: string | null;
 };
 
 export function compatibleImageCodes(item: {
@@ -84,6 +90,9 @@ export function resolveCatalogItemPricing(
     parchinLevel: options.parchinLevel ?? "PARCHIN_START",
     parchinPriceIrr: options.parchinPriceRial ?? 0n,
     taxBps: options.taxBasisPoints ?? 0,
+    termMonths: options.termMonths ?? 1,
+    couponDiscountBps: options.couponDiscountBps,
+    couponCode: options.couponCode,
   });
   return {
     catalogItemId: item.id,
@@ -96,8 +105,11 @@ export function resolveCatalogItemPricing(
     parchinPriceRial: options.parchinPriceRial ?? 0n,
     taxBasisPoints: options.taxBasisPoints ?? 0,
     taxAmountRial: quotePricing.taxAmountIrr,
+    termMonths: quotePricing.termMonths,
+    termDiscountBps: quotePricing.termDiscountBps,
     lineItems: quotePricing.lineItems,
     finalPriceRial: quotePricing.finalPriceIrr,
+    renewalPriceRial: quotePricing.renewalAmountIrr,
     currency: "IRR",
     providerPriceCheckedAt: item.lastSyncedAt,
     vcpu: item.vcpu,

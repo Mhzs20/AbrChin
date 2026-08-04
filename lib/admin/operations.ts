@@ -45,6 +45,7 @@ export type AdminOperationsQueueKey =
   | "activationApproval"
   | "provisionRecovery"
   | "resourceChangeApproval"
+  | "resourceChangeFulfillment"
   | "deliveryApproval"
   | "lowBalance"
   | "unpaidInvoice"
@@ -57,6 +58,7 @@ export type AdminOperationsActionKind =
   | "link"
   | "approve_activation"
   | "approve_resource_change"
+  | "fulfill_resource_change"
   | "approve_suspension"
   | "review_reconciliation";
 
@@ -103,6 +105,11 @@ const definitions: Record<
     title: "تغییر منابع منتظر تأیید",
     description: "Resize، Stop، Resume یا تغییر Plan هنوز اجازه Provider ندارد.",
   },
+  resourceChangeFulfillment: {
+    title: "تغییر منابع تأییدشده — انجام دستی",
+    description:
+      "درخواست ارتقا/حذف تأیید شده؛ Admin باید مشخصات واقعی را ثبت و انجام دهد.",
+  },
   deliveryApproval: {
     title: "تحویل منتظر تأیید دوم",
     description: "Resource آماده است اما Credential هنوز برای Customer قابل Reveal نیست.",
@@ -142,6 +149,7 @@ export async function listAdminOperationsQueues(): Promise<
     activations,
     provisionRecoveries,
     resourceChanges,
+    resourceFulfillments,
     deliveries,
     lowBalances,
     unpaidInvoices,
@@ -230,6 +238,21 @@ export async function listAdminOperationsQueues(): Promise<
         id: true,
         status: true,
         requestedAt: true,
+        plan: { select: { title: true } },
+        cloudInstance: { select: { name: true } },
+      },
+    }),
+    prisma.resourceChangeRequest.findMany({
+      where: {
+        status: { in: ["APPROVED", "PROVIDER_MUTATION_PENDING"] },
+      },
+      orderBy: { requestedAt: "asc" },
+      take: 50,
+      select: {
+        id: true,
+        status: true,
+        requestedAt: true,
+        requestedResources: true,
         plan: { select: { title: true } },
         cloudInstance: { select: { name: true } },
       },
@@ -383,6 +406,29 @@ export async function listAdminOperationsQueues(): Promise<
           label: "تأیید تغییر منابع",
         },
       })),
+    ),
+    queue(
+      "resourceChangeFulfillment",
+      resourceFulfillments.map((item) => {
+        const action =
+          item.requestedResources &&
+          typeof item.requestedResources === "object" &&
+          !Array.isArray(item.requestedResources)
+            ? (item.requestedResources as Record<string, unknown>).action
+            : null;
+        return {
+          id: item.id,
+          reference: item.cloudInstance.name,
+          summary: `${item.plan.title} — ${
+            action === "TERMINATE" ? "حذف" : "ارتقا/تغییر"
+          } (${item.status})`,
+          updatedAt: item.requestedAt.toISOString(),
+          action: {
+            kind: "fulfill_resource_change",
+            label: "ثبت انجام دستی",
+          },
+        };
+      }),
     ),
     queue(
       "deliveryApproval",

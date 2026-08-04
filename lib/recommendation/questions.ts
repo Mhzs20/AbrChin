@@ -181,6 +181,88 @@ const questions: Record<QuestionId, RecommendationQuestion> = {
       { value: "unknown", label: "مشترک / راهنمایی می‌خوام", description: "با هم مرز مسئولیت را روشن می‌کنیم", icon: "support" },
     ],
   },
+  budget: {
+    id: "budget",
+    stepLabel: "بودجه",
+    prompt: "بودجه ماهانه‌ات تقریباً چقدره؟",
+    helper: "یک بازه کافی است؛ پیشنهاد سرور داخل همین محدوده می‌ماند.",
+    explanation: "بودجه از پیشنهاد بیش‌ازحد جلوگیری می‌کند.",
+    example: "مثلاً تا ۲ میلیون تومان در ماه.",
+    decisionEffect: "روی انتخاب چینش اقتصادی‌تر یا قوی‌تر اثر دارد.",
+    unknownNote: "با فرض میانه جلو می‌رویم.",
+    options: [
+      { value: "under_500k", label: "زیر ۵۰۰ هزار", description: "شروع خیلی سبک", icon: "compute" },
+      { value: "500k_2m", label: "۵۰۰ هزار تا ۲ میلیون", description: "شروع معمول", icon: "traffic" },
+      { value: "2m_5m", label: "۲ تا ۵ میلیون", description: "کار جدی‌تر", icon: "growth" },
+      { value: "over_5m", label: "بیش از ۵ میلیون", description: "نیاز پرقدرت", icon: "warning" },
+      { value: "unknown", label: "هنوز مشخص نیست", description: "بعداً تنظیم می‌کنیم", icon: "support" },
+    ],
+  },
+  stack: {
+    id: "stack",
+    stepLabel: "استک",
+    prompt: "استک یا پلتفرم فعلی‌ات چیه؟",
+    helper: "WordPress، Laravel، Node، Docker، ویندوز یا سفارشی.",
+    explanation: "استک مسیر راه‌اندازی و مهاجرت را روشن می‌کند.",
+    example: "فروشگاه وردپرسی یا API با Node.",
+    decisionEffect: "روی خدمت راه‌اندازی/مهاجرت اثر دارد.",
+    unknownNote: "با فرض لینوکس عمومی جلو می‌رویم.",
+    options: [
+      { value: "wordpress", label: "WordPress", description: "سایت یا فروشگاه وردپرس", icon: "storage" },
+      { value: "laravel", label: "Laravel / PHP", description: "اپ PHP", icon: "compute" },
+      { value: "node", label: "Node / JS", description: "API یا سرویس Node", icon: "compute" },
+      { value: "docker", label: "Docker / کانتینر", description: "چند سرویس کانتینری", icon: "growth" },
+      { value: "windows", label: "ویندوز", description: "نیاز به ویندوز سرور", icon: "warning" },
+      { value: "custom", label: "سفارشی", description: "استک خاص خودم", icon: "support" },
+      { value: "unknown", label: "نمی‌دانم", description: "با هم تشخیص می‌دهیم", icon: "question-help" },
+    ],
+  },
+  domainReady: {
+    id: "domainReady",
+    stepLabel: "دامنه",
+    prompt: "دامنه آماده‌ست؟",
+    helper: "اگر دامنه داری، اتصال و SSL را سریع‌تر جلو می‌بریم.",
+    explanation: "آمادگی دامنه خدمت DNS/SSL را مشخص می‌کند.",
+    example: "دامنه خریداری شده یا هنوز نه.",
+    decisionEffect: "روی خدمت اتصال دامنه اثر دارد.",
+    unknownNote: "بعداً هماهنگ می‌کنیم.",
+    options: [
+      { value: "yes", label: "بله", description: "دامنه آماده است", icon: "managed-shield" },
+      { value: "no", label: "هنوز نه", description: "بعداً تهیه می‌کنم", icon: "support" },
+      { value: "unknown", label: "مطمئن نیستم", description: "بررسی می‌کنیم", icon: "question-help" },
+    ],
+  },
+  staging: {
+    id: "staging",
+    stepLabel: "Staging",
+    prompt: "محیط Staging جدا لازم داری؟",
+    helper: "برای تست قبل از پروداکشن؛ فعلاً روی پیشنهاد خدمت اثر دارد.",
+    explanation: "Staging معمولاً سرور یا منابع جدا می‌خواهد.",
+    example: "یک محیط تست جدا از سایت اصلی.",
+    decisionEffect: "ممکن است مسیر خدمت یا سرور دوم پیشنهاد شود.",
+    unknownNote: "فعلاً بدون Staging فرض می‌کنیم.",
+    options: [
+      { value: "yes", label: "بله", description: "محیط تست جدا می‌خواهم", icon: "growth" },
+      { value: "no", label: "خیر", description: "فقط پروداکشن", icon: "compute" },
+      { value: "unknown", label: "هنوز نمی‌دانم", description: "بعداً تصمیم می‌گیریم", icon: "support" },
+    ],
+  },
+  dataResidency: {
+    id: "dataResidency",
+    stepLabel: "محل داده",
+    prompt: "محدودیت محل نگهداری داده داری؟",
+    helper: "اگر داده باید داخل ایران بماند بگو.",
+    explanation: "محل داده روی انتخاب موقعیت سرور اثر دارد.",
+    example: "الزام ایران یا بدون محدودیت خاص.",
+    decisionEffect: "روی فیلتر موقعیت سرور اثر دارد.",
+    unknownNote: "ایران را فرض پیش‌فرض می‌گیریم.",
+    options: [
+      { value: "iran_only", label: "فقط ایران", description: "داده باید داخل ایران بماند", icon: "location" },
+      { value: "flexible", label: "منعطف", description: "محدودیت خاصی ندارم", icon: "traffic" },
+      { value: "unknown", label: "نمی‌دانم", description: "با فرض ایران جلو می‌رویم", icon: "support" },
+    ],
+  },
+
 };
 
 export function getRecommendationQuestionOrder(
@@ -194,11 +276,26 @@ export function getRecommendationQuestionOrder(
     "usage",
     "criticality",
     "management",
+    "budget",
+    "stack",
   ];
   const migration =
     answers.project === "migration" || answers.stage === "migration";
   if (migration) {
     order.splice(2, 0, "downtime");
+  }
+  if (
+    answers.project === "site" ||
+    answers.project === "commerce" ||
+    answers.project === "migration"
+  ) {
+    order.push("domainReady");
+  }
+  if (answers.project === "product" || answers.project === "api") {
+    order.push("staging");
+  }
+  if (answers.project === "commerce" || answers.project === "data") {
+    order.push("dataResidency");
   }
   return order;
 }
@@ -260,5 +357,15 @@ export function getDefaultAssistedAnswer(
       return answers.stage === "growing" ? "rapid" : "stable";
     case "downtime":
       return "short";
+    case "budget":
+      return "unknown";
+    case "stack":
+      return "unknown";
+    case "domainReady":
+      return "unknown";
+    case "staging":
+      return "no";
+    case "dataResidency":
+      return "iran_only";
   }
 }

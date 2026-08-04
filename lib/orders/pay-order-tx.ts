@@ -225,6 +225,12 @@ export async function executePayOrderWithWalletTx(
     tx.commercePricingConfig.findUnique({ where: { id: "default" } }),
     tx.parchinPricingConfig.findUnique({ where: { level: parchinLevel } }),
   ]);
+  const termMonths =
+    order.termMonths === 3 ||
+    order.termMonths === 6 ||
+    order.termMonths === 12
+      ? order.termMonths
+      : 1;
   const currentPricing =
     (manualAdmin || (pricingConfig?.enabled && productPricing?.enabled)) &&
     parchin?.active
@@ -235,6 +241,10 @@ export async function executePayOrderWithWalletTx(
           taxBasisPoints: commerce?.taxBps ?? 1000,
           parchinLevel,
           parchinPriceRial: parchin.priceRial,
+          termMonths,
+          couponDiscountBps:
+            order.recommendationQuote?.couponDiscountBpsSnapshot ?? null,
+          couponCode: order.couponCodeSnapshot,
         })
       : null;
   if (!currentPricing) {
@@ -377,6 +387,21 @@ export async function executePayOrderWithWalletTx(
 
   const existingLedger = await tx.walletLedgerEntry.findUnique({ where: { idempotencyKey } });
   if (existingLedger?.status === LedgerStatus.COMPLETED) {
+    if (order.couponCodeSnapshot) {
+      const { recordCouponRedemptionTx } = await import("@/lib/coupons/service");
+      const coupon = await tx.coupon.findUnique({
+        where: { code: order.couponCodeSnapshot },
+      });
+      if (coupon) {
+        await recordCouponRedemptionTx(tx, {
+          couponId: coupon.id,
+          userId,
+          serviceOrderId: order.id,
+          amountRial: order.amount,
+          idempotencyKey: `coupon-order:${order.id}`,
+        });
+      }
+    }
     const paidOrder = await tx.serviceOrder.findUniqueOrThrow({ where: { id: order.id } });
     const infra = await tx.infrastructureOrder.findUnique({ where: { serviceOrderId: order.id } });
     return { order: paidOrder, infrastructureOrder: infra };
@@ -428,6 +453,22 @@ export async function executePayOrderWithWalletTx(
   });
   if (paid.count !== 1) {
     throw new WalletError("invalid_status", "این سفارش قابل پرداخت نیست.");
+  }
+
+  if (order.couponCodeSnapshot) {
+    const { recordCouponRedemptionTx } = await import("@/lib/coupons/service");
+    const coupon = await tx.coupon.findUnique({
+      where: { code: order.couponCodeSnapshot },
+    });
+    if (coupon) {
+      await recordCouponRedemptionTx(tx, {
+        couponId: coupon.id,
+        userId,
+        serviceOrderId: order.id,
+        amountRial,
+        idempotencyKey: `coupon-order:${order.id}`,
+      });
+    }
   }
 
   const existingInfra = await tx.infrastructureOrder.findUnique({

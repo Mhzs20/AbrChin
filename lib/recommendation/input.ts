@@ -17,6 +17,11 @@ const allowedAnswers: Record<QuestionId, readonly string[]> = {
   downtime: ["flexible", "short", "near_zero", "unknown"],
   criticality: ["low", "medium", "high", "severe", "unknown"],
   management: ["raw", "managed", "unknown"],
+  budget: ["under_500k", "500k_2m", "2m_5m", "over_5m", "unknown"],
+  stack: ["wordpress", "laravel", "node", "docker", "windows", "custom", "unknown"],
+  domainReady: ["yes", "no", "unknown"],
+  staging: ["yes", "no", "unknown"],
+  dataResidency: ["iran_only", "flexible", "unknown"],
 };
 
 const questionIds = Object.keys(allowedAnswers) as QuestionId[];

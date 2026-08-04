@@ -56,6 +56,10 @@ test("recommendation input requires every decision answer and normalizes sources
       growth: "campaign",
       criticality: "high",
       management: "managed",
+      budget: "2m_5m",
+      stack: "wordpress",
+      domainReady: "yes",
+      dataResidency: "iran_only",
     },
     sources: {
       project: "user",
@@ -97,6 +101,9 @@ test("recommendation input requires every decision answer and normalizes sources
       usage: "light",
       criticality: "low",
       management: "raw",
+      budget: "unknown",
+      stack: "unknown",
+      domainReady: "unknown",
     },
   });
   assert.equal(withSelfManage.answers.management, "raw");
@@ -114,6 +121,9 @@ test("conversation questions stay chat-core and branch only for migration", () =
     "usage",
     "criticality",
     "management",
+    "budget",
+    "stack",
+    "domainReady",
   ]);
   assert.equal(simple.includes("downtime"), false);
 
@@ -129,6 +139,9 @@ test("conversation questions stay chat-core and branch only for migration", () =
     "usage",
     "criticality",
     "management",
+    "budget",
+    "stack",
+    "domainReady",
   ]);
 });
 

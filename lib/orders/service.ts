@@ -305,6 +305,12 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
       }),
     ]);
     const manualAdmin = quote.plan.offerSource === "MANUAL_ADMIN";
+    const termMonths =
+      quote.termMonths === 3 ||
+      quote.termMonths === 6 ||
+      quote.termMonths === 12
+        ? quote.termMonths
+        : 1;
     const currentPricing =
       (manualAdmin || (pricingConfig?.enabled && productPricing?.enabled)) &&
       parchin?.active
@@ -315,6 +321,9 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
             taxBasisPoints: commerce?.taxBps ?? 1000,
             parchinLevel: parchin.level,
             parchinPriceRial: parchin.priceRial,
+            termMonths,
+            couponDiscountBps: quote.couponDiscountBpsSnapshot,
+            couponCode: quote.couponCodeSnapshot,
           })
         : null;
     if (!currentPricing) {
@@ -344,6 +353,9 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
         title: quote.plan.title,
         description: quote.plan.description,
         amount: quote.amountRial,
+        termMonths,
+        termDiscountBps: currentPricing.termDiscountBps,
+        couponCodeSnapshot: quote.couponCodeSnapshot,
         currency: "IRR",
         status: ServiceOrderStatus.PENDING_PAYMENT,
         planCode: quote.plan.code,

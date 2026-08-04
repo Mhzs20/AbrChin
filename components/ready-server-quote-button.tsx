@@ -45,10 +45,18 @@ export function ReadyServerQuoteButton({
     useState<AccessMethod | "">("");
   const [sshKeyName, setSshKeyName] = useState("");
   const [serverName, setServerName] = useState("");
+  const [termMonths, setTermMonths] = useState<1 | 3 | 6 | 12>(1);
+  const [couponCode, setCouponCode] = useState("");
   const requestKeyRef = useRef<{
     fingerprint: string;
     key: string;
   } | null>(null);
+  const termLabels: Record<1 | 3 | 6 | 12, string> = {
+    1: "۱ ماه — بدون تخفیف دوره",
+    3: "۳ ماه — ۵٪ تخفیف",
+    6: "۶ ماه — ۱۰٪ تخفیف",
+    12: "۱۲ ماه — ۲۰٪ تخفیف",
+  };
   const selectedImage = useMemo(
     () => options?.images.find((image) => image.id === imageAssetId) ?? null,
     [imageAssetId, options],
@@ -100,6 +108,8 @@ export function ReadyServerQuoteButton({
         imageAssetId,
         accessMethod,
         serverName: serverName.trim(),
+        termMonths,
+        couponCode: couponCode.trim().toUpperCase() || null,
         sshKeyName:
           accessMethod === "SSH_KEY" ? sshKeyName.trim() : null,
       });
@@ -121,6 +131,8 @@ export function ReadyServerQuoteButton({
           imageAssetId,
           accessMethod,
           serverName: serverName.trim(),
+          termMonths,
+          couponCode: couponCode.trim() || null,
           sshKeyName: accessMethod === "SSH_KEY" ? sshKeyName.trim() : null,
         }),
       });
@@ -189,6 +201,34 @@ export function ReadyServerQuoteButton({
               onChange={(event) => setServerName(event.target.value)}
             />
           </label>
+          <label>
+            مدت شارژ
+            <select
+              value={termMonths}
+              onChange={(event) =>
+                setTermMonths(Number(event.target.value) as 1 | 3 | 6 | 12)
+              }
+            >
+              {([1, 3, 6, 12] as const).map((months) => (
+                <option key={months} value={months}>
+                  {termLabels[months]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            کد تخفیف (اختیاری)
+            <input
+              maxLength={32}
+              placeholder="مثلاً ABRCHIN20"
+              value={couponCode}
+              onChange={(event) => setCouponCode(event.target.value)}
+            />
+          </label>
+          <small>
+            با کد تخفیف خرید سرور، تخفیف ثابت ۵/۱۰/۲۰٪ دوره حذف و درصد کد اعمال
+            می‌شود.
+          </small>
           {accessMethod === "SSH_KEY" ? (
             <label>
               نام کلید SSH ثبت‌شده

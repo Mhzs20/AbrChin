@@ -1,5 +1,7 @@
 import { getClientIp, jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 import { ParchinLevel } from "@prisma/client";
+import { isBillingTermMonths } from "@/lib/billing/lifecycle-policy";
+import { normalizeCouponCode } from "@/lib/coupons/service";
 import { recommendationQuoteIpLimiter } from "@/lib/rate-limit";
 import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
 import { createRecommendationQuotes } from "@/lib/recommendation/quote-service";
@@ -31,20 +33,28 @@ export async function POST(request: Request) {
       typeof (body as Record<string, unknown>).sessionId === "string"
         ? String((body as Record<string, unknown>).sessionId)
         : undefined;
-    const requestedParchinLevel =
-      typeof body === "object" &&
-      body !== null &&
-      Object.values(ParchinLevel).includes(
-        (body as Record<string, unknown>).parchinLevel as ParchinLevel,
-      )
-        ? ((body as Record<string, unknown>).parchinLevel as ParchinLevel)
-        : undefined;
+    const record =
+      typeof body === "object" && body !== null
+        ? (body as Record<string, unknown>)
+        : {};
+    const requestedParchinLevel = Object.values(ParchinLevel).includes(
+      record.parchinLevel as ParchinLevel,
+    )
+      ? (record.parchinLevel as ParchinLevel)
+      : undefined;
+    const termMonthsRaw = Number(record.termMonths ?? 1);
+    const termMonths = isBillingTermMonths(termMonthsRaw)
+      ? termMonthsRaw
+      : 1;
+    const couponCode = normalizeCouponCode(record.couponCode);
     const user = await getCurrentUser();
     const result = await createRecommendationQuotes({
       userId: user?.id ?? null,
       includeComparisons,
       sessionId,
       requestedParchinLevel,
+      termMonths,
+      couponCode,
       guestToken:
         request.headers.get("x-recommendation-session-token") ??
         (await getRecommendationGuestToken()),
@@ -63,6 +73,7 @@ export async function POST(request: Request) {
       },
       quotes: result.quotes,
       quoteNotice: result.quoteNotice,
+      servicePackages: result.servicePackages,
     });
   } catch (error) {
     if (error instanceof SyntaxError) return jsonError("درخواست نامعتبر است.", 400);

@@ -48,17 +48,35 @@ function asSources(value: Prisma.JsonValue): AnswerSources {
     : {};
 }
 
-async function requireFreshArvanCatalog() {
-  const freshness = await getCatalogFreshness(
-    InfrastructureProvider.ARVAN,
-  );
-  if (!freshness.fresh) {
+async function requireFreshSaleCatalogs() {
+  const [arvan, parspack] = await Promise.all([
+    getCatalogFreshness(InfrastructureProvider.ARVAN),
+    getCatalogFreshness(InfrastructureProvider.PARSPACK),
+  ]);
+  if (!arvan.fresh) {
     await requestCatalogSync(InfrastructureProvider.ARVAN);
+  }
+  if (!parspack.fresh) {
+    await requestCatalogSync(InfrastructureProvider.PARSPACK);
+  }
+  if (!arvan.fresh && !parspack.fresh) {
     throw new WalletError(
       "quote_unavailable",
       "کاتالوگ در حال به‌روزرسانی است؛ کمی بعد دوباره تلاش کن.",
     );
   }
+}
+
+function assertPlanPublicSale(plan: {
+  provider: InfrastructureProvider;
+  productKind: string;
+  offerSource: string;
+}) {
+  assertPublicSaleEnabled({
+    provider: plan.provider,
+    productKind: plan.productKind as "CLOUD_SERVER" | "READY_INSTANT_SERVER",
+    offerSource: plan.offerSource as "API_CATALOG" | "MANUAL_ADMIN",
+  });
 }
 
 export async function getConversationDeliveryOptions(input: {
@@ -67,11 +85,6 @@ export async function getConversationDeliveryOptions(input: {
   guestToken?: string | null;
   requestedParchinLevel?: ParchinLevel;
 }) {
-  assertPublicSaleEnabled({
-    provider: InfrastructureProvider.ARVAN,
-    productKind: "CLOUD_SERVER",
-    offerSource: "API_CATALOG",
-  });
   const session = await requireConversationAccess(input);
   if (
     ![
@@ -85,7 +98,7 @@ export async function getConversationDeliveryOptions(input: {
   ) {
     throw new Error("conversation_requirements_not_confirmed");
   }
-  await requireFreshArvanCatalog();
+  await requireFreshSaleCatalogs();
   const answers = asAnswers(session.answers);
   const sources = asSources(session.answerSources);
   const minimumParchinLevel = recommendedParchinLevel(answers);
@@ -103,6 +116,12 @@ export async function getConversationDeliveryOptions(input: {
     now,
     new Date(now.getTime() + 10 * 60 * 1000),
   );
+  if (selected.length === 0) {
+    throw new WalletError(
+      "quote_unavailable",
+      "فعلاً سرور قابل پیشنهادی از فهرست ابرچین موجود نیست.",
+    );
+  }
   const catalogItemIds = [
     ...new Set(selected.map(({ plan }) => plan.catalogItemId).filter(Boolean)),
   ] as string[];
@@ -123,7 +142,9 @@ export async function getConversationDeliveryOptions(input: {
   ];
   const images = await prisma.providerCatalogAsset.findMany({
     where: {
-      provider: InfrastructureProvider.ARVAN,
+      provider: {
+        in: [InfrastructureProvider.ARVAN, InfrastructureProvider.PARSPACK],
+      },
       apiVersion: "v1",
       kind: "IMAGE",
       externalId: { in: imageCodes },
@@ -139,6 +160,7 @@ export async function getConversationDeliveryOptions(input: {
     minimumParchinLevel,
     selectedParchinLevel,
     options: selected.map(({ role, plan }) => {
+      assertPlanPublicSale(plan);
       const compatible = itemById.get(plan.catalogItemId ?? "")
         ?.compatibleImageCodes;
       const allowedCodes = Array.isArray(compatible)
@@ -148,6 +170,7 @@ export async function getConversationDeliveryOptions(input: {
         : [];
       const planImages = images.filter(
         (image) =>
+          image.provider === plan.provider &&
           image.regionCode === plan.regionCode &&
           allowedCodes.includes(image.externalId),
       );
@@ -180,11 +203,6 @@ export async function configureConversationDelivery(input: {
   userId?: string | null;
   guestToken?: string | null;
 }) {
-  assertPublicSaleEnabled({
-    provider: InfrastructureProvider.ARVAN,
-    productKind: "CLOUD_SERVER",
-    offerSource: "API_CATALOG",
-  });
   const session = await requireConversationAccess(input);
   if (session.revision !== input.expectedRevision) {
     throw new ConversationRevisionConflictError(session.revision);
@@ -211,20 +229,25 @@ export async function configureConversationDelivery(input: {
   ) {
     throw new Error("ssh_key_name_required");
   }
-  await requireFreshArvanCatalog();
+  await requireFreshSaleCatalogs();
   const plan = (await listActivePlans(input.parchinLevel)).find(
     (candidate) => candidate.id === input.planId,
   );
-  if (!plan || plan.provider !== InfrastructureProvider.ARVAN) {
+  if (
+    !plan ||
+    (plan.provider !== InfrastructureProvider.ARVAN &&
+      plan.provider !== InfrastructureProvider.PARSPACK)
+  ) {
     throw new WalletError(
       "quote_unavailable",
       "این چینش دیگر قابل فروش نیست.",
     );
   }
+  assertPlanPublicSale(plan);
   const image = await prisma.providerCatalogAsset.findFirst({
     where: {
       id: input.imageAssetId,
-      provider: InfrastructureProvider.ARVAN,
+      provider: plan.provider,
       apiVersion: plan.providerApiVersion,
       regionCode: plan.regionCode,
       kind: "IMAGE",
@@ -296,7 +319,7 @@ export async function configureConversationDelivery(input: {
     currentPrice.monthlyPriceIrr !==
     plan.pricing.providerBasePriceRial
   ) {
-    await requestCatalogSync(InfrastructureProvider.ARVAN);
+    await requestCatalogSync(plan.provider);
     throw new WalletError(
       "quote_revalidation_failed",
       "قیمت تغییر کرده و کاتالوگ در حال به‌روزرسانی است.",

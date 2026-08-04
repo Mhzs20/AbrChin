@@ -8,7 +8,12 @@ export type QuestionId =
   | "growth"
   | "downtime"
   | "criticality"
-  | "management";
+  | "management"
+  | "budget"
+  | "stack"
+  | "domainReady"
+  | "staging"
+  | "dataResidency";
 
 export type ProjectKind =
   | "site"
@@ -24,6 +29,11 @@ export type StageKind = "idea" | "launch" | "active" | "growing" | "migration";
 export type UsageKind = "starting" | "light" | "daily" | "busy" | "unknown";
 export type CriticalityKind = "low" | "medium" | "high" | "severe" | "unknown";
 export type ManagementKind = "raw" | "managed" | "unknown";
+export type BudgetKind = "under_500k" | "500k_2m" | "2m_5m" | "over_5m" | "unknown";
+export type StackKind = "wordpress" | "laravel" | "node" | "docker" | "windows" | "custom" | "unknown";
+export type DomainReadyKind = "yes" | "no" | "unknown";
+export type StagingKind = "yes" | "no" | "unknown";
+export type DataResidencyKind = "iran_only" | "flexible" | "unknown";
 export type ArchitectureKind = "single" | "app_db" | "multi_service" | "data_heavy" | "unknown";
 export type StorageKind = "small" | "medium" | "large" | "unknown";
 export type GrowthKind = "stable" | "campaign" | "rapid" | "unknown";
@@ -41,6 +51,11 @@ export type RecommendationAnswers = Partial<{
   downtime: DowntimeKind;
   criticality: CriticalityKind;
   management: ManagementKind;
+  budget: BudgetKind;
+  stack: StackKind;
+  domainReady: DomainReadyKind;
+  staging: StagingKind;
+  dataResidency: DataResidencyKind;
 }>;
 
 export type AnswerSources = Partial<Record<QuestionId, AnswerSource>>;
@@ -134,6 +149,15 @@ export type PublicRecommendationQuote = {
   storageGb: number | null;
   amountRial: string;
   renewalAmountRial: string;
+  termMonths: 1 | 3 | 6 | 12;
+  termDiscountBps: number;
+  couponCode: string | null;
+  couponDiscountBps: number | null;
+  lineItems: Array<{
+    type: string;
+    label: string;
+    amountRial: string;
+  }>;
   deliveryEstimateMinutes: number;
   parchinIncluded: boolean;
   parchinLevel: "PARCHIN_START" | "PARCHIN_ACTIVE" | "PARCHIN_STABLE";

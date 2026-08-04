@@ -28,6 +28,7 @@ enum LedgerDirection {
 
 enum LedgerType {
   TOP_UP
+  TOP_UP_BONUS
   TOP_UP_REFUND
   SERVICE_PURCHASE
   SERVICE_RENEWAL
@@ -417,11 +418,24 @@ enum ParchinLevel {
   PARCHIN_STABLE
 }
 
+
+enum CouponType {
+  SERVER_PURCHASE
+  WALLET_BONUS
+}
+
+enum CouponScope {
+  PUBLIC
+  USER
+}
+
 enum QuoteLineItemType {
   PROVIDER_INFRASTRUCTURE
   INFRASTRUCTURE_MARKUP
   PARCHIN
   PROVIDER_ADDON
+  TERM_DISCOUNT
+  COUPON_DISCOUNT
   TAX
 }
 
@@ -581,6 +595,9 @@ model User {
   activationApprovals         ActivationRequest[]                 @relation("ActivationApprovedBy")
   resourceChangeRequests      ResourceChangeRequest[]             @relation("ResourceChangeRequestedBy")
   resourceChangeApprovals     ResourceChangeRequest[]             @relation("ResourceChangeApprovedBy")
+  couponsForUser              Coupon[]                            @relation("CouponForUser")
+  couponsCreated              Coupon[]                            @relation("CouponCreatedBy")
+  couponRedemptions           CouponRedemption[]
   billingInvoices             BillingInvoice[]
   outstandingBalances         OutstandingBalance[]
   billingAdjustmentsCreated   BillingAdjustment[]                 @relation("BillingAdjustmentCreatedBy")
@@ -674,6 +691,8 @@ model WalletTopUp {
   purchaseOrderId       String?
   requestFingerprint    String?
   redirectUrl           String?
+  couponCode            String?
+  bonusRialSnapshot     BigInt?
   wallet                Wallet                 @relation(fields: [walletId], references: [id], onDelete: Cascade)
   purchaseOrder         ServiceOrder?          @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   paymentAttempts       PaymentAttempt[]
@@ -739,6 +758,9 @@ model ServiceOrder {
   title                  String
   description            String?
   amount                 BigInt
+  termMonths             Int                           @default(1)
+  termDiscountBps        Int                           @default(0)
+  couponCodeSnapshot     String?
   currency               String                        @default("IRR")
   status                 ServiceOrderStatus            @default(DRAFT)
   planCode               String?
@@ -942,6 +964,10 @@ model RecommendationQuote {
   planSnapshot                  Json
   amountRial                    BigInt
   renewalAmountRial             BigInt
+  termMonths                    Int                          @default(1)
+  termDiscountBps               Int                          @default(0)
+  couponCodeSnapshot            String?
+  couponDiscountBpsSnapshot     Int?
   catalogItemId                 String?
   providerBasePriceRialSnapshot BigInt?
   markupBasisPointsSnapshot     Int?
@@ -1240,6 +1266,10 @@ model ServiceSubscription {
   currentPeriodEnd   DateTime
   nextRenewalAt      DateTime
   graceEndsAt        DateTime
+  termMonths         Int                   @default(1)
+  lastReminderSentAt DateTime?
+  suspendedAt        DateTime?
+  deleteReviewAt     DateTime?
   autoRenew          Boolean               @default(false)
   canceledAt         DateTime?
   createdAt          DateTime              @default(now())
@@ -2122,12 +2152,58 @@ model ProductPricingConfig {
   @@index([productKind, enabled])
 }
 
+
+model Coupon {
+  id               String       @id @default(cuid())
+  code             String       @unique
+  type             CouponType
+  scope            CouponScope  @default(PUBLIC)
+  userId           String?
+  discountBps      Int?
+  termMonths       Int?
+  minDepositRial   BigInt?
+  bonusRial        BigInt?
+  expiresAt        DateTime?
+  maxRedemptions   Int?
+  redemptionCount  Int          @default(0)
+  active           Boolean      @default(true)
+  createdById      String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  user             User?        @relation("CouponForUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy        User?        @relation("CouponCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  redemptions      CouponRedemption[]
+
+  @@index([type, active, expiresAt])
+  @@index([userId, active])
+}
+
+model CouponRedemption {
+  id              String   @id @default(cuid())
+  couponId        String
+  userId          String
+  serviceOrderId  String?
+  walletTopUpId   String?
+  amountRial      BigInt   @default(0)
+  bonusRial       BigInt   @default(0)
+  idempotencyKey  String   @unique
+  createdAt       DateTime @default(now())
+  coupon          Coupon   @relation(fields: [couponId], references: [id], onDelete: Restrict)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([couponId, userId])
+  @@index([walletTopUpId])
+  @@index([serviceOrderId])
+}
+
 model CommercePricingConfig {
   id                         String   @id @default("default")
   taxBps                     Int      @default(1000)
   reminderDaysBeforeDue      Int      @default(7)
   suspendGraceDaysAfterZero  Int      @default(7)
   deleteDaysAfterSuspend     Int      @default(7)
+  /// Admin-priced Compass service packages (code -> rial string).
+  compassServicePrices       Json     @default("{}")
   updatedById                String?
   updatedAt                  DateTime @updatedAt
 }

@@ -75,13 +75,10 @@ export async function recordProviderConfirmedResourceVersion(input: {
       const plan = await tx.infrastructurePlan.findUniqueOrThrow({
         where: { id: input.planId },
       });
-      if (
-        plan.provider !== instance.provider ||
-        plan.productKind !== "CLOUD_SERVER"
-      ) {
+      if (plan.provider !== instance.provider) {
         throw new WalletError(
           "resource_plan_provider_mismatch",
-          "Plan با Resource تأییدشده Provider سازگار نیست.",
+          "Plan با Resource تأییدشده سازگار نیست.",
         );
       }
       const current = await tx.resourceVersion.findFirst({

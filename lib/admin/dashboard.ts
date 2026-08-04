@@ -326,11 +326,24 @@ export async function getCommercePricingAdminView() {
     }),
     prisma.parchinPricingConfig.findMany({ orderBy: { sortOrder: "asc" } }),
   ]);
+  const servicePrices =
+    commerce?.compassServicePrices &&
+    typeof commerce.compassServicePrices === "object" &&
+    !Array.isArray(commerce.compassServicePrices)
+      ? (commerce.compassServicePrices as Record<string, string>)
+      : {};
   return {
     taxBps: commerce?.taxBps ?? 1000,
     reminderDaysBeforeDue: commerce?.reminderDaysBeforeDue ?? 7,
     suspendGraceDaysAfterZero: commerce?.suspendGraceDaysAfterZero ?? 7,
     deleteDaysAfterSuspend: commerce?.deleteDaysAfterSuspend ?? 7,
+    compassServicePrices: {
+      SITE_MIGRATION: servicePrices.SITE_MIGRATION ?? "15000000",
+      INITIAL_SETUP: servicePrices.INITIAL_SETUP ?? "8000000",
+      DOMAIN_SSL: servicePrices.DOMAIN_SSL ?? "3000000",
+      BACKUP_RESTORE: servicePrices.BACKUP_RESTORE ?? "5000000",
+      ARCHITECTURE_LIGHT: servicePrices.ARCHITECTURE_LIGHT ?? "10000000",
+    },
     productMarkups: productMarkups.map((config) => ({
       provider: config.provider,
       apiVersion: config.apiVersion,
