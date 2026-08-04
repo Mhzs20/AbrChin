@@ -568,8 +568,12 @@ export async function getStorefrontAssortmentAdminView(): Promise<
 }
 
 export async function listStorefrontCatalogCandidates() {
+  const productKinds: Array<"CLOUD_SERVER" | "READY_INSTANT_SERVER"> = [
+    "CLOUD_SERVER",
+    "READY_INSTANT_SERVER",
+  ];
   const candidateWhere = {
-    productKind: { in: ["CLOUD_SERVER", "READY_INSTANT_SERVER"] as const },
+    productKind: { in: productKinds },
     source: "API_CATALOG" as const,
     active: true,
     OR: [
