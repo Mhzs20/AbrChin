@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
-import { PageHeader, SectionCard, StatusBadge, type BadgeTone } from "@/components/product";
+import {
+  PageHeader,
+  SectionCard,
+  StatusBadge,
+  type BadgeTone,
+} from "@/components/product";
 import { getAdminPageAccess } from "@/lib/auth/guards";
 import { getEnv } from "@/lib/env";
 import { isCloudProviderConfigured } from "@/lib/infrastructure/provider-factory";
@@ -11,6 +17,64 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
+
+const quickLinks = [
+  {
+    href: "/admin/infrastructure/orders",
+    title: "سفارش‌ها و تحویل",
+    description: "تأیید ساخت، ثبت مشخصات، تأیید تحویل",
+  },
+  {
+    href: "/admin/infrastructure/plans",
+    title: "SKUهای قابل‌فروش",
+    description: "انتخاب از کاتالوگ آروان/پارس‌پک و انتشار",
+  },
+  {
+    href: "/admin/infrastructure/providers",
+    title: "آروان و پارس‌پک",
+    description: "اتصال، Sync، Markup و کاتالوگ خام",
+  },
+  {
+    href: "/admin/infrastructure/providers#pricing",
+    title: "قیمت، پرچین، کد تخفیف",
+    description: "VAT، چرخه یادآوری، بسته‌های خدمت قطب‌نما",
+  },
+  {
+    href: "/admin/connections",
+    title: "اتصال سرویس‌ها",
+    description: "OTP، درگاه، Provider — فقط وضعیت ماسک‌شده",
+  },
+  {
+    href: "/admin/payment-gateways",
+    title: "درگاه‌های پرداخت",
+    description: "انتخاب درگاه فعال برای شارژ Wallet",
+  },
+  {
+    href: "/admin/payment-recovery",
+    title: "بازیابی پرداخت",
+    description: "Callback/Verify و Credit ناقص",
+  },
+  {
+    href: "/admin/wallets",
+    title: "کیف پول‌ها",
+    description: "موجودی و بررسی مشتری",
+  },
+  {
+    href: "/admin/instances",
+    title: "سرورهای تحویل‌شده",
+    description: "بازبینی Credential و وضعیت Resource",
+  },
+  {
+    href: "/admin/users",
+    title: "کاربران",
+    description: "حساب‌های مشتری و نقش‌ها",
+  },
+  {
+    href: "/admin/audit",
+    title: "گزارش عملیات",
+    description: "Audit اقدامات Admin",
+  },
+];
 
 export default async function AdminSettingsPage() {
   const access = await getAdminPageAccess();
@@ -45,34 +109,117 @@ export default async function AdminSettingsPage() {
       tone: env.zarinpalMerchantId ? "success" : "warning",
     },
     {
-      label: "ParsPack",
+      label: "آروان",
+      status: isCloudProviderConfigured("ARVAN") ? "فعال" : "تنظیم نشده",
+      tone: isCloudProviderConfigured("ARVAN") ? "success" : "warning",
+    },
+    {
+      label: "پارس‌پک",
       status: isCloudProviderConfigured("PARSPACK") ? "فعال" : "تنظیم نشده",
       tone: isCloudProviderConfigured("PARSPACK") ? "success" : "warning",
     },
     {
-      label: "Infrastructure Mode",
-      status: env.infrastructureProviderMode,
-      tone: env.isProduction && env.infrastructureProviderMode === "mock" ? "danger" : "info",
+      label: "فروش آروان Cloud",
+      status: env.arvanCloudPublicSaleEnabled ? "باز" : "بسته",
+      tone: env.arvanCloudPublicSaleEnabled ? "success" : "warning",
+    },
+    {
+      label: "فروش پارس‌پک",
+      status: env.parspackPublicSaleEnabled ? "باز" : "بسته",
+      tone: env.parspackPublicSaleEnabled ? "success" : "warning",
+    },
+    {
+      label: "Mutation آروان / پارس‌پک",
+      status:
+        env.arvanMutationsEnabled || env.parspackMutationsEnabled
+          ? "فعال"
+          : "خاموش (Fulfillment دستی)",
+      tone:
+        env.arvanMutationsEnabled || env.parspackMutationsEnabled
+          ? "warning"
+          : "info",
     },
   ];
 
   return (
     <>
       <PageHeader
-        title="تنظیمات"
-        description="وضعیت پیکربندی غیرحساس — Secretها فقط از Environment Variables مدیریت می‌شوند."
+        title="راهنمای پنل و وضعیت پیکربندی"
+        description="از اینجا به همه بخش‌های Admin برس. Secretها فقط در Environment سرور هستند."
+        actions={
+          <Link href="/admin" className="product-btn product-btn--primary">
+            بازگشت به مرکز عملیات
+          </Link>
+        }
       />
-      <SectionCard title="وضعیت سرویس‌ها">
-        <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 12 }}>
+
+      <SectionCard title="دسترسی سریع">
+        <ul
+          style={{
+            margin: 0,
+            padding: 0,
+            listStyle: "none",
+            display: "grid",
+            gap: 10,
+          }}
+        >
+          {quickLinks.map((link) => (
+            <li key={link.href}>
+              <Link
+                href={link.href}
+                style={{
+                  display: "block",
+                  padding: 14,
+                  textDecoration: "none",
+                  color: "inherit",
+                  border: "1px solid var(--product-line)",
+                  borderRadius: "var(--product-radius-sm)",
+                  background: "var(--product-surface)",
+                }}
+              >
+                <strong>{link.title}</strong>
+                <p
+                  style={{
+                    margin: "4px 0 0",
+                    color: "var(--product-muted)",
+                    fontSize: 13,
+                  }}
+                >
+                  {link.description}
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </SectionCard>
+
+      <SectionCard title="وضعیت سرویس‌ها (غیرحساس)">
+        <ul
+          style={{
+            margin: 0,
+            padding: 0,
+            listStyle: "none",
+            display: "grid",
+            gap: 12,
+          }}
+        >
           {items.map((item) => (
-            <li key={item.label} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <li
+              key={item.label}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
               <span>{item.label}</span>
               <StatusBadge label={item.status} tone={item.tone} />
             </li>
           ))}
         </ul>
         <p style={{ marginTop: 16, color: "var(--product-muted)", fontSize: 13 }}>
-          هیچ Secret در این صفحه نمایش یا ذخیره نمی‌شود.
+          هیچ Secret در این صفحه نمایش یا ذخیره نمی‌شود. برای تغییر Gateها فایل
+          `.env` سرور را ویرایش و Web/Worker را Recreate کنید.
         </p>
       </SectionCard>
     </>

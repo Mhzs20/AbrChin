@@ -220,7 +220,7 @@ export default async function AdminInfrastructureOrdersPage() {
     fields: [
       { label: "مشتری", value: order.user.mobile },
       { label: "وضعیت", value: infrastructureOrderStatusLabel[order.status] },
-      { label: "RAW/MANAGED", value: deliveryModeLabel[order.deliveryMode] },
+      { label: "حالت تحویل", value: deliveryModeLabel[order.deliveryMode] },
       { label: "فروش", value: <MoneyDisplay amount={formatTomanFa(order.serviceOrder.amount)} /> },
       { label: "بازبینی", value: reviewSummary(order) },
     ],
@@ -229,7 +229,10 @@ export default async function AdminInfrastructureOrdersPage() {
 
   return (
     <>
-      <PageHeader title="سفارش‌های تأمین" description="بازبینی پرداخت، هزینه و موجودی پیش از صدور فرمان ساخت یا تخصیص" />
+      <PageHeader
+        title="سفارش‌ها و تحویل"
+        description="ترتیب الزامی: ۱) تأیید ساخت ۲) ثبت IP و مشخصات ۳) تأیید تحویل. تا گام ۳ مشتری Credential نمی‌بیند."
+      />
       <DataTable columns={columns} rows={rows} />
       <ResponsiveRowList rows={mobileRows} />
     </>

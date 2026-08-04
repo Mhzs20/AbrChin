@@ -6,9 +6,12 @@ import {
   CreditCard,
   FileText,
   LayoutDashboard,
+  Percent,
   Server,
   Settings,
   Shield,
+  Users,
+  Wallet,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -21,34 +24,69 @@ import {
   SidebarGroup,
   SidebarLink,
   isNavActive,
+  type NavGroup,
   type NavItem,
 } from "@/components/product";
 import type { PublicUser } from "@/lib/session";
 
-const mainNav: NavItem[] = [
+/** Bottom bar + primary Launch path (first 4 used on mobile). */
+const primaryNav: NavItem[] = [
   { href: "/admin", label: "مرکز عملیات", icon: LayoutDashboard, shortLabel: "عملیات" },
-  { href: "/admin/connections", label: "اتصال سرویس‌ها", icon: Building2, shortLabel: "اتصال" },
-  { href: "/admin/infrastructure/providers#catalog", label: "کاتالوگ Providerها", icon: Server, shortLabel: "کاتالوگ" },
-  { href: "/admin/infrastructure/storefront", label: "چینش فروشگاهی", icon: Server, shortLabel: "چینش" },
-  { href: "/admin/infrastructure/plans", label: "SKUهای ابرچین", icon: Server, shortLabel: "SKU" },
-  { href: "/admin/infrastructure/orders", label: "سفارش‌ها و تحویل", icon: FileText, shortLabel: "سفارش" },
-  { href: "/admin/transactions", label: "پرداخت‌ها و مشتریان", icon: CreditCard, shortLabel: "پرداخت" },
-  { href: "/admin/settings", label: "تنظیمات پیشرفته", icon: Settings, shortLabel: "تنظیمات" },
+  {
+    href: "/admin/infrastructure/orders",
+    label: "سفارش‌ها و تحویل",
+    icon: FileText,
+    shortLabel: "سفارش",
+  },
+  {
+    href: "/admin/infrastructure/plans",
+    label: "SKUهای قابل‌فروش",
+    icon: Server,
+    shortLabel: "SKU",
+  },
+  {
+    href: "/admin/infrastructure/providers",
+    label: "آروان و پارس‌پک",
+    icon: Building2,
+    shortLabel: "منابع",
+  },
 ];
 
-const drawerGroups = [
-  { title: "عملیات فروش", items: mainNav },
+const saleNav: NavItem[] = [
+  { href: "/admin/connections", label: "اتصال سرویس‌ها", icon: Building2 },
   {
-    title: "ابزارهای پیشرفته",
-    items: [
-      { href: "/admin/instances", label: "سرورها", icon: Server },
-      { href: "/admin/users", label: "کاربران", icon: FileText },
-      { href: "/admin/wallets", label: "کیف پول‌ها", icon: CreditCard },
-      { href: "/admin/payment-gateways", label: "درگاه‌های پرداخت", icon: CreditCard },
-      { href: "/admin/payment-recovery", label: "بازیابی پرداخت Wallet", icon: CreditCard },
-      { href: "/admin/audit", label: "گزارش عملیات", icon: FileText },
-    ],
+    href: "/admin/infrastructure/storefront",
+    label: "چینش فروشگاهی",
+    icon: LayoutDashboard,
   },
+  {
+    href: "/admin/infrastructure/providers#pricing",
+    label: "قیمت، پرچین، کد تخفیف",
+    icon: Percent,
+  },
+];
+
+const moneyNav: NavItem[] = [
+  { href: "/admin/transactions", label: "تراکنش‌ها", icon: CreditCard },
+  { href: "/admin/wallets", label: "کیف پول‌ها", icon: Wallet },
+  { href: "/admin/wallet-topup-settings", label: "مبالغ شارژ Wallet", icon: Wallet },
+  { href: "/admin/payment-gateways", label: "درگاه‌های پرداخت", icon: CreditCard },
+  { href: "/admin/payment-recovery", label: "بازیابی پرداخت", icon: CreditCard },
+];
+
+const advancedNav: NavItem[] = [
+  { href: "/admin/instances", label: "سرورهای تحویل‌شده", icon: Server },
+  { href: "/admin/users", label: "کاربران", icon: Users },
+  { href: "/admin/notifications", label: "اعلان‌ها", icon: Bell },
+  { href: "/admin/audit", label: "گزارش عملیات", icon: FileText },
+  { href: "/admin/settings", label: "وضعیت پیکربندی", icon: Settings },
+];
+
+const drawerGroups: NavGroup[] = [
+  { title: "مسیر فروش", items: primaryNav },
+  { title: "فروش و منابع", items: saleNav },
+  { title: "مالی", items: moneyNav },
+  { title: "پیشرفته", items: advancedNav },
 ];
 
 export function AdminShell({
@@ -71,9 +109,52 @@ export function AdminShell({
             <Image src="/assets/abrchin-symbol.svg" alt="" width={32} height={28} />
             <span>پنل مدیریت</span>
           </Link>
-          <SidebarGroup>
-            {mainNav.map((item) => (
-              <SidebarLink key={item.href} href={item.href} label={item.label} icon={item.icon} active={isNavActive(pathname, item.href)} />
+
+          <SidebarGroup title="مسیر فروش">
+            {primaryNav.map((item) => (
+              <SidebarLink
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                icon={item.icon}
+                active={isNavActive(pathname, item.href)}
+              />
+            ))}
+          </SidebarGroup>
+
+          <SidebarGroup title="فروش و منابع">
+            {saleNav.map((item) => (
+              <SidebarLink
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                icon={item.icon}
+                active={isNavActive(pathname, item.href)}
+              />
+            ))}
+          </SidebarGroup>
+
+          <SidebarGroup title="مالی">
+            {moneyNav.map((item) => (
+              <SidebarLink
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                icon={item.icon}
+                active={isNavActive(pathname, item.href)}
+              />
+            ))}
+          </SidebarGroup>
+
+          <SidebarGroup title="پیشرفته">
+            {advancedNav.map((item) => (
+              <SidebarLink
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                icon={item.icon}
+                active={isNavActive(pathname, item.href)}
+              />
             ))}
           </SidebarGroup>
         </>
@@ -84,20 +165,45 @@ export function AdminShell({
             <Shield size={18} aria-hidden="true" />
             <div>
               <strong>{user.displayName || "مدیر"}</strong>
-              <div style={{ fontSize: 13, color: "var(--product-muted)" }} dir="ltr">{user.mobile}</div>
+              <div style={{ fontSize: 13, color: "var(--product-muted)" }} dir="ltr">
+                {user.mobile}
+              </div>
             </div>
           </div>
-          <Link href="/admin/notifications" className="product-btn product-btn--quiet">
-            <Bell size={16} aria-hidden="true" />
-            اعلان‌ها
-            {unreadNotifications > 0 ? ` (${unreadNotifications.toLocaleString("fa-IR")})` : ""}
-          </Link>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Link
+              href="/admin/infrastructure/orders"
+              className="product-btn product-btn--primary"
+            >
+              سفارش‌ها
+            </Link>
+            <Link href="/admin/notifications" className="product-btn product-btn--quiet">
+              <Bell size={16} aria-hidden="true" />
+              اعلان‌ها
+              {unreadNotifications > 0
+                ? ` (${unreadNotifications.toLocaleString("fa-IR")})`
+                : ""}
+            </Link>
+          </div>
         </div>
       }
       mobileHeader={
-        <MobileHeader title="پنل مدیریت" userName={user.displayName || "مدیر"} groups={drawerGroups} pathname={pathname} />
+        <MobileHeader
+          title="پنل مدیریت"
+          userName={user.displayName || "مدیر"}
+          groups={drawerGroups}
+          pathname={pathname}
+        />
       }
-      mobileNav={<MobileNavigation items={mainNav} pathname={pathname} extraIcon={Settings} extraHref="/admin/settings" extraLabel="بیشتر" />}
+      mobileNav={
+        <MobileNavigation
+          items={primaryNav}
+          pathname={pathname}
+          extraIcon={Settings}
+          extraHref="/admin/settings"
+          extraLabel="بیشتر"
+        />
+      }
     >
       {children}
     </ProductShell>

@@ -258,7 +258,10 @@ export default async function AdminPlansPage() {
 
   return (
     <>
-      <PageHeader title="پلن‌های زیرساخت" description="مشخصات محصول روی Catalog Item واقعی؛ منابع و قیمت فقط خواندنی‌اند" />
+      <PageHeader
+        title="SKUهای قابل‌فروش"
+        description="از کاتالوگ آروان/پارس‌پک انتخاب کن، Markup بگذار، بعد Published کن. تا منتشر نشود مشتری نمی‌بیند."
+      />
       <AdminPlansPanel
         initialPlans={panelPlans}
         catalogItems={panelCatalogItems}

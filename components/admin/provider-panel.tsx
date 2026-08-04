@@ -232,17 +232,17 @@ export function ProviderPanel({
           value={state.lastProviderRequestId ?? "—"}
         />
       </div>
-      <SectionCard title="عملیات">
+      <SectionCard title="اقدام بعدی">
         <p>
-          Sync فقط Endpointهای مستند GET را می‌خواند و Catalog خام را Upsert
-          می‌کند؛ هیچ SKU، Order یا Resource ساخته نمی‌شود.
+          اول اتصال را چک کن، بعد کاتالوگ را به‌روز کن. Sync فقط لیست قیمت/ظرفیت
+          را می‌خواند و به‌تنهایی چیزی را برای مشتری منتشر نمی‌کند.
         </p>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <button type="button" className="product-btn product-btn--primary" disabled={loading !== null} onClick={() => run("health")}>
-            بررسی اتصال
+            ۱. بررسی اتصال
           </button>
           <button type="button" className="product-btn product-btn--quiet" disabled={loading !== null || !state.configured} onClick={() => run("sync")}>
-            Sync Catalog (GET only)
+            ۲. به‌روزرسانی کاتالوگ
           </button>
         </div>
         {state.lastError ? <p style={{ color: "#a83224", marginTop: 12 }}>{state.lastError}</p> : null}

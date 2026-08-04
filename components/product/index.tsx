@@ -15,6 +15,8 @@ export type NavGroup = {
 };
 
 export function isNavActive(pathname: string, href: string) {
+  // Hash-only deep links share a path with a primary nav item; don't steal active.
+  if (href.includes("#")) return false;
   if (href === "/account" || href === "/admin") {
     return pathname === href;
   }

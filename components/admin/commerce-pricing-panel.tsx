@@ -64,10 +64,11 @@ export function CommercePricingPanel({ initial }: { initial: PricingState }) {
   }
 
   return (
-    <SectionCard title="مالیات، Product Markup و پرچین">
+    <SectionCard title="مالیات، پرچین، یادآوری و قیمت خدمت">
       <p>
-        همهٔ مبالغ IRR و مستقل از هزینه Provider هستند. ۱۰۰ basis point برابر
-        ۱٪ است. قیمت پرچین صفر یا غیرفعال کردن سطح، از همین‌جا ممکن است.
+        این بخش روی مبلغ نهایی مشتری اثر دارد. VAT پیش‌فرض ۱۰٪ است. قیمت پرچین
+        را می‌توانی صفر یا غیرفعال کنی. روزهای SMS / تعلیق / حذف و قیمت بسته‌های
+        قطب‌نما هم اینجاست.
       </p>
       <label>
         Tax BPS (۱۰٪ = ۱۰۰۰)
