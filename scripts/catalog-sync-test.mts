@@ -697,20 +697,36 @@ test("catalog remains visible while every commercial gate stays fail-closed", as
   }
 });
 
-test("cloud-servers lists synced catalog before SKU publish while purchase stays closed", async () => {
-  const [plansSource, catalogUi, cloudPage] = await Promise.all([
-    readFile("lib/orders/plans.ts", "utf8"),
-    readFile("components/ready-cloud-catalog.tsx", "utf8"),
-    readFile("app/cloud-servers/page.tsx", "utf8"),
-  ]);
-  assert.match(plansSource, /providerCatalogItem\.findMany/);
-  assert.match(plansSource, /SKU_UNPUBLISHED/);
-  assert.match(plansSource, /purchasable: false/);
-  assert.match(catalogUi, /هنوز برای فروش منتشر نشده/);
+test("cloud-servers uses curated چینش assortment with purchase still closed", async () => {
+  const [assortment, tiers, cloudPage, catalogUi, scheduler, migration] =
+    await Promise.all([
+      readFile("lib/storefront/assortment-service.ts", "utf8"),
+      readFile("lib/storefront/tiers.ts", "utf8"),
+      readFile("app/cloud-servers/page.tsx", "utf8"),
+      readFile("components/chinish-cloud-catalog.tsx", "utf8"),
+      readFile("scripts/catalog-sync-scheduler-entry.ts", "utf8"),
+      readFile(
+        "prisma/migrations/20260804140000_storefront_chinish_assortment/migration.sql",
+        "utf8",
+      ),
+    ]);
+  assert.match(tiers, /چینش نو/);
+  assert.match(tiers, /چینش استوار/);
+  assert.match(tiers, /چینش کهکشان/);
+  assert.match(tiers, /STOREFRONT_PRIMARY_LIMIT = 24/);
+  assert.match(tiers, /STOREFRONT_RESERVE_LIMIT = 12/);
+  assert.match(tiers, /STOREFRONT_LOW_STOCK_THRESHOLD = 12/);
+  assert.match(assortment, /replaceStorefrontTierSlots/);
+  assert.match(assortment, /resolveStorefrontTierOffers/);
+  assert.match(assortment, /SKU_UNPUBLISHED/);
+  assert.match(cloudPage, /listPublicStorefrontTiers/);
+  assert.match(cloudPage, /چینش نو/);
   assert.match(cloudPage, /کیف پول/);
-  assert.doesNotMatch(cloudPage, /\bWallet\b/);
-  assert.doesNotMatch(catalogUi, /\bMarkup\b/);
-  assert.doesNotMatch(catalogUi, /\bSource:\b/);
+  assert.match(catalogUi, /فروش این پلن‌ها به‌زودی فعال می‌شود/);
+  assert.match(scheduler, /checkStorefrontLowStockAlerts/);
+  assert.match(scheduler, /processOperationalAlertOutbox/);
+  assert.match(migration, /StorefrontAssortmentSlot/);
+  assert.match(migration, /STOREFRONT_ASSORTMENT_LOW/);
 });
 
 test("new pricing configuration defaults fail closed outside catalog sync", async () => {

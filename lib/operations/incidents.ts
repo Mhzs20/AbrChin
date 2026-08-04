@@ -68,6 +68,7 @@ export async function recordOperationalIncident(input: {
   safeMessage: string;
   severity: OperationalIncidentSeverity;
   occurredAt?: Date;
+  notificationType?: AdminNotificationType;
 }) {
   const occurredAt = input.occurredAt ?? new Date();
   const fingerprint = incidentFingerprint(input);
@@ -107,7 +108,9 @@ export async function recordOperationalIncident(input: {
     });
     await tx.adminNotification.create({
       data: {
-        type: AdminNotificationType.PROVIDER_UNAVAILABLE,
+        type:
+          input.notificationType ??
+          AdminNotificationType.PROVIDER_UNAVAILABLE,
         title: input.title,
         message: input.safeMessage,
         status: AdminNotificationStatus.UNREAD,

@@ -8,6 +8,8 @@ import {
 } from "@/lib/infrastructure/catalog-sync-observability";
 import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
 import { isCloudProviderConfigured } from "@/lib/infrastructure/provider-factory";
+import { processOperationalAlertOutbox } from "@/lib/operations/alert-worker";
+import { checkStorefrontLowStockAlerts } from "@/lib/storefront/low-stock-alerts";
 
 const intervalMs = Math.max(
   Number.parseInt(process.env.CATALOG_SYNC_INTERVAL_MS ?? "300000", 10) ||
@@ -45,6 +47,24 @@ async function runCycle() {
   );
   await settleProviderCatalogSyncTasks(tasks, undefined, {
     persistIncidents: true,
+  });
+  await checkStorefrontLowStockAlerts().catch((error) => {
+    console.error(
+      JSON.stringify({
+        event: "storefront_low_stock_check_failed",
+        readOnly: true,
+        safeErrorCode: safeProviderSyncCode(error),
+      }),
+    );
+  });
+  await processOperationalAlertOutbox(20).catch((error) => {
+    console.error(
+      JSON.stringify({
+        event: "storefront_alert_outbox_failed",
+        readOnly: true,
+        safeErrorCode: safeProviderSyncCode(error),
+      }),
+    );
   });
 }
 

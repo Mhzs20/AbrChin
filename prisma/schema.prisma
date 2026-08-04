@@ -473,6 +473,18 @@ enum AdminNotificationType {
   PROVIDER_UNAVAILABLE
   RENEWAL_PAID
   RENEWAL_DUE
+  STOREFRONT_ASSORTMENT_LOW
+}
+
+enum StorefrontChinishTier {
+  NO
+  OSTOVAR
+  KAHKESHAN
+}
+
+enum StorefrontSlotRole {
+  PRIMARY
+  RESERVE
 }
 
 enum AdminNotificationStatus {
@@ -555,6 +567,7 @@ model User {
   providerRegionsCreated      ProviderRegionConfig[]              @relation("ProviderRegionCreatedBy")
   providerRegionsUpdated      ProviderRegionConfig[]              @relation("ProviderRegionUpdatedBy")
   catalogItemsManuallyUpdated ProviderCatalogItem[]               @relation("CatalogItemManualUpdatedBy")
+  storefrontSlotsUpdated      StorefrontAssortmentSlot[]          @relation("StorefrontSlotUpdatedBy")
   inventoryItemsCreated       PreprovisionedInventoryItem[]       @relation("InventoryCreatedBy")
   inventoryItemsUpdated       PreprovisionedInventoryItem[]       @relation("InventoryUpdatedBy")
   inventoryCredentialsCreated PreprovisionedInventoryCredential[] @relation("InventoryCredentialCreatedBy")
@@ -1937,6 +1950,7 @@ model ProviderCatalogItem {
   plans                        InfrastructurePlan[]
   recommendationQuotes         RecommendationQuote[]
   renewalQuotes                ServiceRenewalQuote[]
+  storefrontSlots              StorefrontAssortmentSlot[]
   manualUpdatedBy              User?                         @relation("CatalogItemManualUpdatedBy", fields: [manualUpdatedById], references: [id], onDelete: SetNull)
   preprovisionedInventoryItems PreprovisionedInventoryItem[]
 
@@ -1946,6 +1960,25 @@ model ProviderCatalogItem {
   @@index([provider, apiVersion, source, status])
   @@index([provider, lastSyncedAt])
   @@index([manualUpdatedById])
+}
+
+model StorefrontAssortmentSlot {
+  id            String               @id @default(cuid())
+  tier          StorefrontChinishTier
+  role          StorefrontSlotRole
+  sortOrder     Int
+  catalogItemId String
+  enabled       Boolean              @default(true)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  updatedById   String?
+  catalogItem   ProviderCatalogItem  @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  updatedBy     User?                @relation("StorefrontSlotUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([tier, catalogItemId])
+  @@index([tier, role, sortOrder])
+  @@index([catalogItemId])
+  @@index([updatedById])
 }
 
 model PreprovisionedInventoryItem {

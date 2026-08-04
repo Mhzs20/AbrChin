@@ -2,46 +2,46 @@ import { Cloud, Compass, RefreshCw, ShieldCheck, Zap } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { ReadyCloudCatalog } from "@/components/ready-cloud-catalog";
-import { listLiveCloudServerOffers } from "@/lib/orders/plans";
+import { ChinishCloudCatalog } from "@/components/chinish-cloud-catalog";
+import { listPublicStorefrontTiers } from "@/lib/storefront/assortment-service";
 
 export const metadata: Metadata = {
-  title: "سرور ابری قابل انتخاب | ابرچین",
+  title: "سرور ابری ابرچین | چینش نو، استوار، کهکشان",
   description:
-    "همه ظرفیت‌های معتبر و قیمت‌دار سرور ابری، با پرچین و تحویل امن از ابرچین.",
+    "سرور ابری با چینش روشن، قیمت شفاف ساعتی و تحویل امن. منابع را انتخاب کنید و فقط به‌اندازه مصرف از کیف پول بپردازید.",
   alternates: { canonical: "/cloud-servers" },
 };
 
 export const dynamic = "force-dynamic";
 
 export default async function CloudServersPage() {
-  const catalog = await listLiveCloudServerOffers();
+  const catalog = await listPublicStorefrontTiers();
   const checkedAt = catalog.checkedAt
     ? new Intl.DateTimeFormat("fa-IR", {
         dateStyle: "short",
         timeStyle: "short",
       }).format(new Date(catalog.checkedAt))
-    : "ناموفق";
+    : "نامشخص";
 
   return (
     <section className="quick-buy-page page-view" aria-labelledby="quick-buy-title">
       <header className="quick-buy-heading">
         <div>
           <span className="eyebrow">
-            <Cloud size={15} aria-hidden="true" /> سرورهای ابری قابل انتخاب
+            <Cloud size={15} aria-hidden="true" /> سرور ابری ابرچین
           </span>
           <h1 id="quick-buy-title">
-            منابع را انتخاب کن؛ مصرف را از کیف پول بپرداز.
+            سرور ابری را ساده انتخاب کنید؛ فقط به‌اندازه مصرف بپردازید.
           </h1>
           <p>
-            کاتالوگ همگام‌شدهٔ سرور ابری را ببین. خرید فقط وقتی فعال است که
-            ادمین SKU را منتشر کرده باشد و فروش عمومی روشن باشد؛ پیش از برآورد
-            قیمت دوباره اعتبارسنجی می‌شود.
+            پلن‌ها در سه چینش نو، استوار و کهکشان چیده شده‌اند. قیمت پایه شفاف
+            است، برآورد قبل از فعال‌سازی تازه می‌شود و تحویل با پرچین انجام
+            می‌شود.
           </p>
         </div>
         <Link className="button button-quiet" href="/compass">
           <Compass size={16} aria-hidden="true" />
-          برای انتخاب کمک می‌خوام
+          برای انتخاب مطمئن‌تر راهنمایی بگیر
         </Link>
       </header>
 
@@ -55,11 +55,11 @@ export default async function CloudServersPage() {
           <Zap size={15} aria-hidden="true" /> برآورد ساعتی و روزانه
         </span>
         <span>
-          <ShieldCheck size={15} aria-hidden="true" /> همه سرورها با پرچین
+          <ShieldCheck size={15} aria-hidden="true" /> تحویل امن با پرچین
         </span>
       </div>
 
-      <ReadyCloudCatalog offers={catalog.offers} productPath="cloud-servers" />
+      <ChinishCloudCatalog tiers={catalog.tiers} />
     </section>
   );
 }

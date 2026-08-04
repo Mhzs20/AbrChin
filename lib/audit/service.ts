@@ -144,6 +144,7 @@ export const AuditActions = {
   PREPROVISIONED_INVENTORY_CREDENTIAL_UPSERT:
     "preprovisioned_inventory_credential_upsert",
   MANUAL_READY_DELIVERY: "manual_ready_delivery",
+  STOREFRONT_ASSORTMENT_UPDATE: "storefront_assortment_update",
   NOTIFICATION_RESOLVE: "notification_resolve",
   CREDENTIAL_READY: "credential_ready",
   CREDENTIAL_ADMIN_REVIEWED: "credential_admin_reviewed",

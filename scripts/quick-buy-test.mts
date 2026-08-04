@@ -5,23 +5,24 @@ import test from "node:test";
 test("cloud and ready purchase routes stay provider-separated before login", async () => {
   const cloudPage = await readFile("app/cloud-servers/page.tsx", "utf8");
   const readyPage = await readFile("app/ready-servers/page.tsx", "utf8");
+  const chinish = await readFile("components/chinish-cloud-catalog.tsx", "utf8");
   const cards = await readFile("components/ready-cloud-catalog.tsx", "utf8");
   const quoteButton = await readFile("components/ready-server-quote-button.tsx", "utf8");
 
-  assert.match(cloudPage, /سرورهای ابری قابل انتخاب/);
-  assert.match(cloudPage, /listLiveCloudServerOffers/);
+  assert.match(cloudPage, /سرور ابری ابرچین/);
+  assert.match(cloudPage, /listPublicStorefrontTiers/);
   assert.doesNotMatch(cloudPage, /listLiveReadyServerOffers/);
   assert.match(readyPage, /سرورهای آماده/);
   assert.match(readyPage, /listLiveReadyServerOffers/);
   assert.doesNotMatch(readyPage, /listLiveCloudServerOffers/);
-  assert.match(cards, /تومان \/ ساعت/);
-  assert.match(cards, /تخمین ۲۴ ساعت/);
+  assert.match(chinish, /چینش نو|چینش استوار|چینش کهکشان/);
+  assert.match(chinish, /تومان در ساعت/);
+  assert.match(chinish, /برآورد ۲۴ ساعت/);
   assert.match(cards, /دوره ثابت · تمدید/);
-  assert.match(cards, /سیستم‌عامل‌های مجاز/);
+  assert.match(chinish, /سیستم‌عامل‌های مجاز/);
   assert.match(quoteButton, /دریافت Quote/);
-  assert.match(cards, /همه موقعیت‌ها/);
-  assert.match(cards, /۱۰ دقیقه/);
-  assert.match(cards, /سطح پرچین/);
+  assert.match(chinish, /همه موقعیت‌ها/);
+  assert.match(chinish, /تحویل امن با پرچین/);
 });
 
 test("customer recommendation UI does not reveal infrastructure providers", async () => {
@@ -96,6 +97,6 @@ test("solutions use quick purchase and keep guided selection optional", async ()
   const quickPage = await readFile("app/cloud-servers/page.tsx", "utf8");
 
   assert.match(solutions, /\/cloud-servers\?project=/);
-  assert.match(quickPage, /برای انتخاب کمک می‌خوام/);
+  assert.match(quickPage, /برای انتخاب مطمئن‌تر راهنمایی بگیر/);
   assert.match(quickPage, /href="\/compass"/);
 });

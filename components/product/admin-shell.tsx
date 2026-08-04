@@ -29,6 +29,7 @@ const mainNav: NavItem[] = [
   { href: "/admin", label: "مرکز عملیات", icon: LayoutDashboard, shortLabel: "عملیات" },
   { href: "/admin/connections", label: "اتصال سرویس‌ها", icon: Building2, shortLabel: "اتصال" },
   { href: "/admin/infrastructure/providers#catalog", label: "کاتالوگ Providerها", icon: Server, shortLabel: "کاتالوگ" },
+  { href: "/admin/infrastructure/storefront", label: "چینش فروشگاهی", icon: Server, shortLabel: "چینش" },
   { href: "/admin/infrastructure/plans", label: "SKUهای ابرچین", icon: Server, shortLabel: "SKU" },
   { href: "/admin/infrastructure/orders", label: "سفارش‌ها و تحویل", icon: FileText, shortLabel: "سفارش" },
   { href: "/admin/transactions", label: "پرداخت‌ها و مشتریان", icon: CreditCard, shortLabel: "پرداخت" },
