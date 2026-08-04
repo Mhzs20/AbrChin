@@ -46,7 +46,7 @@ const primaryNav: NavItem[] = [
   },
   {
     href: "/admin/infrastructure/providers",
-    label: "آروان و پارس‌پک",
+    label: "منابع AV / PP",
     icon: Building2,
     shortLabel: "منابع",
   },
@@ -60,9 +60,14 @@ const saleNav: NavItem[] = [
     icon: LayoutDashboard,
   },
   {
-    href: "/admin/infrastructure/providers#pricing",
-    label: "قیمت، پرچین، کد تخفیف",
+    href: "/admin/infrastructure/pricing",
+    label: "قواعد قیمت و تخفیف",
     icon: Percent,
+  },
+  {
+    href: "/admin/infrastructure/regions",
+    label: "مناطق فروش",
+    icon: Building2,
   },
 ];
 

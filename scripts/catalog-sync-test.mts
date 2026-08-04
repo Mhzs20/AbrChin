@@ -681,9 +681,9 @@ test("catalog remains visible while every commercial gate stays fail-closed", as
       /recommendationQuote\.amountRial !== order\.amount/,
     );
     for (const expected of [
-      "PARSPACK_PUBLIC_SALE_ENABLED=false",
+      "PARSPACK_PUBLIC_SALE_ENABLED=true",
       "PARSPACK_MUTATIONS_ENABLED=false",
-      "ARVAN_PUBLIC_SALE_ENABLED=false",
+      "ARVAN_PUBLIC_SALE_ENABLED=true",
       "ARVAN_MUTATIONS_ENABLED=false",
     ]) {
       assert.match(productionEnv, new RegExp(`^${expected}$`, "m"));
@@ -697,7 +697,7 @@ test("catalog remains visible while every commercial gate stays fail-closed", as
   }
 });
 
-test("cloud-servers uses curated چینش assortment with purchase still closed", async () => {
+test("cloud-servers uses curated چینش assortment and publishes sale for shown plans", async () => {
   const [
     assortment,
     tiers,
@@ -734,6 +734,7 @@ test("cloud-servers uses curated چینش assortment with purchase still closed"
   assert.match(assortment, /replaceStorefrontTierSlots/);
   assert.match(assortment, /resolveStorefrontTierOffers/);
   assert.match(assortment, /SKU_UNPUBLISHED/);
+  assert.match(assortment, /ensureStorefrontSaleReady/);
   assert.match(assortment, /autoSuggestEnabled: false/);
   // ParsPack catalog is READY_INSTANT_SERVER; Arvan cloud is CLOUD_SERVER.
   assert.match(
@@ -758,11 +759,15 @@ test("cloud-servers uses curated چینش assortment with purchase still closed"
   assert.match(cloudPage, /چینش نو/);
   assert.match(cloudPage, /کیف پول/);
   assert.match(catalogUi, /فروش این پلن‌ها به‌زودی فعال می‌شود/);
+  assert.match(catalogUi, /تومان در ماه/);
+  assert.match(catalogUi, /تومان در ساعت/);
+  assert.match(catalogUi, /providerCode/);
   assert.match(catalogUi, /READY_INSTANT_SERVER/);
   assert.match(catalogUi, /ready-servers/);
   assert.match(catalogUi, /لوکیشن ایران/);
   assert.match(catalogUi, /چینش فنی/);
   assert.doesNotMatch(catalogUi, /قیمت پایه تأمین‌کننده/);
+  assert.doesNotMatch(catalogUi, /آروان|پارس[\u200c ]?پک/);
   assert.match(scheduler, /checkStorefrontLowStockAlerts/);
   assert.match(scheduler, /maybeAutoApplyStorefrontAssortment/);
   assert.match(scheduler, /processOperationalAlertOutbox/);

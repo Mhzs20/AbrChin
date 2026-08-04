@@ -112,6 +112,13 @@ export function ReadyCloudCatalog({
                 <MapPin size={14} aria-hidden="true" />
                 {offer.locationLabel}
               </span>
+              <span
+                className="provider-code-badge"
+                data-code={offer.providerCode}
+                title="کد منبع"
+              >
+                {offer.providerCode}
+              </span>
               <span className="quick-plan-mode">
                 <ShieldCheck size={13} aria-hidden="true" />
                 {parchinLevelLabel(offer.parchinLevel)}
@@ -139,43 +146,21 @@ export function ReadyCloudCatalog({
             </div>
 
             <div className="quick-plan-price">
-              {productPath === "cloud-servers" ? (
-                offer.hourlyPriceRial ? (
-                  <>
-                    <span>
-                      <strong>
-                        {formatRialAsToman(offer.hourlyPriceRial)}
-                      </strong>{" "}
-                      تومان در ساعت
-                    </span>
-                    <small>
-                      برآورد ۲۴ ساعت:{" "}
-                      {formatRialAsToman(
-                        (BigInt(offer.hourlyPriceRial) * 24n).toString(),
-                      )}{" "}
-                      تومان
-                    </small>
-                  </>
-                ) : (
-                  <>
-                    <span>
-                      <strong>قیمت ساعتی در دسترس نیست</strong>
-                    </span>
-                    <small>هیچ مبلغی تخمین زده یا جایگزین نشده است.</small>
-                  </>
-                )
+              {offer.salePriceRial && offer.salePriceRial !== "0" ? (
+                <span>
+                  <strong>{formatRialAsToman(offer.salePriceRial)}</strong>{" "}
+                  تومان در ماه
+                </span>
               ) : (
-                <>
-                  <span>
-                    <strong>{formatRialAsToman(offer.salePriceRial)}</strong>{" "}
-                    تومان
-                  </span>
-                  <small>
-                    دوره ثابت · تمدید{" "}
-                    {formatRialAsToman(offer.renewalPriceRial)} تومان
-                  </small>
-                </>
+                <span>
+                  <strong>قیمت ماهانه در دسترس نیست</strong>
+                </span>
               )}
+              {offer.hourlyPriceRial ? (
+                <small>
+                  {formatRialAsToman(offer.hourlyPriceRial)} تومان در ساعت
+                </small>
+              ) : null}
               <small>
                 واحد مبدأ:{" "}
                 <span dir="ltr">

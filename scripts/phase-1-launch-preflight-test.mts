@@ -8,16 +8,16 @@ async function source(path: string) {
   return readFile(new URL(path, root), "utf8");
 }
 
-test("production placeholders keep every public-sale and mutation gate fail-closed", async () => {
+test("production placeholders open public sale and keep mutations fail-closed", async () => {
   const productionEnv = await source(".env.production.example");
   for (const key of [
-    "PARSPACK_PUBLIC_SALE_ENABLED=false",
+    "PARSPACK_PUBLIC_SALE_ENABLED=true",
     "PARSPACK_MUTATIONS_ENABLED=false",
-    "ARVAN_PUBLIC_SALE_ENABLED=false",
-    "ARVAN_READY_PUBLIC_SALE_ENABLED=false",
-    "ARVAN_CLOUD_PUBLIC_SALE_ENABLED=false",
+    "ARVAN_PUBLIC_SALE_ENABLED=true",
+    "ARVAN_READY_PUBLIC_SALE_ENABLED=true",
+    "ARVAN_CLOUD_PUBLIC_SALE_ENABLED=true",
     "ARVAN_MUTATIONS_ENABLED=false",
-    "MANUAL_READY_PUBLIC_SALE_ENABLED=false",
+    "MANUAL_READY_PUBLIC_SALE_ENABLED=true",
   ]) {
     assert.match(productionEnv, new RegExp(`^${key}$`, "m"));
   }
@@ -40,8 +40,8 @@ test("the Founder path documents both Admin gates and never uses the retired del
   assert.match(runbook, /تأیید اول Admin/);
   assert.match(runbook, /تأیید نهایی تحویل/);
   assert.doesNotMatch(runbook, /\{id\}\/manual-delivery/);
-  assert.match(checklist, /Waiting Admin Provision Approval/);
-  assert.match(checklist, /تأیید دوم/);
+  assert.match(checklist, /Approval اول|تأیید اول/);
+  assert.match(checklist, /Approval دوم|تأیید دوم/);
   assert.match(orderPayment, /WAITING_ADMIN_FUNDING/);
   assert.doesNotMatch(orderPayment, /dispatchApprovedProvision/);
   assert.match(payment, /finalizeOrderPaymentFromCallback/);

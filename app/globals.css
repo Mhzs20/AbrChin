@@ -3974,6 +3974,106 @@ a:focus-visible {
   max-width: 520px;
 }
 
+.provider-code-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #e8eef8;
+  color: #0b2f63;
+}
+
+.provider-code-badge[data-code="AV"] {
+  background: #e7f3ff;
+  color: #0a4f8a;
+}
+
+.provider-code-badge[data-code="PP"] {
+  background: #eaf8ef;
+  color: #17633a;
+}
+
+.admin-advanced-stats {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--product-border, #d7deea);
+  border-radius: 12px;
+  background: #fbfcfe;
+}
+
+.admin-advanced-stats summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.pricing-rules-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.pricing-rules-lead {
+  margin: 0 0 0.75rem;
+  color: var(--product-muted, #5b6b82);
+}
+
+.pricing-rules-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.pricing-rules-grid--cards {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.pricing-product-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--product-border, #d7deea);
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.pricing-product-card header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pricing-field {
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.pricing-field input,
+.pricing-field textarea {
+  min-height: 40px;
+  width: 100%;
+}
+
+.pricing-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+}
+
+.pricing-rules-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 1rem;
+}
+
 .ready-server-quote-action {
   display: grid;
   gap: 7px;

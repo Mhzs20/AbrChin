@@ -31,13 +31,18 @@ const quickLinks = [
   },
   {
     href: "/admin/infrastructure/providers",
-    title: "آروان و پارس‌پک",
+    title: "منابع AV / PP",
     description: "اتصال، Sync، Markup و کاتالوگ خام",
   },
   {
-    href: "/admin/infrastructure/providers#pricing",
-    title: "قیمت، پرچین، کد تخفیف",
-    description: "VAT، چرخه یادآوری، بسته‌های خدمت قطب‌نما",
+    href: "/admin/infrastructure/pricing",
+    title: "قواعد قیمت و تخفیف",
+    description: "VAT، پرچین، Markup محصول، چرخه یادآوری، کوپن",
+  },
+  {
+    href: "/admin/infrastructure/regions",
+    title: "مناطق فروش",
+    description: "Sync و فروش Regionهای AV",
   },
   {
     href: "/admin/connections",

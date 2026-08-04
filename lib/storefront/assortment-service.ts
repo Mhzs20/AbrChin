@@ -28,12 +28,14 @@ import {
   DEFAULT_STOREFRONT_CAPACITY_RULES,
   type StorefrontCapacityRules,
 } from "@/lib/storefront/capacity-rules";
+import { ensureStorefrontSaleReady } from "@/lib/storefront/ensure-sale-plans";
 import {
   isStorefrontDisplayFresh,
   storefrontLocationLabel,
   storefrontParchinForTier,
   storefrontServerTitle,
 } from "@/lib/storefront/presentation";
+import { storefrontProviderCode } from "@/lib/storefront/provider-codes";
 import {
   STOREFRONT_DISPLAY_LIMIT,
   STOREFRONT_PRIMARY_LIMIT,
@@ -120,10 +122,14 @@ function toPublicOffer(input: {
     hourlyBasePriceRial == null
       ? null
       : calculateFinalPriceRial(hourlyBasePriceRial, input.markupBasisPoints);
-  const monthlyPriceRial =
+  const monthlyFromProvider =
     monthlyBasePriceRial > 0n
       ? calculateFinalPriceRial(monthlyBasePriceRial, input.markupBasisPoints)
-      : 0n;
+      : null;
+  // Display + prepaid term: if only hourly exists, estimate 720h month.
+  const monthlyPriceRial =
+    monthlyFromProvider ??
+    (hourlyPriceRial != null ? hourlyPriceRial * 720n : 0n);
   const imageCodes = compatibleImageCodes(input.item);
   const imageCode =
     selectReadyServerImage(imageCodes) ?? imageCodes[0] ?? "linux";
@@ -140,6 +146,7 @@ function toPublicOffer(input: {
     deliveryMode: "MANAGED",
     productKind: input.item.productKind,
     parchinLevel: storefrontParchinForTier(input.tier),
+    providerCode: storefrontProviderCode(input.item.provider),
     regionCode: input.item.regionCode,
     locationLabel: storefrontLocationLabel(input.item.regionCode),
     imageLabel: readyServerImageLabel(imageCode),
@@ -161,7 +168,7 @@ function toPublicOffer(input: {
     normalizedAmountUnit: "RIAL",
     billingIntervals: [
       ...(hourlyBasePriceRial == null ? [] : (["HOURLY"] as const)),
-      ...(monthlyBasePriceRial > 0n ? (["MONTHLY"] as const) : []),
+      ...(monthlyPriceRial > 0n ? (["MONTHLY"] as const) : []),
     ],
     markupBasisPoints: input.markupBasisPoints,
     taxBasisPoints: input.taxBasisPoints,
@@ -435,6 +442,13 @@ export async function listPublicStorefrontTiers(): Promise<{
   checkedAt: string | null;
   tiers: StorefrontPublicTier[];
 }> {
+  // Founder Launch: anything shown in چینش must be purchasable (mutations still off).
+  await ensureStorefrontSaleReady().catch((error) => {
+    console.error(
+      "[storefront:ensure-sale]",
+      error instanceof Error ? error.message : "unknown",
+    );
+  });
   const [arvanFreshness, parsPackFreshness, resolved] = await Promise.all([
     getCatalogFreshness("ARVAN").catch(() => null),
     getCatalogFreshness("PARSPACK").catch(() => null),

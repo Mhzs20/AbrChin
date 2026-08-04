@@ -33,12 +33,27 @@ type PricingState = {
 };
 
 const serviceLabels: Record<keyof PricingState["compassServicePrices"], string> = {
-  SITE_MIGRATION: "انتقال سایت/سورس (ریال)",
-  INITIAL_SETUP: "راه‌اندازی اولیه (ریال)",
-  DOMAIN_SSL: "دامنه و SSL (ریال)",
-  BACKUP_RESTORE: "بکاپ و آزمون بازگردانی (ریال)",
-  ARCHITECTURE_LIGHT: "همراهی معماری سبک (ریال)",
+  SITE_MIGRATION: "انتقال سایت/سورس",
+  INITIAL_SETUP: "راه‌اندازی اولیه",
+  DOMAIN_SSL: "دامنه و SSL",
+  BACKUP_RESTORE: "بکاپ و آزمون بازگردانی",
+  ARCHITECTURE_LIGHT: "همراهی معماری سبک",
 };
+
+function providerCode(provider: "ARVAN" | "PARSPACK") {
+  return provider === "PARSPACK" ? "PP" : "AV";
+}
+
+function productKindLabel(kind: PricingState["productMarkups"][number]["productKind"]) {
+  return kind === "CLOUD_SERVER" ? "سرور ابری" : "سرور آماده";
+}
+
+function bpsToPercentLabel(bps: number) {
+  const whole = Math.floor(bps / 100);
+  const fraction = bps % 100;
+  if (fraction === 0) return `${whole.toLocaleString("fa-IR")}٪`;
+  return `${whole.toLocaleString("fa-IR")}٫${String(fraction).padStart(2, "0")}٪`;
+}
 
 export function CommercePricingPanel({ initial }: { initial: PricingState }) {
   const [state, setState] = useState(initial);
@@ -55,7 +70,7 @@ export function CommercePricingPanel({ initial }: { initial: PricingState }) {
         body: JSON.stringify(state),
       });
       const body = (await response.json()) as { error?: string };
-      setMessage(response.ok ? "تنظیمات ذخیره شد." : body.error ?? "ذخیره ناموفق بود.");
+      setMessage(response.ok ? "تنظیمات قیمت ذخیره شد." : body.error ?? "ذخیره ناموفق بود.");
     } catch {
       setMessage("ارتباط برقرار نشد.");
     } finally {
@@ -64,223 +79,269 @@ export function CommercePricingPanel({ initial }: { initial: PricingState }) {
   }
 
   return (
-    <SectionCard title="مالیات، پرچین، یادآوری و قیمت خدمت">
-      <p>
-        این بخش روی مبلغ نهایی مشتری اثر دارد. VAT پیش‌فرض ۱۰٪ است. قیمت پرچین
-        را می‌توانی صفر یا غیرفعال کنی. روزهای SMS / تعلیق / حذف و قیمت بسته‌های
-        قطب‌نما هم اینجاست.
-      </p>
-      <label>
-        Tax BPS (۱۰٪ = ۱۰۰۰)
-        <input
-          min={0}
-          max={10000}
-          onChange={(event) =>
-            setState((current) => ({
-              ...current,
-              taxBps: Number(event.target.value),
-            }))
-          }
-          type="number"
-          value={state.taxBps}
-        />
-      </label>
-      <fieldset style={{ display: "grid", gap: 8, border: 0, padding: 0 }}>
-        <legend>یادآوری و چرخه تعلیق / حذف (روز)</legend>
-        <label>
-          روزهای SMS قبل از سررسید
-          <input
-            min={1}
-            max={90}
-            onChange={(event) =>
-              setState((current) => ({
-                ...current,
-                reminderDaysBeforeDue: Number(event.target.value),
-              }))
-            }
-            type="number"
-            value={state.reminderDaysBeforeDue}
-          />
-        </label>
-        <label>
-          روز فرصت تمدید پس از صفر شدن کیف پول (تعلیق)
-          <input
-            min={1}
-            max={90}
-            onChange={(event) =>
-              setState((current) => ({
-                ...current,
-                suspendGraceDaysAfterZero: Number(event.target.value),
-              }))
-            }
-            type="number"
-            value={state.suspendGraceDaysAfterZero}
-          />
-        </label>
-        <label>
-          روز تا حذف پس از تعلیق
-          <input
-            min={1}
-            max={90}
-            onChange={(event) =>
-              setState((current) => ({
-                ...current,
-                deleteDaysAfterSuspend: Number(event.target.value),
-              }))
-            }
-            type="number"
-            value={state.deleteDaysAfterSuspend}
-          />
-        </label>
-      </fieldset>
-      <fieldset style={{ display: "grid", gap: 8, border: 0, padding: 0 }}>
-        <legend>قیمت بسته‌های خدمت قطب‌نما (ریال)</legend>
-        {(
-          Object.keys(serviceLabels) as Array<
-            keyof PricingState["compassServicePrices"]
-          >
-        ).map((code) => (
-          <label key={code}>
-            {serviceLabels[code]}
-            <input
-              inputMode="numeric"
-              onChange={(event) =>
-                setState((current) => ({
-                  ...current,
-                  compassServicePrices: {
-                    ...current.compassServicePrices,
-                    [code]: event.target.value.replace(/\D/g, ""),
-                  },
-                }))
-              }
-              value={state.compassServicePrices[code]}
-            />
-          </label>
-        ))}
-      </fieldset>
-      {state.productMarkups.map((config, index) => (
-        <div key={`${config.provider}:${config.productKind}`}>
-          <label>
-            {config.provider} / {config.productKind} Markup BPS
+    <div className="pricing-rules-layout">
+      <SectionCard title="۱. مالیات و مبلغ نهایی">
+        <p className="pricing-rules-lead">
+          VAT روی قیمت فروش اعمال می‌شود. پیش‌فرض لانچ ۱۰٪ است (۱۰۰۰ BPS).
+        </p>
+        <div className="pricing-rules-grid">
+          <label className="pricing-field">
+            <span>مالیات (BPS)</span>
+            <strong>الان: {bpsToPercentLabel(state.taxBps)}</strong>
             <input
               min={0}
-              max={100000}
+              max={10000}
               onChange={(event) =>
                 setState((current) => ({
                   ...current,
-                  productMarkups: current.productMarkups.map((item, itemIndex) =>
-                    itemIndex === index
-                      ? {
-                          ...item,
-                          markupBasisPoints: Number(event.target.value),
-                        }
-                      : item,
-                  ),
+                  taxBps: Number(event.target.value),
                 }))
               }
               type="number"
-              value={config.markupBasisPoints}
+              value={state.taxBps}
             />
-          </label>
-          <label>
-            <input
-              checked={config.enabled}
-              onChange={(event) =>
-                setState((current) => ({
-                  ...current,
-                  productMarkups: current.productMarkups.map((item, itemIndex) =>
-                    itemIndex === index
-                      ? { ...item, enabled: event.target.checked }
-                      : item,
-                  ),
-                }))
-              }
-              type="checkbox"
-            />
-            این Product Kind فعال باشد
           </label>
         </div>
-      ))}
-      {state.parchin.map((config, index) => (
-        <div key={config.level}>
-          <label>
-            عنوان سطح
+      </SectionCard>
+
+      <SectionCard title="۲. Markup نوع محصول (AV / PP)">
+        <p className="pricing-rules-lead">
+          علاوه بر Markup سراسری هر منبع، Markup جدا برای نوع محصول تنظیم می‌شود.
+        </p>
+        <div className="pricing-rules-grid pricing-rules-grid--cards">
+          {state.productMarkups.map((config, index) => (
+            <article
+              className="pricing-product-card"
+              key={`${config.provider}:${config.productKind}`}
+            >
+              <header>
+                <span
+                  className="provider-code-badge"
+                  data-code={providerCode(config.provider)}
+                >
+                  {providerCode(config.provider)}
+                </span>
+                <strong>{productKindLabel(config.productKind)}</strong>
+              </header>
+              <label className="pricing-field">
+                <span>Markup (BPS)</span>
+                <strong>{bpsToPercentLabel(config.markupBasisPoints)}</strong>
+                <input
+                  min={0}
+                  max={100000}
+                  onChange={(event) =>
+                    setState((current) => ({
+                      ...current,
+                      productMarkups: current.productMarkups.map(
+                        (item, itemIndex) =>
+                          itemIndex === index
+                            ? {
+                                ...item,
+                                markupBasisPoints: Number(event.target.value),
+                              }
+                            : item,
+                      ),
+                    }))
+                  }
+                  type="number"
+                  value={config.markupBasisPoints}
+                />
+              </label>
+              <label className="pricing-check">
+                <input
+                  checked={config.enabled}
+                  onChange={(event) =>
+                    setState((current) => ({
+                      ...current,
+                      productMarkups: current.productMarkups.map(
+                        (item, itemIndex) =>
+                          itemIndex === index
+                            ? { ...item, enabled: event.target.checked }
+                            : item,
+                      ),
+                    }))
+                  }
+                  type="checkbox"
+                />
+                محاسبه برای این نوع محصول فعال باشد
+              </label>
+            </article>
+          ))}
+        </div>
+      </SectionCard>
+
+      <SectionCard title="۳. پرچین (الزامی روی همه فروش‌ها)">
+        <p className="pricing-rules-lead">
+          قیمت را صفر کن اگر می‌خواهی در صورتحساب رایگان باشد؛ غیرفعال‌کردن سطح
+          یعنی از مسیر فروش کنار می‌رود.
+        </p>
+        <div className="pricing-rules-grid pricing-rules-grid--cards">
+          {state.parchin.map((config, index) => (
+            <article className="pricing-product-card" key={config.level}>
+              <header>
+                <strong>{config.level.replace("PARCHIN_", "پرچین ")}</strong>
+              </header>
+              <label className="pricing-field">
+                <span>عنوان</span>
+                <input
+                  onChange={(event) =>
+                    setState((current) => ({
+                      ...current,
+                      parchin: current.parchin.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? { ...item, title: event.target.value }
+                          : item,
+                      ),
+                    }))
+                  }
+                  value={config.title}
+                />
+              </label>
+              <label className="pricing-field">
+                <span>دامنه خدمات</span>
+                <textarea
+                  onChange={(event) =>
+                    setState((current) => ({
+                      ...current,
+                      parchin: current.parchin.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? { ...item, description: event.target.value }
+                          : item,
+                      ),
+                    }))
+                  }
+                  rows={2}
+                  value={config.description ?? ""}
+                />
+              </label>
+              <label className="pricing-field">
+                <span>قیمت (ریال)</span>
+                <input
+                  inputMode="numeric"
+                  onChange={(event) =>
+                    setState((current) => ({
+                      ...current,
+                      parchin: current.parchin.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? { ...item, priceRial: event.target.value }
+                          : item,
+                      ),
+                    }))
+                  }
+                  value={config.priceRial}
+                />
+              </label>
+              <label className="pricing-check">
+                <input
+                  checked={config.active}
+                  onChange={(event) =>
+                    setState((current) => ({
+                      ...current,
+                      parchin: current.parchin.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? { ...item, active: event.target.checked }
+                          : item,
+                      ),
+                    }))
+                  }
+                  type="checkbox"
+                />
+                فعال
+              </label>
+            </article>
+          ))}
+        </div>
+      </SectionCard>
+
+      <SectionCard title="۴. چرخه یادآوری / تعلیق / حذف (روز)">
+        <div className="pricing-rules-grid">
+          <label className="pricing-field">
+            <span>SMS قبل از سررسید</span>
             <input
+              min={1}
+              max={90}
               onChange={(event) =>
                 setState((current) => ({
                   ...current,
-                  parchin: current.parchin.map((item, itemIndex) =>
-                    itemIndex === index
-                      ? { ...item, title: event.target.value }
-                      : item,
-                  ),
+                  reminderDaysBeforeDue: Number(event.target.value),
                 }))
               }
-              value={config.title}
+              type="number"
+              value={state.reminderDaysBeforeDue}
             />
           </label>
-          <label>
-            دامنه خدمات
-            <textarea
+          <label className="pricing-field">
+            <span>مهلت تمدید تا تعلیق</span>
+            <input
+              min={1}
+              max={90}
               onChange={(event) =>
                 setState((current) => ({
                   ...current,
-                  parchin: current.parchin.map((item, itemIndex) =>
-                    itemIndex === index
-                      ? { ...item, description: event.target.value }
-                      : item,
-                  ),
+                  suspendGraceDaysAfterZero: Number(event.target.value),
                 }))
               }
-              rows={2}
-              value={config.description ?? ""}
+              type="number"
+              value={state.suspendGraceDaysAfterZero}
             />
           </label>
-          <label>
-            قیمت IRR (صفر = رایگان در صورتحساب)
+          <label className="pricing-field">
+            <span>روز تا بررسی حذف پس از تعلیق</span>
             <input
-              inputMode="numeric"
+              min={1}
+              max={90}
               onChange={(event) =>
                 setState((current) => ({
                   ...current,
-                  parchin: current.parchin.map((item, itemIndex) =>
-                    itemIndex === index
-                      ? { ...item, priceRial: event.target.value }
-                      : item,
-                  ),
+                  deleteDaysAfterSuspend: Number(event.target.value),
                 }))
               }
-              value={config.priceRial}
+              type="number"
+              value={state.deleteDaysAfterSuspend}
             />
-          </label>
-          <label>
-            <input
-              checked={config.active}
-              onChange={(event) =>
-                setState((current) => ({
-                  ...current,
-                  parchin: current.parchin.map((item, itemIndex) =>
-                    itemIndex === index
-                      ? { ...item, active: event.target.checked }
-                      : item,
-                  ),
-                }))
-              }
-              type="checkbox"
-            />
-            فعال
           </label>
         </div>
-      ))}
-      <button
-        className="product-btn product-btn--primary"
-        disabled={saving}
-        onClick={save}
-        type="button"
-      >
-        ذخیره تنظیمات مالی
-      </button>
-      {message ? <p aria-live="polite">{message}</p> : null}
-    </SectionCard>
+      </SectionCard>
+
+      <SectionCard title="۵. قیمت بسته‌های خدمت قطب‌نما">
+        <p className="pricing-rules-lead">مبالغ به ریال هستند و در پیشنهاد قطب‌نما دیده می‌شوند.</p>
+        <div className="pricing-rules-grid">
+          {(
+            Object.keys(serviceLabels) as Array<
+              keyof PricingState["compassServicePrices"]
+            >
+          ).map((code) => (
+            <label className="pricing-field" key={code}>
+              <span>{serviceLabels[code]}</span>
+              <input
+                inputMode="numeric"
+                onChange={(event) =>
+                  setState((current) => ({
+                    ...current,
+                    compassServicePrices: {
+                      ...current.compassServicePrices,
+                      [code]: event.target.value.replace(/\D/g, ""),
+                    },
+                  }))
+                }
+                value={state.compassServicePrices[code]}
+              />
+            </label>
+          ))}
+        </div>
+      </SectionCard>
+
+      <div className="pricing-rules-actions">
+        <button
+          className="product-btn product-btn--primary"
+          disabled={saving}
+          onClick={save}
+          type="button"
+        >
+          {saving ? "در حال ذخیره…" : "ذخیره همه قواعد قیمت"}
+        </button>
+        {message ? <p aria-live="polite">{message}</p> : null}
+      </div>
+    </div>
   );
 }

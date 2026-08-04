@@ -14,6 +14,7 @@ import {
   readyServerTitle,
   selectReadyServerImage,
 } from "@/lib/cloud-servers/catalog";
+import { storefrontProviderCode } from "@/lib/storefront/provider-codes";
 import { prisma } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import {
@@ -97,6 +98,8 @@ export type PublicPlanOffer = {
   deliveryMode: DeliveryMode;
   productKind: InfrastructureProductKind;
   parchinLevel: ParchinLevel;
+  /** Opaque source code only — never supplier brand names. */
+  providerCode: "AV" | "PP";
   regionCode: string;
   locationLabel: string;
   imageLabel: string;
@@ -226,6 +229,7 @@ export function toPublicPlanOffer(plan: PricedInfrastructurePlan): PublicPlanOff
     deliveryMode: plan.deliveryMode,
     productKind: plan.productKind,
     parchinLevel: plan.pricing.parchinLevel,
+    providerCode: storefrontProviderCode(plan.provider),
     regionCode: plan.regionCode,
     locationLabel: readyServerLocation(plan.regionCode).label,
     imageLabel: readyServerImageLabel(plan.imageCode),
@@ -635,13 +639,16 @@ function catalogItemPublicOffer(input: {
           hourlyBasePriceRial,
           input.markupBasisPoints,
         );
-  const monthlyPriceRial =
+  const monthlyFromProvider =
     monthlyBasePriceRial > 0n
       ? calculateFinalPriceRial(
           monthlyBasePriceRial,
           input.markupBasisPoints,
         )
-      : 0n;
+      : null;
+  const monthlyPriceRial =
+    monthlyFromProvider ??
+    (hourlyPriceRial != null ? hourlyPriceRial * 720n : 0n);
   const imageCodes = compatibleImageCodes(input.item);
   const imageCode =
     selectReadyServerImage(imageCodes) ?? imageCodes[0] ?? "linux";
@@ -662,6 +669,7 @@ function catalogItemPublicOffer(input: {
     deliveryMode: "MANAGED",
     productKind: "CLOUD_SERVER",
     parchinLevel: "PARCHIN_START",
+    providerCode: storefrontProviderCode(input.item.provider),
     regionCode: input.item.regionCode,
     locationLabel: input.locationLabel,
     imageLabel: readyServerImageLabel(imageCode),
@@ -684,7 +692,7 @@ function catalogItemPublicOffer(input: {
     normalizedAmountUnit: "RIAL",
     billingIntervals: [
       ...(hourlyBasePriceRial == null ? [] : (["HOURLY"] as const)),
-      ...(monthlyBasePriceRial > 0n ? (["MONTHLY"] as const) : []),
+      ...(monthlyPriceRial > 0n ? (["MONTHLY"] as const) : []),
     ],
     markupBasisPoints: input.markupBasisPoints,
     taxBasisPoints: input.taxBasisPoints,

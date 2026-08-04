@@ -60,7 +60,7 @@ export function getEnv() {
     parspackEnabled: readBool("PARSPACK_ENABLED", false),
     parspackPublicSaleEnabled: readBool(
       "PARSPACK_PUBLIC_SALE_ENABLED",
-      false,
+      true,
     ),
     parspackMutationsEnabled: readBool(
       "PARSPACK_MUTATIONS_ENABLED",
@@ -90,21 +90,22 @@ export function getEnv() {
     arvanGetAttempts: readInt("ARVAN_GET_ATTEMPTS", 3),
     // Public checkout is a separate operational decision from provider
     // connectivity and lifecycle mutation capability. It is fail-closed.
+    // Launch: public sale open by default; Mutation stays fail-closed.
     arvanPublicSaleEnabled: readBool(
       "ARVAN_PUBLIC_SALE_ENABLED",
-      false,
+      true,
     ),
     arvanReadyPublicSaleEnabled: readBool(
       "ARVAN_READY_PUBLIC_SALE_ENABLED",
-      false,
+      true,
     ),
     arvanCloudPublicSaleEnabled: readBool(
       "ARVAN_CLOUD_PUBLIC_SALE_ENABLED",
-      false,
+      true,
     ),
     manualReadyPublicSaleEnabled: readBool(
       "MANUAL_READY_PUBLIC_SALE_ENABLED",
-      false,
+      true,
     ),
     // Lifecycle writes stay disabled until a separately approved staging
     // exercise. Merely configuring an API key must never enable mutations.

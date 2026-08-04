@@ -210,10 +210,10 @@ test("Arvan ready/cloud and manual inventory sale gates are independent", () => 
   const previousManualSale = process.env.MANUAL_READY_PUBLIC_SALE_ENABLED;
   const previousMutations = process.env.ARVAN_MUTATIONS_ENABLED;
   try {
-    delete process.env.ARVAN_PUBLIC_SALE_ENABLED;
-    delete process.env.ARVAN_READY_PUBLIC_SALE_ENABLED;
-    delete process.env.ARVAN_CLOUD_PUBLIC_SALE_ENABLED;
-    delete process.env.MANUAL_READY_PUBLIC_SALE_ENABLED;
+    process.env.ARVAN_PUBLIC_SALE_ENABLED = "false";
+    process.env.ARVAN_READY_PUBLIC_SALE_ENABLED = "false";
+    process.env.ARVAN_CLOUD_PUBLIC_SALE_ENABLED = "false";
+    process.env.MANUAL_READY_PUBLIC_SALE_ENABLED = "false";
     process.env.ARVAN_MUTATIONS_ENABLED = "true";
     assert.deepEqual(
       getPublicSaleDecision({
@@ -266,12 +266,12 @@ test("Arvan ready/cloud and manual inventory sale gates are independent", () => 
   }
 });
 
-test("ParsPack public sale is fail-closed and independent from connectivity", () => {
+test("ParsPack public sale can be closed explicitly and is independent from connectivity", () => {
   const previousSale = process.env.PARSPACK_PUBLIC_SALE_ENABLED;
   const previousMutations = process.env.PARSPACK_MUTATIONS_ENABLED;
   const previousEnabled = process.env.PARSPACK_ENABLED;
   try {
-    delete process.env.PARSPACK_PUBLIC_SALE_ENABLED;
+    process.env.PARSPACK_PUBLIC_SALE_ENABLED = "false";
     delete process.env.PARSPACK_MUTATIONS_ENABLED;
     process.env.PARSPACK_ENABLED = "true";
     assert.deepEqual(
@@ -287,7 +287,7 @@ test("ParsPack public sale is fail-closed and independent from connectivity", ()
           provider: InfrastructureProvider.PARSPACK,
           offerSource: "API_CATALOG",
         }),
-      /فروش عمومی سرورهای فوری.*مبلغی برداشت نشد/,
+      /فروش عمومی این راهکار.*مبلغی برداشت نشد/,
     );
 
     process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";

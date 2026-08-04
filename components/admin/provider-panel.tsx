@@ -44,12 +44,15 @@ function catalogStateLabel(item: {
 
 export function ProviderPanel({
   provider,
+  providerCode,
   title,
   initial,
   catalogItems,
   syncRuns,
+  dailyStats,
 }: {
   provider: "ARVAN" | "PARSPACK";
+  providerCode: "AV" | "PP";
   title: string;
   initial: {
     status: string;
@@ -128,6 +131,10 @@ export function ProviderPanel({
     startedAt: string;
     finishedAt: string | null;
   }>;
+  dailyStats: {
+    syncRunsToday: number;
+    plansSyncedToday: number;
+  };
 }) {
   const [state, setState] = useState(initial);
   const [loading, setLoading] = useState<"health" | "sync" | null>(null);
@@ -189,27 +196,45 @@ export function ProviderPanel({
     }
   }
 
+  const providerItems = catalogItems.filter((item) => item.provider === provider);
+  const syncedTodayItems = providerItems.filter((item) => {
+    const synced = new Date(item.lastSyncedAt);
+    const start = new Date();
+    start.setUTCHours(0, 0, 0, 0);
+    return synced.getTime() >= start.getTime();
+  }).length;
+
   return (
     <>
       <PageHeader
         title={title}
-        description={`API ${initial.apiVersion} · همگام‌سازی کاتالوگ منطقه‌ای`}
+        description={`کد ${providerCode} · API ${initial.apiVersion} · همگام‌سازی کاتالوگ منطقه‌ای`}
       />
       <div className="product-stat-grid">
+        <StatCard
+          label="کد منبع"
+          value={
+            <span className="provider-code-badge" data-code={providerCode}>
+              {providerCode}
+            </span>
+          }
+        />
         <StatCard label="وضعیت" value={<StatusBadge label={state.message} tone={state.status === "healthy" ? "success" : "warning"} />} />
         <StatCard label="Secret" value={state.configured ? "تنظیم شده" : "تنظیم نشده"} />
-        <StatCard label="API Version" value={state.apiVersion} />
-        <StatCard label="Region" value={state.regionCount.toLocaleString("fa-IR")} />
-        <StatCard label="Size" value={state.sizeCount.toLocaleString("fa-IR")} />
-        <StatCard label="Image" value={state.imageCount.toLocaleString("fa-IR")} />
+        <StatCard
+          label="سرورهای دریافتی امروز"
+          value={Math.max(
+            dailyStats.plansSyncedToday,
+            syncedTodayItems,
+          ).toLocaleString("fa-IR")}
+        />
+        <StatCard
+          label="Syncهای امروز"
+          value={dailyStats.syncRunsToday.toLocaleString("fa-IR")}
+        />
         <StatCard label="Catalog Item" value={state.catalogItemCount.toLocaleString("fa-IR")} />
         <StatCard label="قیمت‌دار" value={state.pricedItemCount.toLocaleString("fa-IR")} />
-        <StatCard label="ناموجود" value={state.unavailableItemCount.toLocaleString("fa-IR")} />
-        <StatCard label="Stale" value={state.staleItemCount.toLocaleString("fa-IR")} />
-        <StatCard label="قیمت نامعتبر" value={state.invalidPriceCount.toLocaleString("fa-IR")} />
-        <StatCard label="منابع نامعتبر" value={state.invalidResourceCount.toLocaleString("fa-IR")} />
-        <StatCard label="Network" value={state.networkCount.toLocaleString("fa-IR")} />
-        <StatCard label="Security" value={state.securityCount.toLocaleString("fa-IR")} />
+        <StatCard label="Region" value={state.regionCount.toLocaleString("fa-IR")} />
         <StatCard
           label="آخرین Sync"
           value={
@@ -218,20 +243,34 @@ export function ProviderPanel({
               : "—"
           }
         />
-        <StatCard
-          label="مدت Sync"
-          value={
-            state.syncDurationMs == null
-              ? "—"
-              : `${state.syncDurationMs.toLocaleString("fa-IR")} ms`
-          }
-        />
         <StatCard label="نتیجه Sync" value={state.lastSyncStatus ?? "—"} />
-        <StatCard
-          label="Request ID"
-          value={state.lastProviderRequestId ?? "—"}
-        />
       </div>
+      <details className="admin-advanced-stats">
+        <summary>آمار پیشرفته Sync</summary>
+        <div className="product-stat-grid" style={{ marginTop: 12 }}>
+          <StatCard label="API Version" value={state.apiVersion} />
+          <StatCard label="Size" value={state.sizeCount.toLocaleString("fa-IR")} />
+          <StatCard label="Image" value={state.imageCount.toLocaleString("fa-IR")} />
+          <StatCard label="ناموجود" value={state.unavailableItemCount.toLocaleString("fa-IR")} />
+          <StatCard label="Stale" value={state.staleItemCount.toLocaleString("fa-IR")} />
+          <StatCard label="قیمت نامعتبر" value={state.invalidPriceCount.toLocaleString("fa-IR")} />
+          <StatCard label="منابع نامعتبر" value={state.invalidResourceCount.toLocaleString("fa-IR")} />
+          <StatCard label="Network" value={state.networkCount.toLocaleString("fa-IR")} />
+          <StatCard label="Security" value={state.securityCount.toLocaleString("fa-IR")} />
+          <StatCard
+            label="مدت Sync"
+            value={
+              state.syncDurationMs == null
+                ? "—"
+                : `${state.syncDurationMs.toLocaleString("fa-IR")} ms`
+            }
+          />
+          <StatCard
+            label="Request ID"
+            value={state.lastProviderRequestId ?? "—"}
+          />
+        </div>
+      </details>
       <SectionCard title="اقدام بعدی">
         <p>
           اول اتصال را چک کن، بعد کاتالوگ را به‌روز کن. Sync فقط لیست قیمت/ظرفیت
@@ -312,11 +351,12 @@ export function ProviderPanel({
               </tr>
             </thead>
             <tbody>
-              {catalogItems
-                .filter((item) => item.provider === provider)
-                .map((item) => (
+              {providerItems.map((item) => (
                 <tr key={item.id}>
                   <td className="product-tech">
+                    <span className="provider-code-badge" data-code={providerCode}>
+                      {providerCode}
+                    </span>{" "}
                     {item.regionCode} / {item.sizeCode}
                     <br />
                     <small>

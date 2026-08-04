@@ -167,6 +167,13 @@ export function ChinishCloudCatalog({
                   <MapPin size={14} aria-hidden="true" />
                   {offer.locationLabel}
                 </span>
+                <span
+                  className="provider-code-badge"
+                  data-code={offer.providerCode}
+                  title="کد منبع"
+                >
+                  {offer.providerCode}
+                </span>
                 <span className="quick-plan-mode">
                   <ShieldCheck size={13} aria-hidden="true" />
                   {parchinLevelLabel(offer.parchinLevel)}
@@ -204,16 +211,21 @@ export function ChinishCloudCatalog({
               </div>
 
               <div className="quick-plan-price">
-                {offer.hourlyPriceRial ? (
+                {offer.salePriceRial && offer.salePriceRial !== "0" ? (
                   <span>
-                    <strong>{formatStorefrontToman(offer.hourlyPriceRial)}</strong>{" "}
-                    تومان در ساعت
+                    <strong>{formatStorefrontToman(offer.salePriceRial)}</strong>{" "}
+                    تومان در ماه
                   </span>
                 ) : (
                   <span>
-                    <strong>قیمت ساعتی در دسترس نیست</strong>
+                    <strong>قیمت ماهانه در دسترس نیست</strong>
                   </span>
                 )}
+                {offer.hourlyPriceRial ? (
+                  <small>
+                    {formatStorefrontToman(offer.hourlyPriceRial)} تومان در ساعت
+                  </small>
+                ) : null}
               </div>
 
               <ul>
