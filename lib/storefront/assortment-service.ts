@@ -129,7 +129,7 @@ function toPublicOffer(input: {
       imageCode,
     }),
     deliveryMode: "MANAGED",
-    productKind: "CLOUD_SERVER",
+    productKind: input.item.productKind,
     parchinLevel: "PARCHIN_START",
     regionCode: input.item.regionCode,
     locationLabel: input.locationLabel,
@@ -186,7 +186,7 @@ async function loadPricingContext() {
       }).catch(() => []),
       prisma.infrastructurePlan.findMany({
         where: {
-          productKind: "CLOUD_SERVER",
+          productKind: { in: ["CLOUD_SERVER", "READY_INSTANT_SERVER"] },
           offerSource: "API_CATALOG",
           active: true,
           publicationStatus: "PUBLISHED",
@@ -422,7 +422,7 @@ export async function replaceStorefrontTierSlots(input: {
     where: {
       id: { in: catalogIds },
       provider: { in: ["ARVAN", "PARSPACK"] },
-      productKind: "CLOUD_SERVER",
+      productKind: { in: ["CLOUD_SERVER", "READY_INSTANT_SERVER"] },
       source: "API_CATALOG",
       active: true,
     },
@@ -531,7 +531,8 @@ export async function listStorefrontCatalogCandidates() {
   const items = await prisma.providerCatalogItem.findMany({
     where: {
       provider: { in: ["ARVAN", "PARSPACK"] },
-      productKind: "CLOUD_SERVER",
+      // ParsPack syncs as READY_INSTANT_SERVER; Arvan cloud as CLOUD_SERVER.
+      productKind: { in: ["CLOUD_SERVER", "READY_INSTANT_SERVER"] },
       source: "API_CATALOG",
       active: true,
       OR: [

@@ -239,7 +239,8 @@ export async function applySuggestedStorefrontAssortment(input: {
   const items = await prisma.providerCatalogItem.findMany({
     where: {
       provider: { in: ["ARVAN", "PARSPACK"] },
-      productKind: "CLOUD_SERVER",
+      // ParsPack syncs as READY_INSTANT_SERVER; Arvan cloud as CLOUD_SERVER.
+      productKind: { in: ["CLOUD_SERVER", "READY_INSTANT_SERVER"] },
       source: "API_CATALOG",
       active: true,
       available: true,

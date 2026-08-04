@@ -263,7 +263,11 @@ export function ChinishCloudCatalog({
 
                     <ReadyServerQuoteButton
                       planId={offer.id}
-                      productPath="cloud-servers"
+                      productPath={
+                        offer.productKind === "READY_INSTANT_SERVER"
+                          ? "ready-servers"
+                          : "cloud-servers"
+                      }
                       disabled={!offer.purchasable}
                       disabledReason={purchaseDisabledReason(offer)}
                     />

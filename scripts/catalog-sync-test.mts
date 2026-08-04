@@ -735,14 +735,26 @@ test("cloud-servers uses curated چینش assortment with purchase still closed"
   assert.match(assortment, /resolveStorefrontTierOffers/);
   assert.match(assortment, /SKU_UNPUBLISHED/);
   assert.match(assortment, /autoSuggestEnabled: false/);
+  // ParsPack catalog is READY_INSTANT_SERVER; Arvan cloud is CLOUD_SERVER.
+  assert.match(
+    assortment,
+    /productKind:\s*\{\s*in:\s*\[\s*"CLOUD_SERVER"\s*,\s*"READY_INSTANT_SERVER"\s*\]\s*\}/,
+  );
+  assert.match(assortment, /PARSPACK/);
   assert.match(autoSuggest, /buildSuggestedStorefrontAssortment/);
   assert.match(autoSuggest, /maybeAutoApplyStorefrontAssortment/);
+  assert.match(
+    autoSuggest,
+    /productKind:\s*\{\s*in:\s*\[\s*"CLOUD_SERVER"\s*,\s*"READY_INSTANT_SERVER"\s*\]\s*\}/,
+  );
   assert.match(adminPanel, /روشن کردن پیشنهاد خودکار/);
   assert.match(adminPanel, /خاموش کردن/);
   assert.match(cloudPage, /listPublicStorefrontTiers/);
   assert.match(cloudPage, /چینش نو/);
   assert.match(cloudPage, /کیف پول/);
   assert.match(catalogUi, /فروش این پلن‌ها به‌زودی فعال می‌شود/);
+  assert.match(catalogUi, /READY_INSTANT_SERVER/);
+  assert.match(catalogUi, /ready-servers/);
   assert.match(scheduler, /checkStorefrontLowStockAlerts/);
   assert.match(scheduler, /maybeAutoApplyStorefrontAssortment/);
   assert.match(scheduler, /processOperationalAlertOutbox/);
