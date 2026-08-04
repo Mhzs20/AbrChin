@@ -11,6 +11,12 @@ import {
 } from "@/lib/pricing/plan-pricing";
 import type { StorefrontSlotInput } from "@/lib/storefront/assortment-service";
 import {
+  classifyStorefrontCapacityTier,
+  DEFAULT_STOREFRONT_CAPACITY_RULES,
+  parseStorefrontCapacityRules,
+  type StorefrontCapacityRules,
+} from "@/lib/storefront/capacity-rules";
+import {
   STOREFRONT_PRIMARY_LIMIT,
   STOREFRONT_RESERVE_LIMIT,
   STOREFRONT_TIERS,
@@ -136,80 +142,88 @@ function slotsFor(
 
 export function buildSuggestedStorefrontAssortment(
   items: ProviderCatalogItem[],
+  rules: StorefrontCapacityRules = DEFAULT_STOREFRONT_CAPACITY_RULES,
 ): Record<StorefrontChinishTier, StorefrontSlotInput[]> {
   const ranked = items
     .map(toRanked)
-    .filter((row): row is RankedItem => row != null);
+    .filter((row): row is RankedItem => row != null)
+    .map((row) => ({
+      ...row,
+      capacityTier: classifyStorefrontCapacityTier(
+        { vcpu: row.vcpu, ramGb: row.ramGb, diskGb: row.diskGb },
+        rules,
+      ),
+    }));
 
   const used = new Set<string>();
 
-  // چینش نو: cheapest useful plans
-  const noPrimary = diversifyPick(
-    ranked.filter((row) => !used.has(row.item.id) && row.vcpu <= 4 && row.ramGb <= 8),
-    STOREFRONT_PRIMARY_LIMIT,
-    (a, b) => {
+  function pickForTier(
+    tier: StorefrontChinishTier,
+    compare: (a: RankedItem, b: RankedItem) => number,
+  ) {
+    const pool = ranked.filter(
+      (row) => !used.has(row.item.id) && row.capacityTier === tier,
+    );
+    let primary = diversifyPick(pool, STOREFRONT_PRIMARY_LIMIT, compare);
+    if (primary.length < STOREFRONT_PRIMARY_LIMIT) {
+      const pickedIds = new Set(primary.map((row) => row.item.id));
+      const fallback = diversifyPick(
+        ranked.filter(
+          (row) => !used.has(row.item.id) && !pickedIds.has(row.item.id),
+        ),
+        STOREFRONT_PRIMARY_LIMIT - primary.length,
+        compare,
+      );
+      primary = [...primary, ...fallback];
+    }
+    return slotsFor(primary, ranked, used);
+  }
+
+  return {
+    NO: pickForTier("NO", (a, b) => {
       if (a.economyScore !== b.economyScore) {
         return a.economyScore - b.economyScore;
       }
       return a.powerScore - b.powerScore;
-    },
-  );
-  if (noPrimary.length < STOREFRONT_PRIMARY_LIMIT) {
-    const pickedIds = new Set(noPrimary.map((row) => row.item.id));
-    const extra = diversifyPick(
-      ranked.filter(
-        (row) => !used.has(row.item.id) && !pickedIds.has(row.item.id),
-      ),
-      STOREFRONT_PRIMARY_LIMIT - noPrimary.length,
-      (a, b) => a.economyScore - b.economyScore,
-    );
-    noPrimary.push(...extra);
-  }
-  const noSlots = slotsFor(noPrimary, ranked, used);
-
-  // چینش استوار: mid power / best balance score
-  const ostovarPool = ranked.filter(
-    (row) =>
-      !used.has(row.item.id) &&
-      row.vcpu >= 2 &&
-      row.vcpu <= 16 &&
-      row.ramGb >= 4 &&
-      row.ramGb <= 64,
-  );
-  const ostovarPrimary = diversifyPick(
-    ostovarPool,
-    STOREFRONT_PRIMARY_LIMIT,
-    (a, b) => {
+    }),
+    OSTOVAR: pickForTier("OSTOVAR", (a, b) => {
       if (a.balanceScore !== b.balanceScore) {
         return b.balanceScore - a.balanceScore;
       }
       return a.economyScore - b.economyScore;
-    },
-  );
-  const ostovarSlots = slotsFor(ostovarPrimary, ranked, used);
-
-  // چینش کهکشان: strongest remaining plans
-  const kahkeshanPrimary = diversifyPick(
-    ranked.filter((row) => !used.has(row.item.id)),
-    STOREFRONT_PRIMARY_LIMIT,
-    (a, b) => {
+    }),
+    KAHKESHAN: pickForTier("KAHKESHAN", (a, b) => {
       if (a.powerScore !== b.powerScore) return b.powerScore - a.powerScore;
       return a.economyScore - b.economyScore;
-    },
-  );
-  const kahkeshanSlots = slotsFor(kahkeshanPrimary, ranked, used);
+    }),
+  };
+}
 
+export function toStorefrontSettingsView(
+  settings: Awaited<ReturnType<typeof getStorefrontAssortmentSettings>>,
+) {
   return {
-    NO: noSlots,
-    OSTOVAR: ostovarSlots,
-    KAHKESHAN: kahkeshanSlots,
+    autoSuggestEnabled: settings.autoSuggestEnabled,
+    lastAutoAppliedAt: settings.lastAutoAppliedAt?.toISOString() ?? null,
+    capacityRules: {
+      ostovarMinVcpu: settings.ostovarMinVcpu,
+      ostovarMinRamGb: settings.ostovarMinRamGb,
+      ostovarMinDiskGb: settings.ostovarMinDiskGb,
+      kahkeshanMinVcpu: settings.kahkeshanMinVcpu,
+      kahkeshanMinRamGb: settings.kahkeshanMinRamGb,
+      kahkeshanMinDiskGb: settings.kahkeshanMinDiskGb,
+    },
   };
 }
 
 export async function getStorefrontAssortmentSettings() {
   return prisma.storefrontAssortmentSettings.upsert({
     where: { id: "default" },
-    create: { id: "default", autoSuggestEnabled: false },
+    create: {
+      id: "default",
+      autoSuggestEnabled: false,
+      ...DEFAULT_STOREFRONT_CAPACITY_RULES,
+    },
     update: {},
   });
 }
@@ -224,9 +238,30 @@ export async function setStorefrontAutoSuggestEnabled(input: {
       id: "default",
       autoSuggestEnabled: input.enabled,
       updatedById: input.actorUserId,
+      ...DEFAULT_STOREFRONT_CAPACITY_RULES,
     },
     update: {
       autoSuggestEnabled: input.enabled,
+      updatedById: input.actorUserId,
+    },
+  });
+}
+
+export async function updateStorefrontCapacityRules(input: {
+  rules: StorefrontCapacityRules;
+  actorUserId: string | null;
+}) {
+  const rules = parseStorefrontCapacityRules(input.rules);
+  return prisma.storefrontAssortmentSettings.upsert({
+    where: { id: "default" },
+    create: {
+      id: "default",
+      autoSuggestEnabled: false,
+      updatedById: input.actorUserId,
+      ...rules,
+    },
+    update: {
+      ...rules,
       updatedById: input.actorUserId,
     },
   });
@@ -236,6 +271,15 @@ export async function applySuggestedStorefrontAssortment(input: {
   actorUserId: string | null;
   enableAuto?: boolean;
 }) {
+  const settings = await getStorefrontAssortmentSettings();
+  const rules: StorefrontCapacityRules = {
+    ostovarMinVcpu: settings.ostovarMinVcpu,
+    ostovarMinRamGb: settings.ostovarMinRamGb,
+    ostovarMinDiskGb: settings.ostovarMinDiskGb,
+    kahkeshanMinVcpu: settings.kahkeshanMinVcpu,
+    kahkeshanMinRamGb: settings.kahkeshanMinRamGb,
+    kahkeshanMinDiskGb: settings.kahkeshanMinDiskGb,
+  };
   const items = await prisma.providerCatalogItem.findMany({
     where: {
       provider: { in: ["ARVAN", "PARSPACK"] },
@@ -251,7 +295,7 @@ export async function applySuggestedStorefrontAssortment(input: {
       ],
     },
   });
-  const suggestion = buildSuggestedStorefrontAssortment(items);
+  const suggestion = buildSuggestedStorefrontAssortment(items, rules);
 
   await prisma.$transaction(async (tx) => {
     for (const tier of STOREFRONT_TIERS) {

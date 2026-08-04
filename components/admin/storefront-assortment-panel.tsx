@@ -48,9 +48,19 @@ function formatRial(value: string | null | undefined) {
   return BigInt(value).toLocaleString("fa-IR");
 }
 
+type CapacityRules = {
+  ostovarMinVcpu: number;
+  ostovarMinRamGb: number;
+  ostovarMinDiskGb: number;
+  kahkeshanMinVcpu: number;
+  kahkeshanMinRamGb: number;
+  kahkeshanMinDiskGb: number;
+};
+
 type SettingsView = {
   autoSuggestEnabled: boolean;
   lastAutoAppliedAt: string | null;
+  capacityRules: CapacityRules;
 };
 
 export function StorefrontAssortmentPanel({
@@ -64,6 +74,9 @@ export function StorefrontAssortmentPanel({
 }) {
   const [tiers, setTiers] = useState(initialTiers);
   const [settings, setSettings] = useState(initialSettings);
+  const [capacityDraft, setCapacityDraft] = useState<CapacityRules>(
+    initialSettings.capacityRules,
+  );
   const [activeTier, setActiveTier] = useState<TierView["tier"]>("NO");
   const [draftPrimary, setDraftPrimary] = useState<string[]>(
     initialTiers[0]?.primary.map((row) => row.catalogItemId) ?? [],
@@ -92,7 +105,10 @@ export function StorefrontAssortmentPanel({
         setDraftReserve(refreshed.reserve.map((row) => row.catalogItemId));
       }
     }
-    if (payload.settings) setSettings(payload.settings);
+    if (payload.settings) {
+      setSettings(payload.settings);
+      setCapacityDraft(payload.settings.capacityRules);
+    }
   }
 
   const active = tiers.find((tier) => tier.tier === activeTier) ?? tiers[0];
@@ -266,6 +282,45 @@ export function StorefrontAssortmentPanel({
     }
   }
 
+  async function saveCapacityRules() {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await fetch(
+        "/api/admin/infrastructure/storefront-assortment",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: "set_capacity_rules",
+            capacityRules: capacityDraft,
+          }),
+        },
+      );
+      const payload = (await response.json()) as {
+        error?: string;
+        tiers?: TierView[];
+        settings?: SettingsView;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || "ذخیره قواعد ظرفیت انجام نشد.");
+      }
+      applyServerState(payload);
+      setMessage(
+        "قواعد ظرفیت ذخیره شد. پیشنهاد خودکار بعدی بر همین حداقل‌ها چینش می‌چیند.",
+      );
+    } catch (capacityError) {
+      setError(
+        capacityError instanceof Error
+          ? capacityError.message
+          : "ذخیره قواعد ظرفیت ممکن نیست.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function rowLabel(catalogItemId: string) {
     const candidate = candidates.find((item) => item.id === catalogItemId);
     if (!candidate) return catalogItemId;
@@ -326,6 +381,70 @@ export function StorefrontAssortmentPanel({
             onClick={() => void runAutoAction("apply_suggestions", false)}
           >
             یک‌بار پیشنهاد بده (بدون روشن ماندن)
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          border: "1px solid var(--product-border, #ddd)",
+          borderRadius: 12,
+          padding: 16,
+          display: "grid",
+          gap: 12,
+        }}
+      >
+        <div>
+          <strong>قواعد ظرفیت چینش</strong>
+          <p style={{ margin: "8px 0 0", color: "var(--product-muted)" }}>
+            استوار و کهکشان با حداقل vCPU / RAM / Disk مشخص می‌شوند. پایین‌تر از
+            استوار در چینش نو می‌آید. پرچین کارت‌ها: نو → شروع، استوار → فعال،
+            کهکشان → پایدار.
+          </p>
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 12,
+          }}
+        >
+          {(
+            [
+              ["ostovarMinVcpu", "استوار · حداقل vCPU"],
+              ["ostovarMinRamGb", "استوار · حداقل RAM (GB)"],
+              ["ostovarMinDiskGb", "استوار · حداقل Disk (GB)"],
+              ["kahkeshanMinVcpu", "کهکشان · حداقل vCPU"],
+              ["kahkeshanMinRamGb", "کهکشان · حداقل RAM (GB)"],
+              ["kahkeshanMinDiskGb", "کهکشان · حداقل Disk (GB)"],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key} style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 13 }}>{label}</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={capacityDraft[key]}
+                onChange={(event) =>
+                  setCapacityDraft((current) => ({
+                    ...current,
+                    [key]: Number.parseInt(event.target.value || "0", 10) || 0,
+                  }))
+                }
+                style={{ minHeight: 40 }}
+              />
+            </label>
+          ))}
+        </div>
+        <div>
+          <button
+            type="button"
+            className="product-btn"
+            disabled={busy}
+            onClick={() => void saveCapacityRules()}
+          >
+            ذخیره قواعد ظرفیت
           </button>
         </div>
       </div>

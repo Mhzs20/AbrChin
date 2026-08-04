@@ -17,12 +17,16 @@ test("cloud and ready purchase routes stay provider-separated before login", asy
   assert.doesNotMatch(readyPage, /listLiveCloudServerOffers/);
   assert.match(chinish, /چینش نو|چینش استوار|چینش کهکشان/);
   assert.match(chinish, /تومان در ساعت/);
-  assert.match(chinish, /برآورد ۲۴ ساعت/);
+  assert.match(chinish, /چینش فنی/);
+  assert.match(chinish, /لوکیشن ایران/);
+  assert.match(chinish, /لوکیشن خارج/);
+  assert.doesNotMatch(chinish, /قیمت پایه تأمین‌کننده/);
+  assert.doesNotMatch(chinish, /همگام‌شده/);
+  assert.doesNotMatch(chinish, /سیستم‌عامل‌های مجاز/);
   assert.match(cards, /دوره ثابت · تمدید/);
-  assert.match(chinish, /سیستم‌عامل‌های مجاز/);
   assert.match(quoteButton, /دریافت Quote/);
-  assert.match(chinish, /همه موقعیت‌ها/);
-  assert.match(chinish, /تحویل امن با پرچین/);
+  assert.match(chinish, /امن و آمادهٔ راه‌اندازی با پرچین/);
+  assert.match(chinish, /زمان تحویل تقریبی: فوری/);
 });
 
 test("customer recommendation UI does not reveal infrastructure providers", async () => {

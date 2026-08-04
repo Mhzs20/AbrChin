@@ -1983,12 +1983,18 @@ model StorefrontAssortmentSlot {
 }
 
 model StorefrontAssortmentSettings {
-  id                String   @id @default("default")
-  autoSuggestEnabled Boolean @default(false)
-  lastAutoAppliedAt DateTime?
-  updatedAt         DateTime @updatedAt
-  updatedById       String?
-  updatedBy         User?    @relation("StorefrontSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  id                 String   @id @default("default")
+  autoSuggestEnabled Boolean  @default(false)
+  lastAutoAppliedAt  DateTime?
+  ostovarMinVcpu     Int      @default(6)
+  ostovarMinRamGb    Int      @default(12)
+  ostovarMinDiskGb   Int      @default(100)
+  kahkeshanMinVcpu   Int      @default(16)
+  kahkeshanMinRamGb  Int      @default(32)
+  kahkeshanMinDiskGb Int      @default(200)
+  updatedAt          DateTime @updatedAt
+  updatedById        String?
+  updatedBy          User?    @relation("StorefrontSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@index([updatedById])
 }

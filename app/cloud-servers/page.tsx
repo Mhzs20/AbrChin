@@ -55,7 +55,8 @@ export default async function CloudServersPage() {
           <Zap size={15} aria-hidden="true" /> برآورد ساعتی و روزانه
         </span>
         <span>
-          <ShieldCheck size={15} aria-hidden="true" /> تحویل امن با پرچین
+          <ShieldCheck size={15} aria-hidden="true" /> امن و آمادهٔ راه‌اندازی با
+          پرچین
         </span>
       </div>
 

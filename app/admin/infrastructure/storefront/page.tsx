@@ -7,7 +7,10 @@ import {
   getStorefrontAssortmentAdminView,
   listStorefrontCatalogCandidates,
 } from "@/lib/storefront/assortment-service";
-import { getStorefrontAssortmentSettings } from "@/lib/storefront/auto-suggest";
+import {
+  getStorefrontAssortmentSettings,
+  toStorefrontSettingsView,
+} from "@/lib/storefront/auto-suggest";
 
 export const metadata: Metadata = {
   title: "چینش فروشگاهی | پنل مدیریت | ابرچین",
@@ -35,10 +38,7 @@ export default async function AdminStorefrontAssortmentPage() {
       <StorefrontAssortmentPanel
         initialTiers={tiers}
         candidates={candidates}
-        initialSettings={{
-          autoSuggestEnabled: settings.autoSuggestEnabled,
-          lastAutoAppliedAt: settings.lastAutoAppliedAt?.toISOString() ?? null,
-        }}
+        initialSettings={toStorefrontSettingsView(settings)}
       />
     </section>
   );

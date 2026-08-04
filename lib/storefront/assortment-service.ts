@@ -7,7 +7,6 @@ import type {
 import {
   readyServerDescription,
   readyServerImageLabel,
-  readyServerLocation,
   readyServerTitle,
   selectReadyServerImage,
 } from "@/lib/cloud-servers/catalog";
@@ -24,6 +23,11 @@ import {
   resolveCatalogItemPricing,
 } from "@/lib/pricing/plan-pricing";
 import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
+import {
+  storefrontLocationLabel,
+  storefrontParchinForTier,
+  storefrontServerTitle,
+} from "@/lib/storefront/presentation";
 import {
   STOREFRONT_DISPLAY_LIMIT,
   STOREFRONT_PRIMARY_LIMIT,
@@ -96,7 +100,7 @@ function isCatalogItemDisplayable(
 
 function toPublicOffer(input: {
   item: ProviderCatalogItem;
-  locationLabel: string;
+  tier: StorefrontChinishTier;
   catalogFresh: boolean;
   markupBasisPoints: number;
   taxBasisPoints: number;
@@ -119,10 +123,9 @@ function toPublicOffer(input: {
     selectReadyServerImage(imageCodes) ?? imageCodes[0] ?? "linux";
   return {
     id: input.planId ?? input.item.id,
-    title: readyServerTitle({
+    title: storefrontServerTitle({
       regionCode: input.item.regionCode,
-      vcpu: input.item.vcpu,
-      ramMb: input.item.ramMb,
+      index: 1,
     }),
     description: readyServerDescription({
       regionCode: input.item.regionCode,
@@ -130,9 +133,9 @@ function toPublicOffer(input: {
     }),
     deliveryMode: "MANAGED",
     productKind: input.item.productKind,
-    parchinLevel: "PARCHIN_START",
+    parchinLevel: storefrontParchinForTier(input.tier),
     regionCode: input.item.regionCode,
-    locationLabel: input.locationLabel,
+    locationLabel: storefrontLocationLabel(input.item.regionCode),
     imageLabel: readyServerImageLabel(imageCode),
     operatingSystemLabels: [...new Set(imageCodes.map(readyServerImageLabel))],
     vcpu: input.item.vcpu,
@@ -157,11 +160,11 @@ function toPublicOffer(input: {
     taxBasisPoints: input.taxBasisPoints,
     catalogStatus: !input.catalogFresh ? "STALE" : input.item.status,
     purchaseState: input.purchaseState,
-    deliveryEstimateMinutes: 15,
+    deliveryEstimateMinutes: 0,
     parchinIncluded: true,
     checkedAt: input.item.lastSyncedAt.toISOString(),
     available: input.catalogFresh && input.item.available,
-    instantDelivery: false,
+    instantDelivery: true,
     purchasable: input.purchasable,
   };
 }
@@ -208,13 +211,8 @@ async function loadPricingContext() {
     ARVAN: arvanFreshness,
     PARSPACK: parsPackFreshness,
   } as const;
-  const regionDisplay = new Map<string, string>();
   const regionSale = new Map<string, boolean>();
   for (const region of [...arvanRegions, ...parsPackRegions]) {
-    regionDisplay.set(
-      `${region.provider}:${region.regionCode}`,
-      region.displayName,
-    );
     regionSale.set(
       `${region.provider}:${region.regionCode}`,
       region.saleEnabled,
@@ -230,7 +228,6 @@ async function loadPricingContext() {
     products,
     commerce,
     freshnessByProvider,
-    regionDisplay,
     regionSale,
     publishedByCatalogItemId,
   };
@@ -238,6 +235,7 @@ async function loadPricingContext() {
 
 function buildOfferForItem(
   item: ProviderCatalogItem,
+  tier: StorefrontChinishTier,
   context: Awaited<ReturnType<typeof loadPricingContext>>,
 ): PublicPlanOffer | null {
   const freshness = context.freshnessByProvider[item.provider];
@@ -246,9 +244,6 @@ function buildOfferForItem(
   if (!isCatalogItemDisplayable(item, catalogFresh)) return null;
 
   const published = context.publishedByCatalogItemId.get(item.id);
-  const locationLabel =
-    context.regionDisplay.get(`${item.provider}:${item.regionCode}`) ??
-    readyServerLocation(item.regionCode).label;
   const regionSaleEnabled =
     item.provider !== "ARVAN" ||
     context.regionSale.get(`${item.provider}:${item.regionCode}`) === true;
@@ -289,7 +284,7 @@ function buildOfferForItem(
     if (!access.visible) return null;
     return toPublicOffer({
       item,
-      locationLabel,
+      tier,
       catalogFresh,
       markupBasisPoints,
       taxBasisPoints,
@@ -308,7 +303,7 @@ function buildOfferForItem(
   if (!access.visible) return null;
   return toPublicOffer({
     item,
-    locationLabel,
+    tier,
     catalogFresh,
     markupBasisPoints,
     taxBasisPoints,
@@ -317,6 +312,23 @@ function buildOfferForItem(
         ? "SKU_UNPUBLISHED"
         : "UNAVAILABLE",
     purchasable: false,
+  });
+}
+
+function withStorefrontDisplayTitles(offers: PublicPlanOffer[]): PublicPlanOffer[] {
+  const cityCounters = new Map<string, number>();
+  return offers.map((offer) => {
+    const cityKey = storefrontLocationLabel(offer.regionCode);
+    const index = (cityCounters.get(cityKey) ?? 0) + 1;
+    cityCounters.set(cityKey, index);
+    return {
+      ...offer,
+      title: storefrontServerTitle({
+        regionCode: offer.regionCode,
+        index,
+      }),
+      locationLabel: storefrontLocationLabel(offer.regionCode),
+    };
   });
 }
 
@@ -341,7 +353,7 @@ export async function resolveStorefrontTierOffers(
   let availableCount = 0;
 
   for (const slot of [...primary, ...reserve]) {
-    const offer = buildOfferForItem(slot.catalogItem, context);
+    const offer = buildOfferForItem(slot.catalogItem, tier, context);
     if (!offer || !offer.available) continue;
     availableCount += 1;
     if (selected.length < STOREFRONT_DISPLAY_LIMIT) {
@@ -349,7 +361,10 @@ export async function resolveStorefrontTierOffers(
     }
   }
 
-  return { availableCount, offers: selected };
+  return {
+    availableCount,
+    offers: withStorefrontDisplayTitles(selected),
+  };
 }
 
 export async function listPublicStorefrontTiers(): Promise<{

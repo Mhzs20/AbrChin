@@ -17,7 +17,10 @@ import {
   applySuggestedStorefrontAssortment,
   getStorefrontAssortmentSettings,
   setStorefrontAutoSuggestEnabled,
+  toStorefrontSettingsView,
+  updateStorefrontCapacityRules,
 } from "@/lib/storefront/auto-suggest";
+import { parseStorefrontCapacityRules } from "@/lib/storefront/capacity-rules";
 import { isStorefrontTier } from "@/lib/storefront/tiers";
 
 export const dynamic = "force-dynamic";
@@ -33,10 +36,7 @@ export async function GET() {
     return jsonOk({
       tiers,
       candidates,
-      settings: {
-        autoSuggestEnabled: settings.autoSuggestEnabled,
-        lastAutoAppliedAt: settings.lastAutoAppliedAt?.toISOString() ?? null,
-      },
+      settings: toStorefrontSettingsView(settings),
     });
   } catch (error) {
     const adminError = adminApiError(error);
@@ -58,8 +58,43 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       action?: unknown;
       enabled?: unknown;
+      capacityRules?: unknown;
     };
     const meta = await readRequestMeta(request);
+
+    if (body.action === "set_capacity_rules") {
+      if (
+        !body.capacityRules ||
+        typeof body.capacityRules !== "object" ||
+        Array.isArray(body.capacityRules)
+      ) {
+        return jsonError("قواعد ظرفیت معتبر نیست.", 400);
+      }
+      const rules = parseStorefrontCapacityRules(
+        body.capacityRules as Record<string, unknown>,
+      );
+      await updateStorefrontCapacityRules({
+        rules,
+        actorUserId: admin.id,
+      });
+      await writeAuditLog({
+        actorUserId: admin.id,
+        action: AuditActions.STOREFRONT_ASSORTMENT_UPDATE,
+        entityType: "storefront_assortment",
+        entityId: "capacity_rules",
+        afterData: { action: "set_capacity_rules", rules },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+      const [tiers, settings] = await Promise.all([
+        getStorefrontAssortmentAdminView(),
+        getStorefrontAssortmentSettings(),
+      ]);
+      return jsonOk({
+        tiers,
+        settings: toStorefrontSettingsView(settings),
+      });
+    }
 
     if (body.action === "apply_suggestions") {
       const enableAuto = body.enabled === true;
@@ -86,10 +121,7 @@ export async function POST(request: Request) {
       ]);
       return jsonOk({
         tiers,
-        settings: {
-          autoSuggestEnabled: settings.autoSuggestEnabled,
-          lastAutoAppliedAt: settings.lastAutoAppliedAt?.toISOString() ?? null,
-        },
+        settings: toStorefrontSettingsView(settings),
       });
     }
 
@@ -126,10 +158,7 @@ export async function POST(request: Request) {
       ]);
       return jsonOk({
         tiers,
-        settings: {
-          autoSuggestEnabled: settings.autoSuggestEnabled,
-          lastAutoAppliedAt: settings.lastAutoAppliedAt?.toISOString() ?? null,
-        },
+        settings: toStorefrontSettingsView(settings),
       });
     }
 
@@ -137,6 +166,17 @@ export async function POST(request: Request) {
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);
+    if (error instanceof Error) {
+      if (error.message === "storefront_invalid_capacity_rule") {
+        return jsonError("مقادیر ظرفیت باید عدد صحیح نامنفی باشند.", 400);
+      }
+      if (error.message === "storefront_capacity_order_invalid") {
+        return jsonError(
+          "حداقل ظرفیت کهکشان نباید از استوار کمتر باشد.",
+          400,
+        );
+      }
+    }
     console.error(
       "[admin/storefront-assortment/post]",
       error instanceof Error ? error.message : "unknown",
@@ -220,10 +260,7 @@ export async function PUT(request: Request) {
     ]);
     return jsonOk({
       tiers,
-      settings: {
-        autoSuggestEnabled: settings.autoSuggestEnabled,
-        lastAutoAppliedAt: settings.lastAutoAppliedAt?.toISOString() ?? null,
-      },
+      settings: toStorefrontSettingsView(settings),
     });
   } catch (error) {
     const adminError = adminApiError(error);

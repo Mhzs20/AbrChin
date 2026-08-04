@@ -751,18 +751,81 @@ test("cloud-servers uses curated چینش assortment with purchase still closed"
   );
   assert.match(adminPanel, /روشن کردن پیشنهاد خودکار/);
   assert.match(adminPanel, /خاموش کردن/);
+  assert.match(adminPanel, /قواعد ظرفیت چینش/);
+  assert.match(adminPanel, /ostovarMinRamGb/);
+  assert.match(autoSuggest, /classifyStorefrontCapacityTier|updateStorefrontCapacityRules/);
   assert.match(cloudPage, /listPublicStorefrontTiers/);
   assert.match(cloudPage, /چینش نو/);
   assert.match(cloudPage, /کیف پول/);
   assert.match(catalogUi, /فروش این پلن‌ها به‌زودی فعال می‌شود/);
   assert.match(catalogUi, /READY_INSTANT_SERVER/);
   assert.match(catalogUi, /ready-servers/);
+  assert.match(catalogUi, /لوکیشن ایران/);
+  assert.match(catalogUi, /چینش فنی/);
+  assert.doesNotMatch(catalogUi, /قیمت پایه تأمین‌کننده/);
   assert.match(scheduler, /checkStorefrontLowStockAlerts/);
   assert.match(scheduler, /maybeAutoApplyStorefrontAssortment/);
   assert.match(scheduler, /processOperationalAlertOutbox/);
   assert.match(migration, /StorefrontAssortmentSlot/);
   assert.match(migration, /STOREFRONT_ASSORTMENT_LOW/);
   assert.match(autoMigration, /StorefrontAssortmentSettings/);
+});
+
+test("storefront presentation and capacity rules stay customer-safe", async () => {
+  const [presentation, capacity, capacityMigration] = await Promise.all([
+    readFile("lib/storefront/presentation.ts", "utf8"),
+    readFile("lib/storefront/capacity-rules.ts", "utf8"),
+    readFile(
+      "prisma/migrations/20260804160000_storefront_capacity_rules/migration.sql",
+      "utf8",
+    ),
+  ]);
+  assert.match(presentation, /storefrontServerTitle/);
+  assert.match(presentation, /storefrontLocationLabel/);
+  assert.match(presentation, /roundUpDisplayTomanFromRial/);
+  assert.match(presentation, /STOREFRONT_TOMAN_ROUND_STEP = 500n/);
+  assert.match(presentation, /storefrontParchinForTier/);
+  assert.match(presentation, /PARCHIN_ACTIVE/);
+  assert.match(presentation, /PARCHIN_STABLE/);
+  assert.match(capacity, /ostovarMinRamGb: 12/);
+  assert.match(capacity, /classifyStorefrontCapacityTier/);
+  assert.match(capacityMigration, /ostovarMinRamGb/);
+  assert.match(capacityMigration, /kahkeshanMinDiskGb/);
+
+  const {
+    classifyStorefrontCapacityTier,
+    DEFAULT_STOREFRONT_CAPACITY_RULES,
+  } = await import("../lib/storefront/capacity-rules.ts");
+  const {
+    roundUpDisplayTomanFromRial,
+    storefrontCityName,
+    storefrontLocationLabel,
+    storefrontParchinForTier,
+    storefrontServerTitle,
+  } = await import("../lib/storefront/presentation.ts");
+
+  assert.equal(roundUpDisplayTomanFromRial(14_530n), 1500n); // 1453 تومان
+  assert.equal(roundUpDisplayTomanFromRial(13_200n), 1500n); // 1320 تومان
+  assert.equal(storefrontCityName("tehran3"), "تهران");
+  assert.equal(storefrontLocationLabel("tehran3"), "تهران ایران");
+  assert.equal(storefrontServerTitle({ regionCode: "tehran3", index: 2 }), "ابر ۲ تهران");
+  assert.equal(storefrontParchinForTier("NO"), "PARCHIN_START");
+  assert.equal(storefrontParchinForTier("OSTOVAR"), "PARCHIN_ACTIVE");
+  assert.equal(storefrontParchinForTier("KAHKESHAN"), "PARCHIN_STABLE");
+  assert.equal(
+    classifyStorefrontCapacityTier(
+      { vcpu: 6, ramGb: 12, diskGb: 100 },
+      DEFAULT_STOREFRONT_CAPACITY_RULES,
+    ),
+    "OSTOVAR",
+  );
+  assert.equal(
+    classifyStorefrontCapacityTier(
+      { vcpu: 2, ramGb: 4, diskGb: 40 },
+      DEFAULT_STOREFRONT_CAPACITY_RULES,
+    ),
+    "NO",
+  );
 });
 
 test("new pricing configuration defaults fail closed outside catalog sync", async () => {
