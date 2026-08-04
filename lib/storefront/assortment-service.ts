@@ -528,27 +528,30 @@ export async function getStorefrontAssortmentAdminView(): Promise<
 }
 
 export async function listStorefrontCatalogCandidates() {
-  const items = await prisma.providerCatalogItem.findMany({
-    where: {
-      provider: { in: ["ARVAN", "PARSPACK"] },
-      // ParsPack syncs as READY_INSTANT_SERVER; Arvan cloud as CLOUD_SERVER.
-      productKind: { in: ["CLOUD_SERVER", "READY_INSTANT_SERVER"] },
-      source: "API_CATALOG",
-      active: true,
-      OR: [
-        { providerHourlyPriceIrr: { gt: 0n } },
-        { providerMonthlyPriceIrr: { gt: 0n } },
-      ],
-    },
-    orderBy: [
-      { provider: "asc" },
-      { regionCode: "asc" },
-      { vcpu: "asc" },
-      { ramMb: "asc" },
+  const candidateWhere = {
+    productKind: { in: ["CLOUD_SERVER", "READY_INSTANT_SERVER"] as const },
+    source: "API_CATALOG" as const,
+    active: true,
+    OR: [
+      { providerHourlyPriceIrr: { gt: 0n } },
+      { providerMonthlyPriceIrr: { gt: 0n } },
     ],
-    take: 800,
-  });
-  return items.map((item) => ({
+  };
+  // Load each provider separately so a large Arvan catalog cannot starve
+  // ParsPack (or the reverse) under a shared take limit.
+  const [arvanItems, parsPackItems] = await Promise.all([
+    prisma.providerCatalogItem.findMany({
+      where: { ...candidateWhere, provider: "ARVAN" },
+      orderBy: [{ regionCode: "asc" }, { vcpu: "asc" }, { ramMb: "asc" }],
+      take: 800,
+    }),
+    prisma.providerCatalogItem.findMany({
+      where: { ...candidateWhere, provider: "PARSPACK" },
+      orderBy: [{ regionCode: "asc" }, { vcpu: "asc" }, { ramMb: "asc" }],
+      take: 800,
+    }),
+  ]);
+  return [...arvanItems, ...parsPackItems].map((item) => ({
     id: item.id,
     provider: item.provider,
     regionCode: item.regionCode,

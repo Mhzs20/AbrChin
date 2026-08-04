@@ -741,6 +741,8 @@ test("cloud-servers uses curated چینش assortment with purchase still closed"
     /productKind:\s*\{\s*in:\s*\[\s*"CLOUD_SERVER"\s*,\s*"READY_INSTANT_SERVER"\s*\]\s*\}/,
   );
   assert.match(assortment, /PARSPACK/);
+  assert.match(assortment, /provider: "ARVAN"/);
+  assert.match(assortment, /provider: "PARSPACK"/);
   assert.match(autoSuggest, /buildSuggestedStorefrontAssortment/);
   assert.match(autoSuggest, /maybeAutoApplyStorefrontAssortment/);
   assert.match(
