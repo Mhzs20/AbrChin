@@ -172,17 +172,27 @@ export function CommercePricingPanel({ initial }: { initial: PricingState }) {
 
       <SectionCard title="۳. پرچین (الزامی روی همه فروش‌ها)">
         <p className="pricing-rules-lead">
-          قیمت را صفر کن اگر می‌خواهی در صورتحساب رایگان باشد؛ غیرفعال‌کردن سطح
-          یعنی از مسیر فروش کنار می‌رود.
+          عنوان و قیمت همین‌جا روی سایت، چینش و قطب‌نما اعمال می‌شود. قیمت را صفر
+          کن اگر می‌خواهی در صورتحساب رایگان باشد؛ غیرفعال‌کردن سطح یعنی از مسیر
+          فروش کنار می‌رود. بعد از ویرایش حتماً «ذخیره همه قواعد قیمت» را بزن.
         </p>
         <div className="pricing-rules-grid pricing-rules-grid--cards">
           {state.parchin.map((config, index) => (
             <article className="pricing-product-card" key={config.level}>
               <header>
-                <strong>{config.level.replace("PARCHIN_", "پرچین ")}</strong>
+                <strong>
+                  {config.level === "PARCHIN_START"
+                    ? "سطح ۱"
+                    : config.level === "PARCHIN_ACTIVE"
+                      ? "سطح ۲"
+                      : "سطح ۳"}
+                </strong>
+                <span className="pricing-field-hint" dir="ltr">
+                  {config.level}
+                </span>
               </header>
               <label className="pricing-field">
-                <span>عنوان</span>
+                <span>عنوان نمایش در سایت</span>
                 <input
                   onChange={(event) =>
                     setState((current) => ({
@@ -196,6 +206,9 @@ export function CommercePricingPanel({ initial }: { initial: PricingState }) {
                   }
                   value={config.title}
                 />
+                <small className="pricing-field-hint">
+                  مشتری همین عنوان را می‌بیند (مثلاً پرچین نو).
+                </small>
               </label>
               <label className="pricing-field">
                 <span>دامنه خدمات</span>
@@ -331,16 +344,22 @@ export function CommercePricingPanel({ initial }: { initial: PricingState }) {
         </div>
       </SectionCard>
 
-      <div className="pricing-rules-actions">
+      <div className="pricing-rules-actions pricing-rules-actions--sticky">
         <button
           className="product-btn product-btn--primary"
           disabled={saving}
-          onClick={save}
+          onClick={() => void save()}
           type="button"
         >
           {saving ? "در حال ذخیره…" : "ذخیره همه قواعد قیمت"}
         </button>
-        {message ? <p aria-live="polite">{message}</p> : null}
+        {message ? (
+          <p aria-live="polite" className={message.includes("ذخیره شد") ? "pricing-save-ok" : "pricing-save-err"}>
+            {message}
+          </p>
+        ) : (
+          <p className="pricing-field-hint">بدون ذخیره، تغییرها روی سایت اعمال نمی‌شود.</p>
+        )}
       </div>
     </div>
   );

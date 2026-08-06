@@ -12,7 +12,7 @@ import { useMemo, useState } from "react";
 
 import { ReadyServerQuoteButton } from "@/components/ready-server-quote-button";
 import type { PublicPlanOffer } from "@/lib/orders/plans";
-import { parchinLevelLabel } from "@/lib/parchin/catalog";
+import { resolveParchinLevelLabel } from "@/lib/parchin/labels";
 import type { StorefrontPublicTier } from "@/lib/storefront/assortment-service";
 import {
   formatStorefrontToman,
@@ -176,7 +176,8 @@ export function ChinishCloudCatalog({
                 </span>
                 <span className="quick-plan-mode">
                   <ShieldCheck size={13} aria-hidden="true" />
-                  {parchinLevelLabel(offer.parchinLevel)}
+                  {offer.parchinTitle ??
+                    resolveParchinLevelLabel(offer.parchinLevel)}
                 </span>
               </header>
 

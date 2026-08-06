@@ -4074,6 +4074,38 @@ a:focus-visible {
   margin-bottom: 1rem;
 }
 
+.pricing-rules-actions--sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  padding: 12px 14px;
+  margin-inline: -4px;
+  border: 1px solid var(--product-border, #d7deea);
+  border-radius: 12px;
+  background: color-mix(in srgb, #fff 92%, #e8eef8);
+  backdrop-filter: blur(8px);
+}
+
+.pricing-field-hint {
+  display: block;
+  margin: 0;
+  color: var(--product-muted, #5b6b82);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.pricing-save-ok {
+  margin: 0;
+  color: #0f7a45;
+  font-weight: 600;
+}
+
+.pricing-save-err {
+  margin: 0;
+  color: #a64036;
+  font-weight: 600;
+}
+
 .ready-server-quote-action {
   display: grid;
   gap: 7px;

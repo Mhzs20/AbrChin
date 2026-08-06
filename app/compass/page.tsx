@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { ConversationBuilder } from "@/components/conversation-builder";
+import { listParchinLevelLabels } from "@/lib/parchin/labels";
 import type { ProjectKind } from "@/lib/recommendation/types";
 import { getCurrentUser } from "@/lib/session";
 
@@ -39,7 +40,10 @@ export default async function CompassPage({
   const rawManagement = firstValue(params.management);
   const initialManagement = rawManagement === "managed" ? "managed" : undefined;
   const resume = firstValue(params.resume) === "1";
-  const user = await getCurrentUser();
+  const [user, parchinLabels] = await Promise.all([
+    getCurrentUser(),
+    listParchinLevelLabels(),
+  ]);
 
   return (
     <ConversationBuilder
@@ -47,6 +51,7 @@ export default async function CompassPage({
       initialManagement={initialManagement}
       resume={resume}
       signedIn={Boolean(user)}
+      parchinLabels={parchinLabels}
     />
   );
 }

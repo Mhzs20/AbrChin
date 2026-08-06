@@ -43,6 +43,12 @@ import type {
 } from "@/lib/recommendation/types";
 import type { ParchinLevel } from "@prisma/client";
 
+import type { ParchinLevelLabels } from "@/lib/parchin/labels";
+import {
+  defaultParchinLevelLabels,
+  resolveParchinLevelLabel,
+} from "@/lib/parchin/labels";
+
 const storageKey = "abrchin:conversation:v1";
 
 const confidenceLabels = {
@@ -112,12 +118,15 @@ export function ConversationBuilder({
   initialManagement,
   resume = false,
   signedIn,
+  parchinLabels: parchinLabelsProp,
 }: {
   initialProject?: ProjectKind;
   initialManagement?: "managed";
   resume?: boolean;
   signedIn: boolean;
+  parchinLabels?: ParchinLevelLabels;
 }) {
+  const parchinLabels = parchinLabelsProp ?? defaultParchinLevelLabels();
   const reduceMotion = useReducedMotion();
   const [hydrated, setHydrated] = useState(!resume);
   const [answers, setAnswers] = useState<RecommendationAnswers>(
@@ -1187,11 +1196,10 @@ export function ConversationBuilder({
                 <div className="result-direction" aria-label="انتخاب سطح پرچین">
                   <span>
                     حداقل پیشنهادی:{" "}
-                    {minimumParchinLevel === "PARCHIN_START"
-                      ? "پرچین شروع"
-                      : minimumParchinLevel === "PARCHIN_ACTIVE"
-                        ? "پرچین فعال"
-                        : "پرچین پایدار"}
+                    {resolveParchinLevelLabel(
+                      minimumParchinLevel,
+                      parchinLabels,
+                    )}
                   </span>
                   {parchinLevels
                     .filter(
@@ -1220,11 +1228,7 @@ export function ConversationBuilder({
                           setDeliveryRetry((current) => current + 1);
                         }}
                       >
-                        {level === "PARCHIN_START"
-                          ? "پرچین شروع"
-                          : level === "PARCHIN_ACTIVE"
-                            ? "پرچین فعال"
-                            : "پرچین پایدار"}
+                        {resolveParchinLevelLabel(level, parchinLabels)}
                       </button>
                     ))}
                 </div>
@@ -1545,7 +1549,12 @@ export function ConversationBuilder({
                           <p>{quotesNotice}</p>
                         </div>
                       ) : null}
-                      <QuickCloudPlans quotes={quotes} signedIn={signedIn} compact />
+                      <QuickCloudPlans
+                        quotes={quotes}
+                        signedIn={signedIn}
+                        compact
+                        parchinLabels={parchinLabels}
+                      />
                       {servicePackages.length > 0 ? (
                         <section
                           aria-labelledby="compass-services-title"

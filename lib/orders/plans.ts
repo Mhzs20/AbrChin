@@ -17,6 +17,7 @@ import {
 import { storefrontProviderCode } from "@/lib/storefront/provider-codes";
 import { prisma } from "@/lib/db";
 import { getEnv } from "@/lib/env";
+import { listParchinLevelLabels } from "@/lib/parchin/labels";
 import {
   getCatalogFreshness,
 } from "@/lib/infrastructure/multi-provider-catalog-service";
@@ -98,6 +99,8 @@ export type PublicPlanOffer = {
   deliveryMode: DeliveryMode;
   productKind: InfrastructureProductKind;
   parchinLevel: ParchinLevel;
+  /** Customer-facing title from Admin pricing (falls back to catalog label). */
+  parchinTitle?: string;
   /** Opaque source code only — never supplier brand names. */
   providerCode: "AV" | "PP";
   regionCode: string;
@@ -213,7 +216,10 @@ export function toPlanSnapshot(
   };
 }
 
-export function toPublicPlanOffer(plan: PricedInfrastructurePlan): PublicPlanOffer {
+export function toPublicPlanOffer(
+  plan: PricedInfrastructurePlan,
+  options?: { parchinTitle?: string },
+): PublicPlanOffer {
   const hourlyBasePriceRial = catalogItemBaseHourlyPriceRial(plan.catalogItem);
   const hourlyPriceRial =
     hourlyBasePriceRial == null
@@ -229,6 +235,7 @@ export function toPublicPlanOffer(plan: PricedInfrastructurePlan): PublicPlanOff
     deliveryMode: plan.deliveryMode,
     productKind: plan.productKind,
     parchinLevel: plan.pricing.parchinLevel,
+    parchinTitle: options?.parchinTitle,
     providerCode: storefrontProviderCode(plan.provider),
     regionCode: plan.regionCode,
     locationLabel: readyServerLocation(plan.regionCode).label,
@@ -537,16 +544,18 @@ export async function listPublicPlanOffers() {
 
 export async function listLiveReadyServerOffers() {
   try {
-    const [plans, parsPackResult, arvanResult, arvanRegions] = await Promise.all([
-      listReadyServerPlans(),
-      getCatalogFreshness("PARSPACK").catch(() => null),
-      getCatalogFreshness("ARVAN").catch(() => null),
-      listProviderRegionConfigs({
-        provider: "ARVAN",
-        apiVersion: "v1",
-        purpose: "ALL",
-      }).catch(() => []),
-    ]);
+    const [plans, parsPackResult, arvanResult, arvanRegions, parchinLabels] =
+      await Promise.all([
+        listReadyServerPlans(),
+        getCatalogFreshness("PARSPACK").catch(() => null),
+        getCatalogFreshness("ARVAN").catch(() => null),
+        listProviderRegionConfigs({
+          provider: "ARVAN",
+          apiVersion: "v1",
+          purpose: "ALL",
+        }).catch(() => []),
+        listParchinLevelLabels(),
+      ]);
     const arvanRegionSale = new Map(
       arvanRegions.map((region) => [
         region.regionCode,
@@ -586,8 +595,11 @@ export async function listLiveReadyServerOffers() {
           ? inventoryCount > 0
           : true;
       const purchasable = access.purchasable && capacityAvailable;
+      const parchinLevel = plan.pricing.parchinLevel;
       return [{
-        ...toPublicPlanOffer(plan),
+        ...toPublicPlanOffer(plan, {
+          parchinTitle: parchinLabels[parchinLevel],
+        }),
         available: catalogFresh && capacityAvailable,
         catalogStatus:
           apiCatalog && !catalogFresh

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { LegacyProvidersHashRedirect } from "@/components/admin/legacy-providers-hash-redirect";
 import { ProviderPanel } from "@/components/admin/provider-panel";
 import { PageHeader } from "@/components/product";
 import {
@@ -59,9 +60,10 @@ export default async function AdminProvidersPage() {
 
   return (
     <>
+      <LegacyProvidersHashRedirect />
       <PageHeader
         title="منابع AV و PP"
-        description="اتصال، Sync و Markup تأمین‌کننده‌ها. مشتری فقط کدهای AV / PP را می‌بیند، نه نام برند."
+        description="فقط اتصال، Sync روزانه و Markup منبع. قیمت/پرچین/کوپن و مناطق فروش صفحه‌های جدا دارند."
         actions={
           <>
             <Link
@@ -74,7 +76,7 @@ export default async function AdminProvidersPage() {
               href="/admin/infrastructure/pricing"
               className="product-btn product-btn--quiet"
             >
-              قواعد قیمت
+              قواعد قیمت و پرچین
             </Link>
             <Link
               href="/admin/infrastructure/plans"

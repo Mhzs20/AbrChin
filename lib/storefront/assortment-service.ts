@@ -115,6 +115,7 @@ function toPublicOffer(input: {
   purchaseState: PublicPlanOffer["purchaseState"];
   purchasable: boolean;
   planId?: string;
+  parchinTitle?: string;
 }): PublicPlanOffer {
   const hourlyBasePriceRial = catalogItemBaseHourlyPriceRial(input.item);
   const monthlyBasePriceRial = catalogItemBasePriceRial(input.item) ?? 0n;
@@ -146,6 +147,7 @@ function toPublicOffer(input: {
     deliveryMode: "MANAGED",
     productKind: input.item.productKind,
     parchinLevel: storefrontParchinForTier(input.tier),
+    parchinTitle: input.parchinTitle,
     providerCode: storefrontProviderCode(input.item.provider),
     regionCode: input.item.regionCode,
     locationLabel: storefrontLocationLabel(input.item.regionCode),
@@ -250,11 +252,15 @@ async function loadPricingContext() {
   const parchinByLevel = new Map(
     parchinRows.map((row) => [row.level, row.priceRial]),
   );
+  const parchinTitleByLevel = new Map(
+    parchinRows.map((row) => [row.level, row.title.trim()]),
+  );
   return {
     providers,
     products,
     commerce,
     parchinByLevel,
+    parchinTitleByLevel,
     freshnessByProvider,
     regionSale,
     publishedByCatalogItemId,
@@ -302,6 +308,9 @@ function buildOfferForItem(
   const markupBasisPoints = priced?.markupBasisPoints ?? 0;
   const taxBasisPoints = priced?.taxBasisPoints ?? context.commerce?.taxBps ?? 1000;
 
+  const parchinTitle =
+    context.parchinTitleByLevel.get(parchinLevel) || undefined;
+
   if (published) {
     const access = resolveCatalogOfferAccess({
       catalogFresh,
@@ -323,6 +332,7 @@ function buildOfferForItem(
       purchaseState: access.purchaseState,
       purchasable: access.purchasable,
       planId: published.id,
+      parchinTitle,
     });
   }
 
@@ -344,6 +354,7 @@ function buildOfferForItem(
         ? "SKU_UNPUBLISHED"
         : "UNAVAILABLE",
     purchasable: false,
+    parchinTitle,
   });
 }
 

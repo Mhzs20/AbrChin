@@ -10,10 +10,9 @@ import Link from "next/link";
 
 import { QuoteCountdown } from "@/components/quote-countdown";
 import type { PublicPlanOffer } from "@/lib/orders/plans";
-import {
-  parchinLevelLabel,
-  parchinPlanSummary,
-} from "@/lib/parchin/catalog";
+import { parchinPlanSummary } from "@/lib/parchin/catalog";
+import type { ParchinLevelLabels } from "@/lib/parchin/labels";
+import { resolveParchinLevelLabel } from "@/lib/parchin/labels";
 import type {
   PublicRecommendationQuote,
   RecommendationOfferRole,
@@ -40,11 +39,13 @@ export function QuickCloudPlans({
   quotes = [],
   signedIn,
   compact = false,
+  parchinLabels,
 }: {
   plans?: PublicPlanOffer[];
   quotes?: PublicRecommendationQuote[];
   signedIn: boolean;
   compact?: boolean;
+  parchinLabels?: ParchinLevelLabels;
 }) {
   const visiblePlans = (
     quotes.length > 0
@@ -125,7 +126,12 @@ export function QuickCloudPlans({
 
             <ul>
               <li><Clock3 size={14} aria-hidden="true" /> تحویل حدود {plan.deliveryEstimateMinutes.toLocaleString("fa-IR")} دقیقه</li>
-              <li><ShieldCheck size={14} aria-hidden="true" /> {parchinLevelLabel(plan.parchinLevel)}</li>
+              <li>
+                <ShieldCheck size={14} aria-hidden="true" />{" "}
+                {"parchinTitle" in plan && plan.parchinTitle
+                  ? plan.parchinTitle
+                  : resolveParchinLevelLabel(plan.parchinLevel, parchinLabels)}
+              </li>
               <li><Check size={14} aria-hidden="true" /> ظرفیت فعلی موجود و قیمت دوباره‌سنجی‌شده</li>
               <li><Check size={14} aria-hidden="true" /> بدون Auto-renew یا Auto-charge</li>
             </ul>
