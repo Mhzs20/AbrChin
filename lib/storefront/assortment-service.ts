@@ -45,7 +45,6 @@ import {
   storefrontServerTitle,
   type StorefrontLocationZone,
 } from "@/lib/storefront/presentation";
-import { storefrontProviderCode } from "@/lib/storefront/provider-codes";
 import {
   STOREFRONT_DISPLAY_LIMIT,
   STOREFRONT_PRIMARY_LIMIT,
@@ -165,7 +164,6 @@ function toPublicOffer(input: {
     productKind: input.item.productKind,
     parchinLevel: storefrontParchinForTier(input.tier),
     parchinTitle: input.parchinTitle,
-    providerCode: storefrontProviderCode(input.item.provider),
     regionCode: input.item.regionCode,
     locationLabel: storefrontLocationLabel(input.item.regionCode),
     imageLabel: readyServerImageLabel(imageCode),

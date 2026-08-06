@@ -112,13 +112,6 @@ export function ReadyCloudCatalog({
                 <MapPin size={14} aria-hidden="true" />
                 {offer.locationLabel}
               </span>
-              <span
-                className="provider-code-badge"
-                data-code={offer.providerCode}
-                title="کد منبع"
-              >
-                {offer.providerCode}
-              </span>
               <span className="quick-plan-mode">
                 <ShieldCheck size={13} aria-hidden="true" />
                 {offer.parchinTitle ??

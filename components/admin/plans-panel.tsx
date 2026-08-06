@@ -161,9 +161,9 @@ function sourceLabel(source: string | null) {
   return "کاتالوگ API";
 }
 
-function providerCode(provider: string) {
-  if (provider === "ARVAN") return "AV";
-  if (provider === "PARSPACK") return "PP";
+function providerLabel(provider: string) {
+  if (provider === "ARVAN") return "Arvan";
+  if (provider === "PARSPACK") return "ParsPack";
   return provider;
 }
 
@@ -585,9 +585,9 @@ export function AdminPlansPanel({
   return (
     <>
       <p style={{ marginTop: 0, color: "var(--product-muted)" }}>
-        اینجا SKU فروش ساخته می‌شود: از کاتالوگ AV/PP انتخاب → Markup → Draft →
-        Published. تا Published نشود مشتری نمی‌بیند. چینش فروشگاهی فقط ترتیب نمایش
-        همان SKUهای منتشرشده را تنظیم می‌کند.
+        اینجا SKU فروش ساخته می‌شود: از کاتالوگ Arvan/ParsPack انتخاب → Markup →
+        Draft → Published. تا Published نشود مشتری نمی‌بیند. چینش فروشگاهی فقط
+        ترتیب نمایش همان SKUهای منتشرشده را تنظیم می‌کند.
       </p>
       <div style={{ marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" className="product-btn product-btn--primary" onClick={openCreate}>
@@ -658,8 +658,8 @@ export function AdminPlansPanel({
             }}
           >
             <option value="ALL">همه</option>
-            <option value="ARVAN">AV</option>
-            <option value="PARSPACK">PP</option>
+            <option value="ARVAN">Arvan</option>
+            <option value="PARSPACK">ParsPack</option>
           </select>
         </label>
       </div>
@@ -708,7 +708,7 @@ export function AdminPlansPanel({
                       </span>
                     </td>
                     <td>
-                      {providerCode(plan.provider)} · {sourceLabel(plan.catalogSource)}
+                      {providerLabel(plan.provider)} · {sourceLabel(plan.catalogSource)}
                     </td>
                     <td>
                       <span className="product-tech">{plan.regionCode}</span>
@@ -1148,7 +1148,7 @@ export function AdminPlansPanel({
           </>
         ) : (
           <>
-        <FormField id="manual-external-plan" label="Plan ID واقعی آروان"><input id="manual-external-plan" value={manualForm.externalPlanId} onChange={(event) => setManualForm((current) => ({ ...current, externalPlanId: event.target.value }))} disabled={Boolean(manualEditing)} required /></FormField>
+        <FormField id="manual-external-plan" label="Plan ID واقعی Arvan"><input id="manual-external-plan" value={manualForm.externalPlanId} onChange={(event) => setManualForm((current) => ({ ...current, externalPlanId: event.target.value }))} disabled={Boolean(manualEditing)} required /></FormField>
         <FormField id="manual-region" label="Region">
           <select id="manual-region" value={manualForm.regionCode} disabled={Boolean(manualEditing)} onChange={(event) => {
             const regionCode = event.target.value;

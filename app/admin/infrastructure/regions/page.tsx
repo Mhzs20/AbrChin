@@ -44,7 +44,7 @@ export default async function AdminRegionsPage() {
     <>
       <PageHeader
         title="مناطق Sync و فروش"
-        description="مناطق از سرویس‌دهنده AV به‌صورت خودکار پر می‌شوند و پیش‌فرض فعال‌اند مگر خودتان غیرفعال کنید. مشتری نام تأمین‌کننده را نمی‌بیند."
+        description="مناطق از Arvan به‌صورت خودکار پر می‌شوند و پیش‌فرض فعال‌اند مگر خودتان غیرفعال کنید. مشتری نام تأمین‌کننده را نمی‌بیند."
         actions={
           <Link
             href="/admin/infrastructure/providers"

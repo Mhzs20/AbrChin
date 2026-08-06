@@ -56,11 +56,11 @@ export function FundingConfirmButton({
   return (
     <>
       <button type="button" className="product-btn product-btn--primary" onClick={openDialog}>
-        شارژ پارس‌پک انجام شد
+        شارژ ParsPack انجام شد
       </button>
       <ConfirmDialog
         open={open}
-        title="تأیید شارژ پارس‌پک"
+        title="تأیید شارژ ParsPack"
         confirmLabel="تأیید نهایی"
         loading={loading}
         onCancel={() => setOpen(false)}

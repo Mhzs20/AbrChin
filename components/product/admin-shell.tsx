@@ -46,7 +46,7 @@ const primaryNav: NavItem[] = [
   },
   {
     href: "/admin/infrastructure/providers",
-    label: "منابع AV / PP",
+    label: "منابع Arvan / ParsPack",
     icon: Building2,
     shortLabel: "منابع",
   },

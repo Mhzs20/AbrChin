@@ -767,13 +767,15 @@ test("cloud-servers uses curated چینش assortment and publishes sale for show
   assert.match(catalogUi, /فروش این پلن‌ها به‌زودی فعال می‌شود/);
   assert.match(catalogUi, /تومان در ماه/);
   assert.match(catalogUi, /تومان در ساعت/);
-  assert.match(catalogUi, /providerCode/);
+  assert.doesNotMatch(catalogUi, /providerCode/);
+  assert.doesNotMatch(catalogUi, /provider-code-badge/);
   assert.match(catalogUi, /READY_INSTANT_SERVER/);
   assert.match(catalogUi, /ready-servers/);
   assert.match(catalogUi, /لوکیشن ایران/);
   assert.match(catalogUi, /چینش فنی/);
   assert.doesNotMatch(catalogUi, /قیمت پایه تأمین‌کننده/);
   assert.doesNotMatch(catalogUi, /آروان|پارس[\u200c ]?پک/);
+  assert.doesNotMatch(catalogUi, /\bAV\b|\bPP\b/);
   assert.match(scheduler, /checkStorefrontLowStockAlerts/);
   assert.match(scheduler, /maybeAutoApplyStorefrontAssortment/);
   assert.match(scheduler, /processOperationalAlertOutbox/);

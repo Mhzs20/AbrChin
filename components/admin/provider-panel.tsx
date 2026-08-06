@@ -44,7 +44,7 @@ function catalogStateLabel(item: {
 
 export function ProviderPanel({
   provider,
-  providerCode,
+  providerLabel,
   title,
   initial,
   catalogItems,
@@ -52,7 +52,7 @@ export function ProviderPanel({
   dailyStats,
 }: {
   provider: "ARVAN" | "PARSPACK";
-  providerCode: "AV" | "PP";
+  providerLabel: "Arvan" | "ParsPack";
   title: string;
   initial: {
     status: string;
@@ -208,14 +208,14 @@ export function ProviderPanel({
     <>
       <PageHeader
         title={title}
-        description={`کد ${providerCode} · API ${initial.apiVersion} · همگام‌سازی کاتالوگ منطقه‌ای`}
+        description={`${providerLabel} · API ${initial.apiVersion} · همگام‌سازی کاتالوگ منطقه‌ای`}
       />
       <div className="product-stat-grid">
         <StatCard
-          label="کد منبع"
+          label="تأمین‌کننده"
           value={
-            <span className="provider-code-badge" data-code={providerCode}>
-              {providerCode}
+            <span className="provider-code-badge" data-code={provider}>
+              {providerLabel}
             </span>
           }
         />
@@ -354,8 +354,8 @@ export function ProviderPanel({
               {providerItems.map((item) => (
                 <tr key={item.id}>
                   <td className="product-tech">
-                    <span className="provider-code-badge" data-code={providerCode}>
-                      {providerCode}
+                    <span className="provider-code-badge" data-code={provider}>
+                      {providerLabel}
                     </span>{" "}
                     {item.regionCode} / {item.sizeCode}
                     <br />

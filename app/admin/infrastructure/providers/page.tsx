@@ -90,8 +90,8 @@ export default async function AdminProvidersPage() {
 
       <ProviderPanel
         provider="ARVAN"
-        providerCode="AV"
-        title="AV — سرور ابری"
+        providerLabel="Arvan"
+        title="Arvan — سرور ابری"
         initial={{
           ...system.arvan,
           status: system.arvan.status,
@@ -105,8 +105,8 @@ export default async function AdminProvidersPage() {
       />
       <ProviderPanel
         provider="PARSPACK"
-        providerCode="PP"
-        title="PP — سرور آماده"
+        providerLabel="ParsPack"
+        title="ParsPack — سرور آماده"
         initial={{
           ...system.parspack,
           status: system.parspack.status,

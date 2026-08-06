@@ -40,8 +40,8 @@ const serviceLabels: Record<keyof PricingState["compassServicePrices"], string> 
   ARCHITECTURE_LIGHT: "همراهی معماری سبک",
 };
 
-function providerCode(provider: "ARVAN" | "PARSPACK") {
-  return provider === "PARSPACK" ? "PP" : "AV";
+function providerLabel(provider: "ARVAN" | "PARSPACK") {
+  return provider === "PARSPACK" ? "ParsPack" : "Arvan";
 }
 
 function productKindLabel(kind: PricingState["productMarkups"][number]["productKind"]) {
@@ -104,7 +104,7 @@ export function CommercePricingPanel({ initial }: { initial: PricingState }) {
         </div>
       </SectionCard>
 
-      <SectionCard title="۲. Markup نوع محصول (AV / PP)">
+      <SectionCard title="۲. Markup نوع محصول (Arvan / ParsPack)">
         <p className="pricing-rules-lead">
           علاوه بر Markup سراسری هر منبع، Markup جدا برای نوع محصول تنظیم می‌شود.
         </p>
@@ -115,11 +115,8 @@ export function CommercePricingPanel({ initial }: { initial: PricingState }) {
               key={`${config.provider}:${config.productKind}`}
             >
               <header>
-                <span
-                  className="provider-code-badge"
-                  data-code={providerCode(config.provider)}
-                >
-                  {providerCode(config.provider)}
+                <span className="provider-code-badge" data-code={config.provider}>
+                  {providerLabel(config.provider)}
                 </span>
                 <strong>{productKindLabel(config.productKind)}</strong>
               </header>

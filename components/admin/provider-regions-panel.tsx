@@ -140,11 +140,11 @@ export function ProviderRegionsPanel({
   }
 
   return (
-    <SectionCard title="Regionهای آروان — همگام با سرویس‌دهنده">
+    <SectionCard title="Regionهای Arvan — همگام با سرویس‌دهنده">
       <p>
-        مناطق از API خواندنی سرویس‌دهنده (AV) به‌صورت خودکار پر می‌شوند و به‌طور
-        پیش‌فرض Sync و فروش‌شان فعال است. فقط وقتی شما غیرفعال کنید خاموش
-        می‌مانند. Catalog Sync هم همین کشف را قبل از Sync انجام می‌دهد.
+        مناطق از API خواندنی Arvan به‌صورت خودکار پر می‌شوند و به‌طور پیش‌فرض
+        Sync و فروش‌شان فعال است. فقط وقتی شما غیرفعال کنید خاموش می‌مانند.
+        Catalog Sync هم همین کشف را قبل از Sync انجام می‌دهد.
       </p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
         <button

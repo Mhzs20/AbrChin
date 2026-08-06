@@ -14,7 +14,6 @@ import {
   readyServerTitle,
   selectReadyServerImage,
 } from "@/lib/cloud-servers/catalog";
-import { storefrontProviderCode } from "@/lib/storefront/provider-codes";
 import { prisma } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { listParchinLevelLabels } from "@/lib/parchin/labels";
@@ -101,8 +100,6 @@ export type PublicPlanOffer = {
   parchinLevel: ParchinLevel;
   /** Customer-facing title from Admin pricing (falls back to catalog label). */
   parchinTitle?: string;
-  /** Opaque source code only — never supplier brand names. */
-  providerCode: "AV" | "PP";
   regionCode: string;
   locationLabel: string;
   imageLabel: string;
@@ -238,7 +235,6 @@ export function toPublicPlanOffer(
     productKind: plan.productKind,
     parchinLevel: plan.pricing.parchinLevel,
     parchinTitle: options?.parchinTitle,
-    providerCode: storefrontProviderCode(plan.provider),
     regionCode: plan.regionCode,
     locationLabel: readyServerLocation(plan.regionCode).label,
     imageLabel: readyServerImageLabel(plan.imageCode),
@@ -685,7 +681,6 @@ function catalogItemPublicOffer(input: {
     deliveryMode: "MANAGED",
     productKind: "CLOUD_SERVER",
     parchinLevel: "PARCHIN_START",
-    providerCode: storefrontProviderCode(input.item.provider),
     regionCode: input.item.regionCode,
     locationLabel: input.locationLabel,
     imageLabel: readyServerImageLabel(imageCode),
