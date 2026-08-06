@@ -1,6 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  Calculator,
+  Compass,
+  Percent,
+  Shield,
+  Ticket,
+  TrendingUp,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { CouponsPanel } from "@/components/admin/coupons-panel";
 import { SectionCard, StatusBadge } from "@/components/product";
@@ -55,20 +63,16 @@ type CommerceState = {
     ARCHITECTURE_LIGHT: string;
   };
   productMarkups: Array<ProductMarkup & { markupPercent: string }>;
-  parchin: Array<
-    ParchinRow & {
-      priceToman: string;
-    }
-  >;
+  parchin: Array<ParchinRow & { priceToman: string }>;
 };
 
 const SECTIONS = [
-  { id: "calc", label: "شیوه محاسبه" },
-  { id: "markup", label: "سود و Markup" },
-  { id: "parchin", label: "پرچین" },
-  { id: "tax", label: "مالیات و چرخه" },
-  { id: "compass", label: "قطب‌نما" },
-  { id: "coupons", label: "کد تخفیف" },
+  { id: "calc", label: "شیوه محاسبه", icon: Calculator },
+  { id: "markup", label: "سود و Markup", icon: TrendingUp },
+  { id: "parchin", label: "پرچین", icon: Shield },
+  { id: "tax", label: "مالیات و چرخه", icon: Percent },
+  { id: "compass", label: "قطب‌نما", icon: Compass },
+  { id: "coupons", label: "کد تخفیف", icon: Ticket },
 ] as const;
 
 const TERM_DISCOUNT_BPS: Record<1 | 3 | 6 | 12, number> = {
@@ -135,6 +139,12 @@ function bpsToPercent(bps: number) {
     : `${whole}.${String(fraction).padStart(2, "0").replace(/0$/, "")}`;
 }
 
+function faDigits(value: string) {
+  const cleaned = value.replace(/[^\d]/g, "");
+  if (!cleaned) return "";
+  return Number(cleaned).toLocaleString("fa-IR");
+}
+
 function formatTomanFromRial(rial: bigint) {
   return `${(rial / 10n).toLocaleString("fa-IR")} تومان`;
 }
@@ -142,6 +152,15 @@ function formatTomanFromRial(rial: bigint) {
 function ceilBps(amount: bigint, bps: number) {
   if (amount <= 0n || bps <= 0) return 0n;
   return (amount * BigInt(bps) + 9_999n) / 10_000n;
+}
+
+function markupMultiplierLabel(percent: string): string | null {
+  const bps = percentToBps(percent);
+  if (bps == null) return null;
+  const multiplier = 1 + bps / 10_000;
+  return `فروش ≈ ${multiplier.toLocaleString("fa-IR", {
+    maximumFractionDigits: 2,
+  })}× خرید`;
 }
 
 function scrollToSection(id: string) {
@@ -201,6 +220,32 @@ export function FinanceCenterPanel({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [activeSection, setActiveSection] = useState<string>("calc");
+
+  const baseline = useRef("");
+  const serialized = JSON.stringify({ commerce, providers });
+  if (baseline.current === "") {
+    baseline.current = serialized;
+  }
+  const dirty = serialized !== baseline.current;
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActiveSection(entry.target.id.replace("finance-", ""));
+          }
+        }
+      },
+      { rootMargin: "-30% 0px -60% 0px" },
+    );
+    for (const section of SECTIONS) {
+      const el = document.getElementById(`finance-${section.id}`);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, []);
 
   const [simCostToman, setSimCostToman] = useState("300000");
   const [simProvider, setSimProvider] = useState<"ARVAN" | "PARSPACK">("ARVAN");
@@ -217,6 +262,7 @@ export function FinanceCenterPanel({
     const costToman = simCostToman.replace(/[^\d]/g, "");
     if (!costToman) return null;
     const providerMonthly = BigInt(costToman) * 10n;
+    if (providerMonthly <= 0n) return null;
     const providerCfg = providers.find((item) => item.provider === simProvider);
     const productCfg = commerce.productMarkups.find(
       (item) =>
@@ -228,12 +274,12 @@ export function FinanceCenterPanel({
     const parchinRow = commerce.parchin.find(
       (item) => item.level === simParchin,
     );
-    const parchinMonthly =
-      BigInt(tomanDigitsToRial(parchinRow?.priceToman ?? "0"));
+    const parchinMonthly = BigInt(
+      tomanDigitsToRial(parchinRow?.priceToman ?? "0"),
+    );
     const markupBps = providerBps + productBps;
     const monthlyMarkup = ceilBps(providerMonthly, markupBps);
-    const monthlyPretax =
-      providerMonthly + monthlyMarkup + parchinMonthly;
+    const monthlyPretax = providerMonthly + monthlyMarkup + parchinMonthly;
     const term = BigInt(simTerm);
     const termPretax = monthlyPretax * term;
     const couponBps = simCouponPercent.trim()
@@ -248,32 +294,32 @@ export function FinanceCenterPanel({
     const tax = ceilBps(taxable, taxBps);
     const final = taxable + tax;
     const buyShare =
-      final > 0n
-        ? Number((providerMonthly * term * 10_000n) / final) / 100
-        : 0;
+      final > 0n ? Number((providerMonthly * term * 10_000n) / final) / 100 : 0;
     const profitShare =
-      final > 0n
-        ? Number((monthlyMarkup * term * 10_000n) / final) / 100
-        : 0;
+      final > 0n ? Number((monthlyMarkup * term * 10_000n) / final) / 100 : 0;
+    const restShare = Math.max(0, 100 - buyShare - profitShare);
 
     return {
       lines: [
         {
           key: "buy",
           tone: "cost" as const,
-          label: "قیمت خرید Provider (ماهانه × دوره)",
+          label: "قیمت خرید Provider",
+          hint: `${formatTomanFromRial(providerMonthly)} ماهانه × ${simTerm.toLocaleString("fa-IR")} ماه`,
           amount: providerMonthly * term,
         },
         {
           key: "markup",
           tone: "sale" as const,
-          label: `سود Markup ابرچین (${bpsToPercent(markupBps)}٪ = Provider + محصول)`,
+          label: "سود Markup ابرچین",
+          hint: `${bpsToPercent(markupBps)}٪ روی قیمت خرید`,
           amount: monthlyMarkup * term,
         },
         {
           key: "parchin",
           tone: "sale" as const,
           label: `پرچین · ${parchinRow?.title || simParchin}`,
+          hint: `${formatTomanFromRial(parchinMonthly)} ماهانه`,
           amount: parchinMonthly * term,
         },
         {
@@ -281,22 +327,23 @@ export function FinanceCenterPanel({
           tone: "neutral" as const,
           label:
             discountSource === "coupon"
-              ? `تخفیف کد (${bpsToPercent(discountBps)}٪ — جایگزین ۵/۱۰/۲۰)`
-              : discountSource === "term"
-                ? `تخفیف دوره ${simTerm} ماهه (${bpsToPercent(discountBps)}٪)`
-                : "تخفیف دوره",
+              ? "تخفیف کد (جایگزین ۵/۱۰/۲۰)"
+              : `تخفیف دوره ${simTerm.toLocaleString("fa-IR")} ماهه`,
+          hint: `${bpsToPercent(discountBps)}٪`,
           amount: -discount,
         },
         {
           key: "tax",
           tone: "neutral" as const,
-          label: `مالیات (${commerce.taxPercent}٪)`,
+          label: "مالیات VAT",
+          hint: `${commerce.taxPercent}٪ پس از تخفیف`,
           amount: tax,
         },
       ],
       final,
       buyShare,
       profitShare,
+      restShare,
       providerEnabled: providerCfg?.enabled !== false,
       productEnabled: productCfg?.enabled !== false,
     };
@@ -312,6 +359,18 @@ export function FinanceCenterPanel({
     simProvider,
     simTerm,
   ]);
+
+  const overview = useMemo(() => {
+    const arvan = providers.find((item) => item.provider === "ARVAN");
+    const parspack = providers.find((item) => item.provider === "PARSPACK");
+    const parchinStart = commerce.parchin.find(
+      (item) => item.level === "PARCHIN_START",
+    );
+    const activeCoupons = initialCoupons.filter(
+      (coupon) => coupon.active,
+    ).length;
+    return { arvan, parspack, parchinStart, activeCoupons };
+  }, [commerce.parchin, initialCoupons, providers]);
 
   async function saveAll() {
     setSaving(true);
@@ -404,6 +463,7 @@ export function FinanceCenterPanel({
         }
       }
 
+      baseline.current = JSON.stringify({ commerce, providers });
       setMessage("مرکز مالی ذخیره شد و روی فروش‌های بعدی اعمال می‌شود.");
     } catch (saveError) {
       setError(
@@ -416,25 +476,74 @@ export function FinanceCenterPanel({
 
   return (
     <div className="finance-center">
+      <div className="finance-overview" role="list" aria-label="خلاصه مرکز مالی">
+        <div className="finance-overview-chip" role="listitem">
+          <span>Markup Arvan</span>
+          <strong className="money-tone--sale">
+            {overview.arvan ? `${overview.arvan.markupPercent}٪` : "—"}
+          </strong>
+          <small>
+            {overview.arvan?.enabled ? "فعال" : "خاموش"}
+          </small>
+        </div>
+        <div className="finance-overview-chip" role="listitem">
+          <span>Markup ParsPack</span>
+          <strong className="money-tone--sale">
+            {overview.parspack ? `${overview.parspack.markupPercent}٪` : "—"}
+          </strong>
+          <small>
+            {overview.parspack?.enabled ? "فعال" : "خاموش"}
+          </small>
+        </div>
+        <div className="finance-overview-chip" role="listitem">
+          <span>مالیات VAT</span>
+          <strong>{commerce.taxPercent}٪</strong>
+          <small>روی مبلغ پس از تخفیف</small>
+        </div>
+        <div className="finance-overview-chip" role="listitem">
+          <span>پرچین شروع</span>
+          <strong>
+            {overview.parchinStart
+              ? `${faDigits(overview.parchinStart.priceToman) || "۰"} تومان`
+              : "—"}
+          </strong>
+          <small>ماهانه · الزامی روی فروش</small>
+        </div>
+        <div className="finance-overview-chip" role="listitem">
+          <span>کدهای تخفیف فعال</span>
+          <strong>{overview.activeCoupons.toLocaleString("fa-IR")}</strong>
+          <small>از {initialCoupons.length.toLocaleString("fa-IR")} کد اخیر</small>
+        </div>
+      </div>
+
       <nav className="finance-nav" aria-label="بخش‌های مرکز مالی">
-        {SECTIONS.map((section) => (
-          <button
-            key={section.id}
-            type="button"
-            className="finance-nav-pill"
-            onClick={() => scrollToSection(section.id)}
-          >
-            {section.label}
-          </button>
-        ))}
+        {SECTIONS.map((section) => {
+          const Icon = section.icon;
+          return (
+            <button
+              key={section.id}
+              type="button"
+              className={
+                activeSection === section.id
+                  ? "finance-nav-pill finance-nav-pill--active"
+                  : "finance-nav-pill"
+              }
+              aria-current={activeSection === section.id ? "true" : undefined}
+              onClick={() => scrollToSection(section.id)}
+            >
+              <Icon size={15} aria-hidden="true" />
+              {section.label}
+            </button>
+          );
+        })}
       </nav>
 
       <section id="finance-calc" className="finance-section">
         <SectionCard title="شیوه محاسبه قیمت در فروش">
           <p className="pricing-rules-lead">
             هر فروش سرور از همین خط‌ها ساخته می‌شود. سبز = قیمت خرید، آبی = سود /
-            قیمت فروش ابرچین. پرداخت موفق خودش Provision نمی‌زند؛ فقط مبلغ Quote
-            همین فرمول را قفل می‌کند.
+            قیمت فروش ابرچین. پرداخت موفق خودش Provision نمی‌زند؛ مبلغ Quote همین
+            فرمول را قفل می‌کند.
           </p>
 
           <ol className="finance-pipeline">
@@ -449,7 +558,7 @@ export function FinanceCenterPanel({
               <span>۲</span>
               <div>
                 <strong>سود Markup</strong>
-                <p>Markup منبع + Markup نوع محصول (یا Override روی SKU)</p>
+                <p>Markup منبع + Markup نوع محصول</p>
               </div>
             </li>
             <li className="finance-pipeline-step finance-pipeline-step--sale">
@@ -470,7 +579,7 @@ export function FinanceCenterPanel({
               <span>۵</span>
               <div>
                 <strong>تخفیف</strong>
-                <p>ثابت ۵/۱۰/۲۰٪ یا کد تخفیف خرید سرور (جایگزین)</p>
+                <p>ثابت ۵/۱۰/۲۰٪ یا کد تخفیف (جایگزین)</p>
               </div>
             </li>
             <li className="finance-pipeline-step">
@@ -484,7 +593,7 @@ export function FinanceCenterPanel({
               <span>۷</span>
               <div>
                 <strong>مبلغ نهایی مشتری</strong>
-                <p>همان عددی که قبل از درگاه می‌بیند</p>
+                <p>همان عدد قبل از درگاه</p>
               </div>
             </li>
           </ol>
@@ -492,29 +601,27 @@ export function FinanceCenterPanel({
           <div className="finance-process-grid">
             <article>
               <h3>چینش / خرید سرور</h3>
-              <p>
-                فرمول کامل بالا. مشتری نام Provider و قیمت خرید را نمی‌بیند.
-              </p>
+              <p>فرمول کامل بالا. مشتری نام Provider و قیمت خرید را نمی‌بیند.</p>
             </article>
             <article>
               <h3>قطب‌نما / خدمات</h3>
               <p>
-                قیمت بسته‌های خدمت (انتقال، راه‌اندازی، …) جدا از Markup سرور
-                تنظیم می‌شود و به‌صورت پیشنهاد خدمت دیده می‌شود.
+                قیمت بسته‌های خدمت جدا از Markup سرور تنظیم می‌شود و فقط پیشنهاد
+                خدمت است.
               </p>
             </article>
             <article>
               <h3>شارژ کیف پول</h3>
               <p>
-                مبلغ شارژ = واریز مشتری. کد افزایش اعتبار فقط در صورت رسیدن به
-                حداقل واریز، N تومان اضافه می‌دهد.
+                مبلغ شارژ = واریز مشتری. کد افزایش اعتبار فقط پس از حداقل واریز، N
+                تومان اضافه می‌دهد.
               </p>
             </article>
             <article>
               <h3>SKU دستی ابرچین</h3>
               <p>
-                اگر قیمت پایه را Admin دستی بگذارد، Markup منبع/محصول روی آن صفر
-                می‌شود؛ فقط پرچین و مالیات و تخفیف دوره اعمال می‌شود.
+                قیمت پایه دستی یعنی Markup منبع/محصول صفر؛ فقط پرچین، تخفیف دوره و
+                مالیات اعمال می‌شود.
               </p>
             </article>
           </div>
@@ -522,7 +629,7 @@ export function FinanceCenterPanel({
           <div className="finance-simulator">
             <div className="finance-simulator-head">
               <h3>شبیه‌ساز مبلغ فروش</h3>
-              <p>با اعداد فعلی مرکز مالی، خروجی را همین‌جا ببین.</p>
+              <p>با اعداد فعلی همین صفحه (حتی ذخیره‌نشده) خروجی مشتری را ببین.</p>
             </div>
             <div className="pricing-rules-grid">
               <label className="pricing-field">
@@ -532,15 +639,18 @@ export function FinanceCenterPanel({
                   value={simCostToman}
                   onChange={(event) => setSimCostToman(event.target.value)}
                 />
+                <span className="pricing-field-hint">
+                  {faDigits(simCostToman)
+                    ? `${faDigits(simCostToman)} تومان`
+                    : "عدد نمونه از کاتالوگ Provider"}
+                </span>
               </label>
               <label className="pricing-field">
                 <span>منبع</span>
                 <select
                   value={simProvider}
                   onChange={(event) =>
-                    setSimProvider(
-                      event.target.value as "ARVAN" | "PARSPACK",
-                    )
+                    setSimProvider(event.target.value as "ARVAN" | "PARSPACK")
                   }
                 >
                   <option value="ARVAN">Arvan</option>
@@ -570,9 +680,9 @@ export function FinanceCenterPanel({
                   }
                 >
                   <option value={1}>۱ ماه</option>
-                  <option value={3}>۳ ماه (۵٪)</option>
-                  <option value={6}>۶ ماه (۱۰٪)</option>
-                  <option value={12}>۱۲ ماه (۲۰٪)</option>
+                  <option value={3}>۳ ماه (۵٪ تخفیف)</option>
+                  <option value={6}>۶ ماه (۱۰٪ تخفیف)</option>
+                  <option value={12}>۱۲ ماه (۲۰٪ تخفیف)</option>
                 </select>
               </label>
               <label className="pricing-field">
@@ -591,7 +701,7 @@ export function FinanceCenterPanel({
                 </select>
               </label>
               <label className="pricing-field">
-                <span>کد تخفیف٪ (اختیاری)</span>
+                <span>کد تخفیف ٪ (اختیاری)</span>
                 <input
                   inputMode="decimal"
                   placeholder="خالی = تخفیف ثابت دوره"
@@ -609,7 +719,10 @@ export function FinanceCenterPanel({
                       key={line.key}
                       className={`finance-sim-line finance-sim-line--${line.tone}`}
                     >
-                      <span>{line.label}</span>
+                      <div className="finance-sim-line-label">
+                        <span>{line.label}</span>
+                        <small>{line.hint}</small>
+                      </div>
                       <strong>
                         {line.amount < 0n ? "−" : ""}
                         {formatTomanFromRial(
@@ -626,20 +739,37 @@ export function FinanceCenterPanel({
                       {formatTomanFromRial(simulation.final)}
                     </strong>
                   </div>
-                  <p>
-                    سهم تقریبی خرید{" "}
-                    <span className="money-tone money-tone--cost">
-                      {simulation.buyShare.toLocaleString("fa-IR")}٪
+                  <div
+                    className="finance-share-bar"
+                    role="img"
+                    aria-label={`سهم خرید ${simulation.buyShare}٪، سهم سود ${simulation.profitShare}٪`}
+                  >
+                    <span
+                      className="finance-share-bar-cost"
+                      style={{ width: `${simulation.buyShare}%` }}
+                    />
+                    <span
+                      className="finance-share-bar-profit"
+                      style={{ width: `${simulation.profitShare}%` }}
+                    />
+                  </div>
+                  <p className="finance-share-legend">
+                    <span className="finance-legend-item finance-legend-item--cost">
+                      خرید {simulation.buyShare.toLocaleString("fa-IR")}٪
                     </span>
-                    {" · "}
-                    سهم Markup{" "}
-                    <span className="money-tone money-tone--sale">
-                      {simulation.profitShare.toLocaleString("fa-IR")}٪
+                    <span className="finance-legend-item finance-legend-item--profit">
+                      سود Markup {simulation.profitShare.toLocaleString("fa-IR")}٪
                     </span>
-                    {!simulation.providerEnabled || !simulation.productEnabled
-                      ? " · توجه: یکی از Markupها غیرفعال است"
-                      : ""}
+                    <span className="finance-legend-item">
+                      پرچین و مالیات {simulation.restShare.toLocaleString("fa-IR")}٪
+                    </span>
                   </p>
+                  {!simulation.providerEnabled || !simulation.productEnabled ? (
+                    <p className="pricing-save-err">
+                      توجه: Markup {providerLabel(simProvider)} یا نوع محصول
+                      غیرفعال است؛ فروش واقعی این ترکیب قیمت نمی‌گیرد.
+                    </p>
+                  ) : null}
                 </div>
               </div>
             ) : (
@@ -653,7 +783,8 @@ export function FinanceCenterPanel({
         <SectionCard title="سود و Markup منابع و محصولات">
           <p className="pricing-rules-lead">
             پیش‌فرض لانچ: حدود ۳۰٪ هزینه تأمین و ۷۰٪ سود (مارکاپ حدود ۲۳۳٫۳۳٪ روی
-            قیمت خرید). تغییر فقط فروش‌های بعدی را عوض می‌کند.
+            قیمت خرید). تغییرها فقط فروش‌های بعدی را عوض می‌کنند؛ Snapshot
+            سفارش‌های قبلی ثابت می‌ماند.
           </p>
 
           <h3 className="finance-subtitle">Markup سراسری منبع</h3>
@@ -688,7 +819,8 @@ export function FinanceCenterPanel({
                     }
                   />
                   <span className="pricing-field-hint">
-                    مثلاً ۲۳۳٫۳۳ یعنی سود حدود ۷۰٪ از مبلغ زیرساخت پیش از پرچین
+                    {markupMultiplierLabel(item.markupPercent) ??
+                      "عدد با حداکثر دو رقم اعشار، مثلاً ۲۳۳٫۳۳"}
                   </span>
                 </label>
                 <label className="pricing-check">
@@ -713,8 +845,8 @@ export function FinanceCenterPanel({
 
           <h3 className="finance-subtitle">Markup نوع محصول</h3>
           <p className="pricing-field-hint" style={{ marginBottom: 12 }}>
-            این درصد به Markup منبع اضافه می‌شود. Override اختصاصی روی یک SKU
-            فقط در ویرایش همان SKU (حالت پیشرفته) باقی مانده است.
+            این درصد به Markup منبع اضافه می‌شود. Override اختصاصی روی یک SKU فقط
+            در ویرایش همان SKU (حالت پیشرفته) است.
           </p>
           <div className="pricing-rules-grid pricing-rules-grid--cards">
             {commerce.productMarkups.map((config, index) => (
@@ -742,15 +874,15 @@ export function FinanceCenterPanel({
                         productMarkups: current.productMarkups.map(
                           (item, itemIndex) =>
                             itemIndex === index
-                              ? {
-                                  ...item,
-                                  markupPercent: event.target.value,
-                                }
+                              ? { ...item, markupPercent: event.target.value }
                               : item,
                         ),
                       }))
                     }
                   />
+                  <span className="pricing-field-hint">
+                    صفر = فقط Markup منبع اعمال می‌شود
+                  </span>
                 </label>
                 <label className="pricing-check">
                   <input
@@ -780,13 +912,18 @@ export function FinanceCenterPanel({
         <SectionCard title="پرچین">
           <p className="pricing-rules-lead">
             عنوان و قیمت همین‌جا روی سایت، چینش و قطب‌نما اعمال می‌شود. قیمت صفر =
-            رایگان در صورتحساب؛ غیرفعال = کنار رفتن از مسیر فروش.
+            رایگان در صورتحساب؛ غیرفعال = حذف از مسیر فروش. پرچین شروع باید فعال
+            بماند.
           </p>
           <div className="pricing-rules-grid pricing-rules-grid--cards">
             {commerce.parchin.map((config, index) => (
               <article className="pricing-product-card" key={config.level}>
                 <header>
                   <strong>{parchinLevelLabel(config.level)}</strong>
+                  <StatusBadge
+                    label={config.active ? "فعال" : "غیرفعال"}
+                    tone={config.active ? "success" : "neutral"}
+                  />
                 </header>
                 <label className="pricing-field">
                   <span>عنوان نمایش در سایت</span>
@@ -837,6 +974,11 @@ export function FinanceCenterPanel({
                       }))
                     }
                   />
+                  <span className="pricing-field-hint">
+                    {faDigits(config.priceToman)
+                      ? `${faDigits(config.priceToman)} تومان در ماه`
+                      : "صفر = رایگان در صورتحساب"}
+                  </span>
                 </label>
                 <label className="pricing-check">
                   <input
@@ -894,6 +1036,7 @@ export function FinanceCenterPanel({
                   }))
                 }
               />
+              <span className="pricing-field-hint">یادآوری تمدید به مشتری</span>
             </label>
             <label className="pricing-field">
               <span>مهلت تمدید تا تعلیق (روز)</span>
@@ -909,6 +1052,9 @@ export function FinanceCenterPanel({
                   }))
                 }
               />
+              <span className="pricing-field-hint">
+                پس از صفر شدن کیف پول
+              </span>
             </label>
             <label className="pricing-field">
               <span>روز تا بررسی حذف پس از تعلیق</span>
@@ -924,6 +1070,9 @@ export function FinanceCenterPanel({
                   }))
                 }
               />
+              <span className="pricing-field-hint">
+                حذف فقط با Gate عملیاتی Admin
+              </span>
             </label>
           </div>
         </SectionCard>
@@ -956,28 +1105,41 @@ export function FinanceCenterPanel({
                     }))
                   }
                 />
+                <span className="pricing-field-hint">
+                  {faDigits(commerce.compassServicePricesToman[code])
+                    ? `${faDigits(commerce.compassServicePricesToman[code])} تومان`
+                    : "صفر = بدون پیشنهاد قیمت"}
+                </span>
               </label>
             ))}
           </div>
         </SectionCard>
       </section>
 
-      <div className="pricing-rules-actions pricing-rules-actions--sticky">
+      <div className="finance-save-bar">
         <button
           className="product-btn product-btn--primary"
-          disabled={saving}
+          disabled={saving || !dirty}
           onClick={() => void saveAll()}
           type="button"
         >
           {saving ? "در حال ذخیره…" : "ذخیره مرکز مالی"}
         </button>
-        {message ? <p className="pricing-save-ok">{message}</p> : null}
-        {error ? <p className="pricing-save-err">{error}</p> : null}
-        {!message && !error ? (
-          <p className="pricing-field-hint">
-            بدون ذخیره، تغییر Markup / پرچین / مالیات روی سایت اعمال نمی‌شود.
+        {error ? (
+          <p className="pricing-save-err" aria-live="polite">
+            {error}
           </p>
-        ) : null}
+        ) : dirty ? (
+          <p className="finance-dirty-badge" aria-live="polite">
+            تغییرات ذخیره‌نشده داری — تا ذخیره نکنی روی سایت اعمال نمی‌شود.
+          </p>
+        ) : message ? (
+          <p className="pricing-save-ok" aria-live="polite">
+            {message}
+          </p>
+        ) : (
+          <p className="pricing-field-hint">همه تغییرات ذخیره شده است.</p>
+        )}
       </div>
 
       <section id="finance-coupons" className="finance-section">
