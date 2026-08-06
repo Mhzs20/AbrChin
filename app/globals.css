@@ -3637,7 +3637,7 @@ a:focus-visible {
   align-items: center;
   gap: 5px;
   color: #1765d9;
-  font-size: 0.73rem;
+  font-size: 0.78rem;
   font-weight: 800;
 }
 
@@ -3681,12 +3681,12 @@ a:focus-visible {
 .quick-plan-resources small,
 .quick-plan-validity {
   color: #7589a6;
-  font-size: 0.66rem;
+  font-size: 0.74rem;
 }
 
 .quick-plan-resources strong {
   color: #102f5d;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
 }
 
 .quick-plan-price {
@@ -3715,7 +3715,7 @@ a:focus-visible {
   margin: 0;
   padding: 0;
   color: #4b6486;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   list-style: none;
 }
 
@@ -3733,7 +3733,7 @@ a:focus-visible {
 .quick-plan-card summary {
   cursor: pointer;
   color: #31577f;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 800;
 }
 
@@ -3744,7 +3744,7 @@ a:focus-visible {
 .quick-plan-card .quick-plan-reasons {
   gap: 5px;
   padding-top: 8px;
-  font-size: 0.7rem;
+  font-size: 0.78rem;
 }
 
 .quick-plan-card .quick-plan-reasons li {
@@ -3794,10 +3794,11 @@ a:focus-visible {
 .result-live-plans > div:first-child {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.8rem;
 }
 
 .result-live-plans > div:first-child strong {
@@ -3822,7 +3823,7 @@ a:focus-visible {
 .quick-plans-empty p {
   margin: 5px 0 0;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
 }
 
 /* Platform status */

@@ -69,8 +69,8 @@ export function QuickCloudPlans({
       <section className="quick-plans-empty" aria-live="polite">
         <Gauge size={24} aria-hidden="true" />
         <div>
-          <strong>پیشنهادهای دوره‌ثابت در حال به‌روزرسانی‌اند.</strong>
-          <p>برای Cloud PAYG می‌توانی مستقیماً Configurator سرور ابری را باز کنی.</p>
+          <strong>پیشنهادها در حال به‌روزرسانی‌اند.</strong>
+          <p>چند لحظه بعد دوباره بررسی کن یا یک پاسخ گفت‌وگو را تغییر بده.</p>
         </div>
       </section>
     );
@@ -95,12 +95,12 @@ export function QuickCloudPlans({
                 {plan.role ? roleLabels[plan.role] : positionLabels[index] ?? "چینش ابری"}
               </span>
               <span className="quick-plan-mode">
-                PREPAID_TERM
+                پرداخت دوره‌ای
               </span>
             </header>
 
             <h3>{plan.title}</h3>
-            <p>{plan.description ?? "VPS دوره‌ثابت با Checkout و تمدید دستی مستقل."}</p>
+            <p>{plan.description ?? "سرور دوره‌ای با قیمت شفاف و تمدید دستی در اختیار خودت."}</p>
 
             <div className="quick-plan-resources" aria-label="منابع سرور">
               <span><small>پردازنده</small><strong dir="ltr">{plan.vcpu ?? "—"} vCPU</strong></span>
@@ -133,7 +133,7 @@ export function QuickCloudPlans({
                   : resolveParchinLevelLabel(plan.parchinLevel, parchinLabels)}
               </li>
               <li><Check size={14} aria-hidden="true" /> ظرفیت فعلی موجود و قیمت دوباره‌سنجی‌شده</li>
-              <li><Check size={14} aria-hidden="true" /> بدون Auto-renew یا Auto-charge</li>
+              <li><Check size={14} aria-hidden="true" /> بدون تمدید یا برداشت خودکار</li>
             </ul>
 
             <details>
@@ -165,10 +165,6 @@ export function QuickCloudPlans({
               ) : (
                 "قیمت پس از انتخاب ۱۰ دقیقه قفل می‌شود و پیش از پرداخت دوباره بررسی خواهد شد."
               )}
-            </small>
-            <small className="quick-plan-validity">
-              این کارت PREPAID_TERM است؛ Cloud PAYG از Configurator و Wallet
-              Settlement استفاده می‌کند.
             </small>
           </article>
         );

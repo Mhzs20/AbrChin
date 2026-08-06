@@ -1259,18 +1259,18 @@ export function ConversationBuilder({
 
                 {!deliveryConfigured ? (
                   <section
-                    className="recommendation-details"
+                    className="recommendation-details delivery-config-card"
                     aria-labelledby="delivery-configuration-title"
                   >
                     <div className="result-recommendation-head">
                       <div>
                         <span>تنظیمات تحویل</span>
                         <h2 id="delivery-configuration-title">
-                          Region، سیستم‌عامل و روش دسترسی را تأیید کن
+                          موقعیت، سیستم‌عامل و روش دسترسی را تأیید کن
                         </h2>
                         <p>
-                          این انتخاب پیش از Quote با ظرفیت و قیمت واقعی
-                          دوباره بررسی و سپس قفل می‌شود.
+                          این انتخاب پیش از قفل‌شدن قیمت با ظرفیت و قیمت واقعی
+                          دوباره بررسی می‌شود.
                         </p>
                       </div>
                     </div>
@@ -1307,9 +1307,9 @@ export function ConversationBuilder({
                       </div>
                     ) : (
                       <>
-                        <div className="result-direction">
+                        <div className="delivery-config-grid">
                           <label>
-                            Region و منابع
+                            موقعیت و منابع
                             <select
                               value={selectedDeliveryPlanId}
                               onChange={(event) => {
@@ -1394,13 +1394,15 @@ export function ConversationBuilder({
                                 type="button"
                                 onClick={() => setAccessMethod("SSH_KEY")}
                               >
-                                SSH Key
+                                کلید SSH
                               </button>
                             </>
                           )}
-                          {accessMethod === "SSH_KEY" ? (
+                        </div>
+                        {accessMethod === "SSH_KEY" ? (
+                          <div className="delivery-config-grid">
                             <label>
-                              نام SSH Key ثبت‌شده
+                              نام کلید SSH ثبت‌شده
                               <input
                                 dir="ltr"
                                 maxLength={128}
@@ -1411,11 +1413,11 @@ export function ConversationBuilder({
                                 placeholder="my-production-key"
                               />
                             </label>
-                          ) : null}
-                        </div>
+                          </div>
+                        ) : null}
 
                         <button
-                          className="button button-primary"
+                          className="button button-primary delivery-config-submit"
                           disabled={
                             savingDelivery ||
                             !selectedImageAssetId ||
@@ -1426,7 +1428,7 @@ export function ConversationBuilder({
                         >
                           {savingDelivery
                             ? "در حال بررسی…"
-                            : "تأیید تنظیم تحویل و دریافت Quote"}
+                            : "تأیید تنظیمات و دریافت قیمت قفل‌شده"}
                           <ArrowLeft size={17} aria-hidden="true" />
                         </button>
                       </>
@@ -1450,13 +1452,7 @@ export function ConversationBuilder({
                     </strong>
                   </div>
                   {deliveryConfigured ? (
-                    <div
-                      style={{
-                        display: "grid",
-                        gap: 10,
-                        marginBottom: 16,
-                      }}
-                    >
+                    <div className="result-purchase-controls">
                       <label>
                         دوره شارژ
                         <select
@@ -1498,7 +1494,8 @@ export function ConversationBuilder({
                       <Info size={24} aria-hidden="true" />
                       <div>
                         <strong>
-                          برای ساخت Quote ابتدا تنظیمات تحویل را تأیید کن.
+                          برای دیدن قیمت قفل‌شده، ابتدا تنظیمات تحویل را تأیید
+                          کن.
                         </strong>
                       </div>
                     </section>
@@ -1557,22 +1554,25 @@ export function ConversationBuilder({
                       />
                       {servicePackages.length > 0 ? (
                         <section
+                          className="compass-services"
                           aria-labelledby="compass-services-title"
-                          style={{ marginTop: 20 }}
                         >
-                          <h3 id="compass-services-title" style={{ marginBottom: 8 }}>
+                          <h3 id="compass-services-title">
                             خدمات همراه (جدا از خرید سرور)
                           </h3>
-                          <p style={{ marginTop: 0 }}>
-                            این مسیر خدمت‌محور است؛ اجرا پس از بررسی Admin انجام
-                            می‌شود. سرور پیشنهادی بالا از فهرست واقعی ابرچین است.
+                          <p className="compass-services-lead">
+                            این مسیر خدمت‌محور است؛ اجرا پس از بررسی تیم ابرچین
+                            انجام می‌شود. سرور پیشنهادی بالا از فهرست واقعی
+                            ابرچین است.
                           </p>
-                          <ul style={{ display: "grid", gap: 12, padding: 0, listStyle: "none" }}>
+                          <ul className="compass-services-list">
                             {servicePackages.map((pack) => (
                               <li key={pack.code}>
-                                <strong>{pack.title}</strong>
-                                <p style={{ margin: "4px 0 8px" }}>{pack.description}</p>
-                                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                                <div className="compass-service-info">
+                                  <strong>{pack.title}</strong>
+                                  <p>{pack.description}</p>
+                                </div>
+                                <div className="compass-service-action">
                                   <span>{pack.priceTomanFa} تومان</span>
                                   <button
                                     type="button"
@@ -1610,8 +1610,8 @@ export function ConversationBuilder({
                                           }
                                           setServiceMessage(
                                             data.alreadyRequested
-                                              ? "این درخواست قبلاً ثبت شده و منتظر Admin است."
-                                              : `درخواست «${pack.title}» ثبت شد؛ Admin بررسی می‌کند.`,
+                                              ? "این درخواست قبلاً ثبت شده و در صف بررسی تیم ابرچین است."
+                                              : `درخواست «${pack.title}» ثبت شد؛ تیم ابرچین بررسی می‌کند.`,
                                           );
                                         })
                                         .catch((error: unknown) => {
@@ -1632,7 +1632,11 @@ export function ConversationBuilder({
                               </li>
                             ))}
                           </ul>
-                          {serviceMessage ? <p role="status">{serviceMessage}</p> : null}
+                          {serviceMessage ? (
+                            <p className="compass-services-message" role="status">
+                              {serviceMessage}
+                            </p>
+                          ) : null}
                         </section>
                       ) : null}
                     </>
