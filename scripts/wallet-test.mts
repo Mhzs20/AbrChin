@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test, { after } from "node:test";
 import { LedgerType, PrismaClient, WalletStatus } from "@prisma/client";
 
+import { computeWalletRechargeTotals } from "../lib/admin/wallet-recharge-totals.ts";
 import { assertPositiveIntegerToman, rialToToman, tomanToRial } from "../lib/money.ts";
 import {
   calculateWalletShortfallRial,
@@ -23,6 +24,34 @@ test("money converts toman/rial with integers only", () => {
   assert.equal(assertPositiveIntegerToman(50_000), 50_000);
   assert.throws(() => assertPositiveIntegerToman(12.5));
   assert.throws(() => assertPositiveIntegerToman(-1));
+});
+
+test("admin wallet recharge totals stay integer BigInt and net never negative", () => {
+  assert.deepEqual(
+    computeWalletRechargeTotals({
+      topUpCreditRial: 1_000_000n,
+      topUpRefundRial: 250_000n,
+    }),
+    {
+      topUpCreditRial: 1_000_000n,
+      topUpRefundRial: 250_000n,
+      netTopUpRial: 750_000n,
+    },
+  );
+  assert.equal(
+    computeWalletRechargeTotals({
+      topUpCreditRial: 100n,
+      topUpRefundRial: 500n,
+    }).netTopUpRial,
+    0n,
+  );
+  assert.equal(
+    computeWalletRechargeTotals({
+      topUpCreditRial: -10n,
+      topUpRefundRial: -5n,
+    }).topUpCreditRial,
+    0n,
+  );
 });
 
 test("purchase top-up is exactly the wallet shortfall in IRR", () => {

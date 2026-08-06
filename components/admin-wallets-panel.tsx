@@ -1,7 +1,7 @@
 "use client";
 
 import { LoaderCircle } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 type Lookup = {
   user: { mobile: string; displayName: string | null; role: string };
@@ -17,8 +17,12 @@ type Lookup = {
   }>;
 };
 
-export function AdminWalletsPanel() {
-  const [mobile, setMobile] = useState("");
+export function AdminWalletsPanel({
+  initialMobile = "",
+}: {
+  initialMobile?: string;
+}) {
+  const [mobile, setMobile] = useState(initialMobile);
   const [data, setData] = useState<Lookup | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -27,13 +31,15 @@ export function AdminWalletsPanel() {
   const [direction, setDirection] = useState<"CREDIT" | "DEBIT">("CREDIT");
   const [reason, setReason] = useState("");
 
-  async function lookup(event: FormEvent) {
-    event.preventDefault();
+  async function lookupMobile(targetMobile: string) {
     setLoading(true);
     setError("");
     setMessage("");
     try {
-      const response = await fetch(`/api/admin/wallets?mobile=${encodeURIComponent(mobile)}`, { cache: "no-store" });
+      const response = await fetch(
+        `/api/admin/wallets?mobile=${encodeURIComponent(targetMobile)}`,
+        { cache: "no-store" },
+      );
       const json = await response.json();
       if (!response.ok) {
         setData(null);
@@ -46,6 +52,18 @@ export function AdminWalletsPanel() {
     } finally {
       setLoading(false);
     }
+  }
+
+  useEffect(() => {
+    setMobile(initialMobile);
+    if (initialMobile.trim()) {
+      void lookupMobile(initialMobile.trim());
+    }
+  }, [initialMobile]);
+
+  async function lookup(event: FormEvent) {
+    event.preventDefault();
+    await lookupMobile(mobile);
   }
 
   async function adjust(event: FormEvent) {
@@ -70,7 +88,7 @@ export function AdminWalletsPanel() {
         return;
       }
       setMessage("تعدیل ثبت شد.");
-      await lookup(event);
+      await lookupMobile(mobile);
     } catch {
       setError("ارتباط برقرار نشد.");
     } finally {
@@ -84,7 +102,12 @@ export function AdminWalletsPanel() {
         <form className="auth-form" onSubmit={lookup}>
           <label className="auth-field">
             <span>جست‌وجوی موبایل</span>
-            <input dir="ltr" value={mobile} onChange={(e) => setMobile(e.target.value)} required />
+            <input
+              dir="ltr"
+              value={mobile}
+              onChange={(e) => setMobile(e.target.value)}
+              required
+            />
           </label>
           <button className="button button-primary" type="submit" disabled={loading}>
             {loading ? <LoaderCircle className="spin" size={16} /> : null}
@@ -101,36 +124,67 @@ export function AdminWalletsPanel() {
             <div className="account-card-head">
               <h2>{data.user.mobile}</h2>
               <p>
-                {data.user.displayName || "بدون نام"} · موجودی {data.wallet.balanceTomanFa} تومان
+                {data.user.displayName || "بدون نام"} · موجودی{" "}
+                {data.wallet.balanceTomanFa} تومان
               </p>
             </div>
             <form className="auth-form" onSubmit={adjust}>
               <label className="auth-field">
                 <span>نوع</span>
-                <select value={direction} onChange={(e) => setDirection(e.target.value as "CREDIT" | "DEBIT")}>
+                <select
+                  value={direction}
+                  onChange={(e) =>
+                    setDirection(e.target.value as "CREDIT" | "DEBIT")
+                  }
+                >
                   <option value="CREDIT">افزایش</option>
                   <option value="DEBIT">کاهش</option>
                 </select>
               </label>
               <label className="auth-field">
                 <span>مبلغ تومان</span>
-                <input dir="ltr" value={amountToman} onChange={(e) => setAmountToman(e.target.value.replace(/\D/g, ""))} required />
+                <input
+                  dir="ltr"
+                  value={amountToman}
+                  onChange={(e) =>
+                    setAmountToman(e.target.value.replace(/\D/g, ""))
+                  }
+                  required
+                />
               </label>
               <label className="auth-field">
                 <span>دلیل</span>
-                <input value={reason} onChange={(e) => setReason(e.target.value)} minLength={3} required />
+                <input
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  minLength={3}
+                  required
+                />
               </label>
-              <button className="button button-primary" type="submit" disabled={loading}>ثبت تعدیل</button>
+              <button
+                className="button button-primary"
+                type="submit"
+                disabled={loading}
+              >
+                ثبت تعدیل
+              </button>
             </form>
           </section>
           <section className="account-card">
-            <div className="account-card-head"><h2>Ledger</h2></div>
+            <div className="account-card-head">
+              <h2>Ledger</h2>
+            </div>
             <ul className="account-list dense">
               {data.ledger.map((entry) => (
                 <li key={entry.id}>
-                  <strong>{entry.type} · {entry.direction}</strong>
+                  <strong>
+                    {entry.type} · {entry.direction}
+                  </strong>
                   <span>{entry.amountTomanFa} تومان</span>
-                  <small>{entry.description || "—"} · {new Date(entry.createdAt).toLocaleString("fa-IR")}</small>
+                  <small>
+                    {entry.description || "—"} ·{" "}
+                    {new Date(entry.createdAt).toLocaleString("fa-IR")}
+                  </small>
                 </li>
               ))}
             </ul>
