@@ -423,41 +423,46 @@ export async function getAdminOperationsCenter() {
     connections: [
       {
         key: "arvan",
-        label: "آروان",
+        label: "Arvan",
+        group: "sale" as const,
         status: system.arvan.status,
         message: system.arvan.message,
         href: "/admin/connections",
       },
       {
         key: "parspack",
-        label: "پارس‌پک",
+        label: "ParsPack",
+        group: "sale" as const,
         status: system.parspack.status,
         message: system.parspack.message,
         href: "/admin/connections",
       },
       {
         key: "otp",
-        label: "OTP کاوه‌نگار",
+        label: "ورود OTP (کاوه‌نگار)",
+        group: "sale" as const,
         status: system.kavenegar.configured ? "healthy" : "unconfigured",
-        message: system.kavenegar.configured ? "تنظیم شده" : "تنظیم نشده",
+        message: system.kavenegar.configured ? "آماده" : "تنظیم نشده",
         href: "/admin/connections",
       },
       {
         key: "payment",
         label: "درگاه پرداخت",
+        group: "sale" as const,
         status: paymentConfigured ? "healthy" : "unconfigured",
-        message: paymentConfigured ? "درگاه فعال است" : "درگاه فعال تنظیم نشده است",
-        href: "/admin/connections",
+        message: paymentConfigured ? "فعال" : "تنظیم نشده",
+        href: "/admin/payment-gateways",
       },
       {
         key: "billing-catch-up",
         label: "Billing Catch-up",
+        group: "advanced" as const,
         status:
           billingCatchUp.status === "CURRENT" ? "healthy" : "warning",
         message:
           billingCatchUp.status === "CURRENT"
-            ? "تمام Periodهای بسته ثبت شده‌اند"
-            : `قدیمی‌ترین Period عقب‌افتاده: ${billingCatchUp.cadences
+            ? "به‌روز"
+            : `عقب‌افتاده از ${billingCatchUp.cadences
                 .find((item) => item.oldestOutstandingPeriod)
                 ?.oldestOutstandingPeriod?.periodEnd ?? "نامشخص"}`,
         href: "/admin",
@@ -471,14 +476,15 @@ export async function getAdminOperationsCenter() {
         );
         return {
           key: `billing-contract-${provider.toLowerCase()}`,
-          label: `${provider === "ARVAN" ? "آروان" : "پارس‌پک"} Billing Contract`,
+          label: `${provider === "ARVAN" ? "Arvan" : "ParsPack"} Billing Contract`,
+          group: "advanced" as const,
           status:
             contract?.status === "VERIFIED" && blockingReasons.length === 0
               ? "healthy"
               : "warning",
           message: contract
-            ? `${contract.status} · ${contract.source} · v${contract.version} · ${contract.effectiveFrom.toISOString()}${blockingReasons.length ? ` · تأییدنشده: ${blockingReasons.join(", ")}` : ""}`
-            : "UNVERIFIED · contract missing",
+            ? `${contract.status} · ${contract.source} · v${contract.version}${blockingReasons.length ? ` · ${blockingReasons.length} مورد تأییدنشده` : ""}`
+            : "قرارداد تأییدنشده",
           href: "/admin/infrastructure/plans",
         };
       }),
