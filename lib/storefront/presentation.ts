@@ -4,9 +4,6 @@ import { readyServerLocation } from "@/lib/cloud-servers/catalog";
 
 export type StorefrontLocationZone = "IRAN" | "ABROAD";
 
-/** Ceiling step for customer-facing تومان display (1453 → 1500, 1320 → 1500). */
-export const STOREFRONT_TOMAN_ROUND_STEP = 500n;
-
 /** Public storefront treats catalog sync as fresh for a full day. */
 export const STOREFRONT_DISPLAY_FRESHNESS_SECONDS = 24 * 60 * 60;
 
@@ -166,15 +163,17 @@ export function storefrontParchinForTier(
   return "PARCHIN_STABLE";
 }
 
-/** Display-only round-up of ریال → تومان step. Does not change billed amounts. */
-export function roundUpDisplayTomanFromRial(rialValue: string | bigint): bigint {
+/**
+ * Exact ریال → تومان for storefront display. No rounding step: the card must
+ * show precisely the amount that will be billed at checkout (same conversion
+ * as formatTomanFa on the quote page).
+ */
+export function displayTomanFromRial(rialValue: string | bigint): bigint {
   const rial = typeof rialValue === "bigint" ? rialValue : BigInt(rialValue);
   if (rial <= 0n) return 0n;
-  const toman = rial / 10n + (rial % 10n === 0n ? 0n : 1n);
-  const step = STOREFRONT_TOMAN_ROUND_STEP;
-  return ((toman + step - 1n) / step) * step;
+  return rial / 10n;
 }
 
 export function formatStorefrontToman(rialValue: string | bigint): string {
-  return roundUpDisplayTomanFromRial(rialValue).toLocaleString("fa-IR");
+  return displayTomanFromRial(rialValue).toLocaleString("fa-IR");
 }

@@ -1,0 +1,190 @@
+# Commercial Pricing v3 — موتور واحد قیمت‌گذاری
+
+این سند مرجع Task 1 از بازسازی تجاری AbrChin است: یک موتور واحد، Margin-محور،
+اتمیک و نسخه‌دار برای همه سطوح قیمت.
+
+## فرمول Canonical
+
+فقط یک پیاده‌سازی وجود دارد: `computeCommercialPriceBreakdown` در
+`lib/pricing/commercial-engine.ts`.
+
+```text
+هزینه Provider (ماهانه)
++ Markup منبع            (ceil(bps))
++ Markup نوع محصول        (ceil(bps) — جمع با منبع، نه جایگزین)
++ پرچین (ماهانه)
++ Add-on
+× مدت (۱/۳/۶/۱۲ ماه)
+− تخفیف دوره ۰/۵/۱۰/۲۰٪ یا کد تخفیف (جایگزین، نه جمع)
++ مالیات VAT روی مبلغ پس از تخفیف
+= مبلغ نهایی مشتری
+```
+
+- همه مبالغ `BigInt` ریال؛ Float ممنوع.
+- سیاست Round یکتا: `ceil(amount × bps / 10000)` در `multiplyBpsRoundUp`.
+- Renewal همیشه «یک ماه pretax + مالیات» بدون تخفیف دوره است.
+- تفکیک سود منبع/محصول از جمع ceil مشترک مشتق می‌شود تا جمع دو جزء دقیقاً
+  برابر کل بماند (سازگار با Snapshotهای تاریخی).
+
+مصرف‌کننده‌ها (همه از همین موتور):
+
+| سطح | مسیر |
+|---|---|
+| کارت Storefront | `lib/storefront/assortment-service.ts` → `resolveCatalogItemPricing` (term=1) → `priced.finalPriceRial` |
+| Quote | `lib/recommendation/quote-service.ts` → `resolvePlanPricing` |
+| Checkout / پرداخت | `lib/orders/service.ts`، `lib/orders/pay-order-tx.ts` |
+| Renewal | `lib/subscriptions/service.ts` |
+| Admin Simulator | `POST /api/admin/finance/preview` (موتور واقعی سرور) |
+| Preview اثر تغییر | همان API با `includeImpact` |
+| تست‌ها | `scripts/commercial-pricing-test.mts` |
+
+`calculateQuotePricing` در `lib/pricing/quote-line-items.ts` فقط Adapter نازک
+روی موتور است تا Call siteها و Snapshotهای قبلی دست‌نخورده بمانند.
+
+## Margin در برابر Markup
+
+```text
+Gross margin = سود ÷ قیمت فروش زیرساخت
+Markup       = سود ÷ هزینه خرید
+margin = markup / (1 + markup)
+markup = margin / (1 − margin)
+```
+
+توابع استاندارد (تست‌شده، Client-safe):
+
+- `grossMarginBpsToMarkupBps()` — ورودی صحیح `[0, 10000)`؛ ۱۰۰٪ رد می‌شود.
+- `markupBpsToGrossMarginBps()`
+
+پیش‌فرض‌های جدید Launch:
+
+```text
+DEFAULT_TARGET_GROSS_MARGIN_BPS = 3000   (30%)
+DEFAULT_LAUNCH_MARKUP_BASIS_POINTS = 4286 (≈42.86%)
+LEGACY_LAUNCH_MARKUP_BASIS_POINTS = 23333 (فقط برای شناسایی Migration)
+```
+
+ورودی اصلی Admin در مرکز مالی «حاشیه سود هدف» است؛ Markup معادل Read-only
+نمایش داده می‌شود. مقدار Canonical ذخیره‌شده در DB همچنان
+`markupBasisPoints` است.
+
+## Migration از Legacy
+
+`prisma/migrations/20260806200000_commercial_pricing_v3/migration.sql`
+(Forward-only و Additive):
+
+1. جدول `FinanceConfigurationRevision` (append-only).
+2. `ProviderPricingConfig.markupBasisPoints` پیش‌فرض جدید `4286`.
+3. Repair فقط ردیف‌های دقیقاً `23333` → `4286`. مقادیر Custom دست نمی‌خورند.
+4. Quote/Order/Renewal های قبلی Snapshot خود را نگه می‌دارند؛ هیچ چیز
+   Retroactive نیست.
+
+Product Markup پیش‌فرض صفر می‌ماند (فقط Markup منبع مالک حاشیه ۳۰٪ است).
+
+## API Preview
+
+```text
+POST /api/admin/finance/preview
+{
+  candidate: { providers[targetGrossMarginBps,enabled], productMarkups[],
+               taxBps, parchin[], compassServicePrices, lifecycle, priceDisplay },
+  simulator?: { providerMonthlyCostRial, provider, productKind,
+                termMonths, parchinLevel, couponDiscountBps? },
+  includeImpact?: boolean
+}
+```
+
+- Breakdown کامل از موتور Production برمی‌گردد (UI هیچ فرمولی ندارد).
+- `includeImpact` اثر Candidate را روی حداکثر ۲۴ پلن واقعی منتشرشده
+  محاسبه می‌کند: تعداد گران/ارزان/بدون تغییر، بیشترین افزایش/کاهش،
+  پلن‌های غیرقابل‌فروش با تنظیمات جدید، و نتیجه Parity.
+- Margin خارج از بازه با 400 رد می‌شود؛ سطح Guardrail (`ok/warn/confirm`)
+  همیشه برمی‌گردد.
+
+## API Publish (اتمیک و نسخه‌دار)
+
+```text
+GET   /api/admin/finance/configuration   ← تنظیمات فعلی + ۲۰ نسخه اخیر
+PATCH /api/admin/finance/configuration   ← انتشار اتمیک یا Rollback
+```
+
+انتشار در یک `prisma.$transaction`: Provider pricing، Product pricing،
+Commerce (مالیات/چرخه/قطب‌نما)، پرچین، تنظیمات نمایش قیمت
+(`StorefrontAssortmentSettings`) و سپس ایجاد
+`FinanceConfigurationRevision` با Actor، زمان، دلیل و Snapshot کامل.
+شکست هر بخش یعنی Rollback همه چیز و بدون Revision.
+
+Rollback:
+
+```json
+{ "rollbackToRevisionId": "…", "reason": "اختیاری" }
+```
+
+Snapshot نسخه قدیمی به‌عنوان یک نسخه جدید (با `rollbackOfId`) منتشر می‌شود؛
+تاریخچه append-only است و سفارش‌های قبلی تغییری نمی‌کنند.
+
+سرویس‌ها: `lib/admin/finance-configuration.ts`
+(`applyFinanceConfiguration`, `rollbackFinanceConfiguration`,
+`previewFinanceImpact`, `checkCardQuoteParity`, `readFinanceConfiguration`).
+
+Endpointهای قدیمی (`/api/admin/infrastructure/pricing`,
+`/api/admin/infrastructure/providers/markup`) برای سازگاری باقی‌اند اما مرکز
+مالی فقط از مسیر اتمیک استفاده می‌کند.
+
+## Guardrailهای مالی
+
+- Margin `< 0` یا `≥ 100%` → رد (400).
+- `≥ 50%` → هشدار واضح در UI و Preview.
+- `≥ 70%` → تأیید تایپی الزامی: عبارت دقیق «تایید حاشیه بالا»
+  (`HIGH_MARGIN_CONFIRMATION_PHRASE`؛ در Rollback لازم نیست چون قبلاً
+  منتشر شده بود).
+- قبل از انتشار، اثر روی پلن‌های واقعی (تا ۲۴ نمونه، حداقل ۱۰ در صورت وجود)
+  با بیشترین افزایش/کاهش و تعداد متاثر نمایش داده می‌شود.
+- اگر Card و Quote یک‌ماهه برابر نباشند، Publish با 409
+  (`card_quote_parity_failed`) متوقف می‌شود.
+- Provider/Product غیرفعال در Preview به‌عنوان «غیرقابل‌فروش» شمارش می‌شود و
+  کارت آن هرگز purchasable نیست.
+
+## نمایش قیمت
+
+- قیمت اصلی کارت = مبلغ نهایی یک‌ماهه همان پلن (شامل Markup، پرچین سطح
+  Minimum پلن و VAT) — دقیقاً برابر مبلغ Quote یک‌ماهه.
+- Round نمایشی ۵۰۰تومانی حذف شد؛ `formatStorefrontToman` همان تبدیل دقیق
+  ریال→تومان صفحه Quote است (`displayTomanFromRial`).
+- ساعتی/روزانه «معادل مصرف» است: `ceil(final/720)` و `ceil(final/30)` از
+  `deriveUsageEquivalentPrices` — مدل پرداخت نیست و در UI با برچسب «معادل»
+  نمایش داده می‌شود.
+- پرچین Tier کارت فقط برچسب برندینگ است؛ مبلغ کارت با پرچین Minimum پلن
+  (شروع) محاسبه می‌شود چون Quote همان را شارژ می‌کند.
+- CTA «ثبت سفارش» و Style آن دست‌نخورده ماند.
+
+## تست‌ها
+
+- `scripts/commercial-pricing-test.mts` (داخل `test:infrastructure`):
+  تبدیل Margin/Markup و پیش‌فرض ۳۰٪، محتوای Repair دقیق Legacy، جمع
+  Markup منبع+محصول، پرچین، مالیات، تخفیف ۱/۳/۶/۱۲، جایگزینی Coupon،
+  برابری Card/Quote، Renewal، Immutability خروجی موتور، برابری Adapter،
+  Guardrailها، معادل‌های مصرف.
+- `scripts/finance-configuration-postgres-test.mts`
+  (`test:finance-config`؛ در `test:financial-postgres` و
+  `test:finance-config-isolated`): انتشار اتمیک + Revision،
+  Rollback تراکنشی هنگام شکست میانی، الزام تأیید حاشیه بالا،
+  Rollback نسخه‌ها با تاریخچه append-only، و Replay دقیق Repair Legacy
+  (فقط 23333؛ Custom 25000 دست‌نخورده؛ Default ردیف جدید 4286).
+- `test:fresh-migration` و `test:migration-upgrade` سازگاری Migration تازه
+  و Upgrade را با PostgreSQL ایزوله (Docker) پوشش می‌دهند.
+
+## نکات Task شماره ۲
+
+- Endpointهای Legacy قیمت (`/api/admin/infrastructure/pricing` و
+  `providers/markup`) هنوز زنده‌اند؛ اگر مصرف‌کننده دیگری ندارند می‌توان
+  آن‌ها را به مسیر اتمیک Redirect یا حذف کرد.
+- `PublicPlanOffer.renewalPriceRial` حالا «یک ماه + مالیات» واقعی است؛ اگر
+  UI تمدید جداگانه ساخته می‌شود از همین فیلد استفاده شود.
+- PAYG (`lib/billing/activation.ts`) هنوز Estimate ساعتی مستقل دارد؛ خارج
+  از Scope فروش Prepaid لانچ است و اگر PAYG فعال شود باید به موتور واحد
+  مهاجرت کند.
+- باندهای قیمت Storefront (`price bands`) اکنون روی مبلغ نهایی (با پرچین و
+  VAT) فیلتر می‌کنند؛ اگر Admin باند قدیمی بر مبنای Markup-only تنظیم کرده
+  بود باید بازبینی کند.
+- Impact preview روی ۲۴ پلن آخر نمونه‌گیری می‌کند؛ در صورت رشد کاتالوگ،
+  صفحه‌بندی/انتخاب هوشمند نمونه را در Task 2 اضافه کنید.

@@ -113,6 +113,26 @@ async function cleanupMobile(mobile: string) {
 async function seedDevPlan() {
   if (!prisma) return null;
   const syncedAt = new Date();
+  // Wallet payment requires a fresh, successful catalog sync for
+  // API_CATALOG plans (pay-order freshness gate). Seed the provider state
+  // the way a real recent sync would.
+  await prisma.providerCatalogState.upsert({
+    where: { provider: "PARSPACK" },
+    update: {
+      lastCatalogSync: syncedAt,
+      lastSyncStatus: "SUCCEEDED",
+      freshnessSlaSeconds: 900,
+    },
+    create: {
+      id: "parspack-v1",
+      provider: "PARSPACK",
+      apiVersion: "v1",
+      enabled: true,
+      lastCatalogSync: syncedAt,
+      lastSyncStatus: "SUCCEEDED",
+      freshnessSlaSeconds: 900,
+    },
+  });
   const catalogItem = await prisma.providerCatalogItem.upsert({
     where: {
       provider_apiVersion_regionCode_externalPlanId: {

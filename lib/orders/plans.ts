@@ -33,6 +33,10 @@ import {
   resolvePlanPricing,
 } from "@/lib/pricing/plan-pricing";
 import {
+  DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
+  deriveUsageEquivalentPrices,
+} from "@/lib/pricing/commercial-engine";
+import {
   calculateFinalPriceRial,
   decimalToScaledInteger,
 } from "@/lib/pricing/provider-pricing";
@@ -219,14 +223,9 @@ export function toPublicPlanOffer(
   plan: PricedInfrastructurePlan,
   options?: { parchinTitle?: string },
 ): PublicPlanOffer {
-  const hourlyBasePriceRial = catalogItemBaseHourlyPriceRial(plan.catalogItem);
-  const hourlyPriceRial =
-    hourlyBasePriceRial == null
-      ? null
-      : calculateFinalPriceRial(
-          hourlyBasePriceRial,
-          plan.pricing.markupBasisPoints,
-        );
+  // Usage equivalents are display-only derivations of the billed monthly
+  // amount ("معادل مصرف") — never a second pricing formula.
+  const usage = deriveUsageEquivalentPrices(plan.pricing.finalPriceRial);
   return {
     id: plan.id,
     title: plan.title,
@@ -252,25 +251,19 @@ export function toPublicPlanOffer(
     ramGb: plan.pricing.ramGb,
     storageGb: plan.pricing.storageGb,
     transferTb: plan.catalogItem.transfer,
-    providerBaseHourlyPriceRial:
-      hourlyBasePriceRial?.toString() ?? null,
-    providerBaseMonthlyPriceRial:
-      plan.pricing.providerBasePriceRial.toString(),
-    hourlyPriceRial: hourlyPriceRial?.toString() ?? null,
-    dailyPriceRial:
-      hourlyPriceRial != null ? (hourlyPriceRial * 24n).toString() : null,
+    // Never expose supplier economics on customer payloads.
+    providerBaseHourlyPriceRial: null,
+    providerBaseMonthlyPriceRial: "0",
+    hourlyPriceRial: usage.hourlyRial > 0n ? usage.hourlyRial.toString() : null,
+    dailyPriceRial: usage.dailyRial > 0n ? usage.dailyRial.toString() : null,
     salePriceRial: plan.pricing.finalPriceRial.toString(),
-    renewalPriceRial: plan.pricing.finalPriceRial.toString(),
+    renewalPriceRial: plan.pricing.renewalPriceRial.toString(),
     sourceCurrencyCode: plan.catalogItem.currencyCode,
     sourceAmountUnit: plan.catalogItem.amountUnit,
     normalizedCurrencyCode: "IRR",
     normalizedAmountUnit: "RIAL",
-    billingIntervals: [
-      ...(hourlyBasePriceRial == null ? [] : (["HOURLY"] as const)),
-      ...(plan.pricing.providerBasePriceRial > 0n
-        ? (["MONTHLY"] as const)
-        : []),
-    ],
+    billingIntervals:
+      plan.pricing.finalPriceRial > 0n ? (["MONTHLY"] as const) : [],
     markupBasisPoints: plan.pricing.markupBasisPoints,
     taxBasisPoints: plan.pricing.taxBasisPoints,
     catalogStatus: plan.catalogItem.status,
@@ -294,7 +287,7 @@ async function pricingConfigs() {
   return { providers, products, commerce, parchin };
 }
 
-type PricingConfigs = Awaited<ReturnType<typeof pricingConfigs>>;
+export type PricingConfigs = Awaited<ReturnType<typeof pricingConfigs>>;
 
 type PlanTermPricingOptions = {
   termMonths?: 1 | 3 | 6 | 12;
@@ -302,7 +295,7 @@ type PlanTermPricingOptions = {
   couponCode?: string | null;
 };
 
-function resolveConfiguredPlanPricing(
+export function resolveConfiguredPlanPricing(
   plan: InfrastructurePlan & { catalogItem: ProviderCatalogItem | null },
   configs: PricingConfigs,
   requestedParchinLevel?: ParchinLevel,
@@ -636,31 +629,23 @@ function catalogItemPublicOffer(input: {
   item: ProviderCatalogItem;
   locationLabel: string;
   catalogFresh: boolean;
-  markupBasisPoints: number;
-  taxBasisPoints: number;
+  /** Full engine pricing (1 month) when configs allow it. */
+  priced: EffectivePlanPricing | null;
+  fallbackTaxBasisPoints: number;
   purchaseState: PublicPlanOffer["purchaseState"];
   purchasable: boolean;
   planId?: string;
 }): PublicPlanOffer {
-  const hourlyBasePriceRial = catalogItemBaseHourlyPriceRial(input.item);
-  const monthlyBasePriceRial = catalogItemBasePriceRial(input.item) ?? 0n;
-  const hourlyPriceRial =
-    hourlyBasePriceRial == null
-      ? null
-      : calculateFinalPriceRial(
-          hourlyBasePriceRial,
-          input.markupBasisPoints,
-        );
-  const monthlyFromProvider =
-    monthlyBasePriceRial > 0n
-      ? calculateFinalPriceRial(
-          monthlyBasePriceRial,
-          input.markupBasisPoints,
-        )
-      : null;
+  // Same engine-derived monthly amount as cards/quotes. Unpriced rows are
+  // never purchasable and fall back to a default-markup display estimate so
+  // raw supplier cost is never exposed.
   const monthlyPriceRial =
-    monthlyFromProvider ??
-    (hourlyPriceRial != null ? hourlyPriceRial * 720n : 0n);
+    input.priced?.finalPriceRial ??
+    catalogItemFallbackDisplayMonthly(input.item);
+  const usage =
+    monthlyPriceRial > 0n
+      ? deriveUsageEquivalentPrices(monthlyPriceRial)
+      : null;
   const imageCodes = compatibleImageCodes(input.item);
   const imageCode =
     selectReadyServerImage(imageCodes) ?? imageCodes[0] ?? "linux";
@@ -692,23 +677,24 @@ function catalogItemPublicOffer(input: {
       input.item.ramMb == null ? null : Math.ceil(input.item.ramMb / 1024),
     storageGb: input.item.diskGb,
     transferTb: input.item.transfer,
-    providerBaseHourlyPriceRial: hourlyBasePriceRial?.toString() ?? null,
-    providerBaseMonthlyPriceRial: monthlyBasePriceRial.toString(),
-    hourlyPriceRial: hourlyPriceRial?.toString() ?? null,
-    dailyPriceRial:
-      hourlyPriceRial != null ? (hourlyPriceRial * 24n).toString() : null,
+    // Never expose supplier economics on public payloads.
+    providerBaseHourlyPriceRial: null,
+    providerBaseMonthlyPriceRial: "0",
+    hourlyPriceRial: usage?.hourlyRial.toString() ?? null,
+    dailyPriceRial: usage?.dailyRial.toString() ?? null,
     salePriceRial: monthlyPriceRial.toString(),
-    renewalPriceRial: monthlyPriceRial.toString(),
+    renewalPriceRial: (
+      input.priced?.renewalPriceRial ?? monthlyPriceRial
+    ).toString(),
     sourceCurrencyCode: input.item.currencyCode,
     sourceAmountUnit: input.item.amountUnit,
     normalizedCurrencyCode: "IRR",
     normalizedAmountUnit: "RIAL",
-    billingIntervals: [
-      ...(hourlyBasePriceRial == null ? [] : (["HOURLY"] as const)),
-      ...(monthlyPriceRial > 0n ? (["MONTHLY"] as const) : []),
-    ],
-    markupBasisPoints: input.markupBasisPoints,
-    taxBasisPoints: input.taxBasisPoints,
+    billingIntervals: monthlyPriceRial > 0n ? (["MONTHLY"] as const) : [],
+    markupBasisPoints:
+      input.priced?.markupBasisPoints ?? DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
+    taxBasisPoints:
+      input.priced?.taxBasisPoints ?? input.fallbackTaxBasisPoints,
     catalogStatus,
     purchaseState: input.purchaseState,
     deliveryEstimateMinutes: 15,
@@ -716,8 +702,27 @@ function catalogItemPublicOffer(input: {
     checkedAt: input.item.lastSyncedAt.toISOString(),
     available: input.catalogFresh && input.item.available,
     instantDelivery: false,
-    purchasable: input.purchasable,
+    purchasable: input.purchasable && input.priced != null,
   };
+}
+
+/** Display-only estimate for unpriced (never purchasable) catalog rows. */
+function catalogItemFallbackDisplayMonthly(item: ProviderCatalogItem): bigint {
+  const monthlyBase = catalogItemBasePriceRial(item);
+  if (monthlyBase != null && monthlyBase > 0n) {
+    return calculateFinalPriceRial(
+      monthlyBase,
+      DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
+    );
+  }
+  const hourlyBase = catalogItemBaseHourlyPriceRial(item);
+  if (hourlyBase != null && hourlyBase > 0n) {
+    return (
+      calculateFinalPriceRial(hourlyBase, DEFAULT_LAUNCH_MARKUP_BASIS_POINTS) *
+      720n
+    );
+  }
+  return 0n;
 }
 
 export async function listLiveCloudServerOffers() {
@@ -865,15 +870,19 @@ export async function listLiveCloudServerOffers() {
           config.apiVersion === item.apiVersion &&
           config.productKind === item.productKind,
       );
+      const startParchin = configs.parchin.find(
+        (config) => config.level === "PARCHIN_START",
+      );
       const priced =
         providerPricing && productPricing
           ? resolveCatalogItemPricing(item, providerPricing, {
               productMarkupBasisPoints: productPricing.markupBasisPoints,
-              taxBasisPoints: configs.commerce?.taxBps ?? 0,
+              taxBasisPoints: configs.commerce?.taxBps ?? 1000,
+              parchinLevel: "PARCHIN_START",
+              parchinPriceRial: startParchin?.priceRial ?? 0n,
+              termMonths: 1,
             })
           : null;
-      const markupBasisPoints = priced?.markupBasisPoints ?? 0;
-      const taxBasisPoints = priced?.taxBasisPoints ?? 0;
       const purchaseState: PublicPlanOffer["purchaseState"] =
         item.available && item.status === "ACTIVE"
           ? "SKU_UNPUBLISHED"
@@ -883,8 +892,8 @@ export async function listLiveCloudServerOffers() {
           item,
           locationLabel,
           catalogFresh,
-          markupBasisPoints,
-          taxBasisPoints,
+          priced,
+          fallbackTaxBasisPoints: configs.commerce?.taxBps ?? 1000,
           purchaseState,
           purchasable: false,
         }),

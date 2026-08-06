@@ -241,21 +241,16 @@ export function ChinishCloudCatalog({
                     </span>
                   )
                 ) : null}
-                {priceDisplay.showDailyPrice &&
-                (offer.dailyPriceRial || offer.hourlyPriceRial) ? (
+                {priceDisplay.showDailyPrice && offer.dailyPriceRial ? (
                   <small>
-                    {formatStorefrontToman(
-                      offer.dailyPriceRial ??
-                        (
-                          BigInt(offer.hourlyPriceRial ?? "0") * 24n
-                        ).toString(),
-                    )}{" "}
-                    تومان در روز
+                    معادل روزانه {formatStorefrontToman(offer.dailyPriceRial)}{" "}
+                    تومان
                   </small>
                 ) : null}
                 {priceDisplay.showHourlyPrice && offer.hourlyPriceRial ? (
                   <small>
-                    {formatStorefrontToman(offer.hourlyPriceRial)} تومان در ساعت
+                    معادل ساعتی {formatStorefrontToman(offer.hourlyPriceRial)}{" "}
+                    تومان
                   </small>
                 ) : null}
                 {!priceDisplay.showMonthlyPrice &&

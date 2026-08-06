@@ -4610,6 +4610,34 @@ a:focus-visible {
   font-weight: 600;
 }
 
+.finance-publish-review {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.finance-publish-review-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.finance-publish-review p {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.7;
+}
+
+.finance-impact-list {
+  margin: 0;
+  padding-inline-start: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 0.84rem;
+  color: var(--product-muted, #5b6b82);
+}
+
 /* Wallet-first order checkout */
 .order-wallet-summary {
   display: grid;

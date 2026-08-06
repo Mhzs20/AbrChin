@@ -776,10 +776,17 @@ export function ConversationBuilder({
     imageAssetId: string;
     accessMethod: "ONE_TIME_PASSWORD" | "SSH_KEY" | "WINDOWS_PASSWORD";
     sshKeyName?: string;
+    /** Mirror the auto-picked selection into the form controls. */
+    syncSelection?: boolean;
   }) {
     if (!sessionId || !input.planId || !input.imageAssetId) {
       setQuotesError("یک Region، سرور و سیستم‌عامل معتبر انتخاب کن.");
       return;
+    }
+    if (input.syncSelection) {
+      setSelectedDeliveryPlanId(input.planId);
+      setSelectedImageAssetId(input.imageAssetId);
+      setAccessMethod(input.accessMethod);
     }
     setSavingDelivery(true);
     setQuotesError(null);
@@ -860,18 +867,20 @@ export function ConversationBuilder({
       preferred?.images[0];
     if (!sessionId || !preferred?.id || !image?.id) return;
     autoDeliveryAttempted.current = true;
-    setSelectedDeliveryPlanId(preferred.id);
-    setSelectedImageAssetId(image.id);
-    setAccessMethod(
-      image.windows ? "WINDOWS_PASSWORD" : "ONE_TIME_PASSWORD",
-    );
-    void confirmDeliveryWith({
-      planId: preferred.id,
-      imageAssetId: image.id,
-      accessMethod: image.windows
-        ? "WINDOWS_PASSWORD"
-        : "ONE_TIME_PASSWORD",
-    });
+    // Defer past the render commit so delivery-state updates never cascade
+    // synchronously inside the effect.
+    const timer = setTimeout(() => {
+      void confirmDeliveryWith({
+        planId: preferred.id,
+        imageAssetId: image.id,
+        accessMethod: image.windows
+          ? "WINDOWS_PASSWORD"
+          : "ONE_TIME_PASSWORD",
+        syncSelection: true,
+      });
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     deliveryConfigured,
     deliveryOptions,

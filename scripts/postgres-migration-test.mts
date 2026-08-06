@@ -1817,18 +1817,18 @@ try {
     WHERE so.id = 'order-refunded'
   `);
   assert.deepEqual(terminalFinancialAfter, terminalFinancialBefore);
+  // Raw updates: the generated client belongs to the FINAL schema, whose
+  // newer ServiceOrder columns do not exist yet at this staged migration.
   await assert.rejects(
-    db.serviceOrder.update({
-      where: { id: "order-refunded" },
-      data: { status: ServiceOrderStatus.DRAFT },
-    }),
+    db.$executeRawUnsafe(
+      `UPDATE "ServiceOrder" SET "status" = 'DRAFT' WHERE id = 'order-refunded'`,
+    ),
     /service_order_terminal_status_violation/,
   );
   await assert.rejects(
-    db.serviceOrder.update({
-      where: { id: "order-canceled" },
-      data: { status: ServiceOrderStatus.DRAFT },
-    }),
+    db.$executeRawUnsafe(
+      `UPDATE "ServiceOrder" SET "status" = 'DRAFT' WHERE id = 'order-canceled'`,
+    ),
     /service_order_terminal_status_violation/,
   );
 
@@ -6879,9 +6879,19 @@ try {
     (offer) => offer.id === preprovisionedPlan.id,
   );
   assert.equal(degradedOffers.degraded, true);
+  // Cloud offers are keyed by catalog item; the shared inventory item maps to
+  // the published API plan only.
   assert.equal(manualOffer, undefined);
-  assert.equal(apiOffer, undefined);
   assert.equal(inventoryOffer, undefined);
+  // Admin publication keeps the plan browse-visible during outage, but sale
+  // stays fail-closed: never purchasable, clearly stale, no leaked base price.
+  assert.ok(apiOffer);
+  assert.equal(apiOffer.purchasable, false);
+  assert.equal(apiOffer.purchaseState, "SALE_DISABLED");
+  assert.equal(apiOffer.available, false);
+  assert.equal(apiOffer.catalogStatus, "STALE");
+  assert.equal(apiOffer.providerBaseHourlyPriceRial, null);
+  assert.equal(apiOffer.providerBaseMonthlyPriceRial, "0");
   const {
     createCloudServerQuote,
   } = await import("../lib/recommendation/quote-service.ts");
@@ -6893,6 +6903,7 @@ try {
       delivery: {
         imageAssetId: inventoryImage.id,
         accessMethod: "ONE_TIME_PASSWORD",
+        serverName: "inventory-live",
       },
     }),
     /فروش عمومی/,
@@ -6945,6 +6956,7 @@ try {
       delivery: {
         imageAssetId: inventoryImage.id,
         accessMethod: "ONE_TIME_PASSWORD",
+        serverName: "inventory-live",
       },
     }),
     /فروش عمومی|ساخت این سرور|فعال نشده/i,
@@ -7007,6 +7019,7 @@ try {
       delivery: {
         imageAssetId: inventoryImage.id,
         accessMethod: "ONE_TIME_PASSWORD",
+        serverName: "inventory-live",
       },
     }),
     createCloudServerQuote({
@@ -7016,6 +7029,7 @@ try {
       delivery: {
         imageAssetId: inventoryImage.id,
         accessMethod: "ONE_TIME_PASSWORD",
+        serverName: "inventory-live",
       },
     }),
   ]);
@@ -7100,6 +7114,7 @@ try {
     delivery: {
       imageAssetId: inventoryImage.id,
       accessMethod: "ONE_TIME_PASSWORD",
+      serverName: "inventory-live",
     },
   });
   const failureQuote = await db.recommendationQuote.findFirstOrThrow({
@@ -7175,6 +7190,7 @@ try {
     delivery: {
       imageAssetId: inventoryImage.id,
       accessMethod: "ONE_TIME_PASSWORD",
+      serverName: "inventory-live",
     },
   });
   const successQuote = await db.recommendationQuote.findFirstOrThrow({
@@ -7386,6 +7402,36 @@ try {
         freshnessSlaSeconds: 900,
       },
     });
+    // Selling requires Admin-enabled pricing configs (Financial Center):
+    // provider margin + product markup must be switched on for the route.
+    await db.providerPricingConfig.upsert({
+      where: { provider: InfrastructureProvider.PARSPACK },
+      update: { enabled: true },
+      create: {
+        id: "parspack-v1",
+        provider: InfrastructureProvider.PARSPACK,
+        apiVersion: "v1",
+        enabled: true,
+        markupBasisPoints: 2500,
+      },
+    });
+    await db.productPricingConfig.upsert({
+      where: {
+        provider_apiVersion_productKind: {
+          provider: InfrastructureProvider.PARSPACK,
+          apiVersion: "v1",
+          productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
+        },
+      },
+      update: { enabled: true },
+      create: {
+        provider: InfrastructureProvider.PARSPACK,
+        apiVersion: "v1",
+        productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
+        enabled: true,
+        markupBasisPoints: 0,
+      },
+    });
     const readyPlan =
       await db.infrastructurePlan.findUniqueOrThrow({
         where: { id: parsPackPublishedReadyPlan.id },
@@ -7423,6 +7469,7 @@ try {
     const readyDelivery = {
       imageAssetId: readyImage.id,
       accessMethod: "ONE_TIME_PASSWORD" as const,
+      serverName: "parspack-gate",
     };
     const deliveryOptions = await getCatalogServerDeliveryOptions({
       planId: readyPlan.id,
@@ -7441,14 +7488,26 @@ try {
     });
 
     process.env.PARSPACK_PUBLIC_SALE_ENABLED = "false";
-    assert.deepEqual((await listLiveReadyServerOffers()).offers, []);
+    // Admin publication keeps the offer browse-visible; the sale flag only
+    // closes purchase (fail-closed), it no longer hides the listing.
+    const saleClosedReadyOffers = await listLiveReadyServerOffers();
+    assert.equal(saleClosedReadyOffers.offers.length, 1);
+    assert.equal(
+      saleClosedReadyOffers.offers[0]?.id,
+      "runtime-parspack-ready-plan",
+    );
+    assert.equal(saleClosedReadyOffers.offers[0]?.purchasable, false);
+    assert.equal(
+      saleClosedReadyOffers.offers[0]?.purchaseState,
+      "SALE_DISABLED",
+    );
     await assert.rejects(
       getCatalogServerDeliveryOptions({
         planId: readyPlan.id,
         expectedProductKind:
           InfrastructureProductKind.READY_INSTANT_SERVER,
       }),
-      /فروش عمومی سرورهای فوری/,
+      /فروش عمومی/,
     );
     await assert.rejects(
       createReadyServerQuote({
@@ -7457,7 +7516,7 @@ try {
         idempotencyKey: "parspack-gate-new-quote-blocked",
         delivery: readyDelivery,
       }),
-      /فروش عمومی سرورهای فوری/,
+      /فروش عمومی/,
     );
     const ordersBeforeBlockedConversion = await db.serviceOrder.count();
     await assert.rejects(
@@ -7465,7 +7524,7 @@ try {
         "inventory-customer",
         quoteBeforeGateClosed.quote.id,
       ),
-      /فروش عمومی سرورهای فوری.*مبلغی برداشت نشد/,
+      /فروش عمومی.*مبلغی برداشت نشد/,
     );
     assert.equal(
       await db.serviceOrder.count(),
@@ -7510,7 +7569,7 @@ try {
     process.env.PARSPACK_PUBLIC_SALE_ENABLED = "false";
     await assert.rejects(
       payOrderWithWallet("inventory-customer", oldParsPackOrder.id),
-      /فروش عمومی سرورهای فوری.*مبلغی برداشت نشد/,
+      /فروش عمومی.*مبلغی برداشت نشد/,
     );
     assert.deepEqual(
       await db.wallet.findUniqueOrThrow({

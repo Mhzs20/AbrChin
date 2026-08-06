@@ -598,6 +598,7 @@ model User {
   catalogItemsManuallyUpdated ProviderCatalogItem[]               @relation("CatalogItemManualUpdatedBy")
   storefrontSlotsUpdated      StorefrontAssortmentSlot[]          @relation("StorefrontSlotUpdatedBy")
   storefrontSettingsUpdated   StorefrontAssortmentSettings[]      @relation("StorefrontSettingsUpdatedBy")
+  financeRevisions            FinanceConfigurationRevision[]      @relation("FinanceRevisionActor")
   inventoryItemsCreated       PreprovisionedInventoryItem[]       @relation("InventoryCreatedBy")
   inventoryItemsUpdated       PreprovisionedInventoryItem[]       @relation("InventoryUpdatedBy")
   inventoryCredentialsCreated PreprovisionedInventoryCredential[] @relation("InventoryCredentialCreatedBy")
@@ -2156,11 +2157,28 @@ model ProviderPricingConfig {
   apiVersion        String                 @default("v1")
   enabled           Boolean                @default(false)
   sourceMoneyUnit   String?
-  /// Launch default ~233.33% over cost ⇒ ~30% cost / ~70% profit pre-tax.
-  markupBasisPoints Int                    @default(23333)
+  /// Launch default: 30% target gross margin ⇒ markup ≈ 42.86% on cost.
+  markupBasisPoints Int                    @default(4286)
   updatedAt         DateTime               @updatedAt
   updatedById       String?
   updatedBy         User?                  @relation("ProviderPricingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+/// Immutable, append-only snapshot of the Financial Center configuration.
+/// Publish/rollback always append a new revision; orders keep their own
+/// pricing snapshots so revisions never change past sales retroactively.
+model FinanceConfigurationRevision {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  actorUserId  String?
+  actor        User?    @relation("FinanceRevisionActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  reason       String?
+  /// Set when this revision was produced by rolling back to an older one.
+  rollbackOfId String?
+  snapshot     Json
+
+  @@index([createdAt])
+  @@index([actorUserId])
 }
 
 model ProductPricingConfig {

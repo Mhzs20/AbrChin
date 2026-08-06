@@ -40,27 +40,38 @@ export async function ensurePublishedPlanForCatalogItem(
   const imageCodes = compatibleImageCodes(item);
   const imageCode =
     selectReadyServerImage(imageCodes) ?? imageCodes[0] ?? "linux";
-  const [providerPricing, productPricing] = await Promise.all([
-    prisma.providerPricingConfig.findFirst({
-      where: {
-        provider: item.provider,
-        apiVersion: item.apiVersion,
-        enabled: true,
-      },
-    }),
-    prisma.productPricingConfig.findFirst({
-      where: {
-        provider: item.provider,
-        apiVersion: item.apiVersion,
-        productKind: item.productKind,
-        enabled: true,
-      },
-    }),
-  ]);
+  const [providerPricing, productPricing, commerce, startParchin] =
+    await Promise.all([
+      prisma.providerPricingConfig.findFirst({
+        where: {
+          provider: item.provider,
+          apiVersion: item.apiVersion,
+          enabled: true,
+        },
+      }),
+      prisma.productPricingConfig.findFirst({
+        where: {
+          provider: item.provider,
+          apiVersion: item.apiVersion,
+          productKind: item.productKind,
+          enabled: true,
+        },
+      }),
+      prisma.commercePricingConfig.findUnique({ where: { id: "default" } }),
+      prisma.parchinPricingConfig.findFirst({
+        where: { level: ParchinLevel.PARCHIN_START, active: true },
+      }),
+    ]);
+  // Stored SKU sale price = full 1-month engine amount (markup + Parchin +
+  // tax) so every surface reading the column matches card and quote.
   const priced =
     providerPricing && productPricing
       ? resolveCatalogItemPricing(item, providerPricing, {
           productMarkupBasisPoints: productPricing.markupBasisPoints,
+          taxBasisPoints: commerce?.taxBps ?? 1000,
+          parchinLevel: ParchinLevel.PARCHIN_START,
+          parchinPriceRial: startParchin?.priceRial ?? 0n,
+          termMonths: 1,
         })
       : null;
   const title = storefrontServerTitle({

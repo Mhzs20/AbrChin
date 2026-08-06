@@ -8,32 +8,19 @@ import {
   Ticket,
   TrendingUp,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { CouponsPanel } from "@/components/admin/coupons-panel";
 import { SectionCard, StatusBadge } from "@/components/product";
+import {
+  HIGH_MARGIN_CONFIRMATION_PHRASE,
+  grossMarginBpsToMarkupBps,
+  markupBpsToGrossMarginBps,
+} from "@/lib/pricing/commercial-engine";
 
-type ProductMarkup = {
-  provider: "ARVAN" | "PARSPACK";
-  apiVersion: string;
-  productKind: "CLOUD_SERVER" | "READY_INSTANT_SERVER";
-  markupBasisPoints: number;
-  enabled: boolean;
-};
-
-type ParchinRow = {
-  level: "PARCHIN_START" | "PARCHIN_ACTIVE" | "PARCHIN_STABLE";
-  title: string;
-  description: string | null;
-  priceRial: string;
-  active: boolean;
-};
-
-type ProviderMarkup = {
-  provider: "ARVAN" | "PARSPACK";
-  markupPercent: string;
-  enabled: boolean;
-};
+type ProviderCode = "ARVAN" | "PARSPACK";
+type ProductKindCode = "CLOUD_SERVER" | "READY_INSTANT_SERVER";
+type ParchinLevelCode = "PARCHIN_START" | "PARCHIN_ACTIVE" | "PARCHIN_STABLE";
 
 type CouponRow = {
   id: string;
@@ -50,25 +37,118 @@ type CouponRow = {
   active: boolean;
 };
 
-type CommerceState = {
-  taxPercent: string;
+type InitialConfiguration = {
+  providers: Array<{
+    provider: ProviderCode;
+    markupBasisPoints: number;
+    targetGrossMarginBps: number;
+    enabled: boolean;
+  }>;
+  productMarkups: Array<{
+    provider: string;
+    apiVersion: string;
+    productKind: ProductKindCode;
+    markupBasisPoints: number;
+    enabled: boolean;
+  }>;
+  taxBps: number;
   reminderDaysBeforeDue: number;
   suspendGraceDaysAfterZero: number;
   deleteDaysAfterSuspend: number;
-  compassServicePricesToman: {
-    SITE_MIGRATION: string;
-    INITIAL_SETUP: string;
-    DOMAIN_SSL: string;
-    BACKUP_RESTORE: string;
-    ARCHITECTURE_LIGHT: string;
+  compassServicePrices: Record<string, string>;
+  parchin: Array<{
+    level: ParchinLevelCode;
+    title: string;
+    description: string | null;
+    priceRial: string;
+    active: boolean;
+  }>;
+  priceDisplay: {
+    showHourlyPrice: boolean;
+    showDailyPrice: boolean;
+    showMonthlyPrice: boolean;
   };
-  productMarkups: Array<ProductMarkup & { markupPercent: string }>;
-  parchin: Array<ParchinRow & { priceToman: string }>;
+  revisions: Array<{
+    id: string;
+    createdAt: string;
+    reason: string | null;
+    rollbackOfId: string | null;
+    actorMobile: string | null;
+  }>;
+};
+
+type PreviewBreakdown = {
+  providerCostRial: string;
+  providerMarkupRial: string;
+  productMarkupRial: string;
+  totalMarkupRial: string;
+  parchinRial: string;
+  addonsRial: string;
+  subtotalBeforeDiscountRial: string;
+  discountRial: string;
+  taxableRial: string;
+  taxRial: string;
+  finalPriceRial: string;
+  renewalPriceRial: string;
+  effectiveMarkupBps: number;
+  grossMarginBps: number;
+  termMonths: 1 | 3 | 6 | 12;
+  termDiscountBps: number;
+  discountSource: "none" | "term" | "coupon";
+  lineItems: Array<{
+    type: string;
+    label: string;
+    amountIrr: string;
+  }>;
+};
+
+type PreviewResponse = {
+  guardrails: {
+    level: "ok" | "warn" | "confirm";
+    providerLevels: Array<{
+      provider: ProviderCode;
+      marginBps: number;
+      markupBps: number;
+      level: "ok" | "warn" | "confirm";
+    }>;
+  };
+  simulation: {
+    providerEnabled: boolean;
+    productEnabled: boolean;
+    breakdown: PreviewBreakdown;
+  } | null;
+  impact: {
+    sampledPlans: number;
+    affectedPlans: number;
+    increasedPlans: number;
+    decreasedPlans: number;
+    unchangedPlans: number;
+    notSellablePlans: number;
+    topIncreases: ImpactRow[];
+    topDecreases: ImpactRow[];
+    rows: ImpactRow[];
+  } | null;
+  parity: {
+    ok: boolean;
+    mismatches: Array<{ planId: string; card: string; quote: string }>;
+    sampled: number;
+  } | null;
+};
+
+type ImpactRow = {
+  planId: string;
+  title: string;
+  provider: string;
+  currentFinalRial: string | null;
+  candidateFinalRial: string | null;
+  deltaRial: string | null;
+  deltaBps: number | null;
+  sellable: boolean;
 };
 
 const SECTIONS = [
   { id: "summary", label: "خلاصه", icon: Calculator },
-  { id: "markup", label: "سود و Markup", icon: TrendingUp },
+  { id: "markup", label: "سود و قیمت‌گذاری", icon: TrendingUp },
   { id: "parchin", label: "پرچین", icon: Shield },
   { id: "tax", label: "مالیات و چرخه", icon: Percent },
   { id: "compass", label: "قطب‌نما", icon: Compass },
@@ -77,17 +157,7 @@ const SECTIONS = [
 
 type FinanceSectionId = (typeof SECTIONS)[number]["id"];
 
-const TERM_DISCOUNT_BPS: Record<1 | 3 | 6 | 12, number> = {
-  1: 0,
-  3: 500,
-  6: 1_000,
-  12: 2_000,
-};
-
-const serviceLabels: Record<
-  keyof CommerceState["compassServicePricesToman"],
-  string
-> = {
+const serviceLabels: Record<string, string> = {
   SITE_MIGRATION: "انتقال سایت/سورس",
   INITIAL_SETUP: "راه‌اندازی اولیه",
   DOMAIN_SSL: "دامنه و SSL",
@@ -95,15 +165,15 @@ const serviceLabels: Record<
   ARCHITECTURE_LIGHT: "همراهی معماری سبک",
 };
 
-function providerLabel(provider: "ARVAN" | "PARSPACK") {
+function providerLabel(provider: ProviderCode) {
   return provider === "PARSPACK" ? "ParsPack" : "Arvan";
 }
 
-function productKindLabel(kind: ProductMarkup["productKind"]) {
+function productKindLabel(kind: ProductKindCode) {
   return kind === "CLOUD_SERVER" ? "سرور ابری" : "سرور آماده";
 }
 
-function parchinLevelLabel(level: ParchinRow["level"]) {
+function parchinLevelLabel(level: ParchinLevelCode) {
   if (level === "PARCHIN_START") return "سطح ۱ · نو / شروع";
   if (level === "PARCHIN_ACTIVE") return "سطح ۲ · استوار / فعال";
   return "سطح ۳ · کهکشان / پایدار";
@@ -147,197 +217,215 @@ function faDigits(value: string) {
   return Number(cleaned).toLocaleString("fa-IR");
 }
 
-function formatTomanFromRial(rial: bigint) {
-  return `${(rial / 10n).toLocaleString("fa-IR")} تومان`;
-}
-
-function ceilBps(amount: bigint, bps: number) {
-  if (amount <= 0n || bps <= 0) return 0n;
-  return (amount * BigInt(bps) + 9_999n) / 10_000n;
-}
-
-function markupMultiplierLabel(percent: string): string | null {
-  const bps = percentToBps(percent);
-  if (bps == null) return null;
-  const multiplier = 1 + bps / 10_000;
-  return `فروش ≈ ${multiplier.toLocaleString("fa-IR", {
-    maximumFractionDigits: 2,
-  })}× خرید`;
+function formatTomanFromRialString(rial: string) {
+  try {
+    const value = BigInt(rial);
+    const negative = value < 0n;
+    const toman = (negative ? -value : value) / 10n;
+    return `${negative ? "−" : ""}${toman.toLocaleString("fa-IR")} تومان`;
+  } catch {
+    return "—";
+  }
 }
 
 export function FinanceCenterPanel({
-  initialCommerce,
-  initialProviders,
+  initialConfiguration,
   initialCoupons,
 }: {
-  initialCommerce: {
-    taxBps: number;
-    reminderDaysBeforeDue: number;
-    suspendGraceDaysAfterZero: number;
-    deleteDaysAfterSuspend: number;
-    compassServicePrices: Record<string, string>;
-    productMarkups: ProductMarkup[];
-    parchin: ParchinRow[];
-  };
-  initialProviders: ProviderMarkup[];
+  initialConfiguration: InitialConfiguration;
   initialCoupons: CouponRow[];
 }) {
-  const [commerce, setCommerce] = useState<CommerceState>(() => ({
-    taxPercent: bpsToPercent(initialCommerce.taxBps),
-    reminderDaysBeforeDue: initialCommerce.reminderDaysBeforeDue,
-    suspendGraceDaysAfterZero: initialCommerce.suspendGraceDaysAfterZero,
-    deleteDaysAfterSuspend: initialCommerce.deleteDaysAfterSuspend,
-    compassServicePricesToman: {
-      SITE_MIGRATION: rialToTomanDigits(
-        initialCommerce.compassServicePrices.SITE_MIGRATION ?? "0",
-      ),
-      INITIAL_SETUP: rialToTomanDigits(
-        initialCommerce.compassServicePrices.INITIAL_SETUP ?? "0",
-      ),
-      DOMAIN_SSL: rialToTomanDigits(
-        initialCommerce.compassServicePrices.DOMAIN_SSL ?? "0",
-      ),
-      BACKUP_RESTORE: rialToTomanDigits(
-        initialCommerce.compassServicePrices.BACKUP_RESTORE ?? "0",
-      ),
-      ARCHITECTURE_LIGHT: rialToTomanDigits(
-        initialCommerce.compassServicePrices.ARCHITECTURE_LIGHT ?? "0",
-      ),
-    },
-    productMarkups: initialCommerce.productMarkups.map((item) => ({
-      ...item,
-      markupPercent: bpsToPercent(item.markupBasisPoints),
+  const [providers, setProviders] = useState(
+    initialConfiguration.providers.map((item) => ({
+      provider: item.provider,
+      marginPercent: bpsToPercent(item.targetGrossMarginBps),
+      enabled: item.enabled,
     })),
-    parchin: initialCommerce.parchin.map((item) => ({
+  );
+  const [productMarkups, setProductMarkups] = useState(
+    initialConfiguration.productMarkups
+      .filter(
+        (item): item is typeof item & { provider: ProviderCode } =>
+          item.provider === "ARVAN" || item.provider === "PARSPACK",
+      )
+      .map((item) => ({
+        provider: item.provider,
+        productKind: item.productKind,
+        markupPercent: bpsToPercent(item.markupBasisPoints),
+        enabled: item.enabled,
+      })),
+  );
+  const [taxPercent, setTaxPercent] = useState(
+    bpsToPercent(initialConfiguration.taxBps),
+  );
+  const [lifecycle, setLifecycle] = useState({
+    reminderDaysBeforeDue: initialConfiguration.reminderDaysBeforeDue,
+    suspendGraceDaysAfterZero: initialConfiguration.suspendGraceDaysAfterZero,
+    deleteDaysAfterSuspend: initialConfiguration.deleteDaysAfterSuspend,
+  });
+  const [compassPricesToman, setCompassPricesToman] = useState<
+    Record<string, string>
+  >(() =>
+    Object.fromEntries(
+      Object.keys(serviceLabels).map((code) => [
+        code,
+        rialToTomanDigits(
+          initialConfiguration.compassServicePrices[code] ?? "0",
+        ),
+      ]),
+    ),
+  );
+  const [parchin, setParchin] = useState(
+    initialConfiguration.parchin.map((item) => ({
       ...item,
       priceToman: rialToTomanDigits(item.priceRial),
     })),
-  }));
-  const [providers, setProviders] = useState(initialProviders);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  );
+  const [priceDisplay, setPriceDisplay] = useState(
+    initialConfiguration.priceDisplay,
+  );
+  const [revisions, setRevisions] = useState(initialConfiguration.revisions);
+
   const [activeSection, setActiveSection] =
     useState<FinanceSectionId>("summary");
   const [simOpenMobile, setSimOpenMobile] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [publishReview, setPublishReview] = useState<PreviewResponse | null>(
+    null,
+  );
+  const [publishReason, setPublishReason] = useState("");
+  const [highMarginText, setHighMarginText] = useState("");
 
-  const baseline = useRef("");
-  const serialized = JSON.stringify({ commerce, providers });
-  if (baseline.current === "") {
-    baseline.current = serialized;
-  }
-  const dirty = serialized !== baseline.current;
+  const serialized = JSON.stringify({
+    providers,
+    productMarkups,
+    taxPercent,
+    lifecycle,
+    compassPricesToman,
+    parchin,
+    priceDisplay,
+  });
+  const [baselineSerialized, setBaselineSerialized] = useState(serialized);
+  const dirty = serialized !== baselineSerialized;
 
   useEffect(() => {
-    // Keep the sticky save bar in view after tab switches on long sections.
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [activeSection]);
 
+  // ---- Simulator (server-computed via the production engine) ----
   const [simCostToman, setSimCostToman] = useState("300000");
-  const [simProvider, setSimProvider] = useState<"ARVAN" | "PARSPACK">("ARVAN");
-  const [simProductKind, setSimProductKind] = useState<
-    ProductMarkup["productKind"]
-  >("CLOUD_SERVER");
+  const [simProvider, setSimProvider] = useState<ProviderCode>("ARVAN");
+  const [simProductKind, setSimProductKind] =
+    useState<ProductKindCode>("CLOUD_SERVER");
   const [simTerm, setSimTerm] = useState<1 | 3 | 6 | 12>(3);
-  const [simParchin, setSimParchin] = useState<ParchinRow["level"]>(
-    "PARCHIN_START",
-  );
+  const [simParchin, setSimParchin] =
+    useState<ParchinLevelCode>("PARCHIN_START");
   const [simCouponPercent, setSimCouponPercent] = useState("");
+  const [preview, setPreview] = useState<PreviewResponse | null>(null);
+  const [previewError, setPreviewError] = useState("");
 
-  const simulation = useMemo(() => {
-    const costToman = simCostToman.replace(/[^\d]/g, "");
-    if (!costToman) return null;
-    const providerMonthly = BigInt(costToman) * 10n;
-    if (providerMonthly <= 0n) return null;
-    const providerCfg = providers.find((item) => item.provider === simProvider);
-    const productCfg = commerce.productMarkups.find(
-      (item) =>
-        item.provider === simProvider && item.productKind === simProductKind,
-    );
-    const providerBps = percentToBps(providerCfg?.markupPercent ?? "0") ?? 0;
-    const productBps = percentToBps(productCfg?.markupPercent ?? "0") ?? 0;
-    const taxBps = percentToBps(commerce.taxPercent) ?? 0;
-    const parchinRow = commerce.parchin.find(
-      (item) => item.level === simParchin,
-    );
-    const parchinMonthly = BigInt(
-      tomanDigitsToRial(parchinRow?.priceToman ?? "0"),
-    );
-    const markupBps = providerBps + productBps;
-    const monthlyMarkup = ceilBps(providerMonthly, markupBps);
-    const monthlyPretax = providerMonthly + monthlyMarkup + parchinMonthly;
-    const term = BigInt(simTerm);
-    const termPretax = monthlyPretax * term;
-    const couponBps = simCouponPercent.trim()
-      ? percentToBps(simCouponPercent)
-      : null;
-    const discountBps =
-      couponBps != null ? couponBps : TERM_DISCOUNT_BPS[simTerm];
-    const discountSource =
-      couponBps != null ? "coupon" : discountBps > 0 ? "term" : "none";
-    const discount = ceilBps(termPretax, discountBps);
-    const taxable = termPretax - discount;
-    const tax = ceilBps(taxable, taxBps);
-    const final = taxable + tax;
-    const buyShare =
-      final > 0n ? Number((providerMonthly * term * 10_000n) / final) / 100 : 0;
-    const profitShare =
-      final > 0n ? Number((monthlyMarkup * term * 10_000n) / final) / 100 : 0;
-    const restShare = Math.max(0, 100 - buyShare - profitShare);
-
+  const buildCandidate = useCallback(() => {
+    const providerRows = providers.map((item) => ({
+      provider: item.provider,
+      targetGrossMarginBps: percentToBps(item.marginPercent),
+      enabled: item.enabled,
+    }));
+    if (providerRows.some((row) => row.targetGrossMarginBps == null)) {
+      return null;
+    }
+    const productRows = productMarkups.map((item) => ({
+      provider: item.provider,
+      productKind: item.productKind,
+      markupBasisPoints: percentToBps(item.markupPercent),
+      enabled: item.enabled,
+    }));
+    if (productRows.some((row) => row.markupBasisPoints == null)) return null;
+    const taxBps = percentToBps(taxPercent);
+    if (taxBps == null || taxBps > 10_000) return null;
     return {
-      lines: [
-        {
-          key: "buy",
-          tone: "cost" as const,
-          label: "قیمت خرید Provider",
-          hint: `${formatTomanFromRial(providerMonthly)} ماهانه × ${simTerm.toLocaleString("fa-IR")} ماه`,
-          amount: providerMonthly * term,
-        },
-        {
-          key: "markup",
-          tone: "sale" as const,
-          label: "سود Markup ابرچین",
-          hint: `${bpsToPercent(markupBps)}٪ روی قیمت خرید`,
-          amount: monthlyMarkup * term,
-        },
-        {
-          key: "parchin",
-          tone: "sale" as const,
-          label: `پرچین · ${parchinRow?.title || simParchin}`,
-          hint: `${formatTomanFromRial(parchinMonthly)} ماهانه`,
-          amount: parchinMonthly * term,
-        },
-        {
-          key: "discount",
-          tone: "neutral" as const,
-          label:
-            discountSource === "coupon"
-              ? "تخفیف کد (جایگزین ۵/۱۰/۲۰)"
-              : `تخفیف دوره ${simTerm.toLocaleString("fa-IR")} ماهه`,
-          hint: `${bpsToPercent(discountBps)}٪`,
-          amount: -discount,
-        },
-        {
-          key: "tax",
-          tone: "neutral" as const,
-          label: "مالیات VAT",
-          hint: `${commerce.taxPercent}٪ پس از تخفیف`,
-          amount: tax,
-        },
-      ],
-      final,
-      buyShare,
-      profitShare,
-      restShare,
-      providerEnabled: providerCfg?.enabled !== false,
-      productEnabled: productCfg?.enabled !== false,
+      providers: providerRows,
+      productMarkups: productRows,
+      taxBps,
+      reminderDaysBeforeDue: lifecycle.reminderDaysBeforeDue,
+      suspendGraceDaysAfterZero: lifecycle.suspendGraceDaysAfterZero,
+      deleteDaysAfterSuspend: lifecycle.deleteDaysAfterSuspend,
+      compassServicePrices: Object.fromEntries(
+        Object.keys(serviceLabels).map((code) => [
+          code,
+          tomanDigitsToRial(compassPricesToman[code] ?? "0"),
+        ]),
+      ),
+      parchin: parchin.map((item) => ({
+        level: item.level,
+        title: item.title,
+        description: item.description,
+        priceRial: tomanDigitsToRial(item.priceToman),
+        active: item.active,
+      })),
+      priceDisplay,
     };
   }, [
-    commerce.parchin,
-    commerce.productMarkups,
-    commerce.taxPercent,
+    compassPricesToman,
+    lifecycle,
+    parchin,
+    priceDisplay,
+    productMarkups,
     providers,
+    taxPercent,
+  ]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      const candidate = buildCandidate();
+      const cost = simCostToman.replace(/[^\d]/g, "");
+      if (!candidate || !cost) {
+        setPreview(null);
+        return;
+      }
+      try {
+        setPreviewError("");
+        const response = await fetch("/api/admin/finance/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            candidate,
+            simulator: {
+              providerMonthlyCostRial: (BigInt(cost) * 10n).toString(),
+              provider: simProvider,
+              productKind: simProductKind,
+              termMonths: simTerm,
+              parchinLevel: simParchin,
+              couponDiscountBps: simCouponPercent.trim()
+                ? percentToBps(simCouponPercent)
+                : null,
+            },
+          }),
+        });
+        const body = (await response.json()) as PreviewResponse & {
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(body.error ?? "پیش‌نمایش ممکن نشد.");
+        }
+        setPreview(body);
+      } catch (caught) {
+        if (controller.signal.aborted) return;
+        setPreview(null);
+        setPreviewError(
+          caught instanceof Error ? caught.message : "پیش‌نمایش ممکن نشد.",
+        );
+      }
+    }, 350);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [
+    buildCandidate,
     simCostToman,
     simCouponPercent,
     simParchin,
@@ -346,125 +434,235 @@ export function FinanceCenterPanel({
     simTerm,
   ]);
 
+  const guardrailLevel = preview?.guardrails.level ?? "ok";
+
   const overview = useMemo(() => {
     const arvan = providers.find((item) => item.provider === "ARVAN");
     const parspack = providers.find((item) => item.provider === "PARSPACK");
-    const parchinStart = commerce.parchin.find(
+    const parchinStart = parchin.find(
       (item) => item.level === "PARCHIN_START",
     );
     const activeCoupons = initialCoupons.filter(
       (coupon) => coupon.active,
     ).length;
     return { arvan, parspack, parchinStart, activeCoupons };
-  }, [commerce.parchin, initialCoupons, providers]);
+  }, [initialCoupons, parchin, providers]);
 
-  async function saveAll() {
-    setSaving(true);
-    setMessage("");
-    setError("");
+  function equivalentMarkupPercent(marginPercent: string): string | null {
+    const marginBps = percentToBps(marginPercent);
+    if (marginBps == null || marginBps >= 10_000) return null;
     try {
-      const taxBps = percentToBps(commerce.taxPercent);
-      if (taxBps == null || taxBps > 10_000) {
-        throw new Error("مالیات باید بین ۰ تا ۱۰۰٪ باشد.");
-      }
-      for (const item of commerce.productMarkups) {
-        if (percentToBps(item.markupPercent) == null) {
-          throw new Error(
-            `Markup محصول ${providerLabel(item.provider)} / ${productKindLabel(item.productKind)} معتبر نیست.`,
-          );
-        }
-      }
-      for (const item of providers) {
-        if (percentToBps(item.markupPercent) == null) {
-          throw new Error(
-            `Markup منبع ${providerLabel(item.provider)} معتبر نیست.`,
-          );
-        }
-      }
+      return bpsToPercent(grossMarginBpsToMarkupBps(marginBps));
+    } catch {
+      return null;
+    }
+  }
 
-      const commerceBody = {
-        taxBps,
-        reminderDaysBeforeDue: commerce.reminderDaysBeforeDue,
-        suspendGraceDaysAfterZero: commerce.suspendGraceDaysAfterZero,
-        deleteDaysAfterSuspend: commerce.deleteDaysAfterSuspend,
-        compassServicePrices: {
-          SITE_MIGRATION: tomanDigitsToRial(
-            commerce.compassServicePricesToman.SITE_MIGRATION,
-          ),
-          INITIAL_SETUP: tomanDigitsToRial(
-            commerce.compassServicePricesToman.INITIAL_SETUP,
-          ),
-          DOMAIN_SSL: tomanDigitsToRial(
-            commerce.compassServicePricesToman.DOMAIN_SSL,
-          ),
-          BACKUP_RESTORE: tomanDigitsToRial(
-            commerce.compassServicePricesToman.BACKUP_RESTORE,
-          ),
-          ARCHITECTURE_LIGHT: tomanDigitsToRial(
-            commerce.compassServicePricesToman.ARCHITECTURE_LIGHT,
-          ),
-        },
-        productMarkups: commerce.productMarkups.map((item) => ({
-          provider: item.provider,
-          apiVersion: item.apiVersion,
-          productKind: item.productKind,
-          markupBasisPoints: percentToBps(item.markupPercent)!,
-          enabled: item.enabled,
-        })),
-        parchin: commerce.parchin.map((item) => ({
-          level: item.level,
-          title: item.title,
-          description: item.description,
-          priceRial: tomanDigitsToRial(item.priceToman),
-          active: item.active,
-        })),
-      };
-
-      const commerceRes = await fetch("/api/admin/infrastructure/pricing", {
-        method: "PATCH",
+  async function startPublishReview() {
+    const candidate = buildCandidate();
+    if (!candidate) {
+      setError("مقدارهای واردشده معتبر نیستند.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/finance/preview", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(commerceBody),
+        body: JSON.stringify({ candidate, includeImpact: true }),
       });
-      const commerceJson = (await commerceRes.json()) as { error?: string };
-      if (!commerceRes.ok) {
-        throw new Error(commerceJson.error ?? "ذخیره قواعد قیمت ناموفق بود.");
-      }
-
-      for (const item of providers) {
-        const res = await fetch("/api/admin/infrastructure/providers/markup", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            provider: item.provider,
-            markupPercent: item.markupPercent,
-            enabled: item.enabled,
-          }),
-        });
-        const json = (await res.json()) as { error?: string };
-        if (!res.ok) {
-          throw new Error(
-            json.error ??
-              `ذخیره Markup ${providerLabel(item.provider)} ناموفق بود.`,
-          );
-        }
-      }
-
-      baseline.current = JSON.stringify({ commerce, providers });
-      setMessage("مرکز مالی ذخیره شد و روی فروش‌های بعدی اعمال می‌شود.");
-    } catch (saveError) {
+      const body = (await response.json()) as PreviewResponse & {
+        error?: string;
+      };
+      if (!response.ok) throw new Error(body.error ?? "بررسی اثر ممکن نشد.");
+      setPublishReview(body);
+    } catch (caught) {
       setError(
-        saveError instanceof Error ? saveError.message : "ذخیره ناموفق بود.",
+        caught instanceof Error ? caught.message : "بررسی اثر ممکن نشد.",
       );
     } finally {
       setSaving(false);
     }
   }
 
+  async function publishConfiguration() {
+    const candidate = buildCandidate();
+    if (!candidate) {
+      setError("مقدارهای واردشده معتبر نیستند.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/finance/configuration", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          ...candidate,
+          reason: publishReason.trim() || null,
+          highMarginConfirmation: highMarginText.trim() || null,
+        }),
+      });
+      const body = (await response.json()) as {
+        error?: string;
+        revisionId?: string;
+        configuration?: InitialConfiguration;
+      };
+      if (!response.ok) throw new Error(body.error ?? "انتشار ممکن نشد.");
+      setBaselineSerialized(serialized);
+      if (body.configuration) setRevisions(body.configuration.revisions);
+      setPublishReview(null);
+      setPublishReason("");
+      setHighMarginText("");
+      setMessage("تنظیمات مالی منتشر شد و روی فروش‌های بعدی اعمال می‌شود.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "انتشار ممکن نشد.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function rollbackTo(revisionId: string) {
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/finance/configuration", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ rollbackToRevisionId: revisionId }),
+      });
+      const body = (await response.json()) as {
+        error?: string;
+        configuration?: InitialConfiguration;
+      };
+      if (!response.ok) throw new Error(body.error ?? "بازگشت ممکن نشد.");
+      if (body.configuration) {
+        applyConfiguration(body.configuration);
+        setRevisions(body.configuration.revisions);
+      }
+      setMessage("تنظیمات به نسخه انتخاب‌شده بازگشت و منتشر شد.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "بازگشت ممکن نشد.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function applyConfiguration(configuration: InitialConfiguration) {
+    setProviders(
+      configuration.providers.map((item) => ({
+        provider: item.provider,
+        marginPercent: bpsToPercent(item.targetGrossMarginBps),
+        enabled: item.enabled,
+      })),
+    );
+    setProductMarkups(
+      configuration.productMarkups
+        .filter(
+          (item): item is typeof item & { provider: ProviderCode } =>
+            item.provider === "ARVAN" || item.provider === "PARSPACK",
+        )
+        .map((item) => ({
+          provider: item.provider,
+          productKind: item.productKind,
+          markupPercent: bpsToPercent(item.markupBasisPoints),
+          enabled: item.enabled,
+        })),
+    );
+    setTaxPercent(bpsToPercent(configuration.taxBps));
+    setLifecycle({
+      reminderDaysBeforeDue: configuration.reminderDaysBeforeDue,
+      suspendGraceDaysAfterZero: configuration.suspendGraceDaysAfterZero,
+      deleteDaysAfterSuspend: configuration.deleteDaysAfterSuspend,
+    });
+    setCompassPricesToman(
+      Object.fromEntries(
+        Object.keys(serviceLabels).map((code) => [
+          code,
+          rialToTomanDigits(configuration.compassServicePrices[code] ?? "0"),
+        ]),
+      ),
+    );
+    setParchin(
+      configuration.parchin.map((item) => ({
+        ...item,
+        priceToman: rialToTomanDigits(item.priceRial),
+      })),
+    );
+    setPriceDisplay(configuration.priceDisplay);
+    // New values become the saved baseline.
+    setBaselineSerialized(JSON.stringify({
+      providers: configuration.providers.map((item) => ({
+        provider: item.provider,
+        marginPercent: bpsToPercent(item.targetGrossMarginBps),
+        enabled: item.enabled,
+      })),
+      productMarkups: configuration.productMarkups
+        .filter(
+          (item) => item.provider === "ARVAN" || item.provider === "PARSPACK",
+        )
+        .map((item) => ({
+          provider: item.provider,
+          productKind: item.productKind,
+          markupPercent: bpsToPercent(item.markupBasisPoints),
+          enabled: item.enabled,
+        })),
+      taxPercent: bpsToPercent(configuration.taxBps),
+      lifecycle: {
+        reminderDaysBeforeDue: configuration.reminderDaysBeforeDue,
+        suspendGraceDaysAfterZero: configuration.suspendGraceDaysAfterZero,
+        deleteDaysAfterSuspend: configuration.deleteDaysAfterSuspend,
+      },
+      compassPricesToman: Object.fromEntries(
+        Object.keys(serviceLabels).map((code) => [
+          code,
+          rialToTomanDigits(configuration.compassServicePrices[code] ?? "0"),
+        ]),
+      ),
+      parchin: configuration.parchin.map((item) => ({
+        ...item,
+        priceToman: rialToTomanDigits(item.priceRial),
+      })),
+      priceDisplay: configuration.priceDisplay,
+    }));
+  }
+
+  const breakdown = preview?.simulation?.breakdown ?? null;
+  const shareBps = useMemo(() => {
+    if (!breakdown) return null;
+    try {
+      const final = BigInt(breakdown.finalPriceRial);
+      if (final <= 0n) return null;
+      const cost = Number((BigInt(breakdown.providerCostRial) * 10_000n) / final) / 100;
+      const profit =
+        Number((BigInt(breakdown.totalMarkupRial) * 10_000n) / final) / 100;
+      return {
+        cost,
+        profit,
+        rest: Math.max(0, 100 - cost - profit),
+      };
+    } catch {
+      return null;
+    }
+  }, [breakdown]);
+
   const simulatorPanel = (
     <div className="finance-simulator">
       <div className="finance-simulator-head">
         <h3>شبیه‌ساز مبلغ فروش</h3>
-        <p>با اعداد فعلی (حتی ذخیره‌نشده) ببین مشتری چقدر می‌بیند.</p>
+        <p>
+          محاسبه با موتور واقعی سرور انجام می‌شود؛ همان فرمول Quote و Checkout.
+        </p>
       </div>
       <div className="finance-sim-fields">
         <label className="pricing-field">
@@ -485,7 +683,7 @@ export function FinanceCenterPanel({
           <select
             value={simProvider}
             onChange={(event) =>
-              setSimProvider(event.target.value as "ARVAN" | "PARSPACK")
+              setSimProvider(event.target.value as ProviderCode)
             }
           >
             <option value="ARVAN">Arvan</option>
@@ -497,9 +695,7 @@ export function FinanceCenterPanel({
           <select
             value={simProductKind}
             onChange={(event) =>
-              setSimProductKind(
-                event.target.value as ProductMarkup["productKind"],
-              )
+              setSimProductKind(event.target.value as ProductKindCode)
             }
           >
             <option value="CLOUD_SERVER">سرور ابری</option>
@@ -525,10 +721,10 @@ export function FinanceCenterPanel({
           <select
             value={simParchin}
             onChange={(event) =>
-              setSimParchin(event.target.value as ParchinRow["level"])
+              setSimParchin(event.target.value as ParchinLevelCode)
             }
           >
-            {commerce.parchin.map((item) => (
+            {parchin.map((item) => (
               <option key={item.level} value={item.level}>
                 {item.title || parchinLevelLabel(item.level)}
               </option>
@@ -546,60 +742,115 @@ export function FinanceCenterPanel({
         </label>
       </div>
 
-      {simulation ? (
+      {breakdown ? (
         <div className="finance-sim-result">
           <div className="finance-sim-lines">
-            {simulation.lines.map((line) => (
-              <div
-                key={line.key}
-                className={`finance-sim-line finance-sim-line--${line.tone}`}
-              >
-                <div className="finance-sim-line-label">
-                  <span>{line.label}</span>
-                  <small>{line.hint}</small>
-                </div>
-                <strong>
-                  {line.amount < 0n ? "−" : ""}
-                  {formatTomanFromRial(
-                    line.amount < 0n ? -line.amount : line.amount,
-                  )}
-                </strong>
+            <div className="finance-sim-line finance-sim-line--cost">
+              <div className="finance-sim-line-label">
+                <span>قیمت خرید Provider</span>
+                <small>
+                  {simTerm.toLocaleString("fa-IR")} ماه ×{" "}
+                  {providerLabel(simProvider)}
+                </small>
               </div>
-            ))}
+              <strong>
+                {formatTomanFromRialString(breakdown.providerCostRial)}
+              </strong>
+            </div>
+            <div className="finance-sim-line finance-sim-line--sale">
+              <div className="finance-sim-line-label">
+                <span>سود Markup منبع</span>
+                <small>Markup {providerLabel(simProvider)}</small>
+              </div>
+              <strong>
+                {formatTomanFromRialString(breakdown.providerMarkupRial)}
+              </strong>
+            </div>
+            <div className="finance-sim-line finance-sim-line--sale">
+              <div className="finance-sim-line-label">
+                <span>سود Markup محصول</span>
+                <small>{productKindLabel(simProductKind)} · جمع با منبع</small>
+              </div>
+              <strong>
+                {formatTomanFromRialString(breakdown.productMarkupRial)}
+              </strong>
+            </div>
+            <div className="finance-sim-line finance-sim-line--sale">
+              <div className="finance-sim-line-label">
+                <span>پرچین</span>
+                <small>
+                  {parchin.find((item) => item.level === simParchin)?.title ||
+                    parchinLevelLabel(simParchin)}
+                </small>
+              </div>
+              <strong>{formatTomanFromRialString(breakdown.parchinRial)}</strong>
+            </div>
+            <div className="finance-sim-line">
+              <div className="finance-sim-line-label">
+                <span>
+                  {breakdown.discountSource === "coupon"
+                    ? "تخفیف کد (جایگزین ۵/۱۰/۲۰)"
+                    : `تخفیف دوره ${breakdown.termMonths.toLocaleString("fa-IR")} ماهه`}
+                </span>
+                <small>{bpsToPercent(breakdown.termDiscountBps)}٪</small>
+              </div>
+              <strong>
+                {formatTomanFromRialString(`-${breakdown.discountRial}`)}
+              </strong>
+            </div>
+            <div className="finance-sim-line">
+              <div className="finance-sim-line-label">
+                <span>مالیات VAT</span>
+                <small>{taxPercent}٪ پس از تخفیف</small>
+              </div>
+              <strong>{formatTomanFromRialString(breakdown.taxRial)}</strong>
+            </div>
           </div>
           <div className="finance-sim-total">
             <div>
               <span>مبلغ نهایی مشتری</span>
               <strong className="money-tone money-tone--sale">
-                {formatTomanFromRial(simulation.final)}
+                {formatTomanFromRialString(breakdown.finalPriceRial)}
               </strong>
             </div>
-            <div
-              className="finance-share-bar"
-              role="img"
-              aria-label={`سهم خرید ${simulation.buyShare}٪، سهم سود ${simulation.profitShare}٪`}
-            >
-              <span
-                className="finance-share-bar-cost"
-                style={{ width: `${simulation.buyShare}%` }}
-              />
-              <span
-                className="finance-share-bar-profit"
-                style={{ width: `${simulation.profitShare}%` }}
-              />
+            <div>
+              <span>حاشیه سود واقعی</span>
+              <strong>
+                {bpsToPercent(breakdown.grossMarginBps)}٪ از فروش زیرساخت
+              </strong>
             </div>
-            <p className="finance-share-legend">
-              <span className="finance-legend-item finance-legend-item--cost">
-                خرید {simulation.buyShare.toLocaleString("fa-IR")}٪
-              </span>
-              <span className="finance-legend-item finance-legend-item--profit">
-                سود Markup {simulation.profitShare.toLocaleString("fa-IR")}٪
-              </span>
-              <span className="finance-legend-item">
-                پرچین و مالیات {simulation.restShare.toLocaleString("fa-IR")}٪
-              </span>
-            </p>
-            {!simulation.providerEnabled || !simulation.productEnabled ? (
+            {shareBps ? (
+              <>
+                <div
+                  className="finance-share-bar"
+                  role="img"
+                  aria-label={`سهم خرید ${shareBps.cost}٪، سهم سود ${shareBps.profit}٪`}
+                >
+                  <span
+                    className="finance-share-bar-cost"
+                    style={{ width: `${shareBps.cost}%` }}
+                  />
+                  <span
+                    className="finance-share-bar-profit"
+                    style={{ width: `${shareBps.profit}%` }}
+                  />
+                </div>
+                <p className="finance-share-legend">
+                  <span className="finance-legend-item finance-legend-item--cost">
+                    خرید {shareBps.cost.toLocaleString("fa-IR")}٪
+                  </span>
+                  <span className="finance-legend-item finance-legend-item--profit">
+                    سود {shareBps.profit.toLocaleString("fa-IR")}٪
+                  </span>
+                  <span className="finance-legend-item">
+                    پرچین و مالیات {shareBps.rest.toLocaleString("fa-IR")}٪
+                  </span>
+                </p>
+              </>
+            ) : null}
+            {preview?.simulation &&
+            (!preview.simulation.providerEnabled ||
+              !preview.simulation.productEnabled) ? (
               <p className="pricing-save-err">
                 توجه: Markup {providerLabel(simProvider)} یا نوع محصول غیرفعال
                 است؛ فروش واقعی این ترکیب قیمت نمی‌گیرد.
@@ -607,6 +858,8 @@ export function FinanceCenterPanel({
             ) : null}
           </div>
         </div>
+      ) : previewError ? (
+        <p className="pricing-save-err">{previewError}</p>
       ) : (
         <p className="product-muted">قیمت خرید نمونه را وارد کن.</p>
       )}
@@ -617,22 +870,22 @@ export function FinanceCenterPanel({
     <div className="finance-center">
       <div className="finance-overview" role="list" aria-label="خلاصه مرکز مالی">
         <div className="finance-overview-chip" role="listitem">
-          <span>Markup Arvan</span>
+          <span>حاشیه سود Arvan</span>
           <strong className="money-tone--sale">
-            {overview.arvan ? `${overview.arvan.markupPercent}٪` : "—"}
+            {overview.arvan ? `${overview.arvan.marginPercent}٪` : "—"}
           </strong>
           <small>{overview.arvan?.enabled ? "فعال" : "خاموش"}</small>
         </div>
         <div className="finance-overview-chip" role="listitem">
-          <span>Markup ParsPack</span>
+          <span>حاشیه سود ParsPack</span>
           <strong className="money-tone--sale">
-            {overview.parspack ? `${overview.parspack.markupPercent}٪` : "—"}
+            {overview.parspack ? `${overview.parspack.marginPercent}٪` : "—"}
           </strong>
           <small>{overview.parspack?.enabled ? "فعال" : "خاموش"}</small>
         </div>
         <div className="finance-overview-chip" role="listitem">
           <span>مالیات VAT</span>
-          <strong>{commerce.taxPercent}٪</strong>
+          <strong>{taxPercent}٪</strong>
           <small>روی مبلغ پس از تخفیف</small>
         </div>
         <div className="finance-overview-chip" role="listitem">
@@ -642,7 +895,7 @@ export function FinanceCenterPanel({
               ? `${faDigits(overview.parchinStart.priceToman) || "۰"} تومان`
               : "—"}
           </strong>
-          <small>ماهانه · الزامی روی فروش</small>
+          <small>ماهانه · داخل قیمت کارت و Quote</small>
         </div>
         <div className="finance-overview-chip" role="listitem">
           <span>کدهای تخفیف فعال</span>
@@ -692,15 +945,18 @@ export function FinanceCenterPanel({
                 <p className="pricing-rules-lead finance-formula-line">
                   <strong className="money-tone--cost">خرید Provider</strong>
                   {" + "}
-                  <strong className="money-tone--sale">سود Markup</strong>
+                  <strong className="money-tone--sale">سود منبع</strong>
+                  {" + "}
+                  <strong className="money-tone--sale">سود محصول</strong>
                   {" + "}
                   <strong className="money-tone--sale">پرچین</strong>
                   {" × مدت − تخفیف + VAT = "}
                   <strong className="money-tone--sale">مبلغ مشتری</strong>
                 </p>
                 <p className="pricing-field-hint">
-                  سبز = خرید · آبی = سود / فروش ابرچین. تغییرها فقط بعد از ذخیره
-                  روی فروش بعدی اعمال می‌شوند. پرداخت، Provision خودکار نمی‌زند.
+                  همین فرمول در کارت، Quote، پرداخت و تمدید اجرا می‌شود؛ کارت و
+                  Quote یک‌ماهه همیشه برابرند. تغییرها فقط بعد از انتشار روی
+                  فروش بعدی اثر می‌گذارند و Snapshot سفارش‌های قبلی ثابت می‌ماند.
                 </p>
 
                 <div className="finance-next-actions">
@@ -709,7 +965,7 @@ export function FinanceCenterPanel({
                     className="product-btn product-btn--primary"
                     onClick={() => setActiveSection("markup")}
                   >
-                    تنظیم سود Markup
+                    تنظیم حاشیه سود
                   </button>
                   <button
                     type="button"
@@ -727,90 +983,54 @@ export function FinanceCenterPanel({
                   </button>
                 </div>
 
-                <details className="finance-help">
-                  <summary>چطور حساب می‌شود؟</summary>
-                  <ol className="finance-pipeline">
-                    <li className="finance-pipeline-step finance-pipeline-step--cost">
-                      <span>۱</span>
-                      <div>
-                        <strong>قیمت خرید Provider</strong>
-                        <p>هزینه ماهانه Arvan / ParsPack از کاتالوگ Sync</p>
-                      </div>
-                    </li>
-                    <li className="finance-pipeline-step finance-pipeline-step--sale">
-                      <span>۲</span>
-                      <div>
-                        <strong>سود Markup</strong>
-                        <p>Markup منبع + Markup نوع محصول</p>
-                      </div>
-                    </li>
-                    <li className="finance-pipeline-step finance-pipeline-step--sale">
-                      <span>۳</span>
-                      <div>
-                        <strong>پرچین</strong>
-                        <p>خط خدمت الزامی روی فروش مدیریت‌شده</p>
-                      </div>
-                    </li>
-                    <li className="finance-pipeline-step">
-                      <span>۴</span>
-                      <div>
-                        <strong>× مدت ماه</strong>
-                        <p>۱ / ۳ / ۶ / ۱۲ ماه</p>
-                      </div>
-                    </li>
-                    <li className="finance-pipeline-step">
-                      <span>۵</span>
-                      <div>
-                        <strong>تخفیف</strong>
-                        <p>ثابت ۵/۱۰/۲۰٪ یا کد تخفیف (جایگزین)</p>
-                      </div>
-                    </li>
-                    <li className="finance-pipeline-step">
-                      <span>۶</span>
-                      <div>
-                        <strong>مالیات</strong>
-                        <p>VAT روی مبلغ پس از تخفیف</p>
-                      </div>
-                    </li>
-                    <li className="finance-pipeline-step finance-pipeline-step--sale">
-                      <span>۷</span>
-                      <div>
-                        <strong>مبلغ نهایی مشتری</strong>
-                        <p>همان عدد قبل از درگاه</p>
-                      </div>
-                    </li>
-                  </ol>
-                  <div className="finance-process-grid">
-                    <article>
-                      <h3>چینش / خرید سرور</h3>
-                      <p>
-                        فرمول کامل بالا. مشتری نام Provider و قیمت خرید را
-                        نمی‌بیند.
-                      </p>
-                    </article>
-                    <article>
-                      <h3>قطب‌نما / خدمات</h3>
-                      <p>
-                        قیمت بسته‌های خدمت جدا از Markup سرور تنظیم می‌شود و فقط
-                        پیشنهاد خدمت است.
-                      </p>
-                    </article>
-                    <article>
-                      <h3>شارژ کیف پول</h3>
-                      <p>
-                        مبلغ شارژ = واریز مشتری. کد افزایش اعتبار فقط پس از حداقل
-                        واریز، N تومان اضافه می‌دهد.
-                      </p>
-                    </article>
-                    <article>
-                      <h3>SKU دستی ابرچین</h3>
-                      <p>
-                        قیمت پایه دستی یعنی Markup منبع/محصول صفر؛ فقط پرچین،
-                        تخفیف دوره و مالیات اعمال می‌شود.
-                      </p>
-                    </article>
+                <h3 className="finance-subtitle">نسخه‌های منتشرشده</h3>
+                {revisions.length === 0 ? (
+                  <p className="product-muted">
+                    هنوز نسخه‌ای منتشر نشده است؛ اولین انتشار از دکمه پایین صفحه
+                    ثبت می‌شود.
+                  </p>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="product-table">
+                      <thead>
+                        <tr>
+                          <th>زمان</th>
+                          <th>دلیل</th>
+                          <th>Actor</th>
+                          <th>عملیات</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {revisions.slice(0, 8).map((revision, index) => (
+                          <tr key={revision.id}>
+                            <td>
+                              {new Date(revision.createdAt).toLocaleString(
+                                "fa-IR",
+                              )}
+                              {revision.rollbackOfId ? " · بازگشت" : ""}
+                            </td>
+                            <td>{revision.reason ?? "—"}</td>
+                            <td dir="ltr">{revision.actorMobile ?? "—"}</td>
+                            <td>
+                              {index === 0 ? (
+                                <StatusBadge label="فعلی" tone="success" />
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="product-btn product-btn--quiet"
+                                  disabled={saving}
+                                  onClick={() => void rollbackTo(revision.id)}
+                                >
+                                  بازگشت به این نسخه
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                </details>
+                )}
               </SectionCard>
             </section>
           ) : null}
@@ -822,145 +1042,190 @@ export function FinanceCenterPanel({
               aria-labelledby="finance-tab-markup"
               className="finance-section"
             >
-              <SectionCard title="سود و Markup منابع و محصولات">
+              <SectionCard title="حاشیه سود هدف و Markup">
                 <p className="pricing-rules-lead">
-                  پیش‌فرض لانچ: حدود ۳۰٪ هزینه تأمین و ۷۰٪ سود (مارکاپ حدود
-                  ۲۳۳٫۳۳٪ روی قیمت خرید). تغییرها فقط فروش‌های بعدی را عوض
-                  می‌کنند.
+                  ورودی اصلی «حاشیه سود هدف» است: سهم سود از قیمت فروش زیرساخت.
+                  Markup معادل به‌صورت خودکار محاسبه و روی قیمت خرید اعمال
+                  می‌شود. پیش‌فرض لانچ ۳۰٪ حاشیه (Markup ≈ ۴۲٫۸۶٪) است.
                 </p>
 
-                <h3 className="finance-subtitle">Markup سراسری منبع</h3>
+                <h3 className="finance-subtitle">حاشیه سود منبع</h3>
                 <div className="pricing-rules-grid pricing-rules-grid--cards">
-                  {providers.map((item, index) => (
-                    <article
-                      className="pricing-product-card"
-                      key={item.provider}
-                    >
-                      <header>
-                        <span
-                          className="provider-code-badge"
-                          data-code={item.provider}
-                        >
-                          {providerLabel(item.provider)}
-                        </span>
-                        <StatusBadge
-                          label={item.enabled ? "فعال" : "خاموش"}
-                          tone={item.enabled ? "success" : "warning"}
-                        />
-                      </header>
-                      <label className="pricing-field">
-                        <span>Markup روی قیمت خرید (٪)</span>
-                        <input
-                          inputMode="decimal"
-                          value={item.markupPercent}
-                          onChange={(event) =>
-                            setProviders((current) =>
-                              current.map((row, rowIndex) =>
-                                rowIndex === index
-                                  ? {
-                                      ...row,
-                                      markupPercent: event.target.value,
-                                    }
-                                  : row,
-                              ),
-                            )
-                          }
-                        />
-                        <span className="pricing-field-hint">
-                          {markupMultiplierLabel(item.markupPercent) ??
-                            "عدد با حداکثر دو رقم اعشار، مثلاً ۲۳۳٫۳۳"}
-                        </span>
-                      </label>
-                      <label className="pricing-check">
-                        <input
-                          type="checkbox"
-                          checked={item.enabled}
-                          onChange={(event) =>
-                            setProviders((current) =>
-                              current.map((row, rowIndex) =>
-                                rowIndex === index
-                                  ? {
-                                      ...row,
-                                      enabled: event.target.checked,
-                                    }
-                                  : row,
-                              ),
-                            )
-                          }
-                        />
-                        محاسبه قیمت نهایی برای این منبع فعال باشد
-                      </label>
-                    </article>
-                  ))}
+                  {providers.map((item, index) => {
+                    const equivalent = equivalentMarkupPercent(
+                      item.marginPercent,
+                    );
+                    const marginBps = percentToBps(item.marginPercent);
+                    const level =
+                      marginBps == null || marginBps >= 10_000
+                        ? "invalid"
+                        : marginBps >= 7_000
+                          ? "confirm"
+                          : marginBps >= 5_000
+                            ? "warn"
+                            : "ok";
+                    return (
+                      <article
+                        className="pricing-product-card"
+                        key={item.provider}
+                      >
+                        <header>
+                          <span
+                            className="provider-code-badge"
+                            data-code={item.provider}
+                          >
+                            {providerLabel(item.provider)}
+                          </span>
+                          <StatusBadge
+                            label={item.enabled ? "فعال" : "خاموش"}
+                            tone={item.enabled ? "success" : "warning"}
+                          />
+                        </header>
+                        <label className="pricing-field">
+                          <span>حاشیه سود هدف (٪ از قیمت فروش)</span>
+                          <input
+                            inputMode="decimal"
+                            value={item.marginPercent}
+                            onChange={(event) =>
+                              setProviders((current) =>
+                                current.map((row, rowIndex) =>
+                                  rowIndex === index
+                                    ? {
+                                        ...row,
+                                        marginPercent: event.target.value,
+                                      }
+                                    : row,
+                                ),
+                              )
+                            }
+                          />
+                          <span className="pricing-field-hint">
+                            {equivalent
+                              ? `Markup معادل: ${equivalent}٪ روی قیمت خرید`
+                              : "عدد بین ۰ تا کمتر از ۱۰۰ با حداکثر دو رقم اعشار"}
+                          </span>
+                        </label>
+                        {level === "confirm" ? (
+                          <p className="pricing-save-err">
+                            حاشیه ۷۰٪ یا بیشتر: انتشار فقط با تأیید تایپی ممکن
+                            است.
+                          </p>
+                        ) : level === "warn" ? (
+                          <p className="finance-dirty-badge">
+                            هشدار: حاشیه ۵۰٪ یا بیشتر قیمت نهایی را به‌شدت بالا
+                            می‌برد.
+                          </p>
+                        ) : level === "invalid" ? (
+                          <p className="pricing-save-err">
+                            حاشیه باید کمتر از ۱۰۰٪ باشد.
+                          </p>
+                        ) : null}
+                        <label className="pricing-check">
+                          <input
+                            type="checkbox"
+                            checked={item.enabled}
+                            onChange={(event) =>
+                              setProviders((current) =>
+                                current.map((row, rowIndex) =>
+                                  rowIndex === index
+                                    ? {
+                                        ...row,
+                                        enabled: event.target.checked,
+                                      }
+                                    : row,
+                                ),
+                              )
+                            }
+                          />
+                          محاسبه قیمت نهایی برای این منبع فعال باشد
+                        </label>
+                      </article>
+                    );
+                  })}
                 </div>
 
                 <h3 className="finance-subtitle">Markup نوع محصول</h3>
                 <p className="pricing-field-hint" style={{ marginBottom: 12 }}>
-                  این درصد به Markup منبع اضافه می‌شود. Override اختصاصی روی یک
-                  SKU فقط در ویرایش همان SKU (حالت پیشرفته) است.
+                  این درصد روی قیمت خرید محاسبه و به Markup منبع «اضافه»
+                  می‌شود؛ جایگزین آن نیست. صفر یعنی فقط Markup منبع.
                 </p>
                 <div className="pricing-rules-grid pricing-rules-grid--cards">
-                  {commerce.productMarkups.map((config, index) => (
-                    <article
-                      className="pricing-product-card"
-                      key={`${config.provider}:${config.productKind}`}
-                    >
-                      <header>
-                        <span
-                          className="provider-code-badge"
-                          data-code={config.provider}
-                        >
-                          {providerLabel(config.provider)}
-                        </span>
-                        <strong>{productKindLabel(config.productKind)}</strong>
-                      </header>
-                      <label className="pricing-field">
-                        <span>Markup اضافه محصول (٪)</span>
-                        <input
-                          inputMode="decimal"
-                          value={config.markupPercent}
-                          onChange={(event) =>
-                            setCommerce((current) => ({
-                              ...current,
-                              productMarkups: current.productMarkups.map(
-                                (item, itemIndex) =>
+                  {productMarkups.map((config, index) => {
+                    const providerRow = providers.find(
+                      (row) => row.provider === config.provider,
+                    );
+                    const providerMarginBps = providerRow
+                      ? percentToBps(providerRow.marginPercent)
+                      : null;
+                    const providerMarkupBps =
+                      providerMarginBps != null && providerMarginBps < 10_000
+                        ? grossMarginBpsToMarkupBps(providerMarginBps)
+                        : null;
+                    const productBps = percentToBps(config.markupPercent);
+                    const combined =
+                      providerMarkupBps != null && productBps != null
+                        ? providerMarkupBps + productBps
+                        : null;
+                    return (
+                      <article
+                        className="pricing-product-card"
+                        key={`${config.provider}:${config.productKind}`}
+                      >
+                        <header>
+                          <span
+                            className="provider-code-badge"
+                            data-code={config.provider}
+                          >
+                            {providerLabel(config.provider)}
+                          </span>
+                          <strong>{productKindLabel(config.productKind)}</strong>
+                        </header>
+                        <label className="pricing-field">
+                          <span>Markup اضافه محصول (٪ روی قیمت خرید)</span>
+                          <input
+                            inputMode="decimal"
+                            value={config.markupPercent}
+                            onChange={(event) =>
+                              setProductMarkups((current) =>
+                                current.map((item, itemIndex) =>
                                   itemIndex === index
                                     ? {
                                         ...item,
                                         markupPercent: event.target.value,
                                       }
                                     : item,
-                              ),
-                            }))
-                          }
-                        />
-                        <span className="pricing-field-hint">
-                          صفر = فقط Markup منبع اعمال می‌شود
-                        </span>
-                      </label>
-                      <label className="pricing-check">
-                        <input
-                          type="checkbox"
-                          checked={config.enabled}
-                          onChange={(event) =>
-                            setCommerce((current) => ({
-                              ...current,
-                              productMarkups: current.productMarkups.map(
-                                (item, itemIndex) =>
+                                ),
+                              )
+                            }
+                          />
+                          <span className="pricing-field-hint">
+                            {combined != null
+                              ? `جمع با منبع: ${bpsToPercent(combined)}٪ Markup ⇒ حاشیه ${bpsToPercent(markupBpsToGrossMarginBps(combined))}٪`
+                              : "صفر = فقط Markup منبع اعمال می‌شود"}
+                          </span>
+                        </label>
+                        <label className="pricing-check">
+                          <input
+                            type="checkbox"
+                            checked={config.enabled}
+                            onChange={(event) =>
+                              setProductMarkups((current) =>
+                                current.map((item, itemIndex) =>
                                   itemIndex === index
                                     ? {
                                         ...item,
                                         enabled: event.target.checked,
                                       }
                                     : item,
-                              ),
-                            }))
-                          }
-                        />
-                        فعال برای این نوع محصول
-                      </label>
-                    </article>
-                  ))}
+                                ),
+                              )
+                            }
+                          />
+                          فعال برای این نوع محصول
+                        </label>
+                      </article>
+                    );
+                  })}
                 </div>
               </SectionCard>
             </section>
@@ -975,12 +1240,11 @@ export function FinanceCenterPanel({
             >
               <SectionCard title="پرچین">
                 <p className="pricing-rules-lead">
-                  عنوان و قیمت همین‌جا روی سایت، چینش و قطب‌نما اعمال می‌شود. قیمت
-                  صفر = رایگان؛ غیرفعال = حذف از مسیر فروش. پرچین شروع باید فعال
-                  بماند.
+                  قیمت پرچین داخل مبلغ کارت و Quote است. قیمت صفر = رایگان؛
+                  غیرفعال = حذف از مسیر فروش. پرچین شروع باید فعال بماند.
                 </p>
                 <div className="pricing-rules-grid pricing-rules-grid--cards">
-                  {commerce.parchin.map((config, index) => (
+                  {parchin.map((config, index) => (
                     <article
                       className="pricing-product-card"
                       key={config.level}
@@ -997,14 +1261,13 @@ export function FinanceCenterPanel({
                         <input
                           value={config.title}
                           onChange={(event) =>
-                            setCommerce((current) => ({
-                              ...current,
-                              parchin: current.parchin.map((item, itemIndex) =>
+                            setParchin((current) =>
+                              current.map((item, itemIndex) =>
                                 itemIndex === index
                                   ? { ...item, title: event.target.value }
                                   : item,
                               ),
-                            }))
+                            )
                           }
                         />
                       </label>
@@ -1014,9 +1277,8 @@ export function FinanceCenterPanel({
                           rows={2}
                           value={config.description ?? ""}
                           onChange={(event) =>
-                            setCommerce((current) => ({
-                              ...current,
-                              parchin: current.parchin.map((item, itemIndex) =>
+                            setParchin((current) =>
+                              current.map((item, itemIndex) =>
                                 itemIndex === index
                                   ? {
                                       ...item,
@@ -1024,7 +1286,7 @@ export function FinanceCenterPanel({
                                     }
                                   : item,
                               ),
-                            }))
+                            )
                           }
                         />
                       </label>
@@ -1034,9 +1296,8 @@ export function FinanceCenterPanel({
                           inputMode="numeric"
                           value={config.priceToman}
                           onChange={(event) =>
-                            setCommerce((current) => ({
-                              ...current,
-                              parchin: current.parchin.map((item, itemIndex) =>
+                            setParchin((current) =>
+                              current.map((item, itemIndex) =>
                                 itemIndex === index
                                   ? {
                                       ...item,
@@ -1044,7 +1305,7 @@ export function FinanceCenterPanel({
                                     }
                                   : item,
                               ),
-                            }))
+                            )
                           }
                         />
                         <span className="pricing-field-hint">
@@ -1058,9 +1319,8 @@ export function FinanceCenterPanel({
                           type="checkbox"
                           checked={config.active}
                           onChange={(event) =>
-                            setCommerce((current) => ({
-                              ...current,
-                              parchin: current.parchin.map((item, itemIndex) =>
+                            setParchin((current) =>
+                              current.map((item, itemIndex) =>
                                 itemIndex === index
                                   ? {
                                       ...item,
@@ -1068,7 +1328,7 @@ export function FinanceCenterPanel({
                                     }
                                   : item,
                               ),
-                            }))
+                            )
                           }
                         />
                         فعال در فروش
@@ -1087,19 +1347,14 @@ export function FinanceCenterPanel({
               aria-labelledby="finance-tab-tax"
               className="finance-section"
             >
-              <SectionCard title="مالیات و چرخه یادآوری">
+              <SectionCard title="مالیات، چرخه و نمایش قیمت">
                 <div className="pricing-rules-grid">
                   <label className="pricing-field">
                     <span>مالیات VAT (٪)</span>
                     <input
                       inputMode="decimal"
-                      value={commerce.taxPercent}
-                      onChange={(event) =>
-                        setCommerce((current) => ({
-                          ...current,
-                          taxPercent: event.target.value,
-                        }))
-                      }
+                      value={taxPercent}
+                      onChange={(event) => setTaxPercent(event.target.value)}
                     />
                     <span className="pricing-field-hint">
                       پیش‌فرض لانچ ۱۰٪. روی مبلغ پس از تخفیف اعمال می‌شود.
@@ -1111,9 +1366,9 @@ export function FinanceCenterPanel({
                       type="number"
                       min={1}
                       max={90}
-                      value={commerce.reminderDaysBeforeDue}
+                      value={lifecycle.reminderDaysBeforeDue}
                       onChange={(event) =>
-                        setCommerce((current) => ({
+                        setLifecycle((current) => ({
                           ...current,
                           reminderDaysBeforeDue: Number(event.target.value),
                         }))
@@ -1129,9 +1384,9 @@ export function FinanceCenterPanel({
                       type="number"
                       min={1}
                       max={90}
-                      value={commerce.suspendGraceDaysAfterZero}
+                      value={lifecycle.suspendGraceDaysAfterZero}
                       onChange={(event) =>
-                        setCommerce((current) => ({
+                        setLifecycle((current) => ({
                           ...current,
                           suspendGraceDaysAfterZero: Number(
                             event.target.value,
@@ -1149,9 +1404,9 @@ export function FinanceCenterPanel({
                       type="number"
                       min={1}
                       max={90}
-                      value={commerce.deleteDaysAfterSuspend}
+                      value={lifecycle.deleteDaysAfterSuspend}
                       onChange={(event) =>
-                        setCommerce((current) => ({
+                        setLifecycle((current) => ({
                           ...current,
                           deleteDaysAfterSuspend: Number(event.target.value),
                         }))
@@ -1160,6 +1415,53 @@ export function FinanceCenterPanel({
                     <span className="pricing-field-hint">
                       حذف فقط با Gate عملیاتی Admin
                     </span>
+                  </label>
+                </div>
+
+                <h3 className="finance-subtitle">نمایش قیمت روی کارت</h3>
+                <p className="pricing-field-hint" style={{ marginBottom: 10 }}>
+                  قیمت اصلی کارت مبلغ نهایی یک‌ماهه است. ساعتی/روزانه فقط
+                  «معادل مصرف» همان مبلغ‌اند، نه مدل پرداخت.
+                </p>
+                <div className="pricing-rules-grid">
+                  <label className="pricing-check">
+                    <input
+                      type="checkbox"
+                      checked={priceDisplay.showMonthlyPrice}
+                      onChange={(event) =>
+                        setPriceDisplay((current) => ({
+                          ...current,
+                          showMonthlyPrice: event.target.checked,
+                        }))
+                      }
+                    />
+                    نمایش قیمت ماهانه
+                  </label>
+                  <label className="pricing-check">
+                    <input
+                      type="checkbox"
+                      checked={priceDisplay.showDailyPrice}
+                      onChange={(event) =>
+                        setPriceDisplay((current) => ({
+                          ...current,
+                          showDailyPrice: event.target.checked,
+                        }))
+                      }
+                    />
+                    نمایش معادل روزانه
+                  </label>
+                  <label className="pricing-check">
+                    <input
+                      type="checkbox"
+                      checked={priceDisplay.showHourlyPrice}
+                      onChange={(event) =>
+                        setPriceDisplay((current) => ({
+                          ...current,
+                          showHourlyPrice: event.target.checked,
+                        }))
+                      }
+                    />
+                    نمایش معادل ساعتی
                   </label>
                 </div>
               </SectionCard>
@@ -1175,33 +1477,26 @@ export function FinanceCenterPanel({
             >
               <SectionCard title="قیمت بسته‌های خدمت قطب‌نما">
                 <p className="pricing-rules-lead">
-                  مبالغ به تومان هستند و فقط در مسیر خدمت قطب‌نما پیشنهاد می‌شوند —
-                  جدا از خرید سرور چینش.
+                  مبالغ به تومان هستند و فقط در مسیر خدمت قطب‌نما پیشنهاد
+                  می‌شوند — جدا از خرید سرور چینش.
                 </p>
                 <div className="pricing-rules-grid">
-                  {(
-                    Object.keys(serviceLabels) as Array<
-                      keyof CommerceState["compassServicePricesToman"]
-                    >
-                  ).map((code) => (
+                  {Object.keys(serviceLabels).map((code) => (
                     <label className="pricing-field" key={code}>
                       <span>{serviceLabels[code]}</span>
                       <input
                         inputMode="numeric"
-                        value={commerce.compassServicePricesToman[code]}
+                        value={compassPricesToman[code] ?? ""}
                         onChange={(event) =>
-                          setCommerce((current) => ({
+                          setCompassPricesToman((current) => ({
                             ...current,
-                            compassServicePricesToman: {
-                              ...current.compassServicePricesToman,
-                              [code]: event.target.value.replace(/\D/g, ""),
-                            },
+                            [code]: event.target.value.replace(/\D/g, ""),
                           }))
                         }
                       />
                       <span className="pricing-field-hint">
-                        {faDigits(commerce.compassServicePricesToman[code])
-                          ? `${faDigits(commerce.compassServicePricesToman[code])} تومان`
+                        {faDigits(compassPricesToman[code] ?? "")
+                          ? `${faDigits(compassPricesToman[code] ?? "")} تومان`
                           : "صفر = بدون پیشنهاد قیمت"}
                       </span>
                     </label>
@@ -1234,9 +1529,9 @@ export function FinanceCenterPanel({
           >
             <summary>
               شبیه‌سازی این قیمت
-              {simulation ? (
+              {breakdown ? (
                 <strong className="money-tone money-tone--sale">
-                  {formatTomanFromRial(simulation.final)}
+                  {formatTomanFromRialString(breakdown.finalPriceRial)}
                 </strong>
               ) : null}
             </summary>
@@ -1247,28 +1542,140 @@ export function FinanceCenterPanel({
 
       {activeSection !== "coupons" ? (
         <div className="finance-save-bar">
-          <button
-            className="product-btn product-btn--primary"
-            disabled={saving || !dirty}
-            onClick={() => void saveAll()}
-            type="button"
-          >
-            {saving ? "در حال ذخیره…" : "ذخیره مرکز مالی"}
-          </button>
-          {error ? (
-            <p className="pricing-save-err" aria-live="polite">
-              {error}
-            </p>
-          ) : dirty ? (
-            <p className="finance-dirty-badge" aria-live="polite">
-              تغییرات ذخیره‌نشده داری — تا ذخیره نکنی روی سایت اعمال نمی‌شود.
-            </p>
-          ) : message ? (
-            <p className="pricing-save-ok" aria-live="polite">
-              {message}
-            </p>
+          {publishReview ? (
+            <div className="finance-publish-review">
+              <div className="finance-publish-review-head">
+                <strong>بررسی اثر پیش از انتشار</strong>
+                <button
+                  type="button"
+                  className="product-btn product-btn--quiet"
+                  disabled={saving}
+                  onClick={() => setPublishReview(null)}
+                >
+                  انصراف
+                </button>
+              </div>
+              {publishReview.impact ? (
+                <p>
+                  از {publishReview.impact.sampledPlans.toLocaleString("fa-IR")}{" "}
+                  پلن واقعی نمونه:{" "}
+                  {publishReview.impact.increasedPlans.toLocaleString("fa-IR")}{" "}
+                  گران‌تر،{" "}
+                  {publishReview.impact.decreasedPlans.toLocaleString("fa-IR")}{" "}
+                  ارزان‌تر،{" "}
+                  {publishReview.impact.unchangedPlans.toLocaleString("fa-IR")}{" "}
+                  بدون تغییر
+                  {publishReview.impact.notSellablePlans > 0
+                    ? ` · ${publishReview.impact.notSellablePlans.toLocaleString("fa-IR")} پلن با این تنظیمات قابل فروش نیست`
+                    : ""}
+                  .
+                </p>
+              ) : null}
+              {publishReview.impact &&
+              (publishReview.impact.topIncreases.length > 0 ||
+                publishReview.impact.topDecreases.length > 0) ? (
+                <ul className="finance-impact-list">
+                  {publishReview.impact.topIncreases.map((row) => (
+                    <li key={`inc-${row.planId}`}>
+                      بیشترین افزایش: {row.title} —{" "}
+                      {formatTomanFromRialString(row.currentFinalRial ?? "0")} ←{" "}
+                      {formatTomanFromRialString(row.candidateFinalRial ?? "0")}
+                    </li>
+                  ))}
+                  {publishReview.impact.topDecreases.map((row) => (
+                    <li key={`dec-${row.planId}`}>
+                      بیشترین کاهش: {row.title} —{" "}
+                      {formatTomanFromRialString(row.currentFinalRial ?? "0")} ←{" "}
+                      {formatTomanFromRialString(row.candidateFinalRial ?? "0")}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {publishReview.parity ? (
+                publishReview.parity.ok ? (
+                  <p className="pricing-save-ok">
+                    برابری Card و Quote یک‌ماهه تأیید شد (
+                    {publishReview.parity.sampled.toLocaleString("fa-IR")} پلن).
+                  </p>
+                ) : (
+                  <p className="pricing-save-err">
+                    Card و Quote برابر نیستند؛ انتشار مسدود است.
+                  </p>
+                )
+              ) : null}
+              {publishReview.guardrails.level === "warn" ? (
+                <p className="finance-dirty-badge">
+                  هشدار: حاشیه سود ۵۰٪ یا بیشتر تنظیم شده است.
+                </p>
+              ) : null}
+              {publishReview.guardrails.level === "confirm" ? (
+                <label className="pricing-field">
+                  <span>
+                    برای حاشیه ۷۰٪ یا بیشتر، عبارت «
+                    {HIGH_MARGIN_CONFIRMATION_PHRASE}» را تایپ کن
+                  </span>
+                  <input
+                    value={highMarginText}
+                    onChange={(event) => setHighMarginText(event.target.value)}
+                    placeholder={HIGH_MARGIN_CONFIRMATION_PHRASE}
+                  />
+                </label>
+              ) : null}
+              <label className="pricing-field">
+                <span>دلیل تغییر (در تاریخچه نسخه‌ها ثبت می‌شود)</span>
+                <input
+                  value={publishReason}
+                  onChange={(event) => setPublishReason(event.target.value)}
+                  placeholder="مثلاً اصلاح حاشیه لانچ به ۳۰٪"
+                />
+              </label>
+              <button
+                className="product-btn product-btn--primary"
+                type="button"
+                disabled={
+                  saving ||
+                  publishReview.parity?.ok === false ||
+                  (publishReview.guardrails.level === "confirm" &&
+                    highMarginText.trim() !== HIGH_MARGIN_CONFIRMATION_PHRASE)
+                }
+                onClick={() => void publishConfiguration()}
+              >
+                {saving ? "در حال انتشار…" : "انتشار تنظیمات مالی"}
+              </button>
+            </div>
           ) : (
-            <p className="pricing-field-hint">همه تغییرات ذخیره شده است.</p>
+            <>
+              <button
+                className="product-btn product-btn--primary"
+                disabled={saving || !dirty}
+                onClick={() => void startPublishReview()}
+                type="button"
+              >
+                {saving ? "در حال بررسی…" : "بررسی اثر و انتشار"}
+              </button>
+              {error ? (
+                <p className="pricing-save-err" aria-live="polite">
+                  {error}
+                </p>
+              ) : dirty ? (
+                <p className="finance-dirty-badge" aria-live="polite">
+                  تغییرات منتشرنشده داری — تا انتشار روی سایت اعمال نمی‌شود.
+                  {guardrailLevel === "confirm"
+                    ? " (حاشیه بالا: تأیید تایپی لازم است)"
+                    : guardrailLevel === "warn"
+                      ? " (هشدار حاشیه ≥ ۵۰٪)"
+                      : ""}
+                </p>
+              ) : message ? (
+                <p className="pricing-save-ok" aria-live="polite">
+                  {message}
+                </p>
+              ) : (
+                <p className="pricing-field-hint">
+                  همه تغییرات منتشر شده است.
+                </p>
+              )}
+            </>
           )}
         </div>
       ) : null}

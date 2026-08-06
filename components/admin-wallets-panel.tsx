@@ -30,6 +30,14 @@ export function AdminWalletsPanel({
   const [amountToman, setAmountToman] = useState("10000");
   const [direction, setDirection] = useState<"CREDIT" | "DEBIT">("CREDIT");
   const [reason, setReason] = useState("");
+  // Sync a changed initialMobile during render (React-sanctioned pattern)
+  // instead of setState inside an effect.
+  const [previousInitialMobile, setPreviousInitialMobile] =
+    useState(initialMobile);
+  if (previousInitialMobile !== initialMobile) {
+    setPreviousInitialMobile(initialMobile);
+    setMobile(initialMobile);
+  }
 
   async function lookupMobile(targetMobile: string) {
     setLoading(true);
@@ -55,10 +63,14 @@ export function AdminWalletsPanel({
   }
 
   useEffect(() => {
-    setMobile(initialMobile);
-    if (initialMobile.trim()) {
+    if (!initialMobile.trim()) return;
+    // Defer past the render commit so the lookup's loading state never
+    // cascades synchronously inside the effect.
+    const timer = setTimeout(() => {
       void lookupMobile(initialMobile.trim());
-    }
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMobile]);
 
   async function lookup(event: FormEvent) {

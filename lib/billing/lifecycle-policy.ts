@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/db";
 
+// Canonical home of the term-discount table is the pure commercial engine so
+// client components can import it without pulling prisma into the bundle.
+export {
+  TERM_DISCOUNT_BPS,
+  isBillingTermMonths,
+} from "@/lib/pricing/commercial-engine";
+
 export type LifecyclePolicy = {
   reminderDaysBeforeDue: number;
   suspendGraceDaysAfterZero: number;
@@ -27,14 +34,3 @@ export async function getLifecyclePolicy(): Promise<LifecyclePolicy> {
   };
 }
 
-/** Fixed term discounts when no server-purchase coupon overrides them. */
-export const TERM_DISCOUNT_BPS: Record<1 | 3 | 6 | 12, number> = {
-  1: 0,
-  3: 500,
-  6: 1_000,
-  12: 2_000,
-};
-
-export function isBillingTermMonths(value: unknown): value is 1 | 3 | 6 | 12 {
-  return value === 1 || value === 3 || value === 6 || value === 12;
-}

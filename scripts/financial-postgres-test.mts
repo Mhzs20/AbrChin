@@ -12,6 +12,7 @@ const commands = [
   "test:wallet-activation",
   "test:delivery-credential",
   "test:admin-operations",
+  "test:finance-config",
 ];
 
 for (const command of commands) {

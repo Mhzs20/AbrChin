@@ -1,14 +1,22 @@
+export {
+  DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
+  DEFAULT_TARGET_GROSS_MARGIN_BPS,
+  LEGACY_LAUNCH_MARKUP_BASIS_POINTS,
+  grossMarginBpsToMarkupBps,
+  markupBpsToGrossMarginBps,
+} from "@/lib/pricing/commercial-engine";
+
 export const PROVIDER_PRICE_SCALE = 6;
 export const MARKUP_DENOMINATOR_BPS = 10_000n;
 
 /**
- * Launch default: provider cost is ~30% of pre-tax infrastructure sale,
- * AbrChin profit ~70%. sale ≈ cost × (10000 + 23333) / 10000.
- * Historical quotes/orders keep their own markup snapshots.
+ * Launch default: target gross margin 30% of the sale price ⇒ provider cost
+ * ~70% of the pre-tax infrastructure sale, AbrChin profit ~30%.
+ * sale ≈ cost × (10000 + 4286) / 10000. Historical quotes/orders keep their
+ * own markup snapshots and never change retroactively.
  */
-export const DEFAULT_LAUNCH_MARKUP_BASIS_POINTS = 23_333;
-export const DEFAULT_LAUNCH_COST_SHARE_BPS = 3_000;
-export const DEFAULT_LAUNCH_PROFIT_SHARE_BPS = 7_000;
+export const DEFAULT_LAUNCH_COST_SHARE_BPS = 7_000;
+export const DEFAULT_LAUNCH_PROFIT_SHARE_BPS = 3_000;
 
 export type ProviderPriceContract = {
   currencyCode: "IRR";

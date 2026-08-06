@@ -21,7 +21,12 @@ import {
   catalogItemBasePriceRial,
   compatibleImageCodes,
   resolveCatalogItemPricing,
+  type EffectivePlanPricing,
 } from "@/lib/pricing/plan-pricing";
+import {
+  DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
+  deriveUsageEquivalentPrices,
+} from "@/lib/pricing/commercial-engine";
 import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
 import {
   classifyStorefrontCapacityTier,
@@ -126,27 +131,23 @@ function toPublicOffer(input: {
   item: ProviderCatalogItem;
   tier: StorefrontChinishTier;
   catalogFresh: boolean;
-  markupBasisPoints: number;
-  taxBasisPoints: number;
+  /** Full engine pricing for one prepaid month — the billed card amount. */
+  priced: EffectivePlanPricing | null;
+  fallbackTaxBasisPoints: number;
   purchaseState: PublicPlanOffer["purchaseState"];
   purchasable: boolean;
   planId?: string;
   parchinTitle?: string;
 }): PublicPlanOffer {
-  const hourlyBasePriceRial = catalogItemBaseHourlyPriceRial(input.item);
-  const monthlyBasePriceRial = catalogItemBasePriceRial(input.item) ?? 0n;
-  const hourlyPriceRial =
-    hourlyBasePriceRial == null
-      ? null
-      : calculateFinalPriceRial(hourlyBasePriceRial, input.markupBasisPoints);
-  const monthlyFromProvider =
-    monthlyBasePriceRial > 0n
-      ? calculateFinalPriceRial(monthlyBasePriceRial, input.markupBasisPoints)
+  // Card price = the exact one-month final amount from the unified engine —
+  // identical to the quote/checkout amount for the same plan. Display-only
+  // fallback (never purchasable) uses the launch default markup so provider
+  // cost is never leaked raw.
+  const monthlyPriceRial = input.priced?.finalPriceRial ?? fallbackDisplayMonthly(input.item);
+  const usage =
+    monthlyPriceRial > 0n
+      ? deriveUsageEquivalentPrices(monthlyPriceRial)
       : null;
-  // Display + prepaid term: if only hourly exists, estimate 720h month.
-  const monthlyPriceRial =
-    monthlyFromProvider ??
-    (hourlyPriceRial != null ? hourlyPriceRial * 720n : 0n);
   const imageCodes = compatibleImageCodes(input.item);
   const imageCode =
     selectReadyServerImage(imageCodes) ?? imageCodes[0] ?? "linux";
@@ -162,7 +163,7 @@ function toPublicOffer(input: {
     }),
     deliveryMode: "MANAGED",
     productKind: input.item.productKind,
-    parchinLevel: storefrontParchinForTier(input.tier),
+    parchinLevel: input.priced?.parchinLevel ?? storefrontParchinForTier(input.tier),
     parchinTitle: input.parchinTitle,
     regionCode: input.item.regionCode,
     locationLabel: storefrontLocationLabel(input.item.regionCode),
@@ -176,21 +177,21 @@ function toPublicOffer(input: {
     // Never expose supplier economics on the customer storefront payload.
     providerBaseHourlyPriceRial: null,
     providerBaseMonthlyPriceRial: "0",
-    hourlyPriceRial: hourlyPriceRial?.toString() ?? null,
-    dailyPriceRial:
-      hourlyPriceRial != null ? (hourlyPriceRial * 24n).toString() : null,
+    // Usage equivalents are display-only derivations of the billed monthly
+    // amount ("معادل مصرف"), never a separate payment model.
+    hourlyPriceRial: usage?.hourlyRial.toString() ?? null,
+    dailyPriceRial: usage?.dailyRial.toString() ?? null,
     salePriceRial: monthlyPriceRial.toString(),
-    renewalPriceRial: monthlyPriceRial.toString(),
+    renewalPriceRial: (
+      input.priced?.renewalPriceRial ?? monthlyPriceRial
+    ).toString(),
     sourceCurrencyCode: input.item.currencyCode,
     sourceAmountUnit: input.item.amountUnit,
     normalizedCurrencyCode: "IRR",
     normalizedAmountUnit: "RIAL",
-    billingIntervals: [
-      ...(hourlyBasePriceRial == null ? [] : (["HOURLY"] as const)),
-      ...(monthlyPriceRial > 0n ? (["MONTHLY"] as const) : []),
-    ],
-    markupBasisPoints: input.markupBasisPoints,
-    taxBasisPoints: input.taxBasisPoints,
+    billingIntervals: monthlyPriceRial > 0n ? (["MONTHLY"] as const) : [],
+    markupBasisPoints: input.priced?.markupBasisPoints ?? DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
+    taxBasisPoints: input.priced?.taxBasisPoints ?? input.fallbackTaxBasisPoints,
     catalogStatus: !input.catalogFresh ? "STALE" : input.item.status,
     purchaseState: input.purchaseState,
     deliveryEstimateMinutes: 0,
@@ -198,8 +199,28 @@ function toPublicOffer(input: {
     checkedAt: input.item.lastSyncedAt.toISOString(),
     available: input.catalogFresh && input.item.available,
     instantDelivery: true,
-    purchasable: input.purchasable,
+    // A card without engine pricing can never be sold: no valid quote exists.
+    purchasable: input.purchasable && input.priced != null,
   };
+}
+
+/** Display-only estimate for unpriced (never purchasable) catalog rows. */
+function fallbackDisplayMonthly(item: ProviderCatalogItem): bigint {
+  const monthlyBase = catalogItemBasePriceRial(item);
+  if (monthlyBase != null && monthlyBase > 0n) {
+    return calculateFinalPriceRial(
+      monthlyBase,
+      DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
+    );
+  }
+  const hourlyBase = catalogItemBaseHourlyPriceRial(item);
+  if (hourlyBase != null && hourlyBase > 0n) {
+    return (
+      calculateFinalPriceRial(hourlyBase, DEFAULT_LAUNCH_MARKUP_BASIS_POINTS) *
+      720n
+    );
+  }
+  return 0n;
 }
 
 async function loadPricingContext() {
@@ -312,21 +333,26 @@ function buildOfferForItem(
       config.apiVersion === item.apiVersion &&
       config.productKind === item.productKind,
   );
-  const parchinLevel = storefrontParchinForTier(tier);
+  // Money math must match the quote exactly: quotes charge the plan's
+  // minimum Parchin (START for storefront SKUs). The tier's Parchin level
+  // stays label-only branding on the card.
+  const pricingParchinLevel = "PARCHIN_START" as const;
   const priced =
     providerPricing && productPricing
       ? resolveCatalogItemPricing(item, providerPricing, {
           productMarkupBasisPoints: productPricing.markupBasisPoints,
           taxBasisPoints: context.commerce?.taxBps ?? 1000,
-          parchinLevel,
-          parchinPriceRial: context.parchinByLevel.get(parchinLevel) ?? 0n,
+          parchinLevel: pricingParchinLevel,
+          parchinPriceRial:
+            context.parchinByLevel.get(pricingParchinLevel) ?? 0n,
+          termMonths: 1,
         })
       : null;
-  const markupBasisPoints = priced?.markupBasisPoints ?? 0;
-  const taxBasisPoints = priced?.taxBasisPoints ?? context.commerce?.taxBps ?? 1000;
+  const fallbackTaxBasisPoints = context.commerce?.taxBps ?? 1000;
 
   const parchinTitle =
-    context.parchinTitleByLevel.get(parchinLevel) || undefined;
+    context.parchinTitleByLevel.get(storefrontParchinForTier(tier)) ||
+    undefined;
 
   if (published) {
     const access = resolveCatalogOfferAccess({
@@ -344,8 +370,8 @@ function buildOfferForItem(
       item,
       tier,
       catalogFresh,
-      markupBasisPoints,
-      taxBasisPoints,
+      priced,
+      fallbackTaxBasisPoints,
       purchaseState: access.purchaseState,
       purchasable: access.purchasable,
       planId: published.id,
@@ -364,8 +390,8 @@ function buildOfferForItem(
     item,
     tier,
     catalogFresh,
-    markupBasisPoints,
-    taxBasisPoints,
+    priced,
+    fallbackTaxBasisPoints,
     purchaseState:
       item.available && item.status === "ACTIVE"
         ? "SKU_UNPUBLISHED"

@@ -18,6 +18,9 @@ await withTemporaryPostgres("upgrade", async (databaseUrl) => {
     PARSPACK_ENABLED: "false",
     PARSPACK_MUTATIONS_ENABLED: "false",
     PARSPACK_PUBLIC_SALE_ENABLED: "false",
+    // Alert recipients must be fixture-controlled; a host ADMIN_MOBILES
+    // secret would add an extra SMS outbox row and break dedup counts.
+    ADMIN_MOBILES: "",
   };
   const { stdout, stderr } = await execFileAsync(
     process.platform === "win32" ? "npm.cmd" : "npm",

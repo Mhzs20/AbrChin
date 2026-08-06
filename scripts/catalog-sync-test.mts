@@ -803,8 +803,9 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
   assert.match(priceBandMigration, /assortmentStyle/);
   assert.match(presentation, /storefrontServerTitle/);
   assert.match(presentation, /storefrontLocationLabel/);
-  assert.match(presentation, /roundUpDisplayTomanFromRial/);
-  assert.match(presentation, /STOREFRONT_TOMAN_ROUND_STEP = 500n/);
+  // Card display must be the exact billed toman — no rounding step allowed.
+  assert.match(presentation, /displayTomanFromRial/);
+  assert.doesNotMatch(presentation, /STOREFRONT_TOMAN_ROUND_STEP/);
   assert.match(presentation, /STOREFRONT_DISPLAY_FRESHNESS_SECONDS/);
   assert.match(presentation, /storefrontParchinForTier/);
   assert.match(presentation, /PARCHIN_ACTIVE/);
@@ -820,9 +821,17 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
   );
   assert.match(autoSuggestSource, /STOREFRONT_AUTO_SUGGEST_INTERVAL_MS/);
   assert.match(autoSuggestSource, /resourceFingerprint/);
+  const commercialEngineSource = await readFile(
+    "lib/pricing/commercial-engine.ts",
+    "utf8",
+  );
   assert.match(
-    await readFile("lib/pricing/provider-pricing.ts", "utf8"),
-    /DEFAULT_LAUNCH_MARKUP_BASIS_POINTS = 23_333/,
+    commercialEngineSource,
+    /DEFAULT_LAUNCH_MARKUP_BASIS_POINTS = 4_286/,
+  );
+  assert.match(
+    commercialEngineSource,
+    /LEGACY_LAUNCH_MARKUP_BASIS_POINTS = 23_333/,
   );
 
   const {
@@ -830,8 +839,8 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
     DEFAULT_STOREFRONT_CAPACITY_RULES,
   } = await import("../lib/storefront/capacity-rules.ts");
   const {
+    displayTomanFromRial,
     isStorefrontDisplayFresh,
-    roundUpDisplayTomanFromRial,
     storefrontCityName,
     storefrontLocationLabel,
     storefrontLocationZone,
@@ -839,8 +848,9 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
     storefrontServerTitle,
   } = await import("../lib/storefront/presentation.ts");
 
-  assert.equal(roundUpDisplayTomanFromRial(14_530n), 1500n); // 1453 تومان
-  assert.equal(roundUpDisplayTomanFromRial(13_200n), 1500n); // 1320 تومان
+  // Exact billed toman: no display rounding may change the invoice amount.
+  assert.equal(displayTomanFromRial(14_530n), 1453n);
+  assert.equal(displayTomanFromRial(13_200n), 1320n);
   assert.equal(storefrontCityName("tehran3"), "تهران");
   assert.equal(storefrontLocationLabel("tehran3"), "تهران ایران");
   assert.equal(storefrontServerTitle({ regionCode: "tehran3", index: 2 }), "ابر ۲ تهران");

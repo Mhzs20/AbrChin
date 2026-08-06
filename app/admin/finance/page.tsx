@@ -3,10 +3,9 @@ import Link from "next/link";
 
 import { FinanceCenterPanel } from "@/components/admin/finance-center-panel";
 import { PageHeader } from "@/components/product";
-import { getCommercePricingAdminView } from "@/lib/admin/dashboard";
+import { readFinanceConfiguration } from "@/lib/admin/finance-configuration";
 import { getAdminPageAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
-import { formatBasisPointsPercent } from "@/lib/pricing/provider-pricing";
 
 export const metadata: Metadata = {
   title: "مرکز مالی | پنل مدیریت | ابرچین",
@@ -19,33 +18,16 @@ export default async function AdminFinanceCenterPage() {
   const access = await getAdminPageAccess();
   if (!access.allowed) return null;
 
-  const [pricing, coupons, providerConfigs] = await Promise.all([
-    getCommercePricingAdminView(),
+  const [configuration, coupons] = await Promise.all([
+    readFinanceConfiguration(),
     prisma.coupon.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
-    prisma.providerPricingConfig.findMany({
-      where: { provider: { in: ["ARVAN", "PARSPACK"] } },
-    }),
   ]);
-
-  const byProvider = new Map(
-    providerConfigs.map((config) => [config.provider, config]),
-  );
-
-  const initialProviders = (["ARVAN", "PARSPACK"] as const).map((provider) => {
-    const config = byProvider.get(provider);
-    const markupBasisPoints = config?.markupBasisPoints ?? 23_333;
-    return {
-      provider,
-      markupPercent: formatBasisPointsPercent(markupBasisPoints),
-      enabled: config?.enabled ?? true,
-    };
-  });
 
   return (
     <>
       <PageHeader
         title="مرکز مالی"
-        description="قواعد قیمت فروش را از یکجا تنظیم کن. هر تب یک کار دارد؛ شبیه‌ساز کنار صفحه مبلغ نهایی مشتری را نشان می‌دهد."
+        description="حاشیه سود هدف را تعیین کن؛ موتور واحد قیمت‌گذاری همان عدد را روی کارت، Quote و تمدید اعمال می‌کند. هر انتشار نسخه‌دار و قابل بازگشت است."
         actions={
           <>
             <Link
@@ -65,8 +47,7 @@ export default async function AdminFinanceCenterPage() {
       />
 
       <FinanceCenterPanel
-        initialCommerce={pricing}
-        initialProviders={initialProviders}
+        initialConfiguration={configuration}
         initialCoupons={coupons.map((coupon) => ({
           id: coupon.id,
           code: coupon.code,

@@ -17,14 +17,16 @@ test("cloud and ready purchase routes stay provider-separated before login", asy
   assert.doesNotMatch(siteShell, /\/ready-servers/);
   assert.doesNotMatch(siteShell, /shortLabel: "فوری"/);
   assert.match(chinish, /چینش نو|چینش استوار|چینش کهکشان/);
-  assert.match(chinish, /تومان در ساعت/);
+  // Hourly/daily lines are usage equivalents of the billed monthly amount.
+  assert.match(chinish, /معادل ساعتی/);
+  assert.match(chinish, /معادل روزانه/);
   assert.match(chinish, /چینش فنی/);
   assert.match(chinish, /لوکیشن ایران/);
   assert.match(chinish, /لوکیشن خارج/);
   assert.doesNotMatch(chinish, /قیمت پایه تأمین‌کننده/);
   assert.doesNotMatch(chinish, /همگام‌شده/);
   assert.doesNotMatch(chinish, /سیستم‌عامل‌های مجاز/);
-  assert.match(quoteButton, /دریافت Quote/);
+  assert.match(quoteButton, /ثبت سفارش/);
   assert.match(chinish, /امن و آمادهٔ راه‌اندازی با پرچین/);
   assert.match(chinish, /زمان تحویل تقریبی: فوری/);
 });
