@@ -67,13 +67,15 @@ type CommerceState = {
 };
 
 const SECTIONS = [
-  { id: "calc", label: "شیوه محاسبه", icon: Calculator },
+  { id: "summary", label: "خلاصه", icon: Calculator },
   { id: "markup", label: "سود و Markup", icon: TrendingUp },
   { id: "parchin", label: "پرچین", icon: Shield },
   { id: "tax", label: "مالیات و چرخه", icon: Percent },
   { id: "compass", label: "قطب‌نما", icon: Compass },
   { id: "coupons", label: "کد تخفیف", icon: Ticket },
 ] as const;
+
+type FinanceSectionId = (typeof SECTIONS)[number]["id"];
 
 const TERM_DISCOUNT_BPS: Record<1 | 3 | 6 | 12, number> = {
   1: 0,
@@ -163,11 +165,6 @@ function markupMultiplierLabel(percent: string): string | null {
   })}× خرید`;
 }
 
-function scrollToSection(id: string) {
-  const el = document.getElementById(`finance-${id}`);
-  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
 export function FinanceCenterPanel({
   initialCommerce,
   initialProviders,
@@ -220,7 +217,9 @@ export function FinanceCenterPanel({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [activeSection, setActiveSection] = useState<string>("calc");
+  const [activeSection, setActiveSection] =
+    useState<FinanceSectionId>("summary");
+  const [simOpenMobile, setSimOpenMobile] = useState(false);
 
   const baseline = useRef("");
   const serialized = JSON.stringify({ commerce, providers });
@@ -230,22 +229,9 @@ export function FinanceCenterPanel({
   const dirty = serialized !== baseline.current;
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setActiveSection(entry.target.id.replace("finance-", ""));
-          }
-        }
-      },
-      { rootMargin: "-30% 0px -60% 0px" },
-    );
-    for (const section of SECTIONS) {
-      const el = document.getElementById(`finance-${section.id}`);
-      if (el) observer.observe(el);
-    }
-    return () => observer.disconnect();
-  }, []);
+    // Keep the sticky save bar in view after tab switches on long sections.
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [activeSection]);
 
   const [simCostToman, setSimCostToman] = useState("300000");
   const [simProvider, setSimProvider] = useState<"ARVAN" | "PARSPACK">("ARVAN");
@@ -474,6 +460,159 @@ export function FinanceCenterPanel({
     }
   }
 
+  const simulatorPanel = (
+    <div className="finance-simulator">
+      <div className="finance-simulator-head">
+        <h3>شبیه‌ساز مبلغ فروش</h3>
+        <p>با اعداد فعلی (حتی ذخیره‌نشده) ببین مشتری چقدر می‌بیند.</p>
+      </div>
+      <div className="finance-sim-fields">
+        <label className="pricing-field">
+          <span>قیمت خرید ماهانه (تومان)</span>
+          <input
+            inputMode="numeric"
+            value={simCostToman}
+            onChange={(event) => setSimCostToman(event.target.value)}
+          />
+          <span className="pricing-field-hint">
+            {faDigits(simCostToman)
+              ? `${faDigits(simCostToman)} تومان`
+              : "عدد نمونه از کاتالوگ Provider"}
+          </span>
+        </label>
+        <label className="pricing-field">
+          <span>منبع</span>
+          <select
+            value={simProvider}
+            onChange={(event) =>
+              setSimProvider(event.target.value as "ARVAN" | "PARSPACK")
+            }
+          >
+            <option value="ARVAN">Arvan</option>
+            <option value="PARSPACK">ParsPack</option>
+          </select>
+        </label>
+        <label className="pricing-field">
+          <span>نوع محصول</span>
+          <select
+            value={simProductKind}
+            onChange={(event) =>
+              setSimProductKind(
+                event.target.value as ProductMarkup["productKind"],
+              )
+            }
+          >
+            <option value="CLOUD_SERVER">سرور ابری</option>
+            <option value="READY_INSTANT_SERVER">سرور آماده</option>
+          </select>
+        </label>
+        <label className="pricing-field">
+          <span>مدت</span>
+          <select
+            value={simTerm}
+            onChange={(event) =>
+              setSimTerm(Number(event.target.value) as 1 | 3 | 6 | 12)
+            }
+          >
+            <option value={1}>۱ ماه</option>
+            <option value={3}>۳ ماه (۵٪ تخفیف)</option>
+            <option value={6}>۶ ماه (۱۰٪ تخفیف)</option>
+            <option value={12}>۱۲ ماه (۲۰٪ تخفیف)</option>
+          </select>
+        </label>
+        <label className="pricing-field">
+          <span>پرچین</span>
+          <select
+            value={simParchin}
+            onChange={(event) =>
+              setSimParchin(event.target.value as ParchinRow["level"])
+            }
+          >
+            {commerce.parchin.map((item) => (
+              <option key={item.level} value={item.level}>
+                {item.title || parchinLevelLabel(item.level)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="pricing-field">
+          <span>کد تخفیف ٪ (اختیاری)</span>
+          <input
+            inputMode="decimal"
+            placeholder="خالی = تخفیف ثابت دوره"
+            value={simCouponPercent}
+            onChange={(event) => setSimCouponPercent(event.target.value)}
+          />
+        </label>
+      </div>
+
+      {simulation ? (
+        <div className="finance-sim-result">
+          <div className="finance-sim-lines">
+            {simulation.lines.map((line) => (
+              <div
+                key={line.key}
+                className={`finance-sim-line finance-sim-line--${line.tone}`}
+              >
+                <div className="finance-sim-line-label">
+                  <span>{line.label}</span>
+                  <small>{line.hint}</small>
+                </div>
+                <strong>
+                  {line.amount < 0n ? "−" : ""}
+                  {formatTomanFromRial(
+                    line.amount < 0n ? -line.amount : line.amount,
+                  )}
+                </strong>
+              </div>
+            ))}
+          </div>
+          <div className="finance-sim-total">
+            <div>
+              <span>مبلغ نهایی مشتری</span>
+              <strong className="money-tone money-tone--sale">
+                {formatTomanFromRial(simulation.final)}
+              </strong>
+            </div>
+            <div
+              className="finance-share-bar"
+              role="img"
+              aria-label={`سهم خرید ${simulation.buyShare}٪، سهم سود ${simulation.profitShare}٪`}
+            >
+              <span
+                className="finance-share-bar-cost"
+                style={{ width: `${simulation.buyShare}%` }}
+              />
+              <span
+                className="finance-share-bar-profit"
+                style={{ width: `${simulation.profitShare}%` }}
+              />
+            </div>
+            <p className="finance-share-legend">
+              <span className="finance-legend-item finance-legend-item--cost">
+                خرید {simulation.buyShare.toLocaleString("fa-IR")}٪
+              </span>
+              <span className="finance-legend-item finance-legend-item--profit">
+                سود Markup {simulation.profitShare.toLocaleString("fa-IR")}٪
+              </span>
+              <span className="finance-legend-item">
+                پرچین و مالیات {simulation.restShare.toLocaleString("fa-IR")}٪
+              </span>
+            </p>
+            {!simulation.providerEnabled || !simulation.productEnabled ? (
+              <p className="pricing-save-err">
+                توجه: Markup {providerLabel(simProvider)} یا نوع محصول غیرفعال
+                است؛ فروش واقعی این ترکیب قیمت نمی‌گیرد.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <p className="product-muted">قیمت خرید نمونه را وارد کن.</p>
+      )}
+    </div>
+  );
+
   return (
     <div className="finance-center">
       <div className="finance-overview" role="list" aria-label="خلاصه مرکز مالی">
@@ -482,18 +621,14 @@ export function FinanceCenterPanel({
           <strong className="money-tone--sale">
             {overview.arvan ? `${overview.arvan.markupPercent}٪` : "—"}
           </strong>
-          <small>
-            {overview.arvan?.enabled ? "فعال" : "خاموش"}
-          </small>
+          <small>{overview.arvan?.enabled ? "فعال" : "خاموش"}</small>
         </div>
         <div className="finance-overview-chip" role="listitem">
           <span>Markup ParsPack</span>
           <strong className="money-tone--sale">
             {overview.parspack ? `${overview.parspack.markupPercent}٪` : "—"}
           </strong>
-          <small>
-            {overview.parspack?.enabled ? "فعال" : "خاموش"}
-          </small>
+          <small>{overview.parspack?.enabled ? "فعال" : "خاموش"}</small>
         </div>
         <div className="finance-overview-chip" role="listitem">
           <span>مالیات VAT</span>
@@ -512,24 +647,30 @@ export function FinanceCenterPanel({
         <div className="finance-overview-chip" role="listitem">
           <span>کدهای تخفیف فعال</span>
           <strong>{overview.activeCoupons.toLocaleString("fa-IR")}</strong>
-          <small>از {initialCoupons.length.toLocaleString("fa-IR")} کد اخیر</small>
+          <small>
+            از {initialCoupons.length.toLocaleString("fa-IR")} کد اخیر
+          </small>
         </div>
       </div>
 
-      <nav className="finance-nav" aria-label="بخش‌های مرکز مالی">
+      <nav className="finance-nav" aria-label="بخش‌های مرکز مالی" role="tablist">
         {SECTIONS.map((section) => {
           const Icon = section.icon;
+          const selected = activeSection === section.id;
           return (
             <button
               key={section.id}
               type="button"
+              role="tab"
+              id={`finance-tab-${section.id}`}
+              aria-selected={selected}
+              aria-controls={`finance-panel-${section.id}`}
               className={
-                activeSection === section.id
+                selected
                   ? "finance-nav-pill finance-nav-pill--active"
                   : "finance-nav-pill"
               }
-              aria-current={activeSection === section.id ? "true" : undefined}
-              onClick={() => scrollToSection(section.id)}
+              onClick={() => setActiveSection(section.id)}
             >
               <Icon size={15} aria-hidden="true" />
               {section.label}
@@ -538,613 +679,599 @@ export function FinanceCenterPanel({
         })}
       </nav>
 
-      <section id="finance-calc" className="finance-section">
-        <SectionCard title="شیوه محاسبه قیمت در فروش">
-          <p className="pricing-rules-lead">
-            هر فروش سرور از همین خط‌ها ساخته می‌شود. سبز = قیمت خرید، آبی = سود /
-            قیمت فروش ابرچین. پرداخت موفق خودش Provision نمی‌زند؛ مبلغ Quote همین
-            فرمول را قفل می‌کند.
-          </p>
+      <div className="finance-workspace">
+        <div className="finance-main">
+          {activeSection === "summary" ? (
+            <section
+              id="finance-panel-summary"
+              role="tabpanel"
+              aria-labelledby="finance-tab-summary"
+              className="finance-section"
+            >
+              <SectionCard title="وضعیت فعلی قیمت‌گذاری">
+                <p className="pricing-rules-lead finance-formula-line">
+                  <strong className="money-tone--cost">خرید Provider</strong>
+                  {" + "}
+                  <strong className="money-tone--sale">سود Markup</strong>
+                  {" + "}
+                  <strong className="money-tone--sale">پرچین</strong>
+                  {" × مدت − تخفیف + VAT = "}
+                  <strong className="money-tone--sale">مبلغ مشتری</strong>
+                </p>
+                <p className="pricing-field-hint">
+                  سبز = خرید · آبی = سود / فروش ابرچین. تغییرها فقط بعد از ذخیره
+                  روی فروش بعدی اعمال می‌شوند. پرداخت، Provision خودکار نمی‌زند.
+                </p>
 
-          <ol className="finance-pipeline">
-            <li className="finance-pipeline-step finance-pipeline-step--cost">
-              <span>۱</span>
-              <div>
-                <strong>قیمت خرید Provider</strong>
-                <p>هزینه ماهانه Arvan / ParsPack از کاتالوگ Sync</p>
-              </div>
-            </li>
-            <li className="finance-pipeline-step finance-pipeline-step--sale">
-              <span>۲</span>
-              <div>
-                <strong>سود Markup</strong>
-                <p>Markup منبع + Markup نوع محصول</p>
-              </div>
-            </li>
-            <li className="finance-pipeline-step finance-pipeline-step--sale">
-              <span>۳</span>
-              <div>
-                <strong>پرچین</strong>
-                <p>خط خدمت الزامی روی فروش مدیریت‌شده</p>
-              </div>
-            </li>
-            <li className="finance-pipeline-step">
-              <span>۴</span>
-              <div>
-                <strong>× مدت ماه</strong>
-                <p>۱ / ۳ / ۶ / ۱۲ ماه</p>
-              </div>
-            </li>
-            <li className="finance-pipeline-step">
-              <span>۵</span>
-              <div>
-                <strong>تخفیف</strong>
-                <p>ثابت ۵/۱۰/۲۰٪ یا کد تخفیف (جایگزین)</p>
-              </div>
-            </li>
-            <li className="finance-pipeline-step">
-              <span>۶</span>
-              <div>
-                <strong>مالیات</strong>
-                <p>VAT روی مبلغ پس از تخفیف</p>
-              </div>
-            </li>
-            <li className="finance-pipeline-step finance-pipeline-step--sale">
-              <span>۷</span>
-              <div>
-                <strong>مبلغ نهایی مشتری</strong>
-                <p>همان عدد قبل از درگاه</p>
-              </div>
-            </li>
-          </ol>
+                <div className="finance-next-actions">
+                  <button
+                    type="button"
+                    className="product-btn product-btn--primary"
+                    onClick={() => setActiveSection("markup")}
+                  >
+                    تنظیم سود Markup
+                  </button>
+                  <button
+                    type="button"
+                    className="product-btn product-btn--quiet"
+                    onClick={() => setActiveSection("parchin")}
+                  >
+                    تنظیم پرچین
+                  </button>
+                  <button
+                    type="button"
+                    className="product-btn product-btn--quiet"
+                    onClick={() => setActiveSection("coupons")}
+                  >
+                    کد تخفیف
+                  </button>
+                </div>
 
-          <div className="finance-process-grid">
-            <article>
-              <h3>چینش / خرید سرور</h3>
-              <p>فرمول کامل بالا. مشتری نام Provider و قیمت خرید را نمی‌بیند.</p>
-            </article>
-            <article>
-              <h3>قطب‌نما / خدمات</h3>
-              <p>
-                قیمت بسته‌های خدمت جدا از Markup سرور تنظیم می‌شود و فقط پیشنهاد
-                خدمت است.
-              </p>
-            </article>
-            <article>
-              <h3>شارژ کیف پول</h3>
-              <p>
-                مبلغ شارژ = واریز مشتری. کد افزایش اعتبار فقط پس از حداقل واریز، N
-                تومان اضافه می‌دهد.
-              </p>
-            </article>
-            <article>
-              <h3>SKU دستی ابرچین</h3>
-              <p>
-                قیمت پایه دستی یعنی Markup منبع/محصول صفر؛ فقط پرچین، تخفیف دوره و
-                مالیات اعمال می‌شود.
-              </p>
-            </article>
-          </div>
-
-          <div className="finance-simulator">
-            <div className="finance-simulator-head">
-              <h3>شبیه‌ساز مبلغ فروش</h3>
-              <p>با اعداد فعلی همین صفحه (حتی ذخیره‌نشده) خروجی مشتری را ببین.</p>
-            </div>
-            <div className="pricing-rules-grid">
-              <label className="pricing-field">
-                <span>قیمت خرید ماهانه (تومان)</span>
-                <input
-                  inputMode="numeric"
-                  value={simCostToman}
-                  onChange={(event) => setSimCostToman(event.target.value)}
-                />
-                <span className="pricing-field-hint">
-                  {faDigits(simCostToman)
-                    ? `${faDigits(simCostToman)} تومان`
-                    : "عدد نمونه از کاتالوگ Provider"}
-                </span>
-              </label>
-              <label className="pricing-field">
-                <span>منبع</span>
-                <select
-                  value={simProvider}
-                  onChange={(event) =>
-                    setSimProvider(event.target.value as "ARVAN" | "PARSPACK")
-                  }
-                >
-                  <option value="ARVAN">Arvan</option>
-                  <option value="PARSPACK">ParsPack</option>
-                </select>
-              </label>
-              <label className="pricing-field">
-                <span>نوع محصول</span>
-                <select
-                  value={simProductKind}
-                  onChange={(event) =>
-                    setSimProductKind(
-                      event.target.value as ProductMarkup["productKind"],
-                    )
-                  }
-                >
-                  <option value="CLOUD_SERVER">سرور ابری</option>
-                  <option value="READY_INSTANT_SERVER">سرور آماده</option>
-                </select>
-              </label>
-              <label className="pricing-field">
-                <span>مدت</span>
-                <select
-                  value={simTerm}
-                  onChange={(event) =>
-                    setSimTerm(Number(event.target.value) as 1 | 3 | 6 | 12)
-                  }
-                >
-                  <option value={1}>۱ ماه</option>
-                  <option value={3}>۳ ماه (۵٪ تخفیف)</option>
-                  <option value={6}>۶ ماه (۱۰٪ تخفیف)</option>
-                  <option value={12}>۱۲ ماه (۲۰٪ تخفیف)</option>
-                </select>
-              </label>
-              <label className="pricing-field">
-                <span>پرچین</span>
-                <select
-                  value={simParchin}
-                  onChange={(event) =>
-                    setSimParchin(event.target.value as ParchinRow["level"])
-                  }
-                >
-                  {commerce.parchin.map((item) => (
-                    <option key={item.level} value={item.level}>
-                      {item.title || parchinLevelLabel(item.level)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="pricing-field">
-                <span>کد تخفیف ٪ (اختیاری)</span>
-                <input
-                  inputMode="decimal"
-                  placeholder="خالی = تخفیف ثابت دوره"
-                  value={simCouponPercent}
-                  onChange={(event) => setSimCouponPercent(event.target.value)}
-                />
-              </label>
-            </div>
-
-            {simulation ? (
-              <div className="finance-sim-result">
-                <div className="finance-sim-lines">
-                  {simulation.lines.map((line) => (
-                    <div
-                      key={line.key}
-                      className={`finance-sim-line finance-sim-line--${line.tone}`}
-                    >
-                      <div className="finance-sim-line-label">
-                        <span>{line.label}</span>
-                        <small>{line.hint}</small>
+                <details className="finance-help">
+                  <summary>چطور حساب می‌شود؟</summary>
+                  <ol className="finance-pipeline">
+                    <li className="finance-pipeline-step finance-pipeline-step--cost">
+                      <span>۱</span>
+                      <div>
+                        <strong>قیمت خرید Provider</strong>
+                        <p>هزینه ماهانه Arvan / ParsPack از کاتالوگ Sync</p>
                       </div>
-                      <strong>
-                        {line.amount < 0n ? "−" : ""}
-                        {formatTomanFromRial(
-                          line.amount < 0n ? -line.amount : line.amount,
-                        )}
-                      </strong>
-                    </div>
+                    </li>
+                    <li className="finance-pipeline-step finance-pipeline-step--sale">
+                      <span>۲</span>
+                      <div>
+                        <strong>سود Markup</strong>
+                        <p>Markup منبع + Markup نوع محصول</p>
+                      </div>
+                    </li>
+                    <li className="finance-pipeline-step finance-pipeline-step--sale">
+                      <span>۳</span>
+                      <div>
+                        <strong>پرچین</strong>
+                        <p>خط خدمت الزامی روی فروش مدیریت‌شده</p>
+                      </div>
+                    </li>
+                    <li className="finance-pipeline-step">
+                      <span>۴</span>
+                      <div>
+                        <strong>× مدت ماه</strong>
+                        <p>۱ / ۳ / ۶ / ۱۲ ماه</p>
+                      </div>
+                    </li>
+                    <li className="finance-pipeline-step">
+                      <span>۵</span>
+                      <div>
+                        <strong>تخفیف</strong>
+                        <p>ثابت ۵/۱۰/۲۰٪ یا کد تخفیف (جایگزین)</p>
+                      </div>
+                    </li>
+                    <li className="finance-pipeline-step">
+                      <span>۶</span>
+                      <div>
+                        <strong>مالیات</strong>
+                        <p>VAT روی مبلغ پس از تخفیف</p>
+                      </div>
+                    </li>
+                    <li className="finance-pipeline-step finance-pipeline-step--sale">
+                      <span>۷</span>
+                      <div>
+                        <strong>مبلغ نهایی مشتری</strong>
+                        <p>همان عدد قبل از درگاه</p>
+                      </div>
+                    </li>
+                  </ol>
+                  <div className="finance-process-grid">
+                    <article>
+                      <h3>چینش / خرید سرور</h3>
+                      <p>
+                        فرمول کامل بالا. مشتری نام Provider و قیمت خرید را
+                        نمی‌بیند.
+                      </p>
+                    </article>
+                    <article>
+                      <h3>قطب‌نما / خدمات</h3>
+                      <p>
+                        قیمت بسته‌های خدمت جدا از Markup سرور تنظیم می‌شود و فقط
+                        پیشنهاد خدمت است.
+                      </p>
+                    </article>
+                    <article>
+                      <h3>شارژ کیف پول</h3>
+                      <p>
+                        مبلغ شارژ = واریز مشتری. کد افزایش اعتبار فقط پس از حداقل
+                        واریز، N تومان اضافه می‌دهد.
+                      </p>
+                    </article>
+                    <article>
+                      <h3>SKU دستی ابرچین</h3>
+                      <p>
+                        قیمت پایه دستی یعنی Markup منبع/محصول صفر؛ فقط پرچین،
+                        تخفیف دوره و مالیات اعمال می‌شود.
+                      </p>
+                    </article>
+                  </div>
+                </details>
+              </SectionCard>
+            </section>
+          ) : null}
+
+          {activeSection === "markup" ? (
+            <section
+              id="finance-panel-markup"
+              role="tabpanel"
+              aria-labelledby="finance-tab-markup"
+              className="finance-section"
+            >
+              <SectionCard title="سود و Markup منابع و محصولات">
+                <p className="pricing-rules-lead">
+                  پیش‌فرض لانچ: حدود ۳۰٪ هزینه تأمین و ۷۰٪ سود (مارکاپ حدود
+                  ۲۳۳٫۳۳٪ روی قیمت خرید). تغییرها فقط فروش‌های بعدی را عوض
+                  می‌کنند.
+                </p>
+
+                <h3 className="finance-subtitle">Markup سراسری منبع</h3>
+                <div className="pricing-rules-grid pricing-rules-grid--cards">
+                  {providers.map((item, index) => (
+                    <article
+                      className="pricing-product-card"
+                      key={item.provider}
+                    >
+                      <header>
+                        <span
+                          className="provider-code-badge"
+                          data-code={item.provider}
+                        >
+                          {providerLabel(item.provider)}
+                        </span>
+                        <StatusBadge
+                          label={item.enabled ? "فعال" : "خاموش"}
+                          tone={item.enabled ? "success" : "warning"}
+                        />
+                      </header>
+                      <label className="pricing-field">
+                        <span>Markup روی قیمت خرید (٪)</span>
+                        <input
+                          inputMode="decimal"
+                          value={item.markupPercent}
+                          onChange={(event) =>
+                            setProviders((current) =>
+                              current.map((row, rowIndex) =>
+                                rowIndex === index
+                                  ? {
+                                      ...row,
+                                      markupPercent: event.target.value,
+                                    }
+                                  : row,
+                              ),
+                            )
+                          }
+                        />
+                        <span className="pricing-field-hint">
+                          {markupMultiplierLabel(item.markupPercent) ??
+                            "عدد با حداکثر دو رقم اعشار، مثلاً ۲۳۳٫۳۳"}
+                        </span>
+                      </label>
+                      <label className="pricing-check">
+                        <input
+                          type="checkbox"
+                          checked={item.enabled}
+                          onChange={(event) =>
+                            setProviders((current) =>
+                              current.map((row, rowIndex) =>
+                                rowIndex === index
+                                  ? {
+                                      ...row,
+                                      enabled: event.target.checked,
+                                    }
+                                  : row,
+                              ),
+                            )
+                          }
+                        />
+                        محاسبه قیمت نهایی برای این منبع فعال باشد
+                      </label>
+                    </article>
                   ))}
                 </div>
-                <div className="finance-sim-total">
-                  <div>
-                    <span>مبلغ نهایی مشتری</span>
-                    <strong className="money-tone money-tone--sale">
-                      {formatTomanFromRial(simulation.final)}
-                    </strong>
-                  </div>
-                  <div
-                    className="finance-share-bar"
-                    role="img"
-                    aria-label={`سهم خرید ${simulation.buyShare}٪، سهم سود ${simulation.profitShare}٪`}
-                  >
-                    <span
-                      className="finance-share-bar-cost"
-                      style={{ width: `${simulation.buyShare}%` }}
-                    />
-                    <span
-                      className="finance-share-bar-profit"
-                      style={{ width: `${simulation.profitShare}%` }}
-                    />
-                  </div>
-                  <p className="finance-share-legend">
-                    <span className="finance-legend-item finance-legend-item--cost">
-                      خرید {simulation.buyShare.toLocaleString("fa-IR")}٪
-                    </span>
-                    <span className="finance-legend-item finance-legend-item--profit">
-                      سود Markup {simulation.profitShare.toLocaleString("fa-IR")}٪
-                    </span>
-                    <span className="finance-legend-item">
-                      پرچین و مالیات {simulation.restShare.toLocaleString("fa-IR")}٪
-                    </span>
-                  </p>
-                  {!simulation.providerEnabled || !simulation.productEnabled ? (
-                    <p className="pricing-save-err">
-                      توجه: Markup {providerLabel(simProvider)} یا نوع محصول
-                      غیرفعال است؛ فروش واقعی این ترکیب قیمت نمی‌گیرد.
-                    </p>
-                  ) : null}
+
+                <h3 className="finance-subtitle">Markup نوع محصول</h3>
+                <p className="pricing-field-hint" style={{ marginBottom: 12 }}>
+                  این درصد به Markup منبع اضافه می‌شود. Override اختصاصی روی یک
+                  SKU فقط در ویرایش همان SKU (حالت پیشرفته) است.
+                </p>
+                <div className="pricing-rules-grid pricing-rules-grid--cards">
+                  {commerce.productMarkups.map((config, index) => (
+                    <article
+                      className="pricing-product-card"
+                      key={`${config.provider}:${config.productKind}`}
+                    >
+                      <header>
+                        <span
+                          className="provider-code-badge"
+                          data-code={config.provider}
+                        >
+                          {providerLabel(config.provider)}
+                        </span>
+                        <strong>{productKindLabel(config.productKind)}</strong>
+                      </header>
+                      <label className="pricing-field">
+                        <span>Markup اضافه محصول (٪)</span>
+                        <input
+                          inputMode="decimal"
+                          value={config.markupPercent}
+                          onChange={(event) =>
+                            setCommerce((current) => ({
+                              ...current,
+                              productMarkups: current.productMarkups.map(
+                                (item, itemIndex) =>
+                                  itemIndex === index
+                                    ? {
+                                        ...item,
+                                        markupPercent: event.target.value,
+                                      }
+                                    : item,
+                              ),
+                            }))
+                          }
+                        />
+                        <span className="pricing-field-hint">
+                          صفر = فقط Markup منبع اعمال می‌شود
+                        </span>
+                      </label>
+                      <label className="pricing-check">
+                        <input
+                          type="checkbox"
+                          checked={config.enabled}
+                          onChange={(event) =>
+                            setCommerce((current) => ({
+                              ...current,
+                              productMarkups: current.productMarkups.map(
+                                (item, itemIndex) =>
+                                  itemIndex === index
+                                    ? {
+                                        ...item,
+                                        enabled: event.target.checked,
+                                      }
+                                    : item,
+                              ),
+                            }))
+                          }
+                        />
+                        فعال برای این نوع محصول
+                      </label>
+                    </article>
+                  ))}
                 </div>
-              </div>
-            ) : (
-              <p className="product-muted">قیمت خرید نمونه را وارد کن.</p>
-            )}
-          </div>
-        </SectionCard>
-      </section>
+              </SectionCard>
+            </section>
+          ) : null}
 
-      <section id="finance-markup" className="finance-section">
-        <SectionCard title="سود و Markup منابع و محصولات">
-          <p className="pricing-rules-lead">
-            پیش‌فرض لانچ: حدود ۳۰٪ هزینه تأمین و ۷۰٪ سود (مارکاپ حدود ۲۳۳٫۳۳٪ روی
-            قیمت خرید). تغییرها فقط فروش‌های بعدی را عوض می‌کنند؛ Snapshot
-            سفارش‌های قبلی ثابت می‌ماند.
-          </p>
+          {activeSection === "parchin" ? (
+            <section
+              id="finance-panel-parchin"
+              role="tabpanel"
+              aria-labelledby="finance-tab-parchin"
+              className="finance-section"
+            >
+              <SectionCard title="پرچین">
+                <p className="pricing-rules-lead">
+                  عنوان و قیمت همین‌جا روی سایت، چینش و قطب‌نما اعمال می‌شود. قیمت
+                  صفر = رایگان؛ غیرفعال = حذف از مسیر فروش. پرچین شروع باید فعال
+                  بماند.
+                </p>
+                <div className="pricing-rules-grid pricing-rules-grid--cards">
+                  {commerce.parchin.map((config, index) => (
+                    <article
+                      className="pricing-product-card"
+                      key={config.level}
+                    >
+                      <header>
+                        <strong>{parchinLevelLabel(config.level)}</strong>
+                        <StatusBadge
+                          label={config.active ? "فعال" : "غیرفعال"}
+                          tone={config.active ? "success" : "neutral"}
+                        />
+                      </header>
+                      <label className="pricing-field">
+                        <span>عنوان نمایش در سایت</span>
+                        <input
+                          value={config.title}
+                          onChange={(event) =>
+                            setCommerce((current) => ({
+                              ...current,
+                              parchin: current.parchin.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, title: event.target.value }
+                                  : item,
+                              ),
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="pricing-field">
+                        <span>دامنه خدمات</span>
+                        <textarea
+                          rows={2}
+                          value={config.description ?? ""}
+                          onChange={(event) =>
+                            setCommerce((current) => ({
+                              ...current,
+                              parchin: current.parchin.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? {
+                                      ...item,
+                                      description: event.target.value,
+                                    }
+                                  : item,
+                              ),
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="pricing-field">
+                        <span>قیمت ماهانه (تومان)</span>
+                        <input
+                          inputMode="numeric"
+                          value={config.priceToman}
+                          onChange={(event) =>
+                            setCommerce((current) => ({
+                              ...current,
+                              parchin: current.parchin.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? {
+                                      ...item,
+                                      priceToman: event.target.value,
+                                    }
+                                  : item,
+                              ),
+                            }))
+                          }
+                        />
+                        <span className="pricing-field-hint">
+                          {faDigits(config.priceToman)
+                            ? `${faDigits(config.priceToman)} تومان در ماه`
+                            : "صفر = رایگان در صورتحساب"}
+                        </span>
+                      </label>
+                      <label className="pricing-check">
+                        <input
+                          type="checkbox"
+                          checked={config.active}
+                          onChange={(event) =>
+                            setCommerce((current) => ({
+                              ...current,
+                              parchin: current.parchin.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? {
+                                      ...item,
+                                      active: event.target.checked,
+                                    }
+                                  : item,
+                              ),
+                            }))
+                          }
+                        />
+                        فعال در فروش
+                      </label>
+                    </article>
+                  ))}
+                </div>
+              </SectionCard>
+            </section>
+          ) : null}
 
-          <h3 className="finance-subtitle">Markup سراسری منبع</h3>
-          <div className="pricing-rules-grid pricing-rules-grid--cards">
-            {providers.map((item, index) => (
-              <article className="pricing-product-card" key={item.provider}>
-                <header>
-                  <span
-                    className="provider-code-badge"
-                    data-code={item.provider}
-                  >
-                    {providerLabel(item.provider)}
-                  </span>
-                  <StatusBadge
-                    label={item.enabled ? "فعال" : "خاموش"}
-                    tone={item.enabled ? "success" : "warning"}
-                  />
-                </header>
-                <label className="pricing-field">
-                  <span>Markup روی قیمت خرید (٪)</span>
-                  <input
-                    inputMode="decimal"
-                    value={item.markupPercent}
-                    onChange={(event) =>
-                      setProviders((current) =>
-                        current.map((row, rowIndex) =>
-                          rowIndex === index
-                            ? { ...row, markupPercent: event.target.value }
-                            : row,
-                        ),
-                      )
-                    }
-                  />
-                  <span className="pricing-field-hint">
-                    {markupMultiplierLabel(item.markupPercent) ??
-                      "عدد با حداکثر دو رقم اعشار، مثلاً ۲۳۳٫۳۳"}
-                  </span>
-                </label>
-                <label className="pricing-check">
-                  <input
-                    type="checkbox"
-                    checked={item.enabled}
-                    onChange={(event) =>
-                      setProviders((current) =>
-                        current.map((row, rowIndex) =>
-                          rowIndex === index
-                            ? { ...row, enabled: event.target.checked }
-                            : row,
-                        ),
-                      )
-                    }
-                  />
-                  محاسبه قیمت نهایی برای این منبع فعال باشد
-                </label>
-              </article>
-            ))}
-          </div>
+          {activeSection === "tax" ? (
+            <section
+              id="finance-panel-tax"
+              role="tabpanel"
+              aria-labelledby="finance-tab-tax"
+              className="finance-section"
+            >
+              <SectionCard title="مالیات و چرخه یادآوری">
+                <div className="pricing-rules-grid">
+                  <label className="pricing-field">
+                    <span>مالیات VAT (٪)</span>
+                    <input
+                      inputMode="decimal"
+                      value={commerce.taxPercent}
+                      onChange={(event) =>
+                        setCommerce((current) => ({
+                          ...current,
+                          taxPercent: event.target.value,
+                        }))
+                      }
+                    />
+                    <span className="pricing-field-hint">
+                      پیش‌فرض لانچ ۱۰٪. روی مبلغ پس از تخفیف اعمال می‌شود.
+                    </span>
+                  </label>
+                  <label className="pricing-field">
+                    <span>SMS قبل از سررسید (روز)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={90}
+                      value={commerce.reminderDaysBeforeDue}
+                      onChange={(event) =>
+                        setCommerce((current) => ({
+                          ...current,
+                          reminderDaysBeforeDue: Number(event.target.value),
+                        }))
+                      }
+                    />
+                    <span className="pricing-field-hint">
+                      یادآوری تمدید به مشتری
+                    </span>
+                  </label>
+                  <label className="pricing-field">
+                    <span>مهلت تمدید تا تعلیق (روز)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={90}
+                      value={commerce.suspendGraceDaysAfterZero}
+                      onChange={(event) =>
+                        setCommerce((current) => ({
+                          ...current,
+                          suspendGraceDaysAfterZero: Number(
+                            event.target.value,
+                          ),
+                        }))
+                      }
+                    />
+                    <span className="pricing-field-hint">
+                      پس از صفر شدن کیف پول
+                    </span>
+                  </label>
+                  <label className="pricing-field">
+                    <span>روز تا بررسی حذف پس از تعلیق</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={90}
+                      value={commerce.deleteDaysAfterSuspend}
+                      onChange={(event) =>
+                        setCommerce((current) => ({
+                          ...current,
+                          deleteDaysAfterSuspend: Number(event.target.value),
+                        }))
+                      }
+                    />
+                    <span className="pricing-field-hint">
+                      حذف فقط با Gate عملیاتی Admin
+                    </span>
+                  </label>
+                </div>
+              </SectionCard>
+            </section>
+          ) : null}
 
-          <h3 className="finance-subtitle">Markup نوع محصول</h3>
-          <p className="pricing-field-hint" style={{ marginBottom: 12 }}>
-            این درصد به Markup منبع اضافه می‌شود. Override اختصاصی روی یک SKU فقط
-            در ویرایش همان SKU (حالت پیشرفته) است.
-          </p>
-          <div className="pricing-rules-grid pricing-rules-grid--cards">
-            {commerce.productMarkups.map((config, index) => (
-              <article
-                className="pricing-product-card"
-                key={`${config.provider}:${config.productKind}`}
-              >
-                <header>
-                  <span
-                    className="provider-code-badge"
-                    data-code={config.provider}
-                  >
-                    {providerLabel(config.provider)}
-                  </span>
-                  <strong>{productKindLabel(config.productKind)}</strong>
-                </header>
-                <label className="pricing-field">
-                  <span>Markup اضافه محصول (٪)</span>
-                  <input
-                    inputMode="decimal"
-                    value={config.markupPercent}
-                    onChange={(event) =>
-                      setCommerce((current) => ({
-                        ...current,
-                        productMarkups: current.productMarkups.map(
-                          (item, itemIndex) =>
-                            itemIndex === index
-                              ? { ...item, markupPercent: event.target.value }
-                              : item,
-                        ),
-                      }))
-                    }
-                  />
-                  <span className="pricing-field-hint">
-                    صفر = فقط Markup منبع اعمال می‌شود
-                  </span>
-                </label>
-                <label className="pricing-check">
-                  <input
-                    type="checkbox"
-                    checked={config.enabled}
-                    onChange={(event) =>
-                      setCommerce((current) => ({
-                        ...current,
-                        productMarkups: current.productMarkups.map(
-                          (item, itemIndex) =>
-                            itemIndex === index
-                              ? { ...item, enabled: event.target.checked }
-                              : item,
-                        ),
-                      }))
-                    }
-                  />
-                  فعال برای این نوع محصول
-                </label>
-              </article>
-            ))}
-          </div>
-        </SectionCard>
-      </section>
+          {activeSection === "compass" ? (
+            <section
+              id="finance-panel-compass"
+              role="tabpanel"
+              aria-labelledby="finance-tab-compass"
+              className="finance-section"
+            >
+              <SectionCard title="قیمت بسته‌های خدمت قطب‌نما">
+                <p className="pricing-rules-lead">
+                  مبالغ به تومان هستند و فقط در مسیر خدمت قطب‌نما پیشنهاد می‌شوند —
+                  جدا از خرید سرور چینش.
+                </p>
+                <div className="pricing-rules-grid">
+                  {(
+                    Object.keys(serviceLabels) as Array<
+                      keyof CommerceState["compassServicePricesToman"]
+                    >
+                  ).map((code) => (
+                    <label className="pricing-field" key={code}>
+                      <span>{serviceLabels[code]}</span>
+                      <input
+                        inputMode="numeric"
+                        value={commerce.compassServicePricesToman[code]}
+                        onChange={(event) =>
+                          setCommerce((current) => ({
+                            ...current,
+                            compassServicePricesToman: {
+                              ...current.compassServicePricesToman,
+                              [code]: event.target.value.replace(/\D/g, ""),
+                            },
+                          }))
+                        }
+                      />
+                      <span className="pricing-field-hint">
+                        {faDigits(commerce.compassServicePricesToman[code])
+                          ? `${faDigits(commerce.compassServicePricesToman[code])} تومان`
+                          : "صفر = بدون پیشنهاد قیمت"}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </SectionCard>
+            </section>
+          ) : null}
 
-      <section id="finance-parchin" className="finance-section">
-        <SectionCard title="پرچین">
-          <p className="pricing-rules-lead">
-            عنوان و قیمت همین‌جا روی سایت، چینش و قطب‌نما اعمال می‌شود. قیمت صفر =
-            رایگان در صورتحساب؛ غیرفعال = حذف از مسیر فروش. پرچین شروع باید فعال
-            بماند.
-          </p>
-          <div className="pricing-rules-grid pricing-rules-grid--cards">
-            {commerce.parchin.map((config, index) => (
-              <article className="pricing-product-card" key={config.level}>
-                <header>
-                  <strong>{parchinLevelLabel(config.level)}</strong>
-                  <StatusBadge
-                    label={config.active ? "فعال" : "غیرفعال"}
-                    tone={config.active ? "success" : "neutral"}
-                  />
-                </header>
-                <label className="pricing-field">
-                  <span>عنوان نمایش در سایت</span>
-                  <input
-                    value={config.title}
-                    onChange={(event) =>
-                      setCommerce((current) => ({
-                        ...current,
-                        parchin: current.parchin.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? { ...item, title: event.target.value }
-                            : item,
-                        ),
-                      }))
-                    }
-                  />
-                </label>
-                <label className="pricing-field">
-                  <span>دامنه خدمات</span>
-                  <textarea
-                    rows={2}
-                    value={config.description ?? ""}
-                    onChange={(event) =>
-                      setCommerce((current) => ({
-                        ...current,
-                        parchin: current.parchin.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? { ...item, description: event.target.value }
-                            : item,
-                        ),
-                      }))
-                    }
-                  />
-                </label>
-                <label className="pricing-field">
-                  <span>قیمت ماهانه (تومان)</span>
-                  <input
-                    inputMode="numeric"
-                    value={config.priceToman}
-                    onChange={(event) =>
-                      setCommerce((current) => ({
-                        ...current,
-                        parchin: current.parchin.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? { ...item, priceToman: event.target.value }
-                            : item,
-                        ),
-                      }))
-                    }
-                  />
-                  <span className="pricing-field-hint">
-                    {faDigits(config.priceToman)
-                      ? `${faDigits(config.priceToman)} تومان در ماه`
-                      : "صفر = رایگان در صورتحساب"}
-                  </span>
-                </label>
-                <label className="pricing-check">
-                  <input
-                    type="checkbox"
-                    checked={config.active}
-                    onChange={(event) =>
-                      setCommerce((current) => ({
-                        ...current,
-                        parchin: current.parchin.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? { ...item, active: event.target.checked }
-                            : item,
-                        ),
-                      }))
-                    }
-                  />
-                  فعال در فروش
-                </label>
-              </article>
-            ))}
-          </div>
-        </SectionCard>
-      </section>
+          {activeSection === "coupons" ? (
+            <section
+              id="finance-panel-coupons"
+              role="tabpanel"
+              aria-labelledby="finance-tab-coupons"
+              className="finance-section"
+            >
+              <CouponsPanel initial={initialCoupons} />
+            </section>
+          ) : null}
+        </div>
 
-      <section id="finance-tax" className="finance-section">
-        <SectionCard title="مالیات و چرخه یادآوری">
-          <div className="pricing-rules-grid">
-            <label className="pricing-field">
-              <span>مالیات VAT (٪)</span>
-              <input
-                inputMode="decimal"
-                value={commerce.taxPercent}
-                onChange={(event) =>
-                  setCommerce((current) => ({
-                    ...current,
-                    taxPercent: event.target.value,
-                  }))
-                }
-              />
-              <span className="pricing-field-hint">
-                پیش‌فرض لانچ ۱۰٪. روی مبلغ پس از تخفیف اعمال می‌شود.
-              </span>
-            </label>
-            <label className="pricing-field">
-              <span>SMS قبل از سررسید (روز)</span>
-              <input
-                type="number"
-                min={1}
-                max={90}
-                value={commerce.reminderDaysBeforeDue}
-                onChange={(event) =>
-                  setCommerce((current) => ({
-                    ...current,
-                    reminderDaysBeforeDue: Number(event.target.value),
-                  }))
-                }
-              />
-              <span className="pricing-field-hint">یادآوری تمدید به مشتری</span>
-            </label>
-            <label className="pricing-field">
-              <span>مهلت تمدید تا تعلیق (روز)</span>
-              <input
-                type="number"
-                min={1}
-                max={90}
-                value={commerce.suspendGraceDaysAfterZero}
-                onChange={(event) =>
-                  setCommerce((current) => ({
-                    ...current,
-                    suspendGraceDaysAfterZero: Number(event.target.value),
-                  }))
-                }
-              />
-              <span className="pricing-field-hint">
-                پس از صفر شدن کیف پول
-              </span>
-            </label>
-            <label className="pricing-field">
-              <span>روز تا بررسی حذف پس از تعلیق</span>
-              <input
-                type="number"
-                min={1}
-                max={90}
-                value={commerce.deleteDaysAfterSuspend}
-                onChange={(event) =>
-                  setCommerce((current) => ({
-                    ...current,
-                    deleteDaysAfterSuspend: Number(event.target.value),
-                  }))
-                }
-              />
-              <span className="pricing-field-hint">
-                حذف فقط با Gate عملیاتی Admin
-              </span>
-            </label>
-          </div>
-        </SectionCard>
-      </section>
-
-      <section id="finance-compass" className="finance-section">
-        <SectionCard title="قیمت بسته‌های خدمت قطب‌نما">
-          <p className="pricing-rules-lead">
-            مبالغ به تومان هستند و فقط در مسیر خدمت قطب‌نما پیشنهاد می‌شوند — جدا
-            از خرید سرور چینش.
-          </p>
-          <div className="pricing-rules-grid">
-            {(
-              Object.keys(serviceLabels) as Array<
-                keyof CommerceState["compassServicePricesToman"]
-              >
-            ).map((code) => (
-              <label className="pricing-field" key={code}>
-                <span>{serviceLabels[code]}</span>
-                <input
-                  inputMode="numeric"
-                  value={commerce.compassServicePricesToman[code]}
-                  onChange={(event) =>
-                    setCommerce((current) => ({
-                      ...current,
-                      compassServicePricesToman: {
-                        ...current.compassServicePricesToman,
-                        [code]: event.target.value.replace(/\D/g, ""),
-                      },
-                    }))
-                  }
-                />
-                <span className="pricing-field-hint">
-                  {faDigits(commerce.compassServicePricesToman[code])
-                    ? `${faDigits(commerce.compassServicePricesToman[code])} تومان`
-                    : "صفر = بدون پیشنهاد قیمت"}
-                </span>
-              </label>
-            ))}
-          </div>
-        </SectionCard>
-      </section>
-
-      <div className="finance-save-bar">
-        <button
-          className="product-btn product-btn--primary"
-          disabled={saving || !dirty}
-          onClick={() => void saveAll()}
-          type="button"
-        >
-          {saving ? "در حال ذخیره…" : "ذخیره مرکز مالی"}
-        </button>
-        {error ? (
-          <p className="pricing-save-err" aria-live="polite">
-            {error}
-          </p>
-        ) : dirty ? (
-          <p className="finance-dirty-badge" aria-live="polite">
-            تغییرات ذخیره‌نشده داری — تا ذخیره نکنی روی سایت اعمال نمی‌شود.
-          </p>
-        ) : message ? (
-          <p className="pricing-save-ok" aria-live="polite">
-            {message}
-          </p>
-        ) : (
-          <p className="pricing-field-hint">همه تغییرات ذخیره شده است.</p>
-        )}
+        <aside className="finance-aside" aria-label="شبیه‌ساز مبلغ فروش">
+          <div className="finance-aside-desktop">{simulatorPanel}</div>
+          <details
+            className="finance-aside-mobile"
+            open={simOpenMobile}
+            onToggle={(event) =>
+              setSimOpenMobile((event.target as HTMLDetailsElement).open)
+            }
+          >
+            <summary>
+              شبیه‌سازی این قیمت
+              {simulation ? (
+                <strong className="money-tone money-tone--sale">
+                  {formatTomanFromRial(simulation.final)}
+                </strong>
+              ) : null}
+            </summary>
+            {simulatorPanel}
+          </details>
+        </aside>
       </div>
 
-      <section id="finance-coupons" className="finance-section">
-        <CouponsPanel initial={initialCoupons} />
-      </section>
+      {activeSection !== "coupons" ? (
+        <div className="finance-save-bar">
+          <button
+            className="product-btn product-btn--primary"
+            disabled={saving || !dirty}
+            onClick={() => void saveAll()}
+            type="button"
+          >
+            {saving ? "در حال ذخیره…" : "ذخیره مرکز مالی"}
+          </button>
+          {error ? (
+            <p className="pricing-save-err" aria-live="polite">
+              {error}
+            </p>
+          ) : dirty ? (
+            <p className="finance-dirty-badge" aria-live="polite">
+              تغییرات ذخیره‌نشده داری — تا ذخیره نکنی روی سایت اعمال نمی‌شود.
+            </p>
+          ) : message ? (
+            <p className="pricing-save-ok" aria-live="polite">
+              {message}
+            </p>
+          ) : (
+            <p className="pricing-field-hint">همه تغییرات ذخیره شده است.</p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

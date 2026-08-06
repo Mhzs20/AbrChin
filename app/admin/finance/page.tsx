@@ -45,15 +45,9 @@ export default async function AdminFinanceCenterPage() {
     <>
       <PageHeader
         title="مرکز مالی"
-        description="یکجا ببین قیمت در هر فرایند چطور حساب می‌شود، و سود Arvan / ParsPack / پرچین / مالیات / قطب‌نما / کد تخفیف را از همین‌جا تنظیم کن."
+        description="قواعد قیمت فروش را از یکجا تنظیم کن. هر تب یک کار دارد؛ شبیه‌ساز کنار صفحه مبلغ نهایی مشتری را نشان می‌دهد."
         actions={
           <>
-            <Link
-              href="/admin/infrastructure/providers"
-              className="product-btn product-btn--quiet"
-            >
-              منابع Arvan / ParsPack
-            </Link>
             <Link
               href="/admin/wallets"
               className="product-btn product-btn--quiet"
