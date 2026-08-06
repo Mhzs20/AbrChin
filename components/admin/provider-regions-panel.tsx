@@ -30,10 +30,14 @@ function sourceLabel(source: string) {
 }
 
 export function ProviderRegionsPanel({
+  provider = "ARVAN",
+  providerLabel = "Arvan",
   initialRegions,
   initialDiscovery = null,
   initialDiscoveryError = null,
 }: {
+  provider?: "ARVAN" | "PARSPACK";
+  providerLabel?: string;
   initialRegions: RegionRow[];
   initialDiscovery?: DiscoverySummary | null;
   initialDiscoveryError?: string | null;
@@ -60,7 +64,10 @@ export function ProviderRegionsPanel({
           "Content-Type": "application/json",
           "Idempotency-Key": crypto.randomUUID(),
         },
-        body: JSON.stringify({ action: "discover_from_provider" }),
+        body: JSON.stringify({
+          action: "discover_from_provider",
+          provider,
+        }),
       });
       const data = (await response.json()) as {
         error?: string;
@@ -71,7 +78,7 @@ export function ProviderRegionsPanel({
       if (data.regions) setRegions(data.regions);
       if (data.discovery) {
         setMessage(
-          `از سرویس‌دهنده ${data.discovery.discoveredCount.toLocaleString("fa-IR")} منطقه خوانده شد؛ ${data.discovery.created.toLocaleString("fa-IR")} مورد جدید فعال شد. غیرفعال‌های شما دست نخورده ماند.`,
+          `از ${providerLabel} ${data.discovery.discoveredCount.toLocaleString("fa-IR")} منطقه خوانده شد؛ ${data.discovery.created.toLocaleString("fa-IR")} مورد جدید فعال شد. غیرفعال‌های شما دست نخورده ماند.`,
         );
       }
     } catch (caught) {
@@ -97,6 +104,7 @@ export function ProviderRegionsPanel({
           "Idempotency-Key": crypto.randomUUID(),
         },
         body: JSON.stringify({
+          provider,
           regionCode,
           displayName,
           syncEnabled: true,
@@ -140,11 +148,11 @@ export function ProviderRegionsPanel({
   }
 
   return (
-    <SectionCard title="Regionهای Arvan — همگام با سرویس‌دهنده">
+    <SectionCard title={`Regionهای ${providerLabel} — همگام با سرویس‌دهنده`}>
       <p>
-        مناطق از API خواندنی Arvan به‌صورت خودکار پر می‌شوند و به‌طور پیش‌فرض
-        Sync و فروش‌شان فعال است. فقط وقتی شما غیرفعال کنید خاموش می‌مانند.
-        Catalog Sync هم همین کشف را قبل از Sync انجام می‌دهد.
+        مناطق از API خواندنی {providerLabel} به‌صورت خودکار پر می‌شوند و به‌طور
+        پیش‌فرض Sync و فروش‌شان فعال است. فقط وقتی شما غیرفعال کنید خاموش
+        می‌مانند. Catalog Sync هم همین کشف را قبل از Sync انجام می‌دهد.
       </p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
         <button
@@ -153,7 +161,7 @@ export function ProviderRegionsPanel({
           disabled={loading}
           onClick={() => void discoverFromProvider()}
         >
-          دریافت مناطق از سرویس‌دهنده
+          دریافت مناطق از {providerLabel}
         </button>
       </div>
       {message ? <p className="product-muted">{message}</p> : null}
@@ -169,20 +177,28 @@ export function ProviderRegionsPanel({
             marginTop: 12,
           }}
         >
-          <FormField id="provider-region-code" label="Region Code">
+          <FormField
+            id={`provider-region-code-${provider}`}
+            label="Region Code"
+          >
             <input
-              id="provider-region-code"
+              id={`provider-region-code-${provider}`}
               value={regionCode}
               onChange={(event) => setRegionCode(event.target.value)}
-              placeholder="ir-thr-si1"
+              placeholder={provider === "PARSPACK" ? "tehran2" : "ir-thr-si1"}
             />
           </FormField>
-          <FormField id="provider-region-name" label="نام نمایشی">
+          <FormField
+            id={`provider-region-name-${provider}`}
+            label="نام نمایشی"
+          >
             <input
-              id="provider-region-name"
+              id={`provider-region-name-${provider}`}
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
-              placeholder="سیمین، غرب تهران"
+              placeholder={
+                provider === "PARSPACK" ? "تهران ۲، ایران" : "سیمین، غرب تهران"
+              }
             />
           </FormField>
           <button

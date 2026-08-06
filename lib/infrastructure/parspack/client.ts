@@ -203,6 +203,11 @@ export class ParsPackProvider implements InfrastructureProviderAdapter {
     }
   }
 
+  /** Lightweight region list for Admin discovery (not full catalog sync). */
+  async listRegions(): Promise<ProviderCatalog["regions"]> {
+    return this.readCatalogCollection("/regions", parseParsPackRegions);
+  }
+
   async syncCatalog(): Promise<ProviderCatalog> {
     const [regions, sizes, images] = await Promise.all([
       this.readCatalogCollection("/regions", parseParsPackRegions),

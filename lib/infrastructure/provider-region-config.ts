@@ -11,6 +11,8 @@ import {
   arvanRegionPresentation,
   parseArvanRegionCodes,
 } from "@/lib/infrastructure/arvan/regions";
+import { readyServerLocation } from "@/lib/cloud-servers/catalog";
+import { createParsPackProviderClient } from "@/lib/infrastructure/provider-factory";
 
 const REGION_CODE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -220,4 +222,175 @@ export async function syncArvanRegionsFromProvider(input?: {
       regionCodes: discovered.map((region) => region.regionCode),
     };
   });
+}
+
+/**
+ * Pull every ParsPack region from public /regions into ProviderRegionConfig.
+ * New rows default Sync+Sale enabled. Admin disables are never re-enabled.
+ */
+export async function syncParsPackRegionsFromProvider(input?: {
+  actorUserId?: string | null;
+}) {
+  const client = createParsPackProviderClient();
+  const discovered = await client.listRegions();
+  const actorUserId = input?.actorUserId ?? null;
+
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended(${"provider-region-discovery:PARSPACK:v1"}, 0)
+      )::text AS locked
+    `;
+
+    let created = 0;
+    let unchanged = 0;
+    let refreshed = 0;
+
+    const acceptedCodes: string[] = [];
+
+    for (const [index, region] of discovered.entries()) {
+      let regionCode: string;
+      try {
+        regionCode = normalizeProviderRegionCode(region.code);
+      } catch {
+        continue;
+      }
+      acceptedCodes.push(regionCode);
+      const presentation = readyServerLocation(regionCode);
+      const displayName =
+        region.name?.trim() || presentation.label || regionCode;
+      const existing = await tx.providerRegionConfig.findUnique({
+        where: {
+          provider_apiVersion_regionCode: {
+            provider: InfrastructureProvider.PARSPACK,
+            apiVersion: "v1",
+            regionCode,
+          },
+        },
+      });
+
+      if (!existing) {
+        await tx.providerRegionConfig.create({
+          data: {
+            provider: InfrastructureProvider.PARSPACK,
+            apiVersion: "v1",
+            regionCode,
+            displayName,
+            source: ProviderRegionConfigSource.PROVIDER_DISCOVERY,
+            syncEnabled: true,
+            saleEnabled: true,
+            sortOrder: presentation.sortOrder || index,
+            lastValidatedAt: new Date(),
+            lastValidationCode: "provider_region_discovered",
+            createdById: actorUserId,
+            updatedById: actorUserId,
+          },
+        });
+        created += 1;
+        continue;
+      }
+
+      if (existing.source === ProviderRegionConfigSource.ADMIN) {
+        unchanged += 1;
+        continue;
+      }
+
+      const nextSortOrder = presentation.sortOrder || existing.sortOrder;
+      if (
+        existing.displayName === displayName &&
+        existing.sortOrder === nextSortOrder &&
+        existing.lastValidationCode === "provider_region_discovered"
+      ) {
+        unchanged += 1;
+        continue;
+      }
+
+      await tx.providerRegionConfig.update({
+        where: { id: existing.id },
+        data: {
+          displayName,
+          sortOrder: nextSortOrder,
+          source: ProviderRegionConfigSource.PROVIDER_DISCOVERY,
+          lastValidatedAt: new Date(),
+          lastValidationCode: "provider_region_discovered",
+          updatedById: actorUserId,
+        },
+      });
+      refreshed += 1;
+    }
+
+    return {
+      discoveredCount: acceptedCodes.length,
+      created,
+      refreshed,
+      unchanged,
+      regionCodes: acceptedCodes,
+    };
+  });
+}
+
+/** Discover regions for every Launch provider (Arvan + ParsPack). */
+export async function syncAllProviderRegionsFromProviders(input?: {
+  actorUserId?: string | null;
+}) {
+  const actorUserId = input?.actorUserId ?? null;
+  const results: Array<{
+    provider: "ARVAN" | "PARSPACK";
+    ok: boolean;
+    discovery?: Awaited<ReturnType<typeof syncArvanRegionsFromProvider>>;
+    error?: string;
+  }> = [];
+
+  try {
+    results.push({
+      provider: "ARVAN",
+      ok: true,
+      discovery: await syncArvanRegionsFromProvider({ actorUserId }),
+    });
+  } catch (error) {
+    results.push({
+      provider: "ARVAN",
+      ok: false,
+      error: error instanceof Error ? error.message : "provider_region_discovery_failed",
+    });
+  }
+
+  try {
+    results.push({
+      provider: "PARSPACK",
+      ok: true,
+      discovery: await syncParsPackRegionsFromProvider({ actorUserId }),
+    });
+  } catch (error) {
+    results.push({
+      provider: "PARSPACK",
+      ok: false,
+      error: error instanceof Error ? error.message : "provider_region_discovery_failed",
+    });
+  }
+
+  const discoveredCount = results.reduce(
+    (sum, row) => sum + (row.discovery?.discoveredCount ?? 0),
+    0,
+  );
+  const created = results.reduce(
+    (sum, row) => sum + (row.discovery?.created ?? 0),
+    0,
+  );
+  const refreshed = results.reduce(
+    (sum, row) => sum + (row.discovery?.refreshed ?? 0),
+    0,
+  );
+  const unchanged = results.reduce(
+    (sum, row) => sum + (row.discovery?.unchanged ?? 0),
+    0,
+  );
+
+  return {
+    discoveredCount,
+    created,
+    refreshed,
+    unchanged,
+    providers: results,
+  };
 }

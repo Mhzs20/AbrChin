@@ -13,17 +13,27 @@ import {
   rejectCrossOrigin,
 } from "@/lib/http";
 import { safeProviderSyncCode } from "@/lib/infrastructure/catalog-sync-observability";
-import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
+import {
+  createCloudProviderAdapter,
+  createParsPackProviderClient,
+} from "@/lib/infrastructure/provider-factory";
 import {
   listProviderRegionConfigs,
   normalizeProviderRegionCode,
   normalizeProviderRegionDisplayName,
+  syncAllProviderRegionsFromProviders,
   syncArvanRegionsFromProvider,
+  syncParsPackRegionsFromProvider,
 } from "@/lib/infrastructure/provider-region-config";
 import { readRequestMeta } from "@/lib/session";
 import { IdempotencyConflictError } from "@/lib/idempotency";
 
 export const dynamic = "force-dynamic";
+
+function parseProvider(value: unknown): InfrastructureProvider {
+  if (value === "PARSPACK") return InfrastructureProvider.PARSPACK;
+  return InfrastructureProvider.ARVAN;
+}
 
 function serializeRegions(
   regions: Awaited<ReturnType<typeof listProviderRegionConfigs>>,
@@ -36,12 +46,29 @@ function serializeRegions(
   }));
 }
 
-async function validateArvanRegion(regionCode: string) {
-  const adapter = createCloudProviderAdapter(
-    InfrastructureProvider.ARVAN,
-    "v1",
-    { regionCodes: [regionCode] },
-  );
+async function validateProviderRegion(
+  provider: InfrastructureProvider,
+  regionCode: string,
+) {
+  if (provider === InfrastructureProvider.PARSPACK) {
+    // ParsPack region contract is validated by public /regions presence.
+    try {
+      const regions = await createParsPackProviderClient().listRegions();
+      const match = regions.some(
+        (region) => region.code.toLowerCase() === regionCode.toLowerCase(),
+      );
+      if (!match) {
+        return { ok: false as const, code: "provider_region_not_found" };
+      }
+      return { ok: true as const, code: "provider_region_valid" };
+    } catch (error) {
+      return { ok: false as const, code: safeProviderSyncCode(error) };
+    }
+  }
+
+  const adapter = createCloudProviderAdapter(provider, "v1", {
+    regionCodes: [regionCode],
+  });
   try {
     const [plans, images, networks, security] = await Promise.all([
       adapter.syncPlans(regionCode),
@@ -67,11 +94,11 @@ export async function GET() {
   try {
     const admin = await requireAdminUser();
     let discovery:
-      | Awaited<ReturnType<typeof syncArvanRegionsFromProvider>>
+      | Awaited<ReturnType<typeof syncAllProviderRegionsFromProviders>>
       | null = null;
     let discoveryError: string | null = null;
     try {
-      discovery = await syncArvanRegionsFromProvider({
+      discovery = await syncAllProviderRegionsFromProviders({
         actorUserId: admin.id,
       });
     } catch (error) {
@@ -79,13 +106,20 @@ export async function GET() {
         error instanceof Error ? error.message : "provider_region_discovery_failed";
       console.error("[admin/provider-regions/discover]", discoveryError);
     }
-    const regions = await listProviderRegionConfigs({
-      provider: InfrastructureProvider.ARVAN,
-      apiVersion: "v1",
-      purpose: "ALL",
-    });
+    const [arvanRegions, parsPackRegions] = await Promise.all([
+      listProviderRegionConfigs({
+        provider: InfrastructureProvider.ARVAN,
+        apiVersion: "v1",
+        purpose: "ALL",
+      }),
+      listProviderRegionConfigs({
+        provider: InfrastructureProvider.PARSPACK,
+        apiVersion: "v1",
+        purpose: "ALL",
+      }),
+    ]);
     return jsonOk({
-      regions: serializeRegions(regions),
+      regions: serializeRegions([...arvanRegions, ...parsPackRegions]),
       discovery,
       discoveryError,
     });
@@ -112,17 +146,24 @@ export async function POST(request: Request) {
 
     if (body.action === "discover_from_provider") {
       const meta = await readRequestMeta(request);
+      const provider = parseProvider(body.provider);
       try {
-        const discovery = await syncArvanRegionsFromProvider({
-          actorUserId: admin.id,
-        });
+        const discovery =
+          provider === InfrastructureProvider.PARSPACK
+            ? await syncParsPackRegionsFromProvider({ actorUserId: admin.id })
+            : body.provider == null || body.provider === "ALL"
+              ? await syncAllProviderRegionsFromProviders({
+                  actorUserId: admin.id,
+                })
+              : await syncArvanRegionsFromProvider({ actorUserId: admin.id });
         await writeAuditLog({
           actorUserId: admin.id,
           action: AuditActions.PROVIDER_REGION_DISCOVER,
           entityType: "provider_region_config",
-          entityId: "ARVAN:v1",
+          entityId: `${provider}:v1`,
           afterData: {
             action: "discover_from_provider",
+            provider,
             ...discovery,
           },
           idempotencyKey,
@@ -130,7 +171,7 @@ export async function POST(request: Request) {
           userAgent: meta.userAgent,
         });
         const regions = await listProviderRegionConfigs({
-          provider: InfrastructureProvider.ARVAN,
+          provider,
           apiVersion: "v1",
           purpose: "ALL",
         });
@@ -142,33 +183,36 @@ export async function POST(request: Request) {
         const code =
           error instanceof Error ? error.message : "provider_region_discovery_failed";
         return jsonError(
-          code === "provider_auth_failed"
-            ? "احراز هویت Provider معتبر نیست."
+          code === "provider_auth_failed" || code === "provider_disabled"
+            ? "احراز هویت یا تنظیم Provider معتبر نیست."
             : "دریافت خودکار Region از سرویس‌دهنده ممکن نیست.",
-          code === "provider_auth_failed" ? 409 : 502,
+          code === "provider_auth_failed" || code === "provider_disabled"
+            ? 409
+            : 502,
           { code },
         );
       }
     }
 
+    const provider = parseProvider(body.provider);
     const regionCode = normalizeProviderRegionCode(String(body.regionCode ?? ""));
     const displayName = normalizeProviderRegionDisplayName(
       String(body.displayName ?? ""),
     );
-    const validation = await validateArvanRegion(regionCode);
+    const validation = await validateProviderRegion(provider, regionCode);
     const requestedSync = body.syncEnabled !== false;
     const requestedSale = body.saleEnabled !== false;
     const meta = await readRequestMeta(request);
     const region = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`
         SELECT pg_advisory_xact_lock(
-          hashtextextended(${`provider-region:ARVAN:v1:${regionCode}`}, 0)
+          hashtextextended(${`provider-region:${provider}:v1:${regionCode}`}, 0)
         )::text AS locked
       `;
       const saved = await tx.providerRegionConfig.upsert({
         where: {
           provider_apiVersion_regionCode: {
-            provider: InfrastructureProvider.ARVAN,
+            provider,
             apiVersion: "v1",
             regionCode,
           },
@@ -187,7 +231,7 @@ export async function POST(request: Request) {
           updatedById: admin.id,
         },
         create: {
-          provider: InfrastructureProvider.ARVAN,
+          provider,
           apiVersion: "v1",
           regionCode,
           displayName,
@@ -211,7 +255,7 @@ export async function POST(request: Request) {
           entityType: "provider_region_config",
           entityId: saved.id,
           afterData: {
-            provider: "ARVAN",
+            provider,
             apiVersion: "v1",
             regionCode,
             displayName,
@@ -265,12 +309,16 @@ export async function PATCH(request: Request) {
     const id = typeof body.id === "string" ? body.id.trim() : "";
     if (!id) return jsonError("Region معتبر نیست.", 400);
     const before = await prisma.providerRegionConfig.findUnique({ where: { id } });
-    if (!before || before.provider !== InfrastructureProvider.ARVAN) {
+    if (
+      !before ||
+      (before.provider !== InfrastructureProvider.ARVAN &&
+        before.provider !== InfrastructureProvider.PARSPACK)
+    ) {
       return jsonError("Region پیدا نشد.", 404);
     }
     const wantsEnabled = body.syncEnabled === true || body.saleEnabled === true;
     const validation = wantsEnabled
-      ? await validateArvanRegion(before.regionCode)
+      ? await validateProviderRegion(before.provider, before.regionCode)
       : { ok: true as const, code: "provider_region_disabled_by_admin" };
     if (wantsEnabled && !validation.ok) {
       return jsonError("Region از Provider تأیید نشد و فعال نشد.", 409, {

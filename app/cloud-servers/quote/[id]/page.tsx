@@ -4,16 +4,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { OrderCheckoutPanel } from "@/components/account/order-checkout-panel";
-import { CloudActivationPanel } from "@/components/account/cloud-activation-panel";
 import { QuoteCountdown } from "@/components/quote-countdown";
 import {
   readyServerImageLabel,
   readyServerLocation,
 } from "@/lib/cloud-servers/catalog";
+import { prisma } from "@/lib/db";
 import { formatTomanFa } from "@/lib/money";
-import { getActivationEstimate } from "@/lib/billing/activation";
-import { getEffectiveBillingPolicy } from "@/lib/billing/policy-service";
-import { calculateMarkupRial } from "@/lib/billing/policy";
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 import { parchinBase } from "@/lib/parchin/catalog";
 import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
@@ -66,6 +63,18 @@ export default async function ReadyServerQuotePage({
     redirect("/cloud-servers?quote=expired");
   }
 
+  // Launch Amendment 1.L: storefront checkout is prepaid wallet debit.
+  // Repair leftover PAYG plans so order creation is not rejected.
+  if (quoteRecord.plan.billingModel === "PAYG_WALLET") {
+    await prisma.infrastructurePlan.update({
+      where: { id: quoteRecord.plan.id },
+      data: {
+        billingModel: "PREPAID_TERM",
+        billingPolicyVersionId: null,
+      },
+    });
+  }
+
   const quote = toPublicRecommendationQuote(quoteRecord);
   const snapshot = quoteRecord.planSnapshot as Record<string, unknown>;
   const location = readyServerLocation(
@@ -93,41 +102,7 @@ export default async function ReadyServerQuotePage({
       ? deliveryConfiguration.operatingSystem
       : image;
   const next = `/cloud-servers/quote/${quote.id}`;
-  const policy =
-    quoteRecord.plan.billingModel === "PAYG_WALLET"
-      ? await getEffectiveBillingPolicy(quoteRecord.plan.id)
-      : null;
-  const activationEstimate =
-    user && quoteRecord.plan.billingModel === "PAYG_WALLET"
-      ? await getActivationEstimate({
-          quoteId: quote.id,
-          userId: user.id,
-          cadence: policy?.defaultCadence ?? "HOURLY",
-        })
-      : null;
-  const alternateActivationEstimate =
-    user &&
-    quoteRecord.plan.billingModel === "PAYG_WALLET" &&
-    policy?.availability === "HOURLY_AND_DAILY"
-      ? await getActivationEstimate({
-          quoteId: quote.id,
-          userId: user.id,
-          cadence:
-            policy.defaultCadence === "HOURLY"
-              ? "DAILY"
-              : "HOURLY",
-        })
-      : null;
   const wallet = user ? await ensureWalletForUser(user.id) : null;
-  const publicHourlyEstimate =
-    quoteRecord.providerHourlyPriceIrr != null &&
-    quoteRecord.markupBasisPointsSnapshot != null
-      ? quoteRecord.providerHourlyPriceIrr +
-        calculateMarkupRial(
-          quoteRecord.providerHourlyPriceIrr,
-          quoteRecord.markupBasisPointsSnapshot,
-        )
-      : null;
 
   return (
     <section className="ready-quote-page page-view" aria-labelledby="ready-quote-title">
@@ -178,69 +153,25 @@ export default async function ReadyServerQuotePage({
           ) : null}
           <p><QuoteCountdown expiresAt={quote.expiresAt} /></p>
           {user ? (
-            activationEstimate ? (
-              <CloudActivationPanel
-                quoteId={quote.id}
-                hourlyEstimateToman={formatTomanFa(
-                  activationEstimate.hourlyEstimateRial,
-                )}
-                dailyEstimateToman={formatTomanFa(
-                  activationEstimate.dailyEstimateRial,
-                )}
-                hourlyMinimumCreditToman={formatTomanFa(
-                  activationEstimate.cadence === "HOURLY"
-                    ? activationEstimate.minimumCreditRequiredRial
-                    : alternateActivationEstimate
-                        ?.minimumCreditRequiredRial ??
-                        activationEstimate
-                          .minimumCreditRequiredRial,
-                )}
-                dailyMinimumCreditToman={formatTomanFa(
-                  activationEstimate.cadence === "DAILY"
-                    ? activationEstimate.minimumCreditRequiredRial
-                    : alternateActivationEstimate
-                        ?.minimumCreditRequiredRial ??
-                        activationEstimate
-                          .minimumCreditRequiredRial,
-                )}
-                walletBalanceToman={formatTomanFa(
-                  wallet?.availableBalance ?? 0n,
-                )}
-                availability={activationEstimate.availability}
-                displayMode={activationEstimate.displayMode}
-              />
-            ) : (
-              <OrderCheckoutPanel
-                quoteId={quote.id}
-                planTitle={quote.title}
-                priceToman={formatTomanFa(quoteRecord.amountRial)}
-                termMonths={quote.termMonths}
-                termDiscountBps={quote.termDiscountBps}
-                couponCode={quote.couponCode}
-                lineItems={quote.lineItems}
-                amountRial={quoteRecord.amountRial.toString()}
-                walletBalanceRial={(wallet?.availableBalance ?? 0n).toString()}
-                returnToPath={next}
-                quoteBasePath="/cloud-servers/quote"
-              />
-            )
+            <OrderCheckoutPanel
+              quoteId={quote.id}
+              planTitle={quote.title}
+              priceToman={formatTomanFa(quoteRecord.amountRial)}
+              termMonths={quote.termMonths}
+              termDiscountBps={quote.termDiscountBps}
+              couponCode={quote.couponCode}
+              lineItems={quote.lineItems}
+              amountRial={quoteRecord.amountRial.toString()}
+              walletBalanceRial={(wallet?.availableBalance ?? 0n).toString()}
+              returnToPath={next}
+              quoteBasePath="/cloud-servers/quote"
+            />
           ) : (
             <div className="ready-quote-login">
               <p>
                 Quote قفل شد. برای دیدن موجودی کیف پول، مبلغ قابل‌پرداخت و ثبت
                 سفارش همین انتخاب وارد شو.
               </p>
-              {publicHourlyEstimate ? (
-                <p>
-                  تخمین ساعتی:{" "}
-                  <strong>{formatTomanFa(publicHourlyEstimate)} تومان</strong>
-                  <br />
-                  تخمین ۲۴ ساعت:{" "}
-                  <strong>
-                    {formatTomanFa(publicHourlyEstimate * 24n)} تومان
-                  </strong>
-                </p>
-              ) : null}
               <Link
                 className="button button-primary"
                 href={`/login?next=${encodeURIComponent(next)}`}

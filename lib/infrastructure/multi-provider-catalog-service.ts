@@ -34,6 +34,7 @@ import {
 import {
   listProviderSyncRegionCodes,
   syncArvanRegionsFromProvider,
+  syncParsPackRegionsFromProvider,
 } from "@/lib/infrastructure/provider-region-config";
 import { DEFAULT_LAUNCH_MARKUP_BASIS_POINTS } from "@/lib/pricing/provider-pricing";
 
@@ -1152,6 +1153,16 @@ export async function refreshMultiProviderCatalog(
     return syncMultiProviderCatalog(
       createCloudProviderAdapter(provider, "v1", { regionCodes }),
     );
+  }
+  if (provider === InfrastructureProvider.PARSPACK) {
+    try {
+      await syncParsPackRegionsFromProvider();
+    } catch (error) {
+      console.error(
+        "[catalog-sync:parspack-region-discovery]",
+        error instanceof Error ? error.message : "unknown",
+      );
+    }
   }
   return syncMultiProviderCatalog(
     createCloudProviderAdapter(provider, "v1"),
