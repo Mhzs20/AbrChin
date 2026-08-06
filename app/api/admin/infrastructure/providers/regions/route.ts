@@ -18,11 +18,23 @@ import {
   listProviderRegionConfigs,
   normalizeProviderRegionCode,
   normalizeProviderRegionDisplayName,
+  syncArvanRegionsFromProvider,
 } from "@/lib/infrastructure/provider-region-config";
 import { readRequestMeta } from "@/lib/session";
 import { IdempotencyConflictError } from "@/lib/idempotency";
 
 export const dynamic = "force-dynamic";
+
+function serializeRegions(
+  regions: Awaited<ReturnType<typeof listProviderRegionConfigs>>,
+) {
+  return regions.map((region) => ({
+    ...region,
+    createdAt: region.createdAt.toISOString(),
+    updatedAt: region.updatedAt.toISOString(),
+    lastValidatedAt: region.lastValidatedAt?.toISOString() ?? null,
+  }));
+}
 
 async function validateArvanRegion(regionCode: string) {
   const adapter = createCloudProviderAdapter(
@@ -53,19 +65,29 @@ async function validateArvanRegion(regionCode: string) {
 
 export async function GET() {
   try {
-    await requireAdminUser();
+    const admin = await requireAdminUser();
+    let discovery:
+      | Awaited<ReturnType<typeof syncArvanRegionsFromProvider>>
+      | null = null;
+    let discoveryError: string | null = null;
+    try {
+      discovery = await syncArvanRegionsFromProvider({
+        actorUserId: admin.id,
+      });
+    } catch (error) {
+      discoveryError =
+        error instanceof Error ? error.message : "provider_region_discovery_failed";
+      console.error("[admin/provider-regions/discover]", discoveryError);
+    }
     const regions = await listProviderRegionConfigs({
       provider: InfrastructureProvider.ARVAN,
       apiVersion: "v1",
       purpose: "ALL",
     });
     return jsonOk({
-      regions: regions.map((region) => ({
-        ...region,
-        createdAt: region.createdAt.toISOString(),
-        updatedAt: region.updatedAt.toISOString(),
-        lastValidatedAt: region.lastValidatedAt?.toISOString() ?? null,
-      })),
+      regions: serializeRegions(regions),
+      discovery,
+      discoveryError,
     });
   } catch (error) {
     const adminError = adminApiError(error);
@@ -87,6 +109,48 @@ export async function POST(request: Request) {
     const idempotencyKey = readIdempotencyKey(request);
     if (!idempotencyKey) return jsonError("شناسه یکتای درخواست الزامی است.", 400);
     const body = (await request.json()) as Record<string, unknown>;
+
+    if (body.action === "discover_from_provider") {
+      const meta = await readRequestMeta(request);
+      try {
+        const discovery = await syncArvanRegionsFromProvider({
+          actorUserId: admin.id,
+        });
+        await writeAuditLog({
+          actorUserId: admin.id,
+          action: AuditActions.PROVIDER_REGION_DISCOVER,
+          entityType: "provider_region_config",
+          entityId: "ARVAN:v1",
+          afterData: {
+            action: "discover_from_provider",
+            ...discovery,
+          },
+          idempotencyKey,
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        });
+        const regions = await listProviderRegionConfigs({
+          provider: InfrastructureProvider.ARVAN,
+          apiVersion: "v1",
+          purpose: "ALL",
+        });
+        return jsonOk({
+          discovery,
+          regions: serializeRegions(regions),
+        });
+      } catch (error) {
+        const code =
+          error instanceof Error ? error.message : "provider_region_discovery_failed";
+        return jsonError(
+          code === "provider_auth_failed"
+            ? "احراز هویت Provider معتبر نیست."
+            : "دریافت خودکار Region از سرویس‌دهنده ممکن نیست.",
+          code === "provider_auth_failed" ? 409 : 502,
+          { code },
+        );
+      }
+    }
+
     const regionCode = normalizeProviderRegionCode(String(body.regionCode ?? ""));
     const displayName = normalizeProviderRegionDisplayName(
       String(body.displayName ?? ""),

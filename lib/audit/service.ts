@@ -137,6 +137,7 @@ export const AuditActions = {
   PROVIDER_TOGGLE: "provider_toggle",
   PROVIDER_REGION_UPSERT: "provider_region_upsert",
   PROVIDER_REGION_UPDATE: "provider_region_update",
+  PROVIDER_REGION_DISCOVER: "provider_region_discover",
   MANUAL_CATALOG_CREATE: "manual_catalog_create",
   MANUAL_CATALOG_UPDATE: "manual_catalog_update",
   PREPROVISIONED_INVENTORY_OBSERVE:

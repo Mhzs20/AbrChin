@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { checkArvanAuthenticatedConnection } from "../lib/infrastructure/arvan/connection-check.ts";
+import {
+  fetchArvanRegionsFromProvider,
+  parseDiscoveredArvanRegions,
+} from "../lib/infrastructure/arvan/discover-regions.ts";
 
 const input = {
   apiKey: "test-only-arvan-key",
@@ -100,4 +104,49 @@ test("network errors are safe and the API key never leaks", async () => {
   });
   assert.equal(result.code, "network_error");
   assert.equal(JSON.stringify(result).includes(input.apiKey), false);
+});
+
+test("Arvan region discovery parses GET /regions into storefront-safe rows", () => {
+  const discovered = parseDiscoveredArvanRegions({
+    data: [
+      { code: "ir-thr-si1", name: "Simin" },
+      { id: "eu-west1-a", title: "Frankfurt" },
+      { code: "ir-thr-si1", name: "duplicate" },
+      { unexpected: true },
+    ],
+  });
+  assert.deepEqual(
+    discovered.map((row) => row.regionCode),
+    ["ir-thr-si1", "eu-west1-a"],
+  );
+  assert.equal(discovered[0]?.displayName, "سیمین، غرب تهران");
+  assert.equal(discovered[1]?.displayName, "گوته، آلمان");
+});
+
+test("Arvan region discovery fetch uses read-only GET /regions", async () => {
+  let request: { url: string; init?: RequestInit } | null = null;
+  const previousKey = process.env.ARVAN_API_KEY;
+  process.env.ARVAN_API_KEY = "test-only-arvan-key";
+  try {
+    const discovered = await fetchArvanRegionsFromProvider({
+      apiKey: "test-only-arvan-key",
+      baseUrl: "https://napi.arvancloud.ir/ecc/v1",
+      fetchImpl: async (url, init) => {
+        request = { url: String(url), init };
+        return response({
+          data: [
+            { code: "ir-southwest1-a", name: "Ahvaz" },
+            { code: "unknown-cloud-1", name: "Provider Label" },
+          ],
+        });
+      },
+    });
+    assert.equal(request?.url, "https://napi.arvancloud.ir/ecc/v1/regions");
+    assert.equal(request?.init?.method, "GET");
+    assert.equal(discovered[0]?.displayName, "قیصر، اهواز");
+    assert.equal(discovered[1]?.displayName, "Provider Label");
+  } finally {
+    if (previousKey === undefined) delete process.env.ARVAN_API_KEY;
+    else process.env.ARVAN_API_KEY = previousKey;
+  }
 });

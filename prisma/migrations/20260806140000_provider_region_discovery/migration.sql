@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "ProviderRegionConfigSource" ADD VALUE IF NOT EXISTS 'PROVIDER_DISCOVERY';

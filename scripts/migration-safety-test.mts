@@ -216,3 +216,18 @@ test("compass service prices migration is additive", async () => {
   assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
   assert.doesNotMatch(migration, /DELETE FROM/i);
 });
+
+test("provider region discovery migration only extends the source enum", async () => {
+  const migration = await readFile(
+    "prisma/migrations/20260806140000_provider_region_discovery/migration.sql",
+    "utf8",
+  );
+  assert.match(
+    migration,
+    /ALTER TYPE "ProviderRegionConfigSource" ADD VALUE IF NOT EXISTS 'PROVIDER_DISCOVERY'/,
+  );
+  assert.doesNotMatch(migration, /\bDROP\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM/i);
+  assert.doesNotMatch(migration, /UPDATE "ProviderRegionConfig"/);
+});

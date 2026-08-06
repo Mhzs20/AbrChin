@@ -336,6 +336,7 @@ enum ProviderSyncStatus {
 enum ProviderRegionConfigSource {
   ENV_BOOTSTRAP
   ADMIN
+  PROVIDER_DISCOVERY
 }
 
 enum ProviderCatalogItemSource {

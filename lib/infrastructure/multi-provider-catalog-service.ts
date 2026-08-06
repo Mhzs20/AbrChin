@@ -31,7 +31,10 @@ import {
   catalogExternalKey,
   resolveProviderRoute,
 } from "@/lib/infrastructure/provider-routing";
-import { listProviderSyncRegionCodes } from "@/lib/infrastructure/provider-region-config";
+import {
+  listProviderSyncRegionCodes,
+  syncArvanRegionsFromProvider,
+} from "@/lib/infrastructure/provider-region-config";
 import { DEFAULT_LAUNCH_MARKUP_BASIS_POINTS } from "@/lib/pricing/provider-pricing";
 
 const CATALOG_SYNC_LEASE_MS = 10 * 60 * 1000;
@@ -1127,6 +1130,16 @@ export async function refreshMultiProviderCatalog(
     });
   }
   if (provider === InfrastructureProvider.ARVAN) {
+    // Fill ProviderRegionConfig from GET /regions before Sync allowlist read.
+    // New regions default Sync+Sale on; Admin disables stay off.
+    try {
+      await syncArvanRegionsFromProvider();
+    } catch (error) {
+      console.error(
+        "[catalog-sync:arvan-region-discovery]",
+        error instanceof Error ? error.message : "unknown",
+      );
+    }
     const regionCodes = await listProviderSyncRegionCodes(provider, "v1");
     if (regionCodes.length === 0) {
       throw new ProviderCatalogSyncError({
