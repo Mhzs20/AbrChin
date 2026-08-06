@@ -4807,6 +4807,28 @@ a:focus-visible {
   width: 100%;
 }
 
+/* Soft blue CTA on storefront cards → brighter blue on hover */
+.ready-server-quote-action .button-primary {
+  border-color: #9ec5f5;
+  background: #7eb3f0;
+  box-shadow: none;
+  color: #fff;
+}
+
+.ready-server-quote-action .button-primary:hover:not(:disabled) {
+  border-color: #1565c0;
+  background: #1565c0;
+  box-shadow: 0 8px 18px rgba(21, 101, 192, 0.28);
+  transform: translateY(-1px);
+}
+
+.ready-server-quote-action .button-primary:disabled {
+  opacity: 0.5;
+  filter: none;
+  background: #b7d2f2;
+  border-color: #b7d2f2;
+}
+
 .ready-server-quote-action > small {
   color: #a64036;
   font-size: 0.7rem;

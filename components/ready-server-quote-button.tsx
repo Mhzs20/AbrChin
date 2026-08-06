@@ -291,11 +291,11 @@ export function ReadyServerQuoteButton({
                   size={17}
                   aria-hidden="true"
                 />
-                بررسی قیمت و ظرفیت
+                در حال ثبت سفارش
               </>
             ) : (
               <>
-                تأیید تنظیمات و دریافت Quote
+                ثبت سفارش
                 <ArrowLeft size={17} aria-hidden="true" />
               </>
             )}
@@ -317,16 +317,11 @@ export function ReadyServerQuoteButton({
                 size={17}
                 aria-hidden="true"
               />
-              دریافت تنظیمات معتبر
-            </>
-          ) : requireLogin ? (
-            <>
-              ورود و انتخاب همین سرور
-              <ArrowLeft size={17} aria-hidden="true" />
+              در حال آماده‌سازی
             </>
           ) : (
             <>
-              انتخاب سیستم‌عامل و تحویل
+              ثبت سفارش
               <ArrowLeft size={17} aria-hidden="true" />
             </>
           )}
