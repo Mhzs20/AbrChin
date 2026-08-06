@@ -227,8 +227,8 @@ export default async function ReadyServerQuotePage({
           ) : (
             <div className="ready-quote-login">
               <p>
-                Estimate ساخته شد. برای مشاهده Wallet و ثبت درخواست فعال‌سازی
-                همین انتخاب وارد شو.
+                Quote قفل شد. برای دیدن موجودی کیف پول، مبلغ قابل‌پرداخت و ثبت
+                سفارش همین انتخاب وارد شو.
               </p>
               {publicHourlyEstimate ? (
                 <p>
@@ -245,7 +245,7 @@ export default async function ReadyServerQuotePage({
                 className="button button-primary"
                 href={`/login?next=${encodeURIComponent(next)}`}
               >
-                ورود یا ثبت‌نام
+                ورود و ادامه خرید
               </Link>
             </div>
           )}

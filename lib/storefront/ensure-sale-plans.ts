@@ -73,6 +73,21 @@ export async function ensurePublishedPlanForCatalogItem(
     existing.publicationStatus === InfrastructurePlanPublicationStatus.PUBLISHED &&
     existing.catalogMappingStatus === "MAPPED"
   ) {
+    // Launch Amendment 1.L: storefront sale is prepaid-term wallet checkout.
+    // Older phase plans published as PAYG_WALLET must be repaired or the
+    // customer still sees CloudActivationPanel instead of wallet purchase.
+    if (
+      existing.billingModel !== "PREPAID_TERM" ||
+      existing.billingPolicyVersionId != null
+    ) {
+      return prisma.infrastructurePlan.update({
+        where: { id: existing.id },
+        data: {
+          billingModel: "PREPAID_TERM",
+          billingPolicyVersionId: null,
+        },
+      });
+    }
     return existing;
   }
 
@@ -266,6 +281,20 @@ export async function ensureStorefrontSaleReady() {
       saleEnabled: false,
     },
     data: { saleEnabled: true },
+  });
+
+  // Repair leftover phase plans so wallet-first prepaid checkout is reachable.
+  await prisma.infrastructurePlan.updateMany({
+    where: {
+      offerSource: "API_CATALOG",
+      active: true,
+      publicationStatus: InfrastructurePlanPublicationStatus.PUBLISHED,
+      billingModel: "PAYG_WALLET",
+    },
+    data: {
+      billingModel: "PREPAID_TERM",
+      billingPolicyVersionId: null,
+    },
   });
 
   const slotItems = slots
