@@ -19,9 +19,14 @@ import {
   setStorefrontAutoSuggestEnabled,
   toStorefrontSettingsView,
   updateStorefrontCapacityRules,
+  updateStorefrontPriceBandsAndStyle,
   updateStorefrontPriceDisplay,
 } from "@/lib/storefront/auto-suggest";
 import { parseStorefrontCapacityRules } from "@/lib/storefront/capacity-rules";
+import {
+  parseStorefrontAssortmentStyle,
+  tomanToRial,
+} from "@/lib/storefront/price-bands";
 import { isStorefrontTier } from "@/lib/storefront/tiers";
 
 export const dynamic = "force-dynamic";
@@ -61,8 +66,103 @@ export async function POST(request: Request) {
       enabled?: unknown;
       capacityRules?: unknown;
       priceDisplay?: unknown;
+      assortmentStyle?: unknown;
+      priceBandsToman?: unknown;
     };
     const meta = await readRequestMeta(request);
+
+    if (body.action === "set_price_bands_style") {
+      const rawBands = body.priceBandsToman;
+      if (!rawBands || typeof rawBands !== "object" || Array.isArray(rawBands)) {
+        return jsonError("باند قیمت معتبر نیست.", 400);
+      }
+      const bands = rawBands as Record<string, Record<string, unknown>>;
+      function readToman(tier: string, edge: "min" | "max"): number | null {
+        const row = bands[tier];
+        if (!row || typeof row !== "object") {
+          throw new Error("storefront_invalid_price_band");
+        }
+        const value = row[edge];
+        if (edge === "max" && (value === "" || value == null)) return null;
+        if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+          throw new Error("storefront_invalid_price_band");
+        }
+        return value;
+      }
+      try {
+        const style = parseStorefrontAssortmentStyle(body.assortmentStyle);
+        const noMin = readToman("NO", "min") ?? 0;
+        const noMax = readToman("NO", "max");
+        const ostovarMin = readToman("OSTOVAR", "min") ?? 0;
+        const ostovarMax = readToman("OSTOVAR", "max");
+        const kahkeshanMin = readToman("KAHKESHAN", "min") ?? 0;
+        const kahkeshanMax = readToman("KAHKESHAN", "max");
+        await updateStorefrontPriceBandsAndStyle({
+          assortmentStyle: style,
+          priceBands: {
+            NO: {
+              minMonthlyPriceRial: tomanToRial(noMin),
+              maxMonthlyPriceRial:
+                noMax == null ? null : tomanToRial(noMax),
+            },
+            OSTOVAR: {
+              minMonthlyPriceRial: tomanToRial(ostovarMin),
+              maxMonthlyPriceRial:
+                ostovarMax == null ? null : tomanToRial(ostovarMax),
+            },
+            KAHKESHAN: {
+              minMonthlyPriceRial: tomanToRial(kahkeshanMin),
+              maxMonthlyPriceRial:
+                kahkeshanMax == null ? null : tomanToRial(kahkeshanMax),
+            },
+          },
+          actorUserId: admin.id,
+        });
+        const current = await getStorefrontAssortmentSettings();
+        if (current.autoSuggestEnabled) {
+          await applySuggestedStorefrontAssortment({
+            actorUserId: admin.id,
+            enableAuto: true,
+          });
+        }
+        await writeAuditLog({
+          actorUserId: admin.id,
+          action: AuditActions.STOREFRONT_ASSORTMENT_UPDATE,
+          entityType: "storefront_assortment",
+          entityId: "price_bands_style",
+          afterData: {
+            action: "set_price_bands_style",
+            assortmentStyle: style,
+            priceBandsToman: {
+              NO: { min: noMin, max: noMax },
+              OSTOVAR: { min: ostovarMin, max: ostovarMax },
+              KAHKESHAN: { min: kahkeshanMin, max: kahkeshanMax },
+            },
+            autoSuggestReapplied: current.autoSuggestEnabled,
+          },
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          (error.message.startsWith("storefront_invalid_price_band") ||
+            error.message === "storefront_price_band_order_invalid" ||
+            error.message === "storefront_invalid_assortment_style")
+        ) {
+          return jsonError("باند قیمت یا سبک چینش معتبر نیست.", 400);
+        }
+        throw error;
+      }
+      const [tiers, settings] = await Promise.all([
+        getStorefrontAssortmentAdminView(),
+        getStorefrontAssortmentSettings(),
+      ]);
+      return jsonOk({
+        tiers,
+        settings: toStorefrontSettingsView(settings),
+      });
+    }
 
     if (body.action === "set_price_display") {
       const display = body.priceDisplay;
@@ -128,12 +228,23 @@ export async function POST(request: Request) {
         rules,
         actorUserId: admin.id,
       });
+      const current = await getStorefrontAssortmentSettings();
+      if (current.autoSuggestEnabled) {
+        await applySuggestedStorefrontAssortment({
+          actorUserId: admin.id,
+          enableAuto: true,
+        });
+      }
       await writeAuditLog({
         actorUserId: admin.id,
         action: AuditActions.STOREFRONT_ASSORTMENT_UPDATE,
         entityType: "storefront_assortment",
         entityId: "capacity_rules",
-        afterData: { action: "set_capacity_rules", rules },
+        afterData: {
+          action: "set_capacity_rules",
+          rules,
+          autoSuggestReapplied: current.autoSuggestEnabled,
+        },
         ip: meta.ip,
         userAgent: meta.userAgent,
       });

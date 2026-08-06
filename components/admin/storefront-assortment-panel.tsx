@@ -63,11 +63,19 @@ type PriceDisplay = {
   showMonthlyPrice: boolean;
 };
 
+type TierPriceToman = { min: number; max: number | "" };
+
 type SettingsView = {
   autoSuggestEnabled: boolean;
   lastAutoAppliedAt: string | null;
   capacityRules: CapacityRules;
   priceDisplay: PriceDisplay;
+  assortmentStyle: "CHEAPEST" | "STRONGEST";
+  priceBandsToman: {
+    NO: TierPriceToman;
+    OSTOVAR: TierPriceToman;
+    KAHKESHAN: TierPriceToman;
+  };
 };
 
 export function StorefrontAssortmentPanel({
@@ -89,6 +97,16 @@ export function StorefrontAssortmentPanel({
       showHourlyPrice: true,
       showDailyPrice: true,
       showMonthlyPrice: true,
+    },
+  );
+  const [assortmentStyleDraft, setAssortmentStyleDraft] = useState<
+    "CHEAPEST" | "STRONGEST"
+  >(initialSettings.assortmentStyle ?? "CHEAPEST");
+  const [priceBandsDraft, setPriceBandsDraft] = useState(
+    initialSettings.priceBandsToman ?? {
+      NO: { min: 0, max: "" as const },
+      OSTOVAR: { min: 0, max: "" as const },
+      KAHKESHAN: { min: 0, max: "" as const },
     },
   );
   const [activeTier, setActiveTier] = useState<TierView["tier"]>("NO");
@@ -124,6 +142,12 @@ export function StorefrontAssortmentPanel({
       setCapacityDraft(payload.settings.capacityRules);
       if (payload.settings.priceDisplay) {
         setPriceDisplayDraft(payload.settings.priceDisplay);
+      }
+      if (payload.settings.assortmentStyle) {
+        setAssortmentStyleDraft(payload.settings.assortmentStyle);
+      }
+      if (payload.settings.priceBandsToman) {
+        setPriceBandsDraft(payload.settings.priceBandsToman);
       }
     }
   }
@@ -338,6 +362,48 @@ export function StorefrontAssortmentPanel({
     }
   }
 
+  async function savePriceBandsAndStyle() {
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const response = await fetch(
+        "/api/admin/infrastructure/storefront-assortment",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "set_price_bands_style",
+            assortmentStyle: assortmentStyleDraft,
+            priceBandsToman: priceBandsDraft,
+          }),
+        },
+      );
+      const payload = (await response.json()) as {
+        error?: string;
+        tiers?: TierView[];
+        settings?: SettingsView;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || "ذخیره باند قیمت انجام نشد.");
+      }
+      applyServerState(payload);
+      setMessage(
+        payload.settings?.autoSuggestEnabled
+          ? "باند قیمت و سبک چینش ذخیره شد و پیشنهاد خودکار با همین قواعد دوباره چیده شد."
+          : "باند قیمت و سبک چینش ذخیره شد. ترتیب کارت‌ها روی سایت با سبک انتخابی است؛ برای بازچینی اسلات‌ها پیشنهاد خودکار را روشن کن یا یک‌بار پیشنهاد بده.",
+      );
+    } catch (bandsError) {
+      setError(
+        bandsError instanceof Error
+          ? bandsError.message
+          : "ذخیره باند قیمت ممکن نیست.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function savePriceDisplay() {
     setBusy(true);
     setMessage(null);
@@ -447,9 +513,9 @@ export function StorefrontAssortmentPanel({
         <div>
           <strong>پیشنهاد خودکار چینش</strong>
           <p style={{ margin: "8px 0 0", color: "var(--product-muted)" }}>
-            وقتی روشن باشد، برای هر چینش تا ۸ ایران + ۸ خارج (اگر موجود باشد)
-            و رزرو پیشنهاد می‌کند. بعد از Sync کاتالوگ دوباره تنظیم می‌شود. با
-            ذخیرهٔ دستی، خودکار خاموش می‌شود تا ویرایش شما حفظ شود.
+            وقتی روشن باشد، با سبک انتخاب‌شده (ارزان‌ترین / قوی‌ترین) و باند
+            قیمت هر چینش، تا ۸ ایران + ۸ خارج پیشنهاد می‌کند. با ذخیرهٔ دستی،
+            خودکار خاموش می‌شود تا ویرایش شما حفظ شود.
           </p>
           <p style={{ margin: "8px 0 0" }}>
             وضعیت:{" "}
@@ -551,6 +617,119 @@ export function StorefrontAssortmentPanel({
             onClick={() => void saveCapacityRules()}
           >
             ذخیره قواعد ظرفیت
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          border: "1px solid var(--product-border, #ddd)",
+          borderRadius: 12,
+          padding: 16,
+          display: "grid",
+          gap: 12,
+        }}
+      >
+        <div>
+          <strong>باند قیمت ماهانه و سبک چینش</strong>
+          <p style={{ margin: "8px 0 0", color: "var(--product-muted)" }}>
+            برای هر چینش حداقل و حداکثر قیمت ماهانه (تومان) تعیین کن. سقف خالی =
+            بدون سقف. سبک چینش ترتیب پیشنهاد خودکار و چیدمان کارت‌ها روی سایت را
+            مشخص می‌کند.
+          </p>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+          <label style={{ display: "grid", gap: 4, minWidth: 220 }}>
+            <span style={{ fontSize: 13 }}>سبک چینش خودکار / سایت</span>
+            <select
+              value={assortmentStyleDraft}
+              onChange={(event) =>
+                setAssortmentStyleDraft(
+                  event.target.value === "STRONGEST"
+                    ? "STRONGEST"
+                    : "CHEAPEST",
+                )
+              }
+              style={{ minHeight: 40 }}
+            >
+              <option value="CHEAPEST">از ارزان‌ترین</option>
+              <option value="STRONGEST">از قوی‌ترین</option>
+            </select>
+          </label>
+        </div>
+        {(
+          [
+            ["NO", "چینش نو"],
+            ["OSTOVAR", "چینش استوار"],
+            ["KAHKESHAN", "چینش کهکشان"],
+          ] as const
+        ).map(([tier, label]) => (
+          <div
+            key={tier}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+              gap: 12,
+              paddingTop: 4,
+            }}
+          >
+            <strong style={{ gridColumn: "1 / -1", fontSize: 14 }}>
+              {label} · قیمت ماهانه (تومان)
+            </strong>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 13 }}>حداقل</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={priceBandsDraft[tier].min}
+                onChange={(event) =>
+                  setPriceBandsDraft((current) => ({
+                    ...current,
+                    [tier]: {
+                      ...current[tier],
+                      min:
+                        Number.parseInt(event.target.value || "0", 10) || 0,
+                    },
+                  }))
+                }
+                style={{ minHeight: 40 }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 13 }}>حداکثر (خالی = بدون سقف)</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={priceBandsDraft[tier].max}
+                placeholder="بدون سقف"
+                onChange={(event) => {
+                  const raw = event.target.value.trim();
+                  setPriceBandsDraft((current) => ({
+                    ...current,
+                    [tier]: {
+                      ...current[tier],
+                      max:
+                        raw === ""
+                          ? ""
+                          : Number.parseInt(raw, 10) || 0,
+                    },
+                  }));
+                }}
+                style={{ minHeight: 40 }}
+              />
+            </label>
+          </div>
+        ))}
+        <div>
+          <button
+            type="button"
+            className="product-btn"
+            disabled={busy}
+            onClick={() => void savePriceBandsAndStyle()}
+          >
+            ذخیره باند قیمت و سبک چینش
           </button>
         </div>
       </div>

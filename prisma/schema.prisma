@@ -501,6 +501,12 @@ enum StorefrontSlotRole {
   RESERVE
 }
 
+/// How auto-suggest and public card order prefer plans inside each tier.
+enum StorefrontAssortmentStyle {
+  CHEAPEST
+  STRONGEST
+}
+
 enum AdminNotificationStatus {
   UNREAD
   READ
@@ -2026,6 +2032,14 @@ model StorefrontAssortmentSettings {
   showHourlyPrice    Boolean  @default(true)
   showDailyPrice     Boolean  @default(true)
   showMonthlyPrice   Boolean  @default(true)
+  /// Monthly sale price bands in Rial (0 / null max = open).
+  noMinMonthlyPriceRial       BigInt  @default(0)
+  noMaxMonthlyPriceRial       BigInt?
+  ostovarMinMonthlyPriceRial  BigInt  @default(0)
+  ostovarMaxMonthlyPriceRial  BigInt?
+  kahkeshanMinMonthlyPriceRial BigInt @default(0)
+  kahkeshanMaxMonthlyPriceRial BigInt?
+  assortmentStyle    StorefrontAssortmentStyle @default(CHEAPEST)
   updatedAt          DateTime @updatedAt
   updatedById        String?
   updatedBy          User?    @relation("StorefrontSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)

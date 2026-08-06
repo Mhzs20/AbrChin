@@ -754,7 +754,13 @@ test("cloud-servers uses curated چینش assortment and publishes sale for show
   assert.match(adminPanel, /خاموش کردن/);
   assert.match(adminPanel, /قواعد ظرفیت چینش/);
   assert.match(adminPanel, /ostovarMinRamGb/);
+  assert.match(adminPanel, /باند قیمت ماهانه و سبک چینش/);
+  assert.match(adminPanel, /از ارزان‌ترین/);
+  assert.match(adminPanel, /از قوی‌ترین/);
+  assert.match(adminPanel, /set_price_bands_style/);
   assert.match(autoSuggest, /classifyStorefrontCapacityTier|updateStorefrontCapacityRules/);
+  assert.match(autoSuggest, /updateStorefrontPriceBandsAndStyle/);
+  assert.match(assortment, /offerMatchesTierPriceBand|compareOffersByAssortmentStyle/);
   assert.match(cloudPage, /listPublicStorefrontTiers/);
   assert.match(cloudPage, /چینش نو/);
   assert.match(cloudPage, /کیف پول/);
@@ -777,14 +783,22 @@ test("cloud-servers uses curated چینش assortment and publishes sale for show
 });
 
 test("storefront presentation and capacity rules stay customer-safe", async () => {
-  const [presentation, capacity, capacityMigration] = await Promise.all([
+  const [presentation, capacity, capacityMigration, priceBandMigration] =
+    await Promise.all([
     readFile("lib/storefront/presentation.ts", "utf8"),
     readFile("lib/storefront/capacity-rules.ts", "utf8"),
     readFile(
       "prisma/migrations/20260804160000_storefront_capacity_rules/migration.sql",
       "utf8",
     ),
+    readFile(
+      "prisma/migrations/20260806130000_storefront_price_bands_style/migration.sql",
+      "utf8",
+    ),
   ]);
+  assert.match(priceBandMigration, /StorefrontAssortmentStyle/);
+  assert.match(priceBandMigration, /noMinMonthlyPriceRial/);
+  assert.match(priceBandMigration, /assortmentStyle/);
   assert.match(presentation, /storefrontServerTitle/);
   assert.match(presentation, /storefrontLocationLabel/);
   assert.match(presentation, /roundUpDisplayTomanFromRial/);
@@ -876,7 +890,8 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
     ),
     "NO",
   );
-  assert.match(autoSuggestSource, /capacityTier === tier/);
+  assert.match(autoSuggestSource, /capacityTier !== tier|capacityTier === tier/);
+  assert.match(autoSuggestSource, /offerMatchesTierPriceBand/);
   assert.doesNotMatch(
     autoSuggestSource,
     /STOREFRONT_PRIMARY_LIMIT - primary\.length/,

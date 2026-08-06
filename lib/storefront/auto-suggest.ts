@@ -1,5 +1,6 @@
 import type {
   ProviderCatalogItem,
+  StorefrontAssortmentStyle,
   StorefrontChinishTier,
   StorefrontSlotRole,
 } from "@prisma/client";
@@ -16,6 +17,17 @@ import {
   parseStorefrontCapacityRules,
   type StorefrontCapacityRules,
 } from "@/lib/storefront/capacity-rules";
+import {
+  DEFAULT_STOREFRONT_ASSORTMENT_STYLE,
+  DEFAULT_STOREFRONT_PRICE_BANDS,
+  offerMatchesTierPriceBand,
+  parseStorefrontAssortmentStyle,
+  parseStorefrontPriceBands,
+  priceBandsFromSettings,
+  priceBandsToDbFields,
+  rialToTomanNumber,
+  type StorefrontPriceBands,
+} from "@/lib/storefront/price-bands";
 import { storefrontLocationZone } from "@/lib/storefront/presentation";
 import {
   STOREFRONT_PRIMARY_LIMIT,
@@ -125,6 +137,7 @@ function slotsFor(
   primary: RankedItem[],
   reservePool: RankedItem[],
   usedIds: Set<string>,
+  compare: (a: RankedItem, b: RankedItem) => number,
 ): StorefrontSlotInput[] {
   const primarySlots = primary.map((row, sortOrder) => {
     usedIds.add(row.item.id);
@@ -138,10 +151,7 @@ function slotsFor(
   const reserve = diversifyPick(
     reservePool.filter((row) => !usedIds.has(row.item.id)),
     STOREFRONT_RESERVE_LIMIT,
-    (a, b) => {
-      if (a.hourly !== b.hourly) return a.hourly < b.hourly ? -1 : 1;
-      return b.powerScore - a.powerScore;
-    },
+    compare,
   );
   const reserveSlots = reserve.map((row, sortOrder) => {
     usedIds.add(row.item.id);
@@ -155,10 +165,34 @@ function slotsFor(
   return [...primarySlots, ...reserveSlots];
 }
 
+function compareByAssortmentStyle(
+  style: StorefrontAssortmentStyle,
+): (a: RankedItem, b: RankedItem) => number {
+  if (style === "STRONGEST") {
+    return (a, b) => {
+      if (a.powerScore !== b.powerScore) return b.powerScore - a.powerScore;
+      return a.economyScore - b.economyScore;
+    };
+  }
+  return (a, b) => {
+    if (a.economyScore !== b.economyScore) {
+      return a.economyScore - b.economyScore;
+    }
+    return b.powerScore - a.powerScore;
+  };
+}
+
 export function buildSuggestedStorefrontAssortment(
   items: ProviderCatalogItem[],
   rules: StorefrontCapacityRules = DEFAULT_STOREFRONT_CAPACITY_RULES,
+  options?: {
+    priceBands?: StorefrontPriceBands;
+    style?: StorefrontAssortmentStyle;
+  },
 ): Record<StorefrontChinishTier, StorefrontSlotInput[]> {
+  const priceBands = options?.priceBands ?? DEFAULT_STOREFRONT_PRICE_BANDS;
+  const style = options?.style ?? DEFAULT_STOREFRONT_ASSORTMENT_STYLE;
+  const compare = compareByAssortmentStyle(style);
   const ranked = items
     .map(toRanked)
     .filter((row): row is RankedItem => row != null)
@@ -172,42 +206,34 @@ export function buildSuggestedStorefrontAssortment(
 
   const used = new Set<string>();
 
-  function pickForTier(
-    tier: StorefrontChinishTier,
-    compare: (a: RankedItem, b: RankedItem) => number,
-  ) {
-    // Exclusive capacity bands: never fill نو/استوار/کهکشان from another tier.
-    // Ostovar min = Nu max; Kahkeshan min = Ostovar max (via capacity rules).
-    const pool = ranked.filter(
-      (row) => !used.has(row.item.id) && row.capacityTier === tier,
-    );
+  function pickForTier(tier: StorefrontChinishTier) {
+    // Exclusive capacity bands + Admin monthly price band for that tier.
+    const band = priceBands[tier];
+    const pool = ranked.filter((row) => {
+      if (used.has(row.item.id) || row.capacityTier !== tier) return false;
+      const monthly =
+        row.monthly > 0n
+          ? row.monthly
+          : row.hourly > 0n
+            ? row.hourly * 720n
+            : 0n;
+      return offerMatchesTierPriceBand(monthly, band);
+    });
     const primary = diversifyPick(pool, STOREFRONT_PRIMARY_LIMIT, compare);
-    return slotsFor(primary, pool, used);
+    return slotsFor(primary, pool, used, compare);
   }
 
   return {
-    NO: pickForTier("NO", (a, b) => {
-      if (a.economyScore !== b.economyScore) {
-        return a.economyScore - b.economyScore;
-      }
-      return a.powerScore - b.powerScore;
-    }),
-    OSTOVAR: pickForTier("OSTOVAR", (a, b) => {
-      if (a.balanceScore !== b.balanceScore) {
-        return b.balanceScore - a.balanceScore;
-      }
-      return a.economyScore - b.economyScore;
-    }),
-    KAHKESHAN: pickForTier("KAHKESHAN", (a, b) => {
-      if (a.powerScore !== b.powerScore) return b.powerScore - a.powerScore;
-      return a.economyScore - b.economyScore;
-    }),
+    NO: pickForTier("NO"),
+    OSTOVAR: pickForTier("OSTOVAR"),
+    KAHKESHAN: pickForTier("KAHKESHAN"),
   };
 }
 
 export function toStorefrontSettingsView(
   settings: Awaited<ReturnType<typeof getStorefrontAssortmentSettings>>,
 ) {
+  const bands = priceBandsFromSettings(settings);
   return {
     autoSuggestEnabled: settings.autoSuggestEnabled,
     lastAutoAppliedAt: settings.lastAutoAppliedAt?.toISOString() ?? null,
@@ -223,6 +249,31 @@ export function toStorefrontSettingsView(
       showHourlyPrice: settings.showHourlyPrice,
       showDailyPrice: settings.showDailyPrice,
       showMonthlyPrice: settings.showMonthlyPrice,
+    },
+    assortmentStyle: settings.assortmentStyle,
+    /** Admin form values in تومان (integer). Empty max = unlimited. */
+    priceBandsToman: {
+      NO: {
+        min: rialToTomanNumber(bands.NO.minMonthlyPriceRial),
+        max:
+          bands.NO.maxMonthlyPriceRial == null
+            ? ""
+            : rialToTomanNumber(bands.NO.maxMonthlyPriceRial),
+      },
+      OSTOVAR: {
+        min: rialToTomanNumber(bands.OSTOVAR.minMonthlyPriceRial),
+        max:
+          bands.OSTOVAR.maxMonthlyPriceRial == null
+            ? ""
+            : rialToTomanNumber(bands.OSTOVAR.maxMonthlyPriceRial),
+      },
+      KAHKESHAN: {
+        min: rialToTomanNumber(bands.KAHKESHAN.minMonthlyPriceRial),
+        max:
+          bands.KAHKESHAN.maxMonthlyPriceRial == null
+            ? ""
+            : rialToTomanNumber(bands.KAHKESHAN.maxMonthlyPriceRial),
+      },
     },
   };
 }
@@ -311,6 +362,32 @@ export async function updateStorefrontCapacityRules(input: {
   });
 }
 
+export async function updateStorefrontPriceBandsAndStyle(input: {
+  priceBands: StorefrontPriceBands;
+  assortmentStyle: StorefrontAssortmentStyle;
+  actorUserId: string | null;
+}) {
+  const bands = parseStorefrontPriceBands(priceBandsToDbFields(input.priceBands));
+  const style = parseStorefrontAssortmentStyle(input.assortmentStyle);
+  const dbBands = priceBandsToDbFields(bands);
+  return prisma.storefrontAssortmentSettings.upsert({
+    where: { id: "default" },
+    create: {
+      id: "default",
+      autoSuggestEnabled: false,
+      ...DEFAULT_STOREFRONT_CAPACITY_RULES,
+      ...dbBands,
+      assortmentStyle: style,
+      updatedById: input.actorUserId,
+    },
+    update: {
+      ...dbBands,
+      assortmentStyle: style,
+      updatedById: input.actorUserId,
+    },
+  });
+}
+
 export async function applySuggestedStorefrontAssortment(input: {
   actorUserId: string | null;
   enableAuto?: boolean;
@@ -324,6 +401,7 @@ export async function applySuggestedStorefrontAssortment(input: {
     kahkeshanMinRamGb: settings.kahkeshanMinRamGb,
     kahkeshanMinDiskGb: settings.kahkeshanMinDiskGb,
   };
+  const priceBands = priceBandsFromSettings(settings);
   const items = await prisma.providerCatalogItem.findMany({
     where: {
       provider: { in: ["ARVAN", "PARSPACK"] },
@@ -339,7 +417,10 @@ export async function applySuggestedStorefrontAssortment(input: {
       ],
     },
   });
-  const suggestion = buildSuggestedStorefrontAssortment(items, rules);
+  const suggestion = buildSuggestedStorefrontAssortment(items, rules, {
+    priceBands,
+    style: settings.assortmentStyle,
+  });
 
   await prisma.$transaction(async (tx) => {
     for (const tier of STOREFRONT_TIERS) {

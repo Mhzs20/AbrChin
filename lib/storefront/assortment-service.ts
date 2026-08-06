@@ -33,6 +33,11 @@ import {
   ensureStorefrontSaleReady,
 } from "@/lib/storefront/ensure-sale-plans";
 import {
+  compareOffersByAssortmentStyle,
+  offerMatchesTierPriceBand,
+  priceBandsFromSettings,
+} from "@/lib/storefront/price-bands";
+import {
   isStorefrontDisplayFresh,
   storefrontLocationLabel,
   storefrontLocationZone,
@@ -393,14 +398,19 @@ function offerMatchesStorefrontTier(
   offer: PublicPlanOffer,
   tier: StorefrontChinishTier,
   rules: StorefrontCapacityRules,
+  priceBands: ReturnType<typeof priceBandsFromSettings>,
 ) {
   const vcpu = offer.vcpu ?? 0;
   const ramGb = offer.ramGb ?? 0;
   const diskGb = offer.storageGb ?? 0;
   if (vcpu <= 0 || ramGb <= 0) return false;
-  return (
-    classifyStorefrontCapacityTier({ vcpu, ramGb, diskGb }, rules) === tier
-  );
+  if (
+    classifyStorefrontCapacityTier({ vcpu, ramGb, diskGb }, rules) !== tier
+  ) {
+    return false;
+  }
+  const monthly = BigInt(offer.salePriceRial || "0");
+  return offerMatchesTierPriceBand(monthly, priceBands[tier]);
 }
 
 function zoneCount(
@@ -451,6 +461,8 @@ export async function resolveStorefrontTierOffers(
     kahkeshanMinRamGb: settings.kahkeshanMinRamGb,
     kahkeshanMinDiskGb: settings.kahkeshanMinDiskGb,
   };
+  const priceBands = priceBandsFromSettings(settings);
+  const assortmentStyle = settings.assortmentStyle;
 
   const slotItems = [...slots]
     .sort((a, b) => {
@@ -503,7 +515,9 @@ export async function resolveStorefrontTierOffers(
     }
     const offer = buildOfferForItem(item, tier, context);
     if (!offer || !offer.available) return false;
-    if (!offerMatchesStorefrontTier(offer, tier, capacityRules)) return false;
+    if (!offerMatchesStorefrontTier(offer, tier, capacityRules, priceBands)) {
+      return false;
+    }
     const fingerprint = `${offer.vcpu ?? 0}:${offer.ramGb ?? 0}:${offer.storageGb ?? 0}`;
     if (seenResources.has(fingerprint)) return false;
     usedIds.add(item.id);
@@ -551,10 +565,25 @@ export async function resolveStorefrontTierOffers(
 
   // Rebuild after publish so SKU_UNPUBLISHED becomes PURCHASABLE.
   context = await loadPricingContext();
-  const refreshed = selectedItems.flatMap((item) => {
-    const rebuilt = buildOfferForItem(item, tier, context);
-    return rebuilt ? [rebuilt] : [];
-  });
+  const refreshed = selectedItems
+    .flatMap((item) => {
+      const rebuilt = buildOfferForItem(item, tier, context);
+      if (!rebuilt) return [];
+      if (
+        !offerMatchesStorefrontTier(
+          rebuilt,
+          tier,
+          capacityRules,
+          priceBands,
+        )
+      ) {
+        return [];
+      }
+      return [rebuilt];
+    })
+    .sort((a, b) =>
+      compareOffersByAssortmentStyle(a, b, assortmentStyle),
+    );
 
   return {
     availableCount: refreshed.length,
