@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
 
 import { AdminPlansPanel } from "@/components/admin/plans-panel";
-import { DataTable, MoneyDisplay, PageHeader, StatusBadge, TechnicalValue } from "@/components/product";
+import { PageHeader } from "@/components/product";
 import { getAdminPageAccess } from "@/lib/auth/guards";
 import { listAllPlans } from "@/lib/orders/plans";
-import { deliveryModeLabel } from "@/lib/labels/infrastructure";
-import { formatTomanFa } from "@/lib/money";
 import { prisma } from "@/lib/db";
 import {
   catalogItemBasePriceRial,
@@ -21,7 +19,7 @@ import {
 } from "@/lib/billing/provider-contract";
 
 export const metadata: Metadata = {
-  title: "پلن‌های زیرساخت | پنل مدیریت | ابرچین",
+  title: "SKUهای قابل‌فروش | پنل مدیریت | ابرچین",
   robots: { index: false, follow: false },
 };
 
@@ -218,49 +216,11 @@ export default async function AdminPlansPage() {
     };
   });
 
-  const columns = [
-    { key: "code", header: "کد" },
-    { key: "title", header: "عنوان" },
-    { key: "region", header: "Region" },
-    { key: "size", header: "Size" },
-    { key: "mode", header: "نوع" },
-    { key: "price", header: "قیمت فروش" },
-    { key: "active", header: "وضعیت" },
-  ];
-
-  const rows = plans.map((plan) => ({
-    id: plan.id,
-    cells: {
-      code: <TechnicalValue>{plan.code}</TechnicalValue>,
-      title: plan.title,
-      region: <TechnicalValue>{plan.regionCode}</TechnicalValue>,
-      size: <TechnicalValue>{plan.sizeCode}</TechnicalValue>,
-      mode: deliveryModeLabel[plan.deliveryMode],
-      price: plan.pricing ? (
-        <MoneyDisplay amount={formatTomanFa(plan.pricing.finalPriceRial)} />
-      ) : (
-        "قیمت نامعتبر"
-      ),
-      active: (
-        <StatusBadge
-          label={
-            plan.catalogMappingStatus !== "MAPPED"
-              ? "بدون Mapping"
-              : plan.active
-                ? "فعال"
-                : "غیرفعال"
-          }
-          tone={plan.active && plan.pricing ? "success" : "neutral"}
-        />
-      ),
-    },
-  }));
-
   return (
     <>
       <PageHeader
         title="SKUهای قابل‌فروش"
-        description="از کاتالوگ آروان/پارس‌پک انتخاب کن، Markup بگذار، بعد Published کن. تا منتشر نشود مشتری نمی‌بیند."
+        description="گیت فروش: کاتالوگ خام مشتری را نمی‌بیند. اینجا Draft می‌سازی، Markup می‌گذاری و Published می‌کنی."
       />
       <AdminPlansPanel
         initialPlans={panelPlans}
@@ -279,7 +239,6 @@ export default async function AdminPlansPage() {
           })),
         }}
       />
-      <DataTable columns={columns} rows={rows} emptyMessage="پلنی تعریف نشده است." />
     </>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 
 import { ConfirmDialog, FormField } from "@/components/product";
 
@@ -137,6 +137,36 @@ function toman(value: string | null) {
   return value ? `${(BigInt(value) / 10n).toLocaleString("fa-IR")} تومان` : "نامعتبر";
 }
 
+const PAGE_SIZE = 20;
+
+function publicationLabel(status: string) {
+  if (status === "PUBLISHED") return "منتشر";
+  if (status === "DRAFT") return "پیش‌نویس";
+  if (status === "PAUSED") return "متوقف";
+  if (status === "ARCHIVED") return "بایگانی";
+  return status;
+}
+
+function publicationTone(status: string): "success" | "warning" | "neutral" | "danger" | "info" {
+  if (status === "PUBLISHED") return "success";
+  if (status === "DRAFT") return "warning";
+  if (status === "PAUSED") return "danger";
+  return "neutral";
+}
+
+function sourceLabel(source: string | null) {
+  if (source === "MANUAL_ADMIN") return "دستی ابرچین";
+  if (source === "MANUAL_API_BACKED") return "دستی+API";
+  if (source === "PREPROVISIONED_INVENTORY") return "موجودی واقعی";
+  return "کاتالوگ API";
+}
+
+function providerCode(provider: string) {
+  if (provider === "ARVAN") return "AV";
+  if (provider === "PARSPACK") return "PP";
+  return provider;
+}
+
 function markupBasisPointsFromPercent(value: string): number | null {
   const raw = value.trim();
   if (!raw) return null;
@@ -202,6 +232,11 @@ export function AdminPlansPanel({
   const [inventoryReason, setInventoryReason] = useState("");
   const [billingPlan, setBillingPlan] = useState<PlanRow | null>(null);
   const [billingForm, setBillingForm] = useState(emptyBillingForm);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [providerFilter, setProviderFilter] = useState("ALL");
+  const [page, setPage] = useState(1);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const selectedCatalog = useMemo(
     () => catalogItems.find((item) => item.id === form.catalogItemId) ?? null,
     [catalogItems, form.catalogItemId],
@@ -210,6 +245,69 @@ export function AdminPlansPanel({
     () => previewCatalogPrice(selectedCatalog, form.skuMarkupPercent),
     [form.skuMarkupPercent, selectedCatalog],
   );
+
+  const filteredPlans = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return initialPlans.filter((plan) => {
+      if (statusFilter !== "ALL" && plan.publicationStatus !== statusFilter) {
+        return false;
+      }
+      if (providerFilter !== "ALL" && plan.provider !== providerFilter) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        plan.title.toLowerCase().includes(q) ||
+        plan.code.toLowerCase().includes(q) ||
+        plan.regionCode.toLowerCase().includes(q) ||
+        (plan.externalPlanId ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [initialPlans, providerFilter, query, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredPlans.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagePlans = filteredPlans.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  );
+
+  function openPlanEdit(plan: PlanRow) {
+    if (
+      plan.catalogSource === "MANUAL_API_BACKED" ||
+      plan.catalogSource === "MANUAL_ADMIN"
+    ) {
+      setManualEditing(plan);
+      setManualForm({
+        ...emptyManualForm,
+        code: plan.code,
+        title: plan.title,
+        description: plan.description ?? "",
+        externalPlanId: plan.externalPlanId ?? "",
+        regionCode: plan.regionCode,
+        imageAssetId: plan.imageAssetId ?? "",
+        imageCode: plan.imageCode,
+        vcpu: String(plan.vcpu ?? 1),
+        ramGb: String(plan.ramGb ?? 1),
+        storageGb: String(plan.storageGb ?? 1),
+        availableUnits: String(plan.manualAvailableUnits ?? 0),
+        basePriceToman: plan.manualBasePriceRial
+          ? String(BigInt(plan.manualBasePriceRial) / 10n)
+          : "",
+        priceValidUntil: plan.manualPriceValidUntil
+          ? new Date(plan.manualPriceValidUntil).toISOString().slice(0, 16)
+          : "",
+        instantDelivery: plan.instantDelivery,
+        publish: plan.publicationStatus === "PUBLISHED",
+        sortOrder: String(plan.sortOrder),
+        offerSource: plan.catalogSource ?? "MANUAL_API_BACKED",
+      });
+      setError("");
+      setManualOpen(true);
+      return;
+    }
+    openEdit(plan);
+  }
 
   function openCreate() {
     const first = catalogItems.find((item) => item.available && item.finalPriceRial);
@@ -486,6 +584,11 @@ export function AdminPlansPanel({
 
   return (
     <>
+      <p style={{ marginTop: 0, color: "var(--product-muted)" }}>
+        اینجا SKU فروش ساخته می‌شود: از کاتالوگ AV/PP انتخاب → Markup → Draft →
+        Published. تا Published نشود مشتری نمی‌بیند. چینش فروشگاهی فقط ترتیب نمایش
+        همان SKUهای منتشرشده را تنظیم می‌کند.
+      </p>
       <div style={{ marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" className="product-btn product-btn--primary" onClick={openCreate}>
           ساخت Draft از کاتالوگ Provider
@@ -509,112 +612,263 @@ export function AdminPlansPanel({
           افزودن ظرفیت دستی
         </button>
       </div>
-      <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 8 }}>
-        {initialPlans.map((plan) => (
-          <li key={plan.id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span>
-              {plan.title} <span className="product-tech">({plan.code})</span>
-              {plan.catalogMappingStatus !== "MAPPED" ? " · بدون Mapping" : ""}
-              {` · ${plan.publicationStatus}`}
-              {plan.skuMarkupBasisPoints != null
-                ? ` · افزایش اختصاصی SKU: ${plan.skuMarkupBasisPoints / 100}%`
-                : " · افزایش پیش‌فرض محصول"}
-              {plan.basePriceRial && plan.finalPriceRial
-                ? ` · هزینه Provider: ${toman(plan.basePriceRial)} · قیمت فروش: ${toman(plan.finalPriceRial)}`
-                : " · قیمت نیازمند بررسی"}
-              {plan.catalogSource === "MANUAL_API_BACKED"
-                ? " · دستی متکی به API"
-                : plan.catalogSource === "MANUAL_ADMIN"
-                  ? ` · دستی ابرچین: ${(plan.manualAvailableUnits ?? 0).toLocaleString("fa-IR")} واحد`
-                : plan.catalogSource === "PREPROVISIONED_INVENTORY"
-                  ? ` · موجودی واقعی: ${plan.availableInventory.toLocaleString("fa-IR")}`
-                  : " · API Catalog"}
-              {plan.billingPolicy
-                ? ` · Billing: ${plan.billingPolicy.availability} / پیش‌فرض ${plan.billingPolicy.defaultCadence}`
-                : ""}
-              {plan.pendingBillingPolicy
-                ? ` · تغییر زمان‌بندی‌شده: ${new Date(plan.pendingBillingPolicy).toLocaleString("fa-IR")}`
-                : ""}
-              {plan.providerBillingContract
-                ? ` · قرارداد Provider: ${plan.providerBillingContract.status} / ${plan.providerBillingContract.source} / v${plan.providerBillingContract.version} / ${new Date(plan.providerBillingContract.effectiveFrom).toLocaleString("fa-IR")}`
-                : ""}
-              {plan.providerBillingContract?.unverifiedFields.length
-                ? ` · موارد تأییدنشده: ${plan.providerBillingContract.unverifiedFields.join(", ")}`
-                : ""}
-            </span>
-            <span style={{ display: "flex", gap: 8 }}>
-            {plan.productKind === "CLOUD_SERVER" ? (
-              <button
-                type="button"
-                className="product-btn product-btn--quiet"
-                onClick={() => openBillingPolicy(plan)}
-              >
-                تنظیم Billing
-              </button>
-            ) : null}
-            {plan.catalogSource === "PREPROVISIONED_INVENTORY" ? (
-              <button
-                type="button"
-                className="product-btn product-btn--primary"
-                onClick={() => {
-                  setInventoryPlan(plan);
-                  setInventoryResourceId("");
-                  setInventoryUsername("root");
-                  setInventorySecret("");
-                  setInventoryReason("");
-                  setError("");
-                }}
-              >
-                ثبت Resource واقعی
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="product-btn product-btn--quiet"
-              onClick={() => {
-                if (
-                  plan.catalogSource === "MANUAL_API_BACKED" ||
-                  plan.catalogSource === "MANUAL_ADMIN"
-                ) {
-                  setManualEditing(plan);
-                  setManualForm({
-                    ...emptyManualForm,
-                    code: plan.code,
-                    title: plan.title,
-                    description: plan.description ?? "",
-                    externalPlanId: plan.externalPlanId ?? "",
-                    regionCode: plan.regionCode,
-                    imageAssetId: plan.imageAssetId ?? "",
-                    imageCode: plan.imageCode,
-                    vcpu: String(plan.vcpu ?? 1),
-                    ramGb: String(plan.ramGb ?? 1),
-                    storageGb: String(plan.storageGb ?? 1),
-                    availableUnits: String(plan.manualAvailableUnits ?? 0),
-                    basePriceToman: plan.manualBasePriceRial
-                      ? String(BigInt(plan.manualBasePriceRial) / 10n)
-                      : "",
-                    priceValidUntil: plan.manualPriceValidUntil
-                      ? new Date(plan.manualPriceValidUntil).toISOString().slice(0, 16)
-                      : "",
-                    instantDelivery: plan.instantDelivery,
-                    publish: plan.publicationStatus === "PUBLISHED",
-                    sortOrder: String(plan.sortOrder),
-                    offerSource:
-                      plan.catalogSource ?? "MANUAL_API_BACKED",
-                  });
-                  setError("");
-                  setManualOpen(true);
-                } else {
-                  openEdit(plan);
-                }
-              }}
-            >
-              ویرایش
-            </button>
-            </span>
-          </li>
-        ))}
-      </ul>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(180px, 2fr) repeat(auto-fit, minmax(140px, 1fr))",
+          gap: 8,
+          marginBottom: 12,
+        }}
+      >
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ fontSize: 13 }}>جست‌وجو</span>
+          <input
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPage(1);
+            }}
+            placeholder="عنوان، کد، Region…"
+          />
+        </label>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ fontSize: 13 }}>وضعیت انتشار</span>
+          <select
+            value={statusFilter}
+            onChange={(event) => {
+              setStatusFilter(event.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="ALL">همه</option>
+            <option value="PUBLISHED">منتشر</option>
+            <option value="DRAFT">پیش‌نویس</option>
+            <option value="PAUSED">متوقف</option>
+            <option value="ARCHIVED">بایگانی</option>
+          </select>
+        </label>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ fontSize: 13 }}>منبع</span>
+          <select
+            value={providerFilter}
+            onChange={(event) => {
+              setProviderFilter(event.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="ALL">همه</option>
+            <option value="ARVAN">AV</option>
+            <option value="PARSPACK">PP</option>
+          </select>
+        </label>
+      </div>
+
+      <p style={{ margin: "0 0 8px", color: "var(--product-muted)", fontSize: 13 }}>
+        {filteredPlans.length.toLocaleString("fa-IR")} SKU · صفحه{" "}
+        {safePage.toLocaleString("fa-IR")} از {totalPages.toLocaleString("fa-IR")}
+      </p>
+
+      {pagePlans.length === 0 ? (
+        <p className="product-muted">SKUای با این فیلتر پیدا نشد.</p>
+      ) : (
+        <div className="product-table-wrap">
+          <table className="product-table">
+            <thead>
+              <tr>
+                <th>عنوان</th>
+                <th>وضعیت</th>
+                <th>منبع</th>
+                <th>Region</th>
+                <th>منابع</th>
+                <th>قیمت فروش</th>
+                <th>اقدام</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pagePlans.map((plan) => (
+                <Fragment key={plan.id}>
+                  <tr>
+                    <td>
+                      <strong>{plan.title}</strong>
+                      <br />
+                      <span className="product-tech">{plan.code}</span>
+                      {plan.catalogMappingStatus !== "MAPPED" ? (
+                        <>
+                          <br />
+                          <span className="product-muted">بدون Mapping</span>
+                        </>
+                      ) : null}
+                    </td>
+                    <td>
+                      <span
+                        className={`product-badge product-badge--${publicationTone(plan.publicationStatus)}`}
+                      >
+                        {publicationLabel(plan.publicationStatus)}
+                      </span>
+                    </td>
+                    <td>
+                      {providerCode(plan.provider)} · {sourceLabel(plan.catalogSource)}
+                    </td>
+                    <td>
+                      <span className="product-tech">{plan.regionCode}</span>
+                    </td>
+                    <td>
+                      {String(plan.vcpu ?? "—")} vCPU / {String(plan.ramGb ?? "—")}{" "}
+                      GB / {String(plan.storageGb ?? "—")} GB
+                    </td>
+                    <td>
+                      {plan.finalPriceRial ? toman(plan.finalPriceRial) : "نیازمند بررسی"}
+                      {plan.skuMarkupBasisPoints != null ? (
+                        <>
+                          <br />
+                          <span className="product-muted">
+                            Markup {(plan.skuMarkupBasisPoints / 100).toLocaleString("fa-IR")}٪
+                          </span>
+                        </>
+                      ) : null}
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        <button
+                          type="button"
+                          className="product-btn product-btn--quiet"
+                          onClick={() => openPlanEdit(plan)}
+                        >
+                          ویرایش
+                        </button>
+                        {plan.productKind === "CLOUD_SERVER" ? (
+                          <button
+                            type="button"
+                            className="product-btn product-btn--quiet"
+                            onClick={() => openBillingPolicy(plan)}
+                          >
+                            Billing
+                          </button>
+                        ) : null}
+                        {plan.catalogSource === "PREPROVISIONED_INVENTORY" ? (
+                          <button
+                            type="button"
+                            className="product-btn product-btn--primary"
+                            onClick={() => {
+                              setInventoryPlan(plan);
+                              setInventoryResourceId("");
+                              setInventoryUsername("root");
+                              setInventorySecret("");
+                              setInventoryReason("");
+                              setError("");
+                            }}
+                          >
+                            Resource
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="product-btn product-btn--quiet"
+                          onClick={() =>
+                            setExpandedId((current) =>
+                              current === plan.id ? null : plan.id,
+                            )
+                          }
+                        >
+                          {expandedId === plan.id ? "بستن جزئیات" : "جزئیات"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedId === plan.id ? (
+                    <tr>
+                      <td colSpan={7}>
+                        <div
+                          style={{
+                            display: "grid",
+                            gap: 4,
+                            fontSize: 13,
+                            color: "var(--product-muted)",
+                          }}
+                        >
+                          <div>
+                            هزینه Provider:{" "}
+                            {plan.basePriceRial ? toman(plan.basePriceRial) : "—"}
+                          </div>
+                          <div>
+                            موجودی/واحد:{" "}
+                            {plan.catalogSource === "PREPROVISIONED_INVENTORY"
+                              ? plan.availableInventory.toLocaleString("fa-IR")
+                              : plan.catalogSource === "MANUAL_ADMIN"
+                                ? (plan.manualAvailableUnits ?? 0).toLocaleString(
+                                    "fa-IR",
+                                  )
+                                : "—"}
+                          </div>
+                          {plan.billingPolicy ? (
+                            <div>
+                              Billing: {plan.billingPolicy.availability} /{" "}
+                              {plan.billingPolicy.defaultCadence}
+                            </div>
+                          ) : null}
+                          {plan.pendingBillingPolicy ? (
+                            <div>
+                              تغییر Billing از{" "}
+                              {new Date(plan.pendingBillingPolicy).toLocaleString(
+                                "fa-IR",
+                              )}
+                            </div>
+                          ) : null}
+                          {plan.providerBillingContract ? (
+                            <div>
+                              قرارداد: {plan.providerBillingContract.status} ·{" "}
+                              {plan.providerBillingContract.source} · v
+                              {plan.providerBillingContract.version}
+                              {plan.providerBillingContract.unverifiedFields.length
+                                ? ` · تأییدنشده: ${plan.providerBillingContract.unverifiedFields.join(", ")}`
+                                : ""}
+                            </div>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
+          marginTop: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <button
+          type="button"
+          className="product-btn product-btn--quiet"
+          disabled={safePage <= 1}
+          onClick={() => setPage((current) => Math.max(1, current - 1))}
+        >
+          قبلی
+        </button>
+        <span className="product-muted">
+          صفحه {safePage.toLocaleString("fa-IR")} /{" "}
+          {totalPages.toLocaleString("fa-IR")}
+        </span>
+        <button
+          type="button"
+          className="product-btn product-btn--quiet"
+          disabled={safePage >= totalPages}
+          onClick={() =>
+            setPage((current) => Math.min(totalPages, current + 1))
+          }
+        >
+          بعدی
+        </button>
+      </div>
       <ConfirmDialog
         open={open}
         title={editing ? "ویرایش SKU" : "ساخت SKU پیش‌نویس"}
