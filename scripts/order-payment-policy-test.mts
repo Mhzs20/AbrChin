@@ -38,25 +38,34 @@ test("callback settles the server-locked amount once and moves ambiguity to revi
   assert.doesNotMatch(payment, /createInstance/);
 });
 
-test("customer receives one gateway action and direct callback reaches the order result", async () => {
-  const [checkout, callback, route, retiredWalletRoute] = await Promise.all([
+test("checkout offers wallet-first submit plus one gateway action; callback reaches the order result", async () => {
+  const [checkout, callback, route, walletRoute] = await Promise.all([
     readFile("components/account/order-checkout-panel.tsx", "utf8"),
     readFile("lib/payments/callback-handler.ts", "utf8"),
     readFile("app/api/orders/[id]/payment/route.ts", "utf8"),
     readFile("app/api/orders/[id]/pay-with-wallet/route.ts", "utf8"),
   ]);
 
-  assert.match(checkout, /\/api\/orders\/\$\{createBody\.order\.id\}\/payment/);
+  assert.match(checkout, /\/api\/orders\/\$\{order\.id\}\/payment/);
   assert.match(checkout, /Idempotency-Key/);
   assert.match(checkout, /window\.location\.assign\(payBody\.redirectUrl\)/);
-  assert.doesNotMatch(checkout, /pay-with-wallet/);
+  // Founder wallet-first flow: top-up shortfall, return to the locked quote,
+  // review, then explicit wallet submit — never a silent debit.
+  assert.match(checkout, /\/api\/orders\/\$\{order\.id\}\/pay-with-wallet/);
+  assert.match(checkout, /\/account\/wallet\/topup\?returnTo=/);
   assert.doesNotMatch(checkout, /wallet\/topups/);
   assert.match(callback, /finalizeOrderPaymentFromCallback/);
   assert.match(callback, /\/account\/orders\/\$\{result\.order\.id\}/);
   assert.match(route, /createOrderPaymentIntent/);
   assert.doesNotMatch(route, /gateway.*body/i);
-  assert.match(retiredWalletRoute, /, 410\)/);
-  assert.doesNotMatch(retiredWalletRoute, /payOrderWithWallet/);
+  // Wallet route reuses the shared audited debit path (idempotent ledger key)
+  // and never talks to the gateway or provisions anything.
+  assert.match(walletRoute, /payOrderWithWallet/);
+  assert.match(walletRoute, /rejectCrossOrigin/);
+  assert.match(walletRoute, /requireCurrentUser/);
+  assert.doesNotMatch(walletRoute, /createOrderPaymentIntent/);
+  assert.doesNotMatch(walletRoute, /redirectUrl/);
+  assert.doesNotMatch(walletRoute, /provisioningJob|cloudInstance/);
 });
 
 test("successful payment cannot provision, assign inventory, or expose credentials", async () => {

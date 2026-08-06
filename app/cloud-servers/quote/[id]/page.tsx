@@ -19,6 +19,7 @@ import { parchinBase } from "@/lib/parchin/catalog";
 import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
 import {
   getActiveCloudServerQuote,
+  refreshRecommendationQuote,
   toPublicRecommendationQuote,
 } from "@/lib/recommendation/quote-service";
 import { getCurrentUser } from "@/lib/session";
@@ -32,17 +33,38 @@ export const dynamic = "force-dynamic";
 
 export default async function ReadyServerQuotePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ renewed?: string }>;
 }) {
-  const { id } = await params;
+  const [{ id }, { renewed }] = await Promise.all([params, searchParams]);
   const user = await getCurrentUser();
   const quoteRecord = await getActiveCloudServerQuote(
     id,
     user?.id ?? null,
     user ? null : await getRecommendationGuestToken(),
   );
-  if (!quoteRecord) redirect("/cloud-servers?quote=expired");
+  if (!quoteRecord) {
+    // Keep the customer's configuration across gateway round trips: renew the
+    // expired quote with the same locked delivery configuration when possible.
+    let replacementId: string | null = null;
+    if (user) {
+      try {
+        const replacement = await refreshRecommendationQuote({
+          quoteId: id,
+          userId: user.id,
+        });
+        replacementId = replacement?.id ?? null;
+      } catch {
+        replacementId = null;
+      }
+    }
+    if (replacementId) {
+      redirect(`/cloud-servers/quote/${replacementId}?renewed=1`);
+    }
+    redirect("/cloud-servers?quote=expired");
+  }
 
   const quote = toPublicRecommendationQuote(quoteRecord);
   const snapshot = quoteRecord.planSnapshot as Record<string, unknown>;
@@ -149,6 +171,11 @@ export default async function ReadyServerQuotePage({
         </article>
 
         <aside className="ready-quote-checkout">
+          {renewed === "1" ? (
+            <p className="ready-quote-renewed">
+              قیمت این انتخاب به‌روز و دوباره قفل شد؛ مشخصات سرورت حفظ شده است.
+            </p>
+          ) : null}
           <p><QuoteCountdown expiresAt={quote.expiresAt} /></p>
           {user ? (
             activationEstimate ? (
@@ -191,6 +218,10 @@ export default async function ReadyServerQuotePage({
                 termDiscountBps={quote.termDiscountBps}
                 couponCode={quote.couponCode}
                 lineItems={quote.lineItems}
+                amountRial={quoteRecord.amountRial.toString()}
+                walletBalanceRial={(wallet?.availableBalance ?? 0n).toString()}
+                returnToPath={next}
+                quoteBasePath="/cloud-servers/quote"
               />
             )
           ) : (

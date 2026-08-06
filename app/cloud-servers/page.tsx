@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ChinishCloudCatalog } from "@/components/chinish-cloud-catalog";
+import { getCurrentUser } from "@/lib/session";
 import { listPublicStorefrontTiers } from "@/lib/storefront/assortment-service";
 
 export const metadata: Metadata = {
@@ -14,8 +15,16 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function CloudServersPage() {
-  const catalog = await listPublicStorefrontTiers();
+export default async function CloudServersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ plan?: string }>;
+}) {
+  const [catalog, user, { plan }] = await Promise.all([
+    listPublicStorefrontTiers(),
+    getCurrentUser(),
+    searchParams,
+  ]);
   const checkedAt = catalog.checkedAt
     ? new Intl.DateTimeFormat("fa-IR", {
         dateStyle: "short",
@@ -63,6 +72,8 @@ export default async function CloudServersPage() {
       <ChinishCloudCatalog
         tiers={catalog.tiers}
         priceDisplay={catalog.priceDisplay}
+        isAuthenticated={Boolean(user)}
+        autoExpandPlanId={typeof plan === "string" && plan ? plan : null}
       />
     </section>
   );

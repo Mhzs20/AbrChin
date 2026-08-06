@@ -13,9 +13,11 @@ import { formatTomanFa } from "@/lib/money";
 import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
 import {
   getActiveReadyServerQuote,
+  refreshRecommendationQuote,
   toPublicRecommendationQuote,
 } from "@/lib/recommendation/quote-service";
 import { getCurrentUser } from "@/lib/session";
+import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 
 export const metadata: Metadata = {
   title: "Quote سرور آماده | ابرچین",
@@ -26,17 +28,37 @@ export const dynamic = "force-dynamic";
 
 export default async function ReadyServerQuotePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ renewed?: string }>;
 }) {
-  const { id } = await params;
+  const [{ id }, { renewed }] = await Promise.all([params, searchParams]);
   const user = await getCurrentUser();
   const record = await getActiveReadyServerQuote(
     id,
     user?.id ?? null,
     user ? null : await getRecommendationGuestToken(),
   );
-  if (!record) redirect("/ready-servers?quote=expired");
+  if (!record) {
+    let replacementId: string | null = null;
+    if (user) {
+      try {
+        const replacement = await refreshRecommendationQuote({
+          quoteId: id,
+          userId: user.id,
+        });
+        replacementId = replacement?.id ?? null;
+      } catch {
+        replacementId = null;
+      }
+    }
+    if (replacementId) {
+      redirect(`/ready-servers/quote/${replacementId}?renewed=1`);
+    }
+    redirect("/ready-servers?quote=expired");
+  }
+  const wallet = user ? await ensureWalletForUser(user.id) : null;
 
   const quote = toPublicRecommendationQuote(record);
   const snapshot = record.planSnapshot as Record<string, unknown>;
@@ -97,6 +119,11 @@ export default async function ReadyServerQuotePage({
           <p>
             تمدید دستی فعلی: {formatTomanFa(record.renewalAmountRial)} تومان
           </p>
+          {renewed === "1" ? (
+            <p className="ready-quote-renewed">
+              قیمت این انتخاب به‌روز و دوباره قفل شد؛ مشخصات سرورت حفظ شده است.
+            </p>
+          ) : null}
           <p><QuoteCountdown expiresAt={quote.expiresAt} /></p>
           {user ? (
             <OrderCheckoutPanel
@@ -107,6 +134,10 @@ export default async function ReadyServerQuotePage({
               termDiscountBps={quote.termDiscountBps}
               couponCode={quote.couponCode}
               lineItems={quote.lineItems}
+              amountRial={record.amountRial.toString()}
+              walletBalanceRial={(wallet?.availableBalance ?? 0n).toString()}
+              returnToPath={next}
+              quoteBasePath="/ready-servers/quote"
             />
           ) : (
             <div className="ready-quote-login">

@@ -2,7 +2,7 @@
 
 import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type AccessMethod =
   | "SSH_KEY"
@@ -30,13 +30,21 @@ export function ReadyServerQuoteButton({
   productPath = "cloud-servers",
   disabled = false,
   disabledReason,
+  requireLogin = false,
+  autoExpand = false,
 }: {
   planId: string;
   productPath?: "cloud-servers" | "ready-servers";
   disabled?: boolean;
   disabledReason?: string;
+  /** Customer must login (mobile OTP) before configuring the server. */
+  requireLogin?: boolean;
+  /** Open the delivery form on mount (used after login redirect). */
+  autoExpand?: boolean;
 }) {
   const router = useRouter();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const autoExpandedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [options, setOptions] = useState<DeliveryOptions | null>(null);
@@ -62,7 +70,16 @@ export function ReadyServerQuoteButton({
     [imageAssetId, options],
   );
 
+  function goToLogin() {
+    const next = `/cloud-servers?plan=${encodeURIComponent(planId)}#plan-${planId}`;
+    router.push(`/login?next=${encodeURIComponent(next)}`);
+  }
+
   async function loadDeliveryOptions() {
+    if (requireLogin) {
+      goToLogin();
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -153,8 +170,25 @@ export function ReadyServerQuoteButton({
     }
   }
 
+  useEffect(() => {
+    if (
+      autoExpand &&
+      !requireLogin &&
+      !disabled &&
+      !autoExpandedRef.current
+    ) {
+      autoExpandedRef.current = true;
+      void loadDeliveryOptions();
+      containerRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoExpand, disabled, requireLogin]);
+
   return (
-    <div className="ready-server-quote-action">
+    <div className="ready-server-quote-action" id={`plan-${planId}`} ref={containerRef}>
       {options ? (
         <div className="ready-server-delivery-config">
           <label>
@@ -284,6 +318,11 @@ export function ReadyServerQuoteButton({
                 aria-hidden="true"
               />
               دریافت تنظیمات معتبر
+            </>
+          ) : requireLogin ? (
+            <>
+              ورود و انتخاب همین سرور
+              <ArrowLeft size={17} aria-hidden="true" />
             </>
           ) : (
             <>

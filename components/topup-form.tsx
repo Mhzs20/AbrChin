@@ -11,6 +11,8 @@ type TopUpFormProps = {
   minTopUpToman: number;
   maxTopUpToman: number;
   returnTo?: string | null;
+  /** Prefilled amount (e.g. exact order shortfall) in toman. */
+  initialAmountToman?: number | null;
 };
 
 export function TopUpForm({
@@ -20,11 +22,14 @@ export function TopUpForm({
   minTopUpToman,
   maxTopUpToman,
   returnTo,
+  initialAmountToman = null,
 }: TopUpFormProps) {
   const router = useRouter();
   const defaultAmount = suggestedAmountsToman[0] ?? minTopUpToman;
   const [amount, setAmount] = useState(defaultAmount);
-  const [custom, setCustom] = useState("");
+  const [custom, setCustom] = useState(
+    initialAmountToman != null ? String(initialAmountToman) : "",
+  );
   const [couponCode, setCouponCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -79,6 +84,13 @@ export function TopUpForm({
       ) : (
         <p className="auth-error">درگاه پرداخت موقتاً در دسترس نیست</p>
       )}
+
+      {initialAmountToman != null && returnTo ? (
+        <p className="topup-order-note">
+          مبلغ کسری سفارش از قبل وارد شده است؛ بعد از پرداخت موفق به صفحهٔ
+          سفارش برمی‌گردی و مشخصات سرورت حفظ می‌شود.
+        </p>
+      ) : null}
 
       <div className="topup-suggestions">
         {suggestedAmountsToman.map((value) => (

@@ -46,11 +46,24 @@ export function ChinishCloudCatalog({
     showDailyPrice: true,
     showMonthlyPrice: true,
   },
+  isAuthenticated = false,
+  autoExpandPlanId = null,
 }: {
   tiers: StorefrontPublicTier[];
   priceDisplay?: StorefrontPriceDisplay;
+  isAuthenticated?: boolean;
+  autoExpandPlanId?: string | null;
 }) {
-  const [activeTier, setActiveTier] = useState(tiers[0]?.tier ?? "NO");
+  const initialTier = useMemo(() => {
+    if (autoExpandPlanId) {
+      const owner = tiers.find((item) =>
+        item.offers.some((offer) => offer.id === autoExpandPlanId),
+      );
+      if (owner) return owner.tier;
+    }
+    return tiers[0]?.tier ?? "NO";
+  }, [autoExpandPlanId, tiers]);
+  const [activeTier, setActiveTier] = useState(initialTier);
   const [locationFilter, setLocationFilter] = useState<LocationFilter>("ALL");
 
   const tier =
@@ -272,6 +285,8 @@ export function ChinishCloudCatalog({
                     ? "ready-servers"
                     : "cloud-servers"
                 }
+                requireLogin={!isAuthenticated}
+                autoExpand={autoExpandPlanId === offer.id}
                 disabled={!offer.purchasable}
                 disabledReason={purchaseDisabledReason(offer)}
               />

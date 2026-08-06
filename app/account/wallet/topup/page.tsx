@@ -12,12 +12,20 @@ export const dynamic = "force-dynamic";
 export default async function TopUpPage({
   searchParams,
 }: {
-  searchParams: Promise<{ returnTo?: string }>;
+  searchParams: Promise<{ returnTo?: string; amount?: string }>;
 }) {
   await requireCustomerPage();
-  const { returnTo } = await searchParams;
+  const { returnTo, amount } = await searchParams;
 
   const topUpSettings = await getTopUpSettingsView();
+  const requestedToman = Number.parseInt(amount ?? "", 10);
+  const initialAmountToman =
+    Number.isSafeInteger(requestedToman) && requestedToman > 0
+      ? Math.min(
+          Math.max(requestedToman, topUpSettings.minTopUpToman),
+          topUpSettings.maxTopUpToman,
+        )
+      : null;
 
   let gatewayAvailable = false;
   let gatewayDisplayName: string | null = null;
@@ -38,6 +46,7 @@ export default async function TopUpPage({
         minTopUpToman={topUpSettings.minTopUpToman}
         maxTopUpToman={topUpSettings.maxTopUpToman}
         returnTo={safeCustomerReturnPath(returnTo)}
+        initialAmountToman={initialAmountToman}
       />
     </section>
   );
