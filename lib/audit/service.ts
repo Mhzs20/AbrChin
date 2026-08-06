@@ -100,6 +100,13 @@ export async function writeAuditLog(
 
 export const AuditActions = {
   ROLE_CHANGE: "role_change",
+  USER_CREATE: "user_create",
+  USER_UPDATE: "user_update",
+  USER_BLOCK: "user_block",
+  USER_UNBLOCK: "user_unblock",
+  USER_DELETE: "user_delete",
+  USER_TRANSFER_SERVER: "user_transfer_server",
+  USER_ATTACH_SERVER: "user_attach_server",
   WALLET_ADJUSTMENT: "wallet_adjustment",
   REFUND: "refund",
   PAYMENT_REVERIFY: "payment_reverify",

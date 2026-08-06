@@ -67,6 +67,7 @@ export async function findValidSession(token: string) {
   });
 
   if (!isSessionRecordValid(session)) return null;
+  if (session.user.accountStatus === "BLOCKED") return null;
   return session;
 }
 

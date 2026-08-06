@@ -231,3 +231,17 @@ test("provider region discovery migration only extends the source enum", async (
   assert.doesNotMatch(migration, /DELETE FROM/i);
   assert.doesNotMatch(migration, /UPDATE "ProviderRegionConfig"/);
 });
+
+test("user account status migration is additive", async () => {
+  const migration = await readFile(
+    "prisma/migrations/20260806150000_user_account_status/migration.sql",
+    "utf8",
+  );
+  assert.match(migration, /CREATE TYPE "UserAccountStatus"/);
+  assert.match(migration, /ADD COLUMN "accountStatus"/);
+  assert.match(migration, /ADD COLUMN "blockedAt"/);
+  assert.match(migration, /ADD COLUMN "blockedReason"/);
+  assert.doesNotMatch(migration, /\bDROP\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM "User"/);
+});

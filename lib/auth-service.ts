@@ -32,6 +32,16 @@ export async function requestLoginOtp(
 ): Promise<RequestOtpResult> {
   const env = assertServerSecrets();
   const sms = options?.smsProvider ?? createSmsProvider();
+  const existingUser = await prisma.user.findUnique({
+    where: { mobile },
+    select: { accountStatus: true },
+  });
+  if (existingUser?.accountStatus === "BLOCKED") {
+    return {
+      ok: false,
+      error: "این حساب مسدود است. برای رفع مسدودی با پشتیبانی ابرچین تماس بگیرید.",
+    };
+  }
   const code = generateOtpCode();
   const codeHash = hashWithSecret(code, env.sessionSecret);
   const expiresAt = new Date(Date.now() + env.otpTtlSeconds * 1000);
@@ -156,6 +166,14 @@ export async function verifyLoginOtp(
     return { ok: false, error: otpFailureMessage("consumed") };
   }
 
+  const existing = await prisma.user.findUnique({ where: { mobile } });
+  if (existing?.accountStatus === "BLOCKED") {
+    return {
+      ok: false,
+      error: "این حساب مسدود است. برای رفع مسدودی با پشتیبانی ابرچین تماس بگیرید.",
+    };
+  }
+
   const now = new Date();
   const adminRole = isAdminMobile(mobile) ? UserRole.ADMIN : null;
   const user = await prisma.user.upsert({
@@ -164,12 +182,20 @@ export async function verifyLoginOtp(
       mobile,
       mobileVerifiedAt: now,
       role: adminRole ?? UserRole.CUSTOMER,
+      accountStatus: "ACTIVE",
     },
     update: {
       mobileVerifiedAt: now,
       ...(adminRole ? { role: adminRole } : {}),
     },
   });
+
+  if (user.accountStatus === "BLOCKED") {
+    return {
+      ok: false,
+      error: "این حساب مسدود است. برای رفع مسدودی با پشتیبانی ابرچین تماس بگیرید.",
+    };
+  }
 
   await ensureWalletForUser(user.id);
   const session = await createUserSession(user.id, meta);
