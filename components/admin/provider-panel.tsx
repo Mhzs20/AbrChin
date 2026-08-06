@@ -16,6 +16,28 @@ function formatRialAsToman(value: string | null): string {
   return `${amount} تومان`;
 }
 
+function SalePrice({ value, suffix }: { value: string | null; suffix?: string }) {
+  if (!value) return <span>—</span>;
+  return (
+    <span className="money-tone money-tone--sale">
+      <span className="money-tone-label">فروش</span>
+      {formatRialAsToman(value)}
+      {suffix ? ` ${suffix}` : ""}
+    </span>
+  );
+}
+
+function CostPrice({ value, suffix }: { value: string | null; suffix?: string }) {
+  if (!value) return <span>—</span>;
+  return (
+    <span className="money-tone money-tone--cost">
+      <span className="money-tone-label">خرید</span>
+      {formatRialAsToman(value)}
+      {suffix ? ` ${suffix}` : ""}
+    </span>
+  );
+}
+
 function formatBasisPoints(value: number | null): string {
   if (value == null) return "—";
   const whole = Math.floor(value / 100);
@@ -343,14 +365,14 @@ export function ProviderPanel({
               <tr>
                 <th>Region / Size</th>
                 <th>منابع</th>
-                <th>هزینه Provider</th>
-                <th>سود / قیمت فروش</th>
-                <th>قرارداد قیمت</th>
-                <th>Availability / انتشار</th>
-                <th>آخرین Sync</th>
-              </tr>
-            </thead>
-            <tbody>
+                  <th>قیمت خرید</th>
+                  <th>قیمت فروش</th>
+                  <th>قرارداد قیمت</th>
+                  <th>Availability / انتشار</th>
+                  <th>آخرین Sync</th>
+                </tr>
+              </thead>
+              <tbody>
               {providerItems.map((item) => (
                 <tr key={item.id}>
                   <td className="product-tech">
@@ -373,24 +395,26 @@ export function ProviderPanel({
                   <td>
                     {item.baseHourlyPriceRial ? (
                       <>
-                        {formatRialAsToman(item.baseHourlyPriceRial)} / ساعت
+                        <CostPrice value={item.baseHourlyPriceRial} suffix="/ ساعت" />
                         <br />
                       </>
                     ) : null}
-                    {formatRialAsToman(item.basePriceRial)} / ماه
+                    <CostPrice value={item.basePriceRial} suffix="/ ماه" />
                   </td>
                   <td>
                     {item.finalPriceRial && item.basePriceRial ? (
                       <>
-                        سود تقریبی:{" "}
-                        {formatRialAsToman(
-                          (
-                            BigInt(item.finalPriceRial) - BigInt(item.basePriceRial)
-                          ).toString(),
-                        )}{" "}
-                        / ماه
+                        <SalePrice value={item.finalPriceRial} suffix="/ ماه" />
                         <br />
-                        فروش: {formatRialAsToman(item.finalPriceRial)} / ماه
+                        <small>
+                          سود تقریبی:{" "}
+                          {formatRialAsToman(
+                            (
+                              BigInt(item.finalPriceRial) - BigInt(item.basePriceRial)
+                            ).toString(),
+                          )}{" "}
+                          / ماه
+                        </small>
                       </>
                     ) : item.productKind === "CLOUD_SERVER" ? (
                       "در Estimate نسخه‌دار SKU محاسبه می‌شود"

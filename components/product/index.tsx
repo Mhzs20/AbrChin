@@ -176,9 +176,24 @@ export function StatusBadge({ label, tone = "neutral" }: { label: string; tone?:
   return <span className={`product-badge product-badge--${tone}`}>{label}</span>;
 }
 
-export function MoneyDisplay({ amount, suffix = "تومان" }: { amount: string; suffix?: string }) {
+export function MoneyDisplay({
+  amount,
+  suffix = "تومان",
+  tone = "neutral",
+}: {
+  amount: string;
+  suffix?: string;
+  /** Admin server pricing: sale = blue, cost/buy = green */
+  tone?: "neutral" | "sale" | "cost";
+}) {
+  const toneClass =
+    tone === "sale"
+      ? "money-tone money-tone--sale"
+      : tone === "cost"
+        ? "money-tone money-tone--cost"
+        : undefined;
   return (
-    <span>
+    <span className={toneClass}>
       <span className="product-tech">{amount}</span> {suffix}
     </span>
   );

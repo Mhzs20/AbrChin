@@ -847,7 +847,10 @@ export function StorefrontAssortmentPanel({
                     {" · "}
                     {item.vcpu ?? "—"} vCPU / {item.ramGb ?? "—"} GB
                     {" · "}
-                    ساعتی {formatRial(item.providerHourlyPriceIrr)} ریال
+                    <span className="money-tone money-tone--cost">
+                      <span className="money-tone-label">خرید</span>
+                      ساعتی {formatRial(item.providerHourlyPriceIrr)} ریال
+                    </span>
                     {" · "}
                     {item.available ? "موجود" : "ناموجود"}
                   </div>

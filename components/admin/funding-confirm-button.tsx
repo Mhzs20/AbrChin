@@ -66,7 +66,10 @@ export function FundingConfirmButton({
         onCancel={() => setOpen(false)}
         onConfirm={confirm}
       >
-        <p>مبلغ موردنیاز: <MoneyDisplay amount={requiredTomanFa} /></p>
+        <p>
+          مبلغ موردنیاز (قیمت خرید):{" "}
+          <MoneyDisplay amount={requiredTomanFa} tone="cost" />
+        </p>
         <FormField id="funded-amount" label="مبلغ شارژ‌شده (تومان)">
           <input
             id="funded-amount"

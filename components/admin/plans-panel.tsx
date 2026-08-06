@@ -137,6 +137,26 @@ function toman(value: string | null) {
   return value ? `${(BigInt(value) / 10n).toLocaleString("fa-IR")} تومان` : "نامعتبر";
 }
 
+function SalePrice({ value }: { value: string | null }) {
+  if (!value) return <span>نیازمند بررسی</span>;
+  return (
+    <span className="money-tone money-tone--sale">
+      <span className="money-tone-label">فروش</span>
+      {toman(value)}
+    </span>
+  );
+}
+
+function CostPrice({ value }: { value: string | null }) {
+  if (!value) return <span>—</span>;
+  return (
+    <span className="money-tone money-tone--cost">
+      <span className="money-tone-label">خرید</span>
+      {toman(value)}
+    </span>
+  );
+}
+
 const PAGE_SIZE = 20;
 
 function publicationLabel(status: string) {
@@ -681,6 +701,7 @@ export function AdminPlansPanel({
                 <th>منبع</th>
                 <th>Region</th>
                 <th>منابع</th>
+                <th>قیمت خرید</th>
                 <th>قیمت فروش</th>
                 <th>اقدام</th>
               </tr>
@@ -718,7 +739,10 @@ export function AdminPlansPanel({
                       GB / {String(plan.storageGb ?? "—")} GB
                     </td>
                     <td>
-                      {plan.finalPriceRial ? toman(plan.finalPriceRial) : "نیازمند بررسی"}
+                      <CostPrice value={plan.basePriceRial} />
+                    </td>
+                    <td>
+                      <SalePrice value={plan.finalPriceRial} />
                       {plan.skuMarkupBasisPoints != null ? (
                         <>
                           <br />
@@ -778,7 +802,7 @@ export function AdminPlansPanel({
                   </tr>
                   {expandedId === plan.id ? (
                     <tr>
-                      <td colSpan={7}>
+                      <td colSpan={8}>
                         <div
                           style={{
                             display: "grid",
@@ -788,8 +812,9 @@ export function AdminPlansPanel({
                           }}
                         >
                           <div>
-                            هزینه Provider:{" "}
-                            {plan.basePriceRial ? toman(plan.basePriceRial) : "—"}
+                            <CostPrice value={plan.basePriceRial} />
+                            {" · "}
+                            <SalePrice value={plan.finalPriceRial} />
                           </div>
                           <div>
                             موجودی/واحد:{" "}
@@ -924,11 +949,21 @@ export function AdminPlansPanel({
             <br />
             منابع Read-only: {selectedCatalog.vcpu ?? "—"} vCPU · {selectedCatalog.ramMb ?? "—"} MB RAM · {selectedCatalog.diskGb ?? "—"} GB
             <br />
-            قیمت پایه: {toman(selectedCatalog.basePriceRial)} · Markup Provider: {selectedCatalog.providerMarkupBasisPoints == null ? "تنظیم نشده" : `${selectedCatalog.providerMarkupBasisPoints / 100}%`}
+            قیمت خرید: <CostPrice value={selectedCatalog.basePriceRial} /> · Markup
+            Provider:{" "}
+            {selectedCatalog.providerMarkupBasisPoints == null
+              ? "تنظیم نشده"
+              : `${selectedCatalog.providerMarkupBasisPoints / 100}%`}
             <br />
-            {selectedPreview
-              ? `Markup اعمال‌شده: ${selectedPreview.markupBasisPoints / 100}% · مبلغ Markup: ${toman(selectedPreview.markupAmountRial)} · پیش‌نمایش فروش زیرساخت: ${toman(selectedPreview.finalPriceRial)}`
-              : "برای پیش‌نمایش، قیمت و Markup معتبر Provider لازم است."}
+            {selectedPreview ? (
+              <>
+                Markup اعمال‌شده: {selectedPreview.markupBasisPoints / 100}% · مبلغ
+                Markup: {toman(selectedPreview.markupAmountRial)} · پیش‌نمایش قیمت
+                فروش: <SalePrice value={selectedPreview.finalPriceRial} />
+              </>
+            ) : (
+              "برای پیش‌نمایش، قیمت و Markup معتبر Provider لازم است."
+            )}
           </p>
         ) : null}
         <FormField id="plan-delivery" label="زمان تحویل تقریبی (دقیقه)">

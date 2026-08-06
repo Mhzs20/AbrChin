@@ -63,8 +63,8 @@ export default async function AdminInfrastructureOrdersPage() {
     { key: "order", header: "سفارش" },
     { key: "customer", header: "مشتری" },
     { key: "plan", header: "پلن" },
-    { key: "sale", header: "فروش" },
-    { key: "providerCost", header: "هزینه Provider" },
+    { key: "sale", header: "قیمت فروش" },
+    { key: "providerCost", header: "قیمت خرید" },
     { key: "payment", header: "پرداخت" },
     { key: "review", header: "بازبینی ساخت / تحویل / توجه" },
     { key: "region", header: "Region" },
@@ -170,14 +170,27 @@ export default async function AdminInfrastructureOrdersPage() {
         </div>
       );
     }
-    const cost = (value: string | null) =>
-      value == null ? "—" : formatTomanFa(BigInt(value));
+    const costAmount = (value: string | null) =>
+      value == null ? null : formatTomanFa(BigInt(value));
+    const costNode = (value: string | null) => {
+      const amount = costAmount(value);
+      return amount == null ? (
+        "—"
+      ) : (
+        <MoneyDisplay amount={amount} tone="cost" />
+      );
+    };
     return (
       <div style={{ display: "grid", gap: 4 }}>
         <span>Source: {review.sku.source}</span>
-        <span>Snapshot: {cost(review.pricing.providerCostSnapshotRial)} تومان</span>
-        <span>فعلی: {cost(review.pricing.providerCostCurrentRial)} تومان</span>
-        <span>Margin: {cost(review.pricing.currentMarginRial)} تومان</span>
+        <span>Snapshot: {costNode(review.pricing.providerCostSnapshotRial)}</span>
+        <span>فعلی: {costNode(review.pricing.providerCostCurrentRial)}</span>
+        <span>
+          Margin:{" "}
+          {costAmount(review.pricing.currentMarginRial) == null
+            ? "—"
+            : `${costAmount(review.pricing.currentMarginRial)} تومان`}
+        </span>
         <span>Availability: {review.availability.available ? "تأیید" : "نیازمند بررسی"}</span>
         <span>Freshness: {review.availability.fresh ? "تازه" : "کهنه/نامشخص"}</span>
         <span>{review.balance.message}</span>
@@ -198,8 +211,18 @@ export default async function AdminInfrastructureOrdersPage() {
         </div>
       ),
       plan: order.plan.title,
-      sale: <MoneyDisplay amount={formatTomanFa(order.serviceOrder.amount)} />,
-      providerCost: <MoneyDisplay amount={formatTomanFa(order.requiredFundingRial)} />,
+      sale: (
+        <MoneyDisplay
+          amount={formatTomanFa(order.serviceOrder.amount)}
+          tone="sale"
+        />
+      ),
+      providerCost: (
+        <MoneyDisplay
+          amount={formatTomanFa(order.requiredFundingRial)}
+          tone="cost"
+        />
+      ),
       payment: (
         <div>
           <div>{review?.payment.gateway ?? "ثبت مالی داخلی"}</div>
@@ -221,7 +244,24 @@ export default async function AdminInfrastructureOrdersPage() {
       { label: "مشتری", value: order.user.mobile },
       { label: "وضعیت", value: infrastructureOrderStatusLabel[order.status] },
       { label: "حالت تحویل", value: deliveryModeLabel[order.deliveryMode] },
-      { label: "فروش", value: <MoneyDisplay amount={formatTomanFa(order.serviceOrder.amount)} /> },
+      {
+        label: "قیمت فروش",
+        value: (
+          <MoneyDisplay
+            amount={formatTomanFa(order.serviceOrder.amount)}
+            tone="sale"
+          />
+        ),
+      },
+      {
+        label: "قیمت خرید",
+        value: (
+          <MoneyDisplay
+            amount={formatTomanFa(order.requiredFundingRial)}
+            tone="cost"
+          />
+        ),
+      },
       { label: "بازبینی", value: reviewSummary(order) },
     ],
     actions: actionFor(order),
