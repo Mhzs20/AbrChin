@@ -13,7 +13,7 @@ import { getAdminPageAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 
 export const metadata: Metadata = {
-  title: "منابع AV و PP | پنل مدیریت | ابرچین",
+  title: "منابع Arvan / ParsPack | پنل مدیریت | ابرچین",
   robots: { index: false, follow: false },
 };
 
@@ -62,8 +62,8 @@ export default async function AdminProvidersPage() {
     <>
       <LegacyProvidersHashRedirect />
       <PageHeader
-        title="منابع AV و PP"
-        description="فقط اتصال، Sync روزانه و Markup منبع. قیمت/پرچین/کوپن و مناطق فروش صفحه‌های جدا دارند."
+        title="منابع Arvan / ParsPack"
+        description="فقط اتصال و Sync کاتالوگ. تعیین Markup، پرچین، مالیات و کد تخفیف فقط در مرکز مالی است."
         actions={
           <>
             <Link
@@ -73,10 +73,10 @@ export default async function AdminProvidersPage() {
               مناطق فروش
             </Link>
             <Link
-              href="/admin/infrastructure/pricing"
+              href="/admin/finance"
               className="product-btn product-btn--quiet"
             >
-              قواعد قیمت و پرچین
+              مرکز مالی
             </Link>
             <Link
               href="/admin/infrastructure/plans"

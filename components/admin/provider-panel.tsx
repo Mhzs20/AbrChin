@@ -1,8 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
-import { PageHeader, SectionCard, StatCard, StatusBadge } from "@/components/product";
+import {
+  PageHeader,
+  SectionCard,
+  StatCard,
+  StatusBadge,
+} from "@/components/product";
 
 function formatRialAsToman(value: string | null): string {
   if (!value) return "در دسترس نیست";
@@ -161,10 +167,6 @@ export function ProviderPanel({
   const [state, setState] = useState(initial);
   const [loading, setLoading] = useState<"health" | "sync" | null>(null);
   const [error, setError] = useState("");
-  const [markupPercent, setMarkupPercent] = useState(
-    String(initial.markupBasisPoints / 100),
-  );
-  const [providerEnabled, setProviderEnabled] = useState(initial.enabled);
 
   async function run(action: "health" | "sync") {
     setLoading(action);
@@ -185,32 +187,6 @@ export function ProviderPanel({
         return;
       }
       setState(data.state);
-    } catch {
-      setError("ارتباط برقرار نشد.");
-    } finally {
-      setLoading(null);
-    }
-  }
-
-  async function saveMarkup() {
-    setLoading("sync");
-    setError("");
-    try {
-      const response = await fetch("/api/admin/infrastructure/providers/markup", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider,
-          markupPercent,
-          enabled: providerEnabled,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        setError(data.error || "ذخیره Markup ناموفق بود.");
-        return;
-      }
-      window.location.reload();
     } catch {
       setError("ارتباط برقرار نشد.");
     } finally {
@@ -315,41 +291,25 @@ export function ProviderPanel({
         ) : null}
         {error ? <p className="product-error">{error}</p> : null}
       </SectionCard>
-      <SectionCard title="Markup سراسری">
+      <SectionCard title="Markup و قیمت‌گذاری">
         <p>
-          قیمت پایه Read-only است. واحد منبع: {state.sourceMoneyUnit ?? "تأیید نشده"}.
-          پیش‌فرض لانچ: حدود ۳۰٪ هزینه تأمین و ۷۰٪ سود (مارکاپ ۲۳۳٫۳۳٪ روی قیمت
-          پایه). تغییر Markup فقط فروش‌های بعدی را عوض می‌کند؛ Snapshot خریدهای
-          قبلی دست نمی‌خورد. مالیات و پرچین Line Item مستقل هستند.
+          تعیین سود {providerLabel}، پرچین، مالیات و کد تخفیف فقط در{" "}
+          <strong>مرکز مالی</strong> انجام می‌شود تا با Sync کاتالوگ قاطی نشود.
+          قیمت خرید اینجا Read-only است (واحد منبع:{" "}
+          {state.sourceMoneyUnit ?? "تأیید نشده"}).
         </p>
-        <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
-          <label>
-            <input
-              checked={providerEnabled}
-              onChange={(event) => setProviderEnabled(event.target.checked)}
-              type="checkbox"
-            />
-            محاسبهٔ قیمت نهایی برای این Provider فعال باشد
-          </label>
-          <label>
-            درصد Markup روی هزینه Provider
-            <input
-              type="text"
-              inputMode="decimal"
-              value={markupPercent}
-              onChange={(event) => setMarkupPercent(event.target.value)}
-              style={{ display: "block", marginTop: 6, maxWidth: 180 }}
-              placeholder="233.33"
-            />
-          </label>
-          <button
-            type="button"
-            className="product-btn product-btn--primary"
-            disabled={loading !== null}
-            onClick={saveMarkup}
-          >
-            ذخیره Markup
-          </button>
+        <p style={{ marginTop: 8 }}>
+          Markup فعلی این منبع:{" "}
+          <strong className="money-tone money-tone--sale">
+            {(initial.markupBasisPoints / 100).toLocaleString("fa-IR")}٪
+          </strong>
+          {" · "}
+          {initial.enabled ? "فعال" : "خاموش"}
+        </p>
+        <div style={{ marginTop: 12 }}>
+          <Link href="/admin/finance#finance-markup" className="product-btn product-btn--primary">
+            تنظیم در مرکز مالی
+          </Link>
         </div>
       </SectionCard>
       <div id="catalog">

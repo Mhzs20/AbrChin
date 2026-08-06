@@ -31,13 +31,13 @@ const quickLinks = [
   },
   {
     href: "/admin/infrastructure/providers",
-    title: "منابع AV / PP",
-    description: "اتصال، Sync، Markup و کاتالوگ خام",
+    title: "منابع Arvan / ParsPack",
+    description: "اتصال، Sync و کاتالوگ خام",
   },
   {
-    href: "/admin/infrastructure/pricing",
-    title: "قواعد قیمت و تخفیف",
-    description: "VAT، پرچین، Markup محصول، چرخه یادآوری، کوپن",
+    href: "/admin/finance",
+    title: "مرکز مالی",
+    description: "شیوه محاسبه قیمت، Markup، پرچین، VAT، قطب‌نما، کوپن",
   },
   {
     href: "/admin/infrastructure/regions",

@@ -60,11 +60,6 @@ const saleNav: NavItem[] = [
     icon: LayoutDashboard,
   },
   {
-    href: "/admin/infrastructure/pricing",
-    label: "قواعد قیمت و تخفیف",
-    icon: Percent,
-  },
-  {
     href: "/admin/infrastructure/regions",
     label: "مناطق فروش",
     icon: Building2,
@@ -72,6 +67,7 @@ const saleNav: NavItem[] = [
 ];
 
 const moneyNav: NavItem[] = [
+  { href: "/admin/finance", label: "مرکز مالی", icon: Percent },
   { href: "/admin/transactions", label: "تراکنش‌ها", icon: CreditCard },
   { href: "/admin/wallets", label: "کیف پول‌ها", icon: Wallet },
   { href: "/admin/wallet-topup-settings", label: "مبالغ شارژ Wallet", icon: Wallet },

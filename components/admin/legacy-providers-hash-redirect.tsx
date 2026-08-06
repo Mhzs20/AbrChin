@@ -10,7 +10,7 @@ export function LegacyProvidersHashRedirect() {
   useEffect(() => {
     const hash = window.location.hash.replace(/^#/, "");
     if (hash === "pricing") {
-      router.replace("/admin/infrastructure/pricing");
+      router.replace("/admin/finance");
       return;
     }
     if (hash === "regions") {

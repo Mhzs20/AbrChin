@@ -969,22 +969,30 @@ export function AdminPlansPanel({
         <FormField id="plan-delivery" label="زمان تحویل تقریبی (دقیقه)">
           <input id="plan-delivery" type="number" min={1} value={form.deliveryEstimateMinutes} onChange={(event) => setForm((current) => ({ ...current, deliveryEstimateMinutes: event.target.value }))} required />
         </FormField>
-        <FormField id="plan-sku-markup" label="افزایش اختصاصی SKU (درصد، اختیاری)">
-          <input
-            id="plan-sku-markup"
-            inputMode="decimal"
-            min="0"
-            max="1000"
-            value={form.skuMarkupPercent}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                skuMarkupPercent: event.target.value,
-              }))
-            }
-            placeholder="استفاده از افزایش پیش‌فرض محصول"
-          />
-        </FormField>
+        <details className="admin-advanced-stats">
+          <summary>پیشرفته · Override Markup این SKU</summary>
+          <p className="pricing-field-hint" style={{ marginTop: 8 }}>
+            سود پیش‌فرض Arvan/ParsPack و محصول را در{" "}
+            <a href="/admin/finance#finance-markup">مرکز مالی</a> تنظیم کن. فقط اگر
+            این SKU باید از آن پیش‌فرض جدا باشد، اینجا درصد جایگزین محصول را بگذار.
+          </p>
+          <FormField id="plan-sku-markup" label="Override Markup محصول (٪، اختیاری)">
+            <input
+              id="plan-sku-markup"
+              inputMode="decimal"
+              min="0"
+              max="1000"
+              value={form.skuMarkupPercent}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  skuMarkupPercent: event.target.value,
+                }))
+              }
+              placeholder="خالی = پیش‌فرض مرکز مالی"
+            />
+          </FormField>
+        </details>
         <FormField id="plan-sort" label="ترتیب نمایش">
           <input id="plan-sort" type="number" value={form.sortOrder} onChange={(event) => setForm((current) => ({ ...current, sortOrder: event.target.value }))} />
         </FormField>

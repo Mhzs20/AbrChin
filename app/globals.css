@@ -4171,6 +4171,224 @@ a:focus-visible {
   color: var(--product-navy, #123);
 }
 
+.finance-center {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.finance-nav {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-inline: -4px;
+  border: 1px solid var(--product-border, #d7deea);
+  border-radius: 14px;
+  background: color-mix(in srgb, #fff 90%, #e8eef8);
+  backdrop-filter: blur(8px);
+}
+
+.finance-nav-pill {
+  border: 1px solid var(--product-border, #d7deea);
+  background: #fff;
+  color: var(--product-navy, #123);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.finance-nav-pill:hover {
+  border-color: #2f6fed;
+  color: #1565c0;
+}
+
+.finance-section {
+  scroll-margin-top: 72px;
+}
+
+.finance-pipeline {
+  list-style: none;
+  margin: 0 0 1.1rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.finance-pipeline-step {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--product-border, #d7deea);
+  background: #f8fafc;
+  min-height: 100%;
+}
+
+.finance-pipeline-step > span {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #e8eef8;
+  color: var(--product-navy, #123);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.finance-pipeline-step strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--product-navy, #123);
+  font-size: 0.92rem;
+}
+
+.finance-pipeline-step p {
+  margin: 0;
+  color: var(--product-muted, #5b6b82);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.finance-pipeline-step--cost {
+  border-color: color-mix(in srgb, #2e7d32 35%, #d7deea);
+  background: color-mix(in srgb, #e8f5e9 70%, #fff);
+}
+
+.finance-pipeline-step--cost > span {
+  background: #c8e6c9;
+  color: #1b5e20;
+}
+
+.finance-pipeline-step--sale {
+  border-color: color-mix(in srgb, #1565c0 35%, #d7deea);
+  background: color-mix(in srgb, #e3f2fd 70%, #fff);
+}
+
+.finance-pipeline-step--sale > span {
+  background: #bbdefb;
+  color: #0d47a1;
+}
+
+.finance-process-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 1.1rem;
+}
+
+.finance-process-grid article {
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--product-border, #d7deea);
+  background: #fff;
+}
+
+.finance-process-grid h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  color: var(--product-navy, #123);
+}
+
+.finance-process-grid p {
+  margin: 0;
+  color: var(--product-muted, #5b6b82);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.finance-simulator {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid #d3e0f2;
+  background: linear-gradient(180deg, #f7faff 0%, #fff 55%);
+}
+
+.finance-simulator-head h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  color: var(--product-navy, #123);
+}
+
+.finance-simulator-head p {
+  margin: 0;
+  color: var(--product-muted, #5b6b82);
+  font-size: 0.86rem;
+}
+
+.finance-sim-result {
+  display: grid;
+  gap: 12px;
+}
+
+.finance-sim-lines {
+  display: grid;
+  gap: 8px;
+}
+
+.finance-sim-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid var(--product-border, #d7deea);
+  font-size: 0.9rem;
+}
+
+.finance-sim-line--cost strong {
+  color: #2e7d32;
+}
+
+.finance-sim-line--sale strong {
+  color: #1565c0;
+}
+
+.finance-sim-total {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #eef5ff;
+  border: 1px solid #c9dbf5;
+}
+
+.finance-sim-total > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.finance-sim-total strong {
+  font-size: 1.2rem;
+}
+
+.finance-sim-total p {
+  margin: 0;
+  color: var(--product-muted, #5b6b82);
+  font-size: 0.84rem;
+}
+
+.finance-subtitle {
+  margin: 1rem 0 0.65rem;
+  font-size: 0.98rem;
+  color: var(--product-navy, #123);
+}
+
 .pricing-check {
   display: flex;
   align-items: center;
