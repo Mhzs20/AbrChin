@@ -4809,24 +4809,24 @@ a:focus-visible {
 
 /* Soft blue CTA on storefront cards → brighter blue on hover */
 .ready-server-quote-action .button-primary {
-  border-color: #9ec5f5;
-  background: #7eb3f0;
+  border-color: color-mix(in srgb, var(--blue-500) 55%, #fff);
+  background: var(--blue-500);
   box-shadow: none;
   color: #fff;
 }
 
 .ready-server-quote-action .button-primary:hover:not(:disabled) {
-  border-color: #1565c0;
-  background: #1565c0;
-  box-shadow: 0 8px 18px rgba(21, 101, 192, 0.28);
+  border-color: var(--blue-700);
+  background: var(--blue-600);
+  box-shadow: 0 8px 18px rgba(29, 114, 243, 0.28);
   transform: translateY(-1px);
 }
 
 .ready-server-quote-action .button-primary:disabled {
-  opacity: 0.5;
+  opacity: 0.55;
   filter: none;
-  background: #b7d2f2;
-  border-color: #b7d2f2;
+  background: color-mix(in srgb, var(--blue-500) 45%, #fff);
+  border-color: color-mix(in srgb, var(--blue-500) 35%, #fff);
 }
 
 .ready-server-quote-action > small {
