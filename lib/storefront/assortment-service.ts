@@ -28,12 +28,17 @@ import {
   DEFAULT_STOREFRONT_CAPACITY_RULES,
   type StorefrontCapacityRules,
 } from "@/lib/storefront/capacity-rules";
-import { ensureStorefrontSaleReady } from "@/lib/storefront/ensure-sale-plans";
+import {
+  ensurePublishedPlanForCatalogItem,
+  ensureStorefrontSaleReady,
+} from "@/lib/storefront/ensure-sale-plans";
 import {
   isStorefrontDisplayFresh,
   storefrontLocationLabel,
+  storefrontLocationZone,
   storefrontParchinForTier,
   storefrontServerTitle,
+  type StorefrontLocationZone,
 } from "@/lib/storefront/presentation";
 import { storefrontProviderCode } from "@/lib/storefront/provider-codes";
 import {
@@ -41,6 +46,7 @@ import {
   STOREFRONT_PRIMARY_LIMIT,
   STOREFRONT_RESERVE_LIMIT,
   STOREFRONT_TIERS,
+  STOREFRONT_ZONE_TARGET,
   storefrontTierDescription,
   storefrontTierLabel,
 } from "@/lib/storefront/tiers";
@@ -82,6 +88,12 @@ export type StorefrontSlotAdminRow = {
   providerHourlyPriceIrr: string | null;
   providerMonthlyPriceIrr: string | null;
   catalogStatus: string;
+};
+
+export type StorefrontPriceDisplay = {
+  showHourlyPrice: boolean;
+  showDailyPrice: boolean;
+  showMonthlyPrice: boolean;
 };
 
 export type StorefrontPublicTier = {
@@ -162,6 +174,8 @@ function toPublicOffer(input: {
     providerBaseHourlyPriceRial: null,
     providerBaseMonthlyPriceRial: "0",
     hourlyPriceRial: hourlyPriceRial?.toString() ?? null,
+    dailyPriceRial:
+      hourlyPriceRial != null ? (hourlyPriceRial * 24n).toString() : null,
     salePriceRial: monthlyPriceRial.toString(),
     renewalPriceRial: monthlyPriceRial.toString(),
     sourceCurrencyCode: input.item.currencyCode,
@@ -389,19 +403,36 @@ function offerMatchesStorefrontTier(
   );
 }
 
+function zoneCount(
+  offers: PublicPlanOffer[],
+  zone: StorefrontLocationZone,
+) {
+  return offers.filter(
+    (offer) => storefrontLocationZone(offer.regionCode) === zone,
+  ).length;
+}
+
+async function publishCatalogItems(items: ProviderCatalogItem[]) {
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    await ensurePublishedPlanForCatalogItem(item);
+  }
+}
+
 export async function resolveStorefrontTierOffers(
   tier: StorefrontChinishTier,
 ): Promise<{
   availableCount: number;
   offers: PublicPlanOffer[];
 }> {
-  const [slots, context, settings] = await Promise.all([
+  const [slots, settings] = await Promise.all([
     prisma.storefrontAssortmentSlot.findMany({
       where: { tier, enabled: true },
       include: { catalogItem: true },
       orderBy: [{ role: "asc" }, { sortOrder: "asc" }],
     }),
-    loadPricingContext(),
     prisma.storefrontAssortmentSettings.upsert({
       where: { id: "default" },
       create: {
@@ -421,29 +452,113 @@ export async function resolveStorefrontTierOffers(
     kahkeshanMinDiskGb: settings.kahkeshanMinDiskGb,
   };
 
-  const primary = slots.filter((slot) => slot.role === "PRIMARY");
-  const reserve = slots.filter((slot) => slot.role === "RESERVE");
-  const selected: PublicPlanOffer[] = [];
-  let availableCount = 0;
+  const slotItems = [...slots]
+    .sort((a, b) => {
+      if (a.role !== b.role) return a.role === "PRIMARY" ? -1 : 1;
+      return a.sortOrder - b.sortOrder;
+    })
+    .map((slot) => slot.catalogItem)
+    .filter((item): item is ProviderCatalogItem => item != null);
 
+  // Extra catalog pool for Iran/abroad fill when curated slots are thin.
+  const fillPool = await prisma.providerCatalogItem.findMany({
+    where: {
+      provider: { in: ["ARVAN", "PARSPACK"] },
+      source: "API_CATALOG",
+      active: true,
+      available: true,
+      status: "ACTIVE",
+      OR: [
+        { providerHourlyPriceIrr: { gt: 0n } },
+        { providerMonthlyPriceIrr: { gt: 0n } },
+      ],
+    },
+    orderBy: [{ vcpu: "asc" }, { ramMb: "asc" }, { diskGb: "asc" }],
+    take: 240,
+  });
+
+  const publishCandidates = [...slotItems, ...fillPool].filter((item) => {
+    const vcpu = item.vcpu ?? 0;
+    const ramGb = item.ramMb == null ? 0 : Math.ceil(item.ramMb / 1024);
+    const diskGb = item.diskGb ?? 0;
+    if (vcpu <= 0 || ramGb <= 0) return false;
+    return (
+      classifyStorefrontCapacityTier(
+        { vcpu, ramGb, diskGb },
+        capacityRules,
+      ) === tier
+    );
+  });
+  await publishCatalogItems(publishCandidates);
+
+  let context = await loadPricingContext();
+  const selectedItems: ProviderCatalogItem[] = [];
+  const selected: PublicPlanOffer[] = [];
+  const usedIds = new Set<string>();
   const seenResources = new Set<string>();
-  for (const slot of [...primary, ...reserve]) {
-    const offer = buildOfferForItem(slot.catalogItem, tier, context);
-    if (!offer || !offer.available) continue;
-    // Defense in depth: wrong-tier slots (old auto-suggest fallback) stay hidden.
-    if (!offerMatchesStorefrontTier(offer, tier, capacityRules)) continue;
+
+  function tryPush(item: ProviderCatalogItem) {
+    if (usedIds.has(item.id) || selected.length >= STOREFRONT_DISPLAY_LIMIT) {
+      return false;
+    }
+    const offer = buildOfferForItem(item, tier, context);
+    if (!offer || !offer.available) return false;
+    if (!offerMatchesStorefrontTier(offer, tier, capacityRules)) return false;
     const fingerprint = `${offer.vcpu ?? 0}:${offer.ramGb ?? 0}:${offer.storageGb ?? 0}`;
-    if (seenResources.has(fingerprint)) continue;
+    if (seenResources.has(fingerprint)) return false;
+    usedIds.add(item.id);
     seenResources.add(fingerprint);
-    availableCount += 1;
-    if (selected.length < STOREFRONT_DISPLAY_LIMIT) {
-      selected.push(offer);
+    selectedItems.push(item);
+    selected.push(offer);
+    return true;
+  }
+
+  for (const item of slotItems) {
+    tryPush(item);
+  }
+
+  function fillZone(zone: StorefrontLocationZone) {
+    let guard = 0;
+    while (
+      zoneCount(selected, zone) < STOREFRONT_ZONE_TARGET &&
+      selected.length < STOREFRONT_DISPLAY_LIMIT &&
+      guard < fillPool.length
+    ) {
+      guard += 1;
+      const next = fillPool.find((item) => {
+        if (usedIds.has(item.id)) return false;
+        if (storefrontLocationZone(item.regionCode) !== zone) return false;
+        const vcpu = item.vcpu ?? 0;
+        const ramGb = item.ramMb == null ? 0 : Math.ceil(item.ramMb / 1024);
+        const diskGb = item.diskGb ?? 0;
+        if (vcpu <= 0 || ramGb <= 0) return false;
+        return (
+          classifyStorefrontCapacityTier(
+            { vcpu, ramGb, diskGb },
+            capacityRules,
+          ) === tier
+        );
+      });
+      if (!next) break;
+      if (!tryPush(next)) {
+        usedIds.add(next.id);
+      }
     }
   }
 
+  fillZone("IRAN");
+  fillZone("ABROAD");
+
+  // Rebuild after publish so SKU_UNPUBLISHED becomes PURCHASABLE.
+  context = await loadPricingContext();
+  const refreshed = selectedItems.flatMap((item) => {
+    const rebuilt = buildOfferForItem(item, tier, context);
+    return rebuilt ? [rebuilt] : [];
+  });
+
   return {
-    availableCount,
-    offers: withStorefrontDisplayTitles(selected),
+    availableCount: refreshed.length,
+    offers: withStorefrontDisplayTitles(refreshed),
   };
 }
 
@@ -451,6 +566,7 @@ export async function listPublicStorefrontTiers(): Promise<{
   live: boolean;
   degraded: boolean;
   checkedAt: string | null;
+  priceDisplay: StorefrontPriceDisplay;
   tiers: StorefrontPublicTier[];
 }> {
   // Founder Launch: anything shown in چینش must be purchasable (mutations still off).
@@ -459,6 +575,15 @@ export async function listPublicStorefrontTiers(): Promise<{
       "[storefront:ensure-sale]",
       error instanceof Error ? error.message : "unknown",
     );
+  });
+  const settings = await prisma.storefrontAssortmentSettings.upsert({
+    where: { id: "default" },
+    create: {
+      id: "default",
+      autoSuggestEnabled: false,
+      ...DEFAULT_STOREFRONT_CAPACITY_RULES,
+    },
+    update: {},
   });
   const [arvanFreshness, parsPackFreshness, resolved] = await Promise.all([
     getCatalogFreshness("ARVAN").catch(() => null),
@@ -489,6 +614,11 @@ export async function listPublicStorefrontTiers(): Promise<{
     live: allFresh,
     degraded: !allFresh,
     checkedAt,
+    priceDisplay: {
+      showHourlyPrice: settings.showHourlyPrice,
+      showDailyPrice: settings.showDailyPrice,
+      showMonthlyPrice: settings.showMonthlyPrice,
+    },
     tiers: resolved,
   };
 }

@@ -114,6 +114,8 @@ export type PublicPlanOffer = {
   providerBaseHourlyPriceRial: string | null;
   providerBaseMonthlyPriceRial: string;
   hourlyPriceRial: string | null;
+  /** Display-only: hourly × 24. Not a billing interval. */
+  dailyPriceRial?: string | null;
   salePriceRial: string;
   renewalPriceRial: string;
   sourceCurrencyCode: string | null;
@@ -259,6 +261,8 @@ export function toPublicPlanOffer(
     providerBaseMonthlyPriceRial:
       plan.pricing.providerBasePriceRial.toString(),
     hourlyPriceRial: hourlyPriceRial?.toString() ?? null,
+    dailyPriceRial:
+      hourlyPriceRial != null ? (hourlyPriceRial * 24n).toString() : null,
     salePriceRial: plan.pricing.finalPriceRial.toString(),
     renewalPriceRial: plan.pricing.finalPriceRial.toString(),
     sourceCurrencyCode: plan.catalogItem.currencyCode,
@@ -696,6 +700,8 @@ function catalogItemPublicOffer(input: {
     providerBaseHourlyPriceRial: hourlyBasePriceRial?.toString() ?? null,
     providerBaseMonthlyPriceRial: monthlyBasePriceRial.toString(),
     hourlyPriceRial: hourlyPriceRial?.toString() ?? null,
+    dailyPriceRial:
+      hourlyPriceRial != null ? (hourlyPriceRial * 24n).toString() : null,
     salePriceRial: monthlyPriceRial.toString(),
     renewalPriceRial: monthlyPriceRial.toString(),
     sourceCurrencyCode: input.item.currencyCode,

@@ -26,7 +26,9 @@ function safePlanCode(item: ProviderCatalogItem) {
   return raw.replace(/^_|_$/g, "") || `SF_${code}_${item.id.slice(0, 12)}`;
 }
 
-async function ensurePublishedPlanForCatalogItem(item: ProviderCatalogItem) {
+export async function ensurePublishedPlanForCatalogItem(
+  item: ProviderCatalogItem,
+) {
   const existing = await prisma.infrastructurePlan.findFirst({
     where: {
       catalogItemId: item.id,

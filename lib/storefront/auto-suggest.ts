@@ -16,10 +16,12 @@ import {
   parseStorefrontCapacityRules,
   type StorefrontCapacityRules,
 } from "@/lib/storefront/capacity-rules";
+import { storefrontLocationZone } from "@/lib/storefront/presentation";
 import {
   STOREFRONT_PRIMARY_LIMIT,
   STOREFRONT_RESERVE_LIMIT,
   STOREFRONT_TIERS,
+  STOREFRONT_ZONE_TARGET,
 } from "@/lib/storefront/tiers";
 
 type RankedItem = {
@@ -86,29 +88,35 @@ function diversifyPick(
   const picked: RankedItem[] = [];
   const regionCounts = new Map<string, number>();
   const seenResources = new Set<string>();
+  const zoneCounts = { IRAN: 0, ABROAD: 0 };
 
-  for (const candidate of sorted) {
-    if (picked.length >= limit) break;
+  function accept(candidate: RankedItem, enforceZoneBalance: boolean) {
+    if (picked.length >= limit) return false;
+    if (picked.some((row) => row.item.id === candidate.item.id)) return false;
     const regionKey = `${candidate.item.provider}:${candidate.item.regionCode}`;
     const resourcesKey = resourceFingerprint(candidate);
     const regionCount = regionCounts.get(regionKey) ?? 0;
-    // Manual-sell storefront: never repeat the same vCPU/RAM/Disk shape.
-    if (seenResources.has(resourcesKey)) continue;
-    if (regionCount >= 6) continue;
+    if (seenResources.has(resourcesKey)) return false;
+    if (regionCount >= 6) return false;
+    const zone = storefrontLocationZone(candidate.item.regionCode);
+    if (enforceZoneBalance && zoneCounts[zone] >= STOREFRONT_ZONE_TARGET) {
+      return false;
+    }
     picked.push(candidate);
     seenResources.add(resourcesKey);
     regionCounts.set(regionKey, regionCount + 1);
+    zoneCounts[zone] += 1;
+    return true;
   }
 
-  if (picked.length < limit) {
-    for (const candidate of sorted) {
-      if (picked.length >= limit) break;
-      if (picked.some((row) => row.item.id === candidate.item.id)) continue;
-      const resourcesKey = resourceFingerprint(candidate);
-      if (seenResources.has(resourcesKey)) continue;
-      picked.push(candidate);
-      seenResources.add(resourcesKey);
-    }
+  // Prefer balanced Iran / abroad seats first.
+  for (const candidate of sorted) {
+    if (picked.length >= Math.min(limit, STOREFRONT_ZONE_TARGET * 2)) break;
+    accept(candidate, true);
+  }
+  for (const candidate of sorted) {
+    if (picked.length >= limit) break;
+    accept(candidate, false);
   }
   return picked;
 }
@@ -211,6 +219,11 @@ export function toStorefrontSettingsView(
       kahkeshanMinRamGb: settings.kahkeshanMinRamGb,
       kahkeshanMinDiskGb: settings.kahkeshanMinDiskGb,
     },
+    priceDisplay: {
+      showHourlyPrice: settings.showHourlyPrice,
+      showDailyPrice: settings.showDailyPrice,
+      showMonthlyPrice: settings.showMonthlyPrice,
+    },
   };
 }
 
@@ -240,6 +253,39 @@ export async function setStorefrontAutoSuggestEnabled(input: {
     },
     update: {
       autoSuggestEnabled: input.enabled,
+      updatedById: input.actorUserId,
+    },
+  });
+}
+
+export async function updateStorefrontPriceDisplay(input: {
+  showHourlyPrice: boolean;
+  showDailyPrice: boolean;
+  showMonthlyPrice: boolean;
+  actorUserId: string | null;
+}) {
+  if (
+    !input.showHourlyPrice &&
+    !input.showDailyPrice &&
+    !input.showMonthlyPrice
+  ) {
+    throw new Error("storefront_price_display_empty");
+  }
+  return prisma.storefrontAssortmentSettings.upsert({
+    where: { id: "default" },
+    create: {
+      id: "default",
+      autoSuggestEnabled: false,
+      ...DEFAULT_STOREFRONT_CAPACITY_RULES,
+      showHourlyPrice: input.showHourlyPrice,
+      showDailyPrice: input.showDailyPrice,
+      showMonthlyPrice: input.showMonthlyPrice,
+      updatedById: input.actorUserId,
+    },
+    update: {
+      showHourlyPrice: input.showHourlyPrice,
+      showDailyPrice: input.showDailyPrice,
+      showMonthlyPrice: input.showMonthlyPrice,
       updatedById: input.actorUserId,
     },
   });

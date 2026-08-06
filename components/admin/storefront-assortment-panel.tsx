@@ -57,10 +57,17 @@ type CapacityRules = {
   kahkeshanMinDiskGb: number;
 };
 
+type PriceDisplay = {
+  showHourlyPrice: boolean;
+  showDailyPrice: boolean;
+  showMonthlyPrice: boolean;
+};
+
 type SettingsView = {
   autoSuggestEnabled: boolean;
   lastAutoAppliedAt: string | null;
   capacityRules: CapacityRules;
+  priceDisplay: PriceDisplay;
 };
 
 export function StorefrontAssortmentPanel({
@@ -76,6 +83,13 @@ export function StorefrontAssortmentPanel({
   const [settings, setSettings] = useState(initialSettings);
   const [capacityDraft, setCapacityDraft] = useState<CapacityRules>(
     initialSettings.capacityRules,
+  );
+  const [priceDisplayDraft, setPriceDisplayDraft] = useState<PriceDisplay>(
+    initialSettings.priceDisplay ?? {
+      showHourlyPrice: true,
+      showDailyPrice: true,
+      showMonthlyPrice: true,
+    },
   );
   const [activeTier, setActiveTier] = useState<TierView["tier"]>("NO");
   const [draftPrimary, setDraftPrimary] = useState<string[]>(
@@ -108,6 +122,9 @@ export function StorefrontAssortmentPanel({
     if (payload.settings) {
       setSettings(payload.settings);
       setCapacityDraft(payload.settings.capacityRules);
+      if (payload.settings.priceDisplay) {
+        setPriceDisplayDraft(payload.settings.priceDisplay);
+      }
     }
   }
 
@@ -321,6 +338,43 @@ export function StorefrontAssortmentPanel({
     }
   }
 
+  async function savePriceDisplay() {
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const response = await fetch(
+        "/api/admin/infrastructure/storefront-assortment",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "set_price_display",
+            priceDisplay: priceDisplayDraft,
+          }),
+        },
+      );
+      const payload = (await response.json()) as {
+        error?: string;
+        tiers?: TierView[];
+        settings?: SettingsView;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || "ذخیره نمایش قیمت انجام نشد.");
+      }
+      applyServerState(payload);
+      setMessage("نمایش قیمت ساعتی/روزانه/ماهانه روی سایت اعمال شد.");
+    } catch (priceError) {
+      setError(
+        priceError instanceof Error
+          ? priceError.message
+          : "ذخیره نمایش قیمت ممکن نیست.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function rowLabel(catalogItemId: string) {
     const candidate = candidates.find((item) => item.id === catalogItemId);
     if (!candidate) return catalogItemId;
@@ -339,10 +393,62 @@ export function StorefrontAssortmentPanel({
         }}
       >
         <div>
+          <strong>نمایش قیمت روی کارت سرور</strong>
+          <p style={{ margin: "8px 0 0", color: "var(--product-muted)" }}>
+            خرید واقعی همچنان دوره‌ای ماهانه است. اینجا فقط مشخص می‌کنی کدام
+            قیمت‌ها روی کارت چینش دیده شوند. حداقل یکی باید روشن باشد.
+          </p>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+          {(
+            [
+              ["showHourlyPrice", "ساعتی"],
+              ["showDailyPrice", "روزانه (ساعتی × ۲۴)"],
+              ["showMonthlyPrice", "ماهانه"],
+            ] as const
+          ).map(([key, label]) => (
+            <label
+              key={key}
+              style={{ display: "flex", alignItems: "center", gap: 8 }}
+            >
+              <input
+                type="checkbox"
+                checked={priceDisplayDraft[key]}
+                onChange={(event) =>
+                  setPriceDisplayDraft((current) => ({
+                    ...current,
+                    [key]: event.target.checked,
+                  }))
+                }
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="product-btn"
+          disabled={busy}
+          onClick={() => void savePriceDisplay()}
+        >
+          ذخیره نمایش قیمت
+        </button>
+      </div>
+
+      <div
+        style={{
+          border: "1px solid var(--product-border, #ddd)",
+          borderRadius: 12,
+          padding: 16,
+          display: "grid",
+          gap: 12,
+        }}
+      >
+        <div>
           <strong>پیشنهاد خودکار چینش</strong>
           <p style={{ margin: "8px 0 0", color: "var(--product-muted)" }}>
-            وقتی روشن باشد، برای چینش نو / استوار / کهکشان خودش ۲۴ اصلی و ۱۲ رزرو
-            پیشنهاد می‌کند و بعد از هر Sync کاتالوگ دوباره تنظیم می‌شود. با
+            وقتی روشن باشد، برای هر چینش تا ۸ ایران + ۸ خارج (اگر موجود باشد)
+            و رزرو پیشنهاد می‌کند. بعد از Sync کاتالوگ دوباره تنظیم می‌شود. با
             ذخیرهٔ دستی، خودکار خاموش می‌شود تا ویرایش شما حفظ شود.
           </p>
           <p style={{ margin: "8px 0 0" }}>

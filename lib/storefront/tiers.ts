@@ -4,6 +4,8 @@ export const STOREFRONT_PRIMARY_LIMIT = 24;
 export const STOREFRONT_RESERVE_LIMIT = 12;
 export const STOREFRONT_DISPLAY_LIMIT = 24;
 export const STOREFRONT_LOW_STOCK_THRESHOLD = 12;
+/** Target cards per location zone (Iran / abroad) inside each chinish tier. */
+export const STOREFRONT_ZONE_TARGET = 8;
 
 export const STOREFRONT_TIERS = [
   "NO",

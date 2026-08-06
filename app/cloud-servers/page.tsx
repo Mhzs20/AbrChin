@@ -52,7 +52,7 @@ export default async function CloudServersPage() {
           {checkedAt}
         </span>
         <span>
-          <Zap size={15} aria-hidden="true" /> برآورد ساعتی و روزانه
+          <Zap size={15} aria-hidden="true" /> قیمت ساعتی، روزانه و ماهانه
         </span>
         <span>
           <ShieldCheck size={15} aria-hidden="true" /> امن و آمادهٔ راه‌اندازی با
@@ -60,7 +60,10 @@ export default async function CloudServersPage() {
         </span>
       </div>
 
-      <ChinishCloudCatalog tiers={catalog.tiers} />
+      <ChinishCloudCatalog
+        tiers={catalog.tiers}
+        priceDisplay={catalog.priceDisplay}
+      />
     </section>
   );
 }

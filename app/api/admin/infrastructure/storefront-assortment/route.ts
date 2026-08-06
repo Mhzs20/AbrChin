@@ -19,6 +19,7 @@ import {
   setStorefrontAutoSuggestEnabled,
   toStorefrontSettingsView,
   updateStorefrontCapacityRules,
+  updateStorefrontPriceDisplay,
 } from "@/lib/storefront/auto-suggest";
 import { parseStorefrontCapacityRules } from "@/lib/storefront/capacity-rules";
 import { isStorefrontTier } from "@/lib/storefront/tiers";
@@ -59,8 +60,58 @@ export async function POST(request: Request) {
       action?: unknown;
       enabled?: unknown;
       capacityRules?: unknown;
+      priceDisplay?: unknown;
     };
     const meta = await readRequestMeta(request);
+
+    if (body.action === "set_price_display") {
+      const display = body.priceDisplay;
+      if (!display || typeof display !== "object" || Array.isArray(display)) {
+        return jsonError("نمایش قیمت معتبر نیست.", 400);
+      }
+      const record = display as Record<string, unknown>;
+      try {
+        await updateStorefrontPriceDisplay({
+          showHourlyPrice: record.showHourlyPrice === true,
+          showDailyPrice: record.showDailyPrice === true,
+          showMonthlyPrice: record.showMonthlyPrice === true,
+          actorUserId: admin.id,
+        });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "storefront_price_display_empty"
+        ) {
+          return jsonError("حداقل یک نوع قیمت باید روشن باشد.", 400);
+        }
+        throw error;
+      }
+      const priceDisplay = {
+        showHourlyPrice: record.showHourlyPrice === true,
+        showDailyPrice: record.showDailyPrice === true,
+        showMonthlyPrice: record.showMonthlyPrice === true,
+      };
+      await writeAuditLog({
+        actorUserId: admin.id,
+        action: AuditActions.STOREFRONT_ASSORTMENT_UPDATE,
+        entityType: "storefront_assortment",
+        entityId: "price_display",
+        afterData: {
+          action: "set_price_display",
+          priceDisplay,
+        },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+      const [tiers, settings] = await Promise.all([
+        getStorefrontAssortmentAdminView(),
+        getStorefrontAssortmentSettings(),
+      ]);
+      return jsonOk({
+        tiers,
+        settings: toStorefrontSettingsView(settings),
+      });
+    }
 
     if (body.action === "set_capacity_rules") {
       if (

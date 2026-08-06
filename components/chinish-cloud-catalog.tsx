@@ -13,7 +13,10 @@ import { useMemo, useState } from "react";
 import { ReadyServerQuoteButton } from "@/components/ready-server-quote-button";
 import type { PublicPlanOffer } from "@/lib/orders/plans";
 import { resolveParchinLevelLabel } from "@/lib/parchin/labels";
-import type { StorefrontPublicTier } from "@/lib/storefront/assortment-service";
+import type {
+  StorefrontPriceDisplay,
+  StorefrontPublicTier,
+} from "@/lib/storefront/assortment-service";
 import {
   formatStorefrontToman,
   storefrontLocationZone,
@@ -38,8 +41,14 @@ type LocationFilter = "ALL" | "IRAN" | "ABROAD";
 
 export function ChinishCloudCatalog({
   tiers,
+  priceDisplay = {
+    showHourlyPrice: true,
+    showDailyPrice: true,
+    showMonthlyPrice: true,
+  },
 }: {
   tiers: StorefrontPublicTier[];
+  priceDisplay?: StorefrontPriceDisplay;
 }) {
   const [activeTier, setActiveTier] = useState(tiers[0]?.tier ?? "NO");
   const [locationFilter, setLocationFilter] = useState<LocationFilter>("ALL");
@@ -212,20 +221,43 @@ export function ChinishCloudCatalog({
               </div>
 
               <div className="quick-plan-price">
-                {offer.salePriceRial && offer.salePriceRial !== "0" ? (
-                  <span>
-                    <strong>{formatStorefrontToman(offer.salePriceRial)}</strong>{" "}
-                    تومان در ماه
-                  </span>
-                ) : (
-                  <span>
-                    <strong>قیمت ماهانه در دسترس نیست</strong>
-                  </span>
-                )}
-                {offer.hourlyPriceRial ? (
+                {priceDisplay.showMonthlyPrice ? (
+                  offer.salePriceRial && offer.salePriceRial !== "0" ? (
+                    <span>
+                      <strong>
+                        {formatStorefrontToman(offer.salePriceRial)}
+                      </strong>{" "}
+                      تومان در ماه
+                    </span>
+                  ) : (
+                    <span>
+                      <strong>قیمت ماهانه در دسترس نیست</strong>
+                    </span>
+                  )
+                ) : null}
+                {priceDisplay.showDailyPrice &&
+                (offer.dailyPriceRial || offer.hourlyPriceRial) ? (
+                  <small>
+                    {formatStorefrontToman(
+                      offer.dailyPriceRial ??
+                        (
+                          BigInt(offer.hourlyPriceRial ?? "0") * 24n
+                        ).toString(),
+                    )}{" "}
+                    تومان در روز
+                  </small>
+                ) : null}
+                {priceDisplay.showHourlyPrice && offer.hourlyPriceRial ? (
                   <small>
                     {formatStorefrontToman(offer.hourlyPriceRial)} تومان در ساعت
                   </small>
+                ) : null}
+                {!priceDisplay.showMonthlyPrice &&
+                !priceDisplay.showDailyPrice &&
+                !priceDisplay.showHourlyPrice ? (
+                  <span>
+                    <strong>نمایش قیمت خاموش است</strong>
+                  </span>
                 ) : null}
               </div>
 
