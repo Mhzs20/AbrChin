@@ -5038,3 +5038,104 @@ a:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+/* Parchin service details dialog + order summary (Task 2) */
+.parchin-dialog-root {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, #0b1220 55%, transparent);
+}
+
+.parchin-dialog {
+  width: min(560px, 100%);
+  max-height: min(84vh, 720px);
+  overflow: auto;
+  border-radius: 18px;
+  background: var(--surface, #fff);
+  color: var(--ink, #10203a);
+  box-shadow: 0 24px 64px rgba(16, 32, 58, 0.28);
+  padding: 20px 22px 24px;
+  display: grid;
+  gap: 14px;
+}
+
+.parchin-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.parchin-dialog-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.parchin-dialog-header p,
+.parchin-dialog-summary,
+.parchin-dialog-price,
+.parchin-dialog-support p {
+  margin: 4px 0 0;
+  color: var(--product-muted, #5b6b82);
+}
+
+.parchin-dialog section h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+.parchin-dialog ul {
+  margin: 0;
+  padding-inline-start: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.parchin-card-summary {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.parchin-card-summary p {
+  margin: 0;
+  color: var(--product-muted, #5b6b82);
+  font-size: 0.9rem;
+}
+
+.parchin-details-trigger {
+  justify-self: start;
+  min-height: 34px;
+  padding-inline: 12px;
+}
+
+.ready-server-order-summary {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line, #d7deea);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--blue-100, #e8f1ff) 55%, #fff);
+}
+
+.ready-server-order-summary ul {
+  margin: 0;
+  padding-inline-start: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.ready-quote-parchin {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ready-quote-parchin h2,
+.ready-quote-parchin h3 {
+  margin: 0;
+}

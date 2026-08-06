@@ -41,6 +41,36 @@ type TierView = {
   availableCount: number;
   primary: SlotRow[];
   reserve: SlotRow[];
+  dominance?: {
+    rawCount: number;
+    incompleteCount: number;
+    notPurchasableCount: number;
+    duplicateCount: number;
+    dominatedCount: number;
+    finalCount: number;
+    removals: Array<{
+      candidateId: string;
+      reason: string;
+      dominatedById?: string;
+      detail: string;
+      comparison?: {
+        survivorId: string;
+        removedId: string;
+        survivor: {
+          vcpu: number | null;
+          ramGb: number | null;
+          diskGb: number | null;
+          finalMonthlyPriceRial: string;
+        };
+        removed: {
+          vcpu: number | null;
+          ramGb: number | null;
+          diskGb: number | null;
+          finalMonthlyPriceRial: string;
+        };
+      };
+    }>;
+  };
 };
 
 function formatRial(value: string | null | undefined) {
@@ -335,7 +365,11 @@ export function StorefrontAssortmentPanel({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             action: "set_capacity_rules",
-            capacityRules: capacityDraft,
+            capacityRules: {
+              ...capacityDraft,
+              ostovarMinDiskGb: 0,
+              kahkeshanMinDiskGb: 0,
+            },
           }),
         },
       );
@@ -569,9 +603,9 @@ export function StorefrontAssortmentPanel({
         <div>
           <strong>قواعد ظرفیت چینش</strong>
           <p style={{ margin: "8px 0 0", color: "var(--product-muted)" }}>
-            باندها جدا هستند: حداقل استوار = سقف چینش نو؛ حداقل کهکشان = سقف
-            استوار. پیشنهاد خودکار هرگز از چینش دیگر پر نمی‌کند. پرچین کارت‌ها:
-            نو → شروع، استوار → فعال، کهکشان → پایدار.
+            Tier فقط با vCPU و RAM تعیین می‌شود. Disk مشخصه و فیلتر است، نه شرط
+            چینش. حداقل استوار و کهکشان باید صعودی بمانند. پرچین کارت‌ها: نو →
+            شروع، استوار → فعال، کهکشان → پایدار.
           </p>
         </div>
         <div
@@ -585,10 +619,8 @@ export function StorefrontAssortmentPanel({
             [
               ["ostovarMinVcpu", "استوار · حداقل vCPU"],
               ["ostovarMinRamGb", "استوار · حداقل RAM (GB)"],
-              ["ostovarMinDiskGb", "استوار · حداقل Disk (GB)"],
               ["kahkeshanMinVcpu", "کهکشان · حداقل vCPU"],
               ["kahkeshanMinRamGb", "کهکشان · حداقل RAM (GB)"],
-              ["kahkeshanMinDiskGb", "کهکشان · حداقل Disk (GB)"],
             ] as const
           ).map(([key, label]) => (
             <label key={key} style={{ display: "grid", gap: 4 }}>
@@ -619,6 +651,70 @@ export function StorefrontAssortmentPanel({
             ذخیره قواعد ظرفیت
           </button>
         </div>
+      </div>
+
+      <div
+        style={{
+          border: "1px solid var(--product-border, #ddd)",
+          borderRadius: 12,
+          padding: 16,
+          display: "grid",
+          gap: 12,
+        }}
+      >
+        <div>
+          <strong>تشخیص پلن مغلوب (Diagnostics)</strong>
+          <p style={{ margin: "8px 0 0", color: "var(--product-muted)" }}>
+            گزارش داخلی Admin: تعداد خام، Duplicate، Dominated و نهایی قابل
+            نمایش. نام Provider به مشتری نشان داده نمی‌شود؛ اینجا فقط برای عیب‌یابی
+            است.
+          </p>
+        </div>
+        {tiers.map((item) => {
+          const d = item.dominance;
+          if (!d) return null;
+          return (
+            <div key={`dom-${item.tier}`} style={{ display: "grid", gap: 8 }}>
+              <strong>
+                {item.label}: خام {d.rawCount.toLocaleString("fa-IR")} · تکراری{" "}
+                {d.duplicateCount.toLocaleString("fa-IR")} · مغلوب{" "}
+                {d.dominatedCount.toLocaleString("fa-IR")} · نهایی{" "}
+                {d.finalCount.toLocaleString("fa-IR")}
+              </strong>
+              {d.removals.length > 0 ? (
+                <details>
+                  <summary>
+                    دلایل حذف ({d.removals.length.toLocaleString("fa-IR")})
+                  </summary>
+                  <ul style={{ margin: "8px 0 0", paddingInlineStart: 18 }}>
+                    {d.removals.slice(0, 40).map((removal) => (
+                      <li key={`${removal.candidateId}-${removal.reason}`}>
+                        <code dir="ltr">{removal.candidateId}</code> —{" "}
+                        {removal.reason}: {removal.detail}
+                        {removal.comparison ? (
+                          <small style={{ display: "block", color: "var(--product-muted)" }}>
+                            survivor {removal.comparison.survivor.vcpu}/
+                            {removal.comparison.survivor.ramGb}/
+                            {removal.comparison.survivor.diskGb} @{" "}
+                            {removal.comparison.survivor.finalMonthlyPriceRial}{" "}
+                            vs removed {removal.comparison.removed.vcpu}/
+                            {removal.comparison.removed.ramGb}/
+                            {removal.comparison.removed.diskGb} @{" "}
+                            {removal.comparison.removed.finalMonthlyPriceRial}
+                          </small>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ) : (
+                <small style={{ color: "var(--product-muted)" }}>
+                  حذفی در این چینش ثبت نشده است.
+                </small>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div

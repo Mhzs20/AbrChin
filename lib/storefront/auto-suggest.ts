@@ -199,7 +199,7 @@ export function buildSuggestedStorefrontAssortment(
     .map((row) => ({
       ...row,
       capacityTier: classifyStorefrontCapacityTier(
-        { vcpu: row.vcpu, ramGb: row.ramGb, diskGb: row.diskGb },
+        { vcpu: row.vcpu, ramGb: row.ramGb },
         rules,
       ),
     }));
@@ -342,7 +342,11 @@ export async function updateStorefrontCapacityRules(input: {
   rules: StorefrontCapacityRules;
   actorUserId: string | null;
 }) {
-  const rules = parseStorefrontCapacityRules(input.rules);
+  const rules = parseStorefrontCapacityRules({
+    ...input.rules,
+    ostovarMinDiskGb: 0,
+    kahkeshanMinDiskGb: 0,
+  });
   return prisma.storefrontAssortmentSettings.upsert({
     where: { id: "default" },
     create: {

@@ -104,6 +104,12 @@ export type PublicPlanOffer = {
   parchinLevel: ParchinLevel;
   /** Customer-facing title from Admin pricing (falls back to catalog label). */
   parchinTitle?: string;
+  parchinSubtitle?: string;
+  parchinSummary?: string;
+  parchinIncludedServices?: string[];
+  parchinExcludedServices?: string[];
+  /** Monthly Parchin fee in Rial; "0" means included in the shown price. */
+  parchinMonthlyPriceRial?: string;
   regionCode: string;
   locationLabel: string;
   imageLabel: string;
@@ -112,6 +118,10 @@ export type PublicPlanOffer = {
   ramGb: number | null;
   storageGb: number | null;
   transferTb: string | null;
+  /** Only present when the catalog payload recorded a real disk type. */
+  diskTypeLabel?: string | null;
+  ipv4Available?: boolean | null;
+  ipv6Available?: boolean | null;
   providerBaseHourlyPriceRial: string | null;
   providerBaseMonthlyPriceRial: string;
   hourlyPriceRial: string | null;
@@ -338,6 +348,8 @@ export function resolveConfiguredPlanPricing(
     taxBasisPoints: configs.commerce?.taxBps ?? 1000,
     parchinLevel: selectedParchinLevel,
     parchinPriceRial: parchin.priceRial,
+    parchinTitle: parchin.title,
+    parchinVersion: "version" in parchin ? (parchin.version as number) : 1,
     termMonths: termOptions.termMonths ?? 1,
     couponDiscountBps: termOptions.couponDiscountBps,
     couponCode: termOptions.couponCode,

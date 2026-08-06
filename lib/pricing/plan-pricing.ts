@@ -47,6 +47,8 @@ export type PlanPricingOptions = {
   taxBasisPoints?: number;
   parchinLevel?: ParchinLevel;
   parchinPriceRial?: bigint;
+  parchinTitle?: string | null;
+  parchinVersion?: number | null;
   termMonths?: 1 | 3 | 6 | 12;
   couponDiscountBps?: number | null;
   couponCode?: string | null;
@@ -89,6 +91,8 @@ export function resolveCatalogItemPricing(
     productMarkupBps: options.productMarkupBasisPoints ?? 0,
     parchinLevel: options.parchinLevel ?? "PARCHIN_START",
     parchinPriceIrr: options.parchinPriceRial ?? 0n,
+    parchinTitle: options.parchinTitle,
+    parchinVersion: options.parchinVersion,
     taxBps: options.taxBasisPoints ?? 0,
     termMonths: options.termMonths ?? 1,
     couponDiscountBps: options.couponDiscountBps,

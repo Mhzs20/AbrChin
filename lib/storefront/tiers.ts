@@ -2,7 +2,8 @@ import type { StorefrontChinishTier } from "@prisma/client";
 
 export const STOREFRONT_PRIMARY_LIMIT = 24;
 export const STOREFRONT_RESERVE_LIMIT = 12;
-export const STOREFRONT_DISPLAY_LIMIT = 24;
+/** Soft safety ceiling only — public listing shows all non-dominated plans. */
+export const STOREFRONT_DISPLAY_LIMIT = 500;
 export const STOREFRONT_LOW_STOCK_THRESHOLD = 12;
 /** Target cards per location zone (Iran / abroad) inside each chinish tier. */
 export const STOREFRONT_ZONE_TARGET = 8;
@@ -21,14 +22,15 @@ export function storefrontTierLabel(tier: StorefrontChinishTier): string {
   return "چینش کهکشان";
 }
 
+/** Customer-facing copy — never expose internal threshold phrasing. */
 export function storefrontTierDescription(tier: StorefrontChinishTier): string {
   if (tier === "NO") {
-    return "کمتر از حداقل استوار — شروع کنترل‌شده برای سایت، آزمایش و بار روزمره.";
+    return "شروع سبک و اقتصادی برای سایت، آزمایش و بار روزمره.";
   }
   if (tier === "OSTOVAR") {
-    return "از حداقل استوار تا زیر حداقل کهکشان — تعادل قدرت و قیمت برای کار پایدار.";
+    return "تعادل قدرت و قیمت برای کار پایدار و رشد کنترل‌شده.";
   }
-  return "از حداقل کهکشان به بالا — ظرفیت بالاتر برای ترافیک جدی و رشد سریع.";
+  return "ظرفیت بالاتر برای ترافیک جدی، پردازش سنگین و مقیاس‌پذیری.";
 }
 
 export function isStorefrontTier(value: unknown): value is StorefrontChinishTier {

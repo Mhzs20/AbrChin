@@ -321,6 +321,8 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
             taxBasisPoints: commerce?.taxBps ?? 1000,
             parchinLevel: parchin.level,
             parchinPriceRial: parchin.priceRial,
+            parchinTitle: parchin.title,
+            parchinVersion: parchin.version,
             termMonths,
             couponDiscountBps: quote.couponDiscountBpsSnapshot,
             couponCode: quote.couponCodeSnapshot,
@@ -367,6 +369,11 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
         providerApiVersion: quote.plan.providerApiVersion,
         productKind: quote.plan.productKind,
         parchinLevel: currentPricing.parchinLevel,
+        parchinServiceSnapshot:
+          quote.parchinServiceSnapshot === null ||
+          quote.parchinServiceSnapshot === undefined
+            ? undefined
+            : (quote.parchinServiceSnapshot as Prisma.InputJsonValue),
         productFlowState: "QUOTED",
         productFlowRevision: quote.session.productFlowRevision,
       },

@@ -12,7 +12,7 @@ import {
 import { prisma } from "@/lib/db";
 import { formatTomanFa } from "@/lib/money";
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
-import { parchinBase } from "@/lib/parchin/catalog";
+import { readParchinServiceSnapshot } from "@/lib/parchin/service-contract";
 import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
 import {
   getActiveCloudServerQuote,
@@ -43,8 +43,6 @@ export default async function ReadyServerQuotePage({
     user ? null : await getRecommendationGuestToken(),
   );
   if (!quoteRecord) {
-    // Keep the customer's configuration across gateway round trips: renew the
-    // expired quote with the same locked delivery configuration when possible.
     let replacementId: string | null = null;
     if (user) {
       try {
@@ -63,8 +61,6 @@ export default async function ReadyServerQuotePage({
     redirect("/cloud-servers?quote=expired");
   }
 
-  // Launch Amendment 1.L: storefront checkout is prepaid wallet debit.
-  // Repair leftover PAYG plans so order creation is not rejected.
   if (quoteRecord.plan.billingModel === "PAYG_WALLET") {
     await prisma.infrastructurePlan.update({
       where: { id: quoteRecord.plan.id },
@@ -101,6 +97,13 @@ export default async function ReadyServerQuotePage({
     typeof deliveryConfiguration?.operatingSystem === "string"
       ? deliveryConfiguration.operatingSystem
       : image;
+  const accessMethod =
+    typeof deliveryConfiguration?.accessMethod === "string"
+      ? deliveryConfiguration.accessMethod
+      : null;
+  const parchinContract = readParchinServiceSnapshot(
+    quoteRecord.parchinServiceSnapshot,
+  );
   const next = `/cloud-servers/quote/${quote.id}`;
   const wallet = user ? await ensureWalletForUser(user.id) : null;
 
@@ -115,7 +118,7 @@ export default async function ReadyServerQuotePage({
           <h1 id="ready-quote-title">{quote.title}</h1>
           <p>
             قیمت، ظرفیت، موقعیت و سیستم‌عامل این انتخاب برای ۱۰ دقیقه Snapshot
-            شده‌اند.
+            شده‌اند. تغییر بعدی پرچین در Admin این تعهد را عوض نمی‌کند.
           </p>
         </div>
         <Link className="button button-quiet" href="/cloud-servers">
@@ -127,7 +130,12 @@ export default async function ReadyServerQuotePage({
         <article className="ready-quote-summary">
           <div className="ready-quote-badges">
             <span><MapPin size={14} aria-hidden="true" /> {location}</span>
-            <span><ShieldCheck size={14} aria-hidden="true" /> {parchinBase.title}</span>
+            <span>
+              <ShieldCheck size={14} aria-hidden="true" />{" "}
+              {parchinContract
+                ? `${parchinContract.title} · نسخه ${parchinContract.version.toLocaleString("fa-IR")}`
+                : "پرچین"}
+            </span>
           </div>
 
           <div className="ready-quote-resources">
@@ -135,10 +143,40 @@ export default async function ReadyServerQuotePage({
             <span><small>حافظه</small><strong dir="ltr">{quote.ramGb ?? "—"} GB</strong></span>
             <span><small>فضای دیسک</small><strong dir="ltr">{quote.storageGb ?? "—"} GB</strong></span>
             <span><small>سیستم‌عامل</small><strong dir="ltr">{lockedOsLabel}</strong></span>
+            {accessMethod ? (
+              <span><small>روش دسترسی</small><strong dir="ltr">{accessMethod}</strong></span>
+            ) : null}
             {serverName ? (
               <span><small>نام سرور</small><strong dir="ltr">{serverName}</strong></span>
             ) : null}
+            <span>
+              <small>مدت</small>
+              <strong>{quote.termMonths.toLocaleString("fa-IR")} ماه</strong>
+            </span>
+            <span>
+              <small>تحویل</small>
+              <strong>فوری پس از تأیید ظرفیت</strong>
+            </span>
           </div>
+
+          {parchinContract ? (
+            <div className="ready-quote-parchin">
+              <h2>{parchinContract.title}</h2>
+              <p>{parchinContract.description}</p>
+              <h3>شامل می‌شود</h3>
+              <ul>
+                {parchinContract.includedServices.map((item) => (
+                  <li key={`in-${item}`}>{item}</li>
+                ))}
+              </ul>
+              <h3>شامل نمی‌شود</h3>
+              <ul>
+                {parchinContract.excludedServices.map((item) => (
+                  <li key={`ex-${item}`}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <ul>
             {quote.reasons.map((reason) => <li key={reason}>{reason}</li>)}

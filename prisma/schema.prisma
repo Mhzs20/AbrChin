@@ -788,6 +788,8 @@ model ServiceOrder {
   providerApiVersion     String?
   productKind            InfrastructureProductKind?
   parchinLevel           ParchinLevel?
+  /// Immutable Parchin service-contract snapshot copied from the locked Quote.
+  parchinServiceSnapshot Json?
   productFlowState       String?
   productFlowRevision    Int                           @default(0)
   paidAt                 DateTime?
@@ -1007,6 +1009,8 @@ model RecommendationQuote {
   markupAmountIrr               BigInt?
   parchinLevel                  ParchinLevel?
   parchinPriceIrr               BigInt?
+  /// Immutable Parchin service-contract snapshot (version, includes, excludes).
+  parchinServiceSnapshot        Json?
   providerAddonsSnapshot        Json?
   deliveryConfigurationSnapshot Json?
   taxBasisPointsSnapshot        Int?
@@ -2034,10 +2038,12 @@ model StorefrontAssortmentSettings {
   lastAutoAppliedAt  DateTime?
   ostovarMinVcpu     Int      @default(6)
   ostovarMinRamGb    Int      @default(12)
-  ostovarMinDiskGb   Int      @default(100)
+  /// Legacy column — Disk is not a chinish tier axis (kept for forward-compat).
+  ostovarMinDiskGb   Int      @default(0)
   kahkeshanMinVcpu   Int      @default(16)
   kahkeshanMinRamGb  Int      @default(32)
-  kahkeshanMinDiskGb Int      @default(200)
+  /// Legacy column — Disk is not a chinish tier axis (kept for forward-compat).
+  kahkeshanMinDiskGb Int      @default(0)
   /// Customer card price lines (display only; checkout stays prepaid monthly).
   showHourlyPrice    Boolean  @default(true)
   showDailyPrice     Boolean  @default(true)
@@ -2254,16 +2260,25 @@ model CommercePricingConfig {
 }
 
 model ParchinPricingConfig {
-  id          String       @id @default(cuid())
-  level       ParchinLevel @unique
-  title       String
-  description String?
-  priceRial   BigInt
-  active      Boolean      @default(true)
-  sortOrder   Int          @default(0)
-  updatedById String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id                   String       @id @default(cuid())
+  level                ParchinLevel @unique
+  /// Monotonic service-contract version. Admin edits bump this; Quote/Order keep snapshots.
+  version              Int          @default(1)
+  title                String
+  subtitle             String?
+  description          String?
+  priceRial            BigInt
+  includedServices     Json         @default("[]")
+  excludedServices     Json         @default("[]")
+  serviceLimits        Json         @default("{}")
+  supportWindow        String?
+  firstResponseTarget  String?
+  active               Boolean      @default(true)
+  effectiveFrom        DateTime     @default(now())
+  sortOrder            Int          @default(0)
+  updatedById          String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 }
 
 model ProviderCatalogAsset {

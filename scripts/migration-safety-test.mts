@@ -245,3 +245,16 @@ test("user account status migration is additive", async () => {
   assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
   assert.doesNotMatch(migration, /DELETE FROM "User"/);
 });
+
+test("storefront dominance and parchin v3 migration is additive", async () => {
+  const migration = await readFile(
+    "prisma/migrations/20260806210000_storefront_dominance_parchin_v3/migration.sql",
+    "utf8",
+  );
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "parchinServiceSnapshot"/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "includedServices"/);
+  assert.match(migration, /ostovarMinDiskGb" SET DEFAULT 0/);
+  assert.doesNotMatch(migration, /\bDROP TABLE\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM/i);
+});

@@ -19,6 +19,10 @@ import {
   type PricedInfrastructurePlan,
 } from "@/lib/orders/plans";
 import {
+  snapshotParchinServiceContract,
+  toParchinServiceContract,
+} from "@/lib/parchin/service-contract";
+import {
   getCatalogFreshness,
 } from "@/lib/infrastructure/multi-provider-catalog-service";
 import { isRegionEnabledForSale } from "@/lib/infrastructure/provider-region-config";
@@ -1035,6 +1039,14 @@ async function createCatalogServerQuote(params: {
         markupAmountIrr: plan.pricing.markupAmountRial,
         parchinLevel: plan.pricing.parchinLevel,
         parchinPriceIrr: plan.pricing.parchinPriceRial,
+        parchinServiceSnapshot: await (async () => {
+          const row = await tx.parchinPricingConfig.findUnique({
+            where: { level: plan.pricing.parchinLevel },
+          });
+          return row
+            ? snapshotParchinServiceContract(toParchinServiceContract(row))
+            : undefined;
+        })(),
         providerAddonsSnapshot: [],
         deliveryConfigurationSnapshot:
           effectiveConfiguration as unknown as Prisma.InputJsonValue,
@@ -1434,6 +1446,18 @@ export async function createRecommendationQuotes(params: {
     });
 
     if (selected.length > 0) {
+      const parchinLevels = [
+        ...new Set(selected.map(({ plan }) => plan.pricing.parchinLevel)),
+      ];
+      const parchinRows = await tx.parchinPricingConfig.findMany({
+        where: { level: { in: parchinLevels } },
+      });
+      const parchinSnapshotByLevel = new Map(
+        parchinRows.map((row) => [
+          row.level,
+          snapshotParchinServiceContract(toParchinServiceContract(row)),
+        ]),
+      );
       await tx.recommendationQuote.createMany({
         data: selected.map(
           ({
@@ -1488,6 +1512,8 @@ export async function createRecommendationQuotes(params: {
           markupAmountIrr: plan.pricing.markupAmountRial,
           parchinLevel: plan.pricing.parchinLevel,
           parchinPriceIrr: plan.pricing.parchinPriceRial,
+          parchinServiceSnapshot:
+            parchinSnapshotByLevel.get(plan.pricing.parchinLevel),
           providerAddonsSnapshot: [],
           deliveryConfigurationSnapshot:
             configuration as unknown as Prisma.InputJsonValue,

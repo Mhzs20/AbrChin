@@ -173,18 +173,61 @@ Endpointهای قدیمی (`/api/admin/infrastructure/pricing`,
 - `test:fresh-migration` و `test:migration-upgrade` سازگاری Migration تازه
   و Upgrade را با PostgreSQL ایزوله (Docker) پوشش می‌دهند.
 
-## نکات Task شماره ۲
+## نکات Task شماره ۲ (انجام‌شده روی همین Branch)
+
+- Dominated Plan Detection در `lib/storefront/dominance.ts` و کاتالوگ عمومی.
+- چینش نو/استوار/کهکشان فقط با vCPU+RAM؛ Disk از شرط Tier حذف شد.
+- قرارداد نسخه‌دار پرچین در `lib/parchin/service-contract.ts` با Snapshot روی
+  Quote/Order (`parchinServiceSnapshot`).
+- Migration:
+  `prisma/migrations/20260806210000_storefront_dominance_parchin_v3`.
+- تست: `scripts/storefront-dominance-parchin-test.mts` داخل
+  `test:recommendation`.
+
+## نکات Task شماره ۳
 
 - Endpointهای Legacy قیمت (`/api/admin/infrastructure/pricing` و
   `providers/markup`) هنوز زنده‌اند؛ اگر مصرف‌کننده دیگری ندارند می‌توان
   آن‌ها را به مسیر اتمیک Redirect یا حذف کرد.
-- `PublicPlanOffer.renewalPriceRial` حالا «یک ماه + مالیات» واقعی است؛ اگر
-  UI تمدید جداگانه ساخته می‌شود از همین فیلد استفاده شود.
-- PAYG (`lib/billing/activation.ts`) هنوز Estimate ساعتی مستقل دارد؛ خارج
-  از Scope فروش Prepaid لانچ است و اگر PAYG فعال شود باید به موتور واحد
-  مهاجرت کند.
-- باندهای قیمت Storefront (`price bands`) اکنون روی مبلغ نهایی (با پرچین و
-  VAT) فیلتر می‌کنند؛ اگر Admin باند قدیمی بر مبنای Markup-only تنظیم کرده
-  بود باید بازبینی کند.
+- PAYG (`lib/billing/activation.ts`) هنوز Estimate ساعتی مستقل دارد.
 - Impact preview روی ۲۴ پلن آخر نمونه‌گیری می‌کند؛ در صورت رشد کاتالوگ،
-  صفحه‌بندی/انتخاب هوشمند نمونه را در Task 2 اضافه کنید.
+  صفحه‌بندی/انتخاب هوشمند نمونه را اضافه کنید.
+- Finance Center UI هنوز ویرایش کامل فهرست خدمات پرچین را ساده نگه داشته؛
+  قرارداد از Migration Backfill می‌شود و Publish نسخه را بالا می‌برد.
+
+
+## Dominated Plan Detection (Task 2)
+
+در یک بازار قابل‌مقایسه (لوکیشن مشتری‌محور، Product kind، Delivery mode،
+صفات تجاری ثبت‌شده مانند ترافیک/نوع Disk/IPv4/IPv6 وقتی معتبرند):
+
+```text
+A مغلوب می‌کند B را اگر
+A.vCPU >= B.vCPU و A.RAM >= B.RAM و A.Disk >= B.Disk
+و A.finalMonthlyPrice <= B.finalMonthlyPrice
+و حداقل یکی Strictly better باشد.
+```
+
+- قیمت = `finalPriceRial` موتور تجاری Task 1 (نه Provider cost).
+- منبع ناقص مغلوب نمی‌کند.
+- بین Equals: ارزان‌ترین سپس تازه‌ترین قابل‌خرید می‌ماند.
+- Provider به‌تنهایی پلن ضعیف را حفظ نمی‌کند.
+- همه Non-dominated نمایش داده می‌شوند؛ ترتیب: قیمت، RAM، CPU، Disk.
+- Diagnostics در Admin Storefront بدون افشای Provider به مشتری.
+
+## Chinish Tiers بدون Disk
+
+```text
+نو: زیر حداقل استوار
+استوار: vCPU >= 6 و RAM >= 12GB (قابل تنظیم Admin)
+کهکشان: vCPU >= 16 و RAM >= 32GB (قابل تنظیم Admin)
+```
+
+Disk فقط مشخصه/فیلتر است. متن مشتری عبارت‌های داخلی آستانه را نشان نمی‌دهد.
+
+## قرارداد پرچین نسخه‌دار
+
+سه سطح Start / Active / Stable با `version`، `includedServices`،
+`excludedServices`، `serviceLimits`، `supportWindow`، `firstResponseTarget`.
+Snapshot روی Quote و ServiceOrder؛ Publish Admin نسخه را بالا می‌برد و سفارش
+قبلی را عوض نمی‌کند. Line Item عنوان + نسخه را ثبت می‌کند.

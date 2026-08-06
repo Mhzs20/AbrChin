@@ -138,6 +138,10 @@ export type CommercialPricingInput = {
   productMarkupBps: number;
   parchinLevel: ParchinLevel;
   parchinPriceIrr: bigint;
+  /** Customer-facing Parchin title for the line item (versioned contract). */
+  parchinTitle?: string | null;
+  /** Service-contract version snapshotted onto the line item. */
+  parchinVersion?: number | null;
   providerAddons?: Array<{ code: string; label: string; amountIrr: bigint }>;
   taxBps: number;
   /** Prepaid term length. Default 1 month. */
@@ -275,9 +279,19 @@ export function computeCommercialPriceBreakdown(
     },
     {
       type: "PARCHIN" as QuoteLineItemType,
-      label: "پرچین",
+      label:
+        input.parchinTitle && input.parchinTitle.trim()
+          ? input.parchinVersion != null
+            ? `${input.parchinTitle.trim()} · نسخه ${input.parchinVersion}`
+            : input.parchinTitle.trim()
+          : "پرچین",
       amountIrr: parchinTermIrr,
-      metadata: { level: input.parchinLevel, termMonths },
+      metadata: {
+        level: input.parchinLevel,
+        termMonths,
+        version: input.parchinVersion ?? null,
+        title: input.parchinTitle?.trim() || null,
+      },
     },
     ...addonItems,
   ];

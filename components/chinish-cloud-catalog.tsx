@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { ParchinDetailsDialog } from "@/components/parchin-details-dialog";
 import { ReadyServerQuoteButton } from "@/components/ready-server-quote-button";
 import type { PublicPlanOffer } from "@/lib/orders/plans";
 import { resolveParchinLevelLabel } from "@/lib/parchin/labels";
@@ -65,6 +66,9 @@ export function ChinishCloudCatalog({
   }, [autoExpandPlanId, tiers]);
   const [activeTier, setActiveTier] = useState(initialTier);
   const [locationFilter, setLocationFilter] = useState<LocationFilter>("ALL");
+  const [parchinOffer, setParchinOffer] = useState<PublicPlanOffer | null>(
+    null,
+  );
 
   const tier =
     tiers.find((item) => item.tier === activeTier) ?? tiers[0] ?? null;
@@ -179,116 +183,168 @@ export function ChinishCloudCatalog({
         </p>
       ) : (
         <div className="ready-cloud-grid">
-          {filteredOffers.map((offer) => (
-            <article
-              className="quick-plan-card ready-cloud-card"
-              key={`${tier.tier}-${offer.id}`}
-            >
-              <header>
-                <span className="quick-plan-label">
-                  <MapPin size={14} aria-hidden="true" />
-                  {offer.locationLabel}
-                </span>
-                <span className="quick-plan-mode">
-                  <ShieldCheck size={13} aria-hidden="true" />
-                  {offer.parchinTitle ??
-                    resolveParchinLevelLabel(offer.parchinLevel)}
-                </span>
-              </header>
+          {filteredOffers.map((offer) => {
+            const parchinTitle =
+              offer.parchinTitle ??
+              resolveParchinLevelLabel(offer.parchinLevel);
+            return (
+              <article
+                className="quick-plan-card ready-cloud-card"
+                key={`${tier.tier}-${offer.id}`}
+              >
+                <header>
+                  <span className="quick-plan-label">
+                    <MapPin size={14} aria-hidden="true" />
+                    {offer.locationLabel}
+                  </span>
+                  <span className="quick-plan-mode">
+                    <ShieldCheck size={13} aria-hidden="true" />
+                    {parchinTitle}
+                  </span>
+                </header>
 
-              <div>
-                <h3>{offer.title}</h3>
-              </div>
-
-              <div>
-                <strong style={{ display: "block", marginBottom: 8 }}>
-                  چینش فنی
-                </strong>
-                <div className="quick-plan-resources" aria-label="چینش فنی">
-                  <span>
-                    <small>
-                      <Cpu size={12} aria-hidden="true" /> پردازنده
-                    </small>
-                    <strong dir="ltr">{offer.vcpu ?? "—"} vCPU</strong>
-                  </span>
-                  <span>
-                    <small>
-                      <MemoryStick size={12} aria-hidden="true" /> حافظه
-                    </small>
-                    <strong dir="ltr">{offer.ramGb ?? "—"} GB</strong>
-                  </span>
-                  <span>
-                    <small>
-                      <Database size={12} aria-hidden="true" /> فضای دیسک
-                    </small>
-                    <strong dir="ltr">{offer.storageGb ?? "—"} GB</strong>
-                  </span>
+                <div>
+                  <h3>{offer.title}</h3>
                 </div>
-              </div>
 
-              <div className="quick-plan-price">
-                {priceDisplay.showMonthlyPrice ? (
-                  offer.salePriceRial && offer.salePriceRial !== "0" ? (
+                <div>
+                  <strong style={{ display: "block", marginBottom: 8 }}>
+                    چینش فنی
+                  </strong>
+                  <div className="quick-plan-resources" aria-label="چینش فنی">
                     <span>
-                      <strong>
-                        {formatStorefrontToman(offer.salePriceRial)}
-                      </strong>{" "}
-                      تومان در ماه
+                      <small>
+                        <Cpu size={12} aria-hidden="true" /> پردازنده
+                      </small>
+                      <strong dir="ltr">{offer.vcpu ?? "—"} vCPU</strong>
                     </span>
-                  ) : (
                     <span>
-                      <strong>قیمت ماهانه در دسترس نیست</strong>
+                      <small>
+                        <MemoryStick size={12} aria-hidden="true" /> حافظه
+                      </small>
+                      <strong dir="ltr">{offer.ramGb ?? "—"} GB</strong>
                     </span>
-                  )
-                ) : null}
-                {priceDisplay.showDailyPrice && offer.dailyPriceRial ? (
-                  <small>
-                    معادل روزانه {formatStorefrontToman(offer.dailyPriceRial)}{" "}
-                    تومان
-                  </small>
-                ) : null}
-                {priceDisplay.showHourlyPrice && offer.hourlyPriceRial ? (
-                  <small>
-                    معادل ساعتی {formatStorefrontToman(offer.hourlyPriceRial)}{" "}
-                    تومان
-                  </small>
-                ) : null}
-                {!priceDisplay.showMonthlyPrice &&
-                !priceDisplay.showDailyPrice &&
-                !priceDisplay.showHourlyPrice ? (
-                  <span>
-                    <strong>نمایش قیمت خاموش است</strong>
-                  </span>
-                ) : null}
-              </div>
+                    <span>
+                      <small>
+                        <Database size={12} aria-hidden="true" /> فضای دیسک
+                      </small>
+                      <strong dir="ltr">{offer.storageGb ?? "—"} GB</strong>
+                    </span>
+                  </div>
+                </div>
 
-              <ul>
-                <li>
-                  <ShieldCheck size={14} aria-hidden="true" />
-                  امن و آمادهٔ راه‌اندازی با پرچین
-                </li>
-                <li>
-                  <Clock3 size={14} aria-hidden="true" />
-                  زمان تحویل تقریبی: فوری
-                </li>
-              </ul>
+                <div className="parchin-card-summary">
+                  <strong>{parchinTitle}</strong>
+                  {offer.parchinSummary || offer.parchinSubtitle ? (
+                    <p>{offer.parchinSummary ?? offer.parchinSubtitle}</p>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="button button-quiet parchin-details-trigger"
+                    onClick={() => setParchinOffer(offer)}
+                  >
+                    جزئیات خدمات
+                  </button>
+                </div>
 
-              <ReadyServerQuoteButton
-                planId={offer.id}
-                productPath={
-                  offer.productKind === "READY_INSTANT_SERVER"
-                    ? "ready-servers"
-                    : "cloud-servers"
-                }
-                requireLogin={!isAuthenticated}
-                autoExpand={autoExpandPlanId === offer.id}
-                disabled={!offer.purchasable}
-                disabledReason={purchaseDisabledReason(offer)}
-              />
-            </article>
-          ))}
+                <div className="quick-plan-price">
+                  {priceDisplay.showMonthlyPrice ? (
+                    offer.salePriceRial && offer.salePriceRial !== "0" ? (
+                      <span>
+                        <strong>
+                          {formatStorefrontToman(offer.salePriceRial)}
+                        </strong>{" "}
+                        تومان در ماه
+                      </span>
+                    ) : (
+                      <span>
+                        <strong>قیمت ماهانه در دسترس نیست</strong>
+                      </span>
+                    )
+                  ) : null}
+                  {priceDisplay.showDailyPrice && offer.dailyPriceRial ? (
+                    <small>
+                      معادل روزانه {formatStorefrontToman(offer.dailyPriceRial)}{" "}
+                      تومان
+                    </small>
+                  ) : null}
+                  {priceDisplay.showHourlyPrice && offer.hourlyPriceRial ? (
+                    <small>
+                      معادل ساعتی {formatStorefrontToman(offer.hourlyPriceRial)}{" "}
+                      تومان
+                    </small>
+                  ) : null}
+                  {!priceDisplay.showMonthlyPrice &&
+                  !priceDisplay.showDailyPrice &&
+                  !priceDisplay.showHourlyPrice ? (
+                    <span>
+                      <strong>نمایش قیمت خاموش است</strong>
+                    </span>
+                  ) : null}
+                </div>
+
+                <ul>
+                  <li>
+                    <Clock3 size={14} aria-hidden="true" />
+                    زمان تحویل: فوری
+                  </li>
+                </ul>
+
+                <ReadyServerQuoteButton
+                  planId={offer.id}
+                  productPath={
+                    offer.productKind === "READY_INSTANT_SERVER"
+                      ? "ready-servers"
+                      : "cloud-servers"
+                  }
+                  requireLogin={!isAuthenticated}
+                  autoExpand={autoExpandPlanId === offer.id}
+                  disabled={!offer.purchasable}
+                  disabledReason={purchaseDisabledReason(offer)}
+                  orderSummary={{
+                    title: offer.title,
+                    locationLabel: offer.locationLabel,
+                    vcpu: offer.vcpu,
+                    ramGb: offer.ramGb,
+                    storageGb: offer.storageGb,
+                    transferTb: offer.transferTb,
+                    diskTypeLabel: offer.diskTypeLabel ?? null,
+                    ipv4Available: offer.ipv4Available ?? null,
+                    ipv6Available: offer.ipv6Available ?? null,
+                    operatingSystemLabels: offer.operatingSystemLabels,
+                    parchinTitle,
+                    parchinSummary: offer.parchinSummary ?? null,
+                    parchinIncludedServices: offer.parchinIncludedServices,
+                    parchinExcludedServices: offer.parchinExcludedServices,
+                    salePriceRial: offer.salePriceRial,
+                    renewalPriceRial: offer.renewalPriceRial,
+                    instantDelivery: offer.instantDelivery,
+                  }}
+                />
+              </article>
+            );
+          })}
         </div>
       )}
+
+      <ParchinDetailsDialog
+        open={parchinOffer != null}
+        onClose={() => setParchinOffer(null)}
+        content={
+          parchinOffer
+            ? {
+                title:
+                  parchinOffer.parchinTitle ??
+                  resolveParchinLevelLabel(parchinOffer.parchinLevel),
+                subtitle: parchinOffer.parchinSubtitle,
+                summary: parchinOffer.parchinSummary,
+                includedServices: parchinOffer.parchinIncludedServices,
+                excludedServices: parchinOffer.parchinExcludedServices,
+                monthlyPriceRial: parchinOffer.parchinMonthlyPriceRial,
+              }
+            : null
+        }
+      />
     </section>
   );
 }

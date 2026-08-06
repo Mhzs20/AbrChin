@@ -4,6 +4,8 @@ import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { formatStorefrontToman } from "@/lib/storefront/presentation";
+
 type AccessMethod =
   | "SSH_KEY"
   | "ONE_TIME_PASSWORD"
@@ -19,6 +21,26 @@ type DeliveryOptions = {
   }>;
 };
 
+export type ReadyServerOrderSummary = {
+  title: string;
+  locationLabel: string;
+  vcpu: number | null;
+  ramGb: number | null;
+  storageGb: number | null;
+  transferTb?: string | null;
+  diskTypeLabel?: string | null;
+  ipv4Available?: boolean | null;
+  ipv6Available?: boolean | null;
+  operatingSystemLabels?: string[];
+  parchinTitle: string;
+  parchinSummary?: string | null;
+  parchinIncludedServices?: string[];
+  parchinExcludedServices?: string[];
+  salePriceRial: string;
+  renewalPriceRial: string;
+  instantDelivery?: boolean;
+};
+
 const accessLabels: Record<AccessMethod, string> = {
   SSH_KEY: "کلید SSH تأییدشده",
   ONE_TIME_PASSWORD: "رمز یک‌بارمصرف لینوکس",
@@ -32,6 +54,7 @@ export function ReadyServerQuoteButton({
   disabledReason,
   requireLogin = false,
   autoExpand = false,
+  orderSummary,
 }: {
   planId: string;
   productPath?: "cloud-servers" | "ready-servers";
@@ -41,6 +64,7 @@ export function ReadyServerQuoteButton({
   requireLogin?: boolean;
   /** Open the delivery form on mount (used after login redirect). */
   autoExpand?: boolean;
+  orderSummary?: ReadyServerOrderSummary;
 }) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -191,6 +215,87 @@ export function ReadyServerQuoteButton({
     <div className="ready-server-quote-action" id={`plan-${planId}`} ref={containerRef}>
       {options ? (
         <div className="ready-server-delivery-config">
+          {orderSummary ? (
+            <div className="ready-server-order-summary" aria-label="خلاصه سفارش">
+              <strong>{orderSummary.title}</strong>
+              <ul>
+                <li>
+                  پردازنده:{" "}
+                  <span dir="ltr">{orderSummary.vcpu ?? "—"} vCPU</span>
+                </li>
+                <li>
+                  حافظه: <span dir="ltr">{orderSummary.ramGb ?? "—"} GB</span>
+                </li>
+                <li>
+                  دیسک:{" "}
+                  <span dir="ltr">{orderSummary.storageGb ?? "—"} GB</span>
+                </li>
+                <li>موقعیت: {orderSummary.locationLabel}</li>
+                {orderSummary.operatingSystemLabels &&
+                orderSummary.operatingSystemLabels.length > 0 ? (
+                  <li>
+                    سیستم‌عامل‌های قابل نصب:{" "}
+                    {orderSummary.operatingSystemLabels.join("، ")}
+                  </li>
+                ) : null}
+                {orderSummary.transferTb ? (
+                  <li>
+                    ترافیک: <span dir="ltr">{orderSummary.transferTb}</span>
+                  </li>
+                ) : null}
+                {orderSummary.diskTypeLabel ? (
+                  <li>نوع دیسک: {orderSummary.diskTypeLabel}</li>
+                ) : null}
+                {orderSummary.ipv4Available != null ? (
+                  <li>
+                    IPv4: {orderSummary.ipv4Available ? "دارد" : "ندارد"}
+                  </li>
+                ) : null}
+                {orderSummary.ipv6Available != null ? (
+                  <li>
+                    IPv6: {orderSummary.ipv6Available ? "دارد" : "ندارد"}
+                  </li>
+                ) : null}
+                <li>پرچین: {orderSummary.parchinTitle}</li>
+                {orderSummary.parchinSummary ? (
+                  <li>{orderSummary.parchinSummary}</li>
+                ) : null}
+                {orderSummary.instantDelivery !== false ? (
+                  <li>تحویل فوری پس از تأیید ظرفیت</li>
+                ) : null}
+                <li>
+                  قیمت پایه یک‌ماهه:{" "}
+                  {formatStorefrontToman(orderSummary.salePriceRial)} تومان
+                </li>
+                <li>
+                  مبلغ تمدید ماهانه:{" "}
+                  {formatStorefrontToman(orderSummary.renewalPriceRial)} تومان
+                </li>
+              </ul>
+              {orderSummary.parchinIncludedServices &&
+              orderSummary.parchinIncludedServices.length > 0 ? (
+                <details>
+                  <summary>خدمات پرچین</summary>
+                  <ul>
+                    {orderSummary.parchinIncludedServices.map((item) => (
+                      <li key={`inc-${item}`}>{item}</li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+              {orderSummary.parchinExcludedServices &&
+              orderSummary.parchinExcludedServices.length > 0 ? (
+                <details>
+                  <summary>خارج از پرچین</summary>
+                  <ul>
+                    {orderSummary.parchinExcludedServices.map((item) => (
+                      <li key={`exc-${item}`}>{item}</li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+            </div>
+          ) : null}
           <label>
             سیستم‌عامل
             <select
@@ -261,7 +366,7 @@ export function ReadyServerQuoteButton({
           </label>
           <small>
             با کد تخفیف خرید سرور، تخفیف ثابت ۵/۱۰/۲۰٪ دوره حذف و درصد کد اعمال
-            می‌شود.
+            می‌شود. مبلغ نهایی، مالیات و تفکیک خطی روی صفحه Quote قفل می‌شود.
           </small>
           {accessMethod === "SSH_KEY" ? (
             <label>

@@ -890,13 +890,28 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
     ),
     "KAHKESHAN",
   );
-  // Boundary: just below Ostovar floor stays in Nu; Ostovar min is Nu max.
+  // Disk must not keep a strong CPU/RAM plan out of کهکشان / استوار.
+  assert.equal(
+    classifyStorefrontCapacityTier(
+      { vcpu: 16, ramGb: 32, diskGb: 75 },
+      DEFAULT_STOREFRONT_CAPACITY_RULES,
+    ),
+    "KAHKESHAN",
+  );
+  assert.equal(
+    classifyStorefrontCapacityTier(
+      { vcpu: 6, ramGb: 12, diskGb: 50 },
+      DEFAULT_STOREFRONT_CAPACITY_RULES,
+    ),
+    "OSTOVAR",
+  );
+  // Boundary: just below Ostovar floor stays in Nu.
   assert.equal(
     classifyStorefrontCapacityTier(
       {
         vcpu: DEFAULT_STOREFRONT_CAPACITY_RULES.ostovarMinVcpu - 1,
         ramGb: DEFAULT_STOREFRONT_CAPACITY_RULES.ostovarMinRamGb,
-        diskGb: DEFAULT_STOREFRONT_CAPACITY_RULES.ostovarMinDiskGb,
+        diskGb: 500,
       },
       DEFAULT_STOREFRONT_CAPACITY_RULES,
     ),

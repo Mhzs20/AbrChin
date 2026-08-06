@@ -38,27 +38,34 @@ import {
   ensureStorefrontSaleReady,
 } from "@/lib/storefront/ensure-sale-plans";
 import {
-  compareOffersByAssortmentStyle,
   offerMatchesTierPriceBand,
   priceBandsFromSettings,
 } from "@/lib/storefront/price-bands";
 import {
+  extractCatalogCommercialTraits,
+  filterDominatedPlans,
+  locationKeyForRegion,
+  type DominanceCandidate,
+  type DominanceRemoval,
+} from "@/lib/storefront/dominance";
+import {
   isStorefrontDisplayFresh,
   storefrontLocationLabel,
-  storefrontLocationZone,
   storefrontParchinForTier,
   storefrontServerTitle,
-  type StorefrontLocationZone,
 } from "@/lib/storefront/presentation";
 import {
   STOREFRONT_DISPLAY_LIMIT,
   STOREFRONT_PRIMARY_LIMIT,
   STOREFRONT_RESERVE_LIMIT,
   STOREFRONT_TIERS,
-  STOREFRONT_ZONE_TARGET,
   storefrontTierDescription,
   storefrontTierLabel,
 } from "@/lib/storefront/tiers";
+import {
+  oneLineParchinSummary,
+  toParchinServiceContract,
+} from "@/lib/parchin/service-contract";
 
 export type StorefrontSlotInput = {
   catalogItemId: string;
@@ -78,6 +85,7 @@ export type StorefrontTierAdminView = {
   primary: Array<StorefrontSlotAdminRow>;
   reserve: Array<StorefrontSlotAdminRow>;
   preview: PublicPlanOffer[];
+  dominance: StorefrontDominanceDiagnostics;
 };
 
 export type StorefrontSlotAdminRow = {
@@ -113,6 +121,16 @@ export type StorefrontPublicTier = {
   offers: PublicPlanOffer[];
 };
 
+export type StorefrontDominanceDiagnostics = {
+  rawCount: number;
+  incompleteCount: number;
+  notPurchasableCount: number;
+  duplicateCount: number;
+  dominatedCount: number;
+  finalCount: number;
+  removals: DominanceRemoval[];
+};
+
 function isCatalogItemDisplayable(
   item: ProviderCatalogItem,
   catalogFresh: boolean,
@@ -138,6 +156,14 @@ function toPublicOffer(input: {
   purchasable: boolean;
   planId?: string;
   parchinTitle?: string;
+  parchinSubtitle?: string;
+  parchinSummary?: string;
+  parchinIncludedServices?: string[];
+  parchinExcludedServices?: string[];
+  parchinMonthlyPriceRial?: string;
+  diskTypeLabel?: string | null;
+  ipv4Available?: boolean | null;
+  ipv6Available?: boolean | null;
 }): PublicPlanOffer {
   // Card price = the exact one-month final amount from the unified engine —
   // identical to the quote/checkout amount for the same plan. Display-only
@@ -174,6 +200,14 @@ function toPublicOffer(input: {
       input.item.ramMb == null ? null : Math.ceil(input.item.ramMb / 1024),
     storageGb: input.item.diskGb,
     transferTb: input.item.transfer,
+    diskTypeLabel: input.diskTypeLabel ?? null,
+    ipv4Available: input.ipv4Available ?? null,
+    ipv6Available: input.ipv6Available ?? null,
+    parchinSubtitle: input.parchinSubtitle,
+    parchinSummary: input.parchinSummary,
+    parchinIncludedServices: input.parchinIncludedServices,
+    parchinExcludedServices: input.parchinExcludedServices,
+    parchinMonthlyPriceRial: input.parchinMonthlyPriceRial,
     // Never expose supplier economics on the customer storefront payload.
     providerBaseHourlyPriceRial: null,
     providerBaseMonthlyPriceRial: "0",
@@ -293,12 +327,16 @@ async function loadPricingContext() {
   const parchinTitleByLevel = new Map(
     parchinRows.map((row) => [row.level, row.title.trim()]),
   );
+  const parchinContractByLevel = new Map(
+    parchinRows.map((row) => [row.level, toParchinServiceContract(row)]),
+  );
   return {
     providers,
     products,
     commerce,
     parchinByLevel,
     parchinTitleByLevel,
+    parchinContractByLevel,
     freshnessByProvider,
     regionSale,
     publishedByCatalogItemId,
@@ -345,14 +383,35 @@ function buildOfferForItem(
           parchinLevel: pricingParchinLevel,
           parchinPriceRial:
             context.parchinByLevel.get(pricingParchinLevel) ?? 0n,
+          parchinTitle:
+            context.parchinContractByLevel.get(pricingParchinLevel)?.title,
+          parchinVersion:
+            context.parchinContractByLevel.get(pricingParchinLevel)?.version,
           termMonths: 1,
         })
       : null;
   const fallbackTaxBasisPoints = context.commerce?.taxBps ?? 1000;
 
-  const parchinTitle =
-    context.parchinTitleByLevel.get(storefrontParchinForTier(tier)) ||
-    undefined;
+  const brandingLevel = storefrontParchinForTier(tier);
+  const brandingContract =
+    context.parchinContractByLevel.get(brandingLevel) ?? null;
+  const traits = extractCatalogCommercialTraits({
+    transfer: item.transfer,
+    rawPayload: item.rawPayload,
+  });
+  const parchinTitle = brandingContract?.title || undefined;
+  const parchinSubtitle = brandingContract?.subtitle || undefined;
+  const parchinSummary = brandingContract
+    ? oneLineParchinSummary(brandingContract)
+    : undefined;
+  const parchinIncludedServices = brandingContract?.includedServices;
+  const parchinExcludedServices = brandingContract?.excludedServices;
+  const parchinMonthlyPriceRial = brandingContract?.monthlyPriceRial;
+  const diskTypeLabel = traits.diskTypeKey;
+  const ipv4Available =
+    traits.ipv4Key == null ? null : traits.ipv4Key === "yes";
+  const ipv6Available =
+    traits.ipv6Key == null ? null : traits.ipv6Key === "yes";
 
   if (published) {
     const access = resolveCatalogOfferAccess({
@@ -376,6 +435,14 @@ function buildOfferForItem(
       purchasable: access.purchasable,
       planId: published.id,
       parchinTitle,
+      parchinSubtitle,
+      parchinSummary,
+      parchinIncludedServices,
+      parchinExcludedServices,
+      parchinMonthlyPriceRial,
+      diskTypeLabel,
+      ipv4Available,
+      ipv6Available,
     });
   }
 
@@ -398,6 +465,14 @@ function buildOfferForItem(
         : "UNAVAILABLE",
     purchasable: false,
     parchinTitle,
+    parchinSubtitle,
+    parchinSummary,
+    parchinIncludedServices,
+    parchinExcludedServices,
+    parchinMonthlyPriceRial,
+    diskTypeLabel,
+    ipv4Available,
+    ipv6Available,
   });
 }
 
@@ -426,24 +501,12 @@ function offerMatchesStorefrontTier(
 ) {
   const vcpu = offer.vcpu ?? 0;
   const ramGb = offer.ramGb ?? 0;
-  const diskGb = offer.storageGb ?? 0;
   if (vcpu <= 0 || ramGb <= 0) return false;
-  if (
-    classifyStorefrontCapacityTier({ vcpu, ramGb, diskGb }, rules) !== tier
-  ) {
+  if (classifyStorefrontCapacityTier({ vcpu, ramGb }, rules) !== tier) {
     return false;
   }
   const monthly = BigInt(offer.salePriceRial || "0");
   return offerMatchesTierPriceBand(monthly, priceBands[tier]);
-}
-
-function zoneCount(
-  offers: PublicPlanOffer[],
-  zone: StorefrontLocationZone,
-) {
-  return offers.filter(
-    (offer) => storefrontLocationZone(offer.regionCode) === zone,
-  ).length;
 }
 
 async function publishCatalogItems(items: ProviderCatalogItem[]) {
@@ -455,11 +518,63 @@ async function publishCatalogItems(items: ProviderCatalogItem[]) {
   }
 }
 
+type OfferDominanceRow = DominanceCandidate & {
+  offer: PublicPlanOffer;
+  item: ProviderCatalogItem;
+};
+
+function toDominanceRow(
+  offer: PublicPlanOffer,
+  item: ProviderCatalogItem,
+): OfferDominanceRow {
+  const traits = extractCatalogCommercialTraits({
+    transfer: item.transfer,
+    rawPayload: item.rawPayload,
+  });
+  return {
+    id: offer.id,
+    locationKey: locationKeyForRegion(offer.regionCode),
+    productKind: offer.productKind,
+    deliveryMode: offer.deliveryMode,
+    purchasable: offer.purchasable && offer.available,
+    vcpu: offer.vcpu,
+    ramGb: offer.ramGb,
+    diskGb: offer.storageGb,
+    finalMonthlyPriceRial: BigInt(offer.salePriceRial || "0"),
+    checkedAtMs: Date.parse(offer.checkedAt) || 0,
+    traits,
+    offer,
+    item,
+  };
+}
+
+function applyDominanceToOffers(
+  rows: OfferDominanceRow[],
+): {
+  offers: PublicPlanOffer[];
+  diagnostics: StorefrontDominanceDiagnostics;
+} {
+  const filtered = filterDominatedPlans(rows);
+  return {
+    offers: filtered.kept.map((row) => row.offer),
+    diagnostics: {
+      ...filtered.stats,
+      removals: filtered.removed,
+    },
+  };
+}
+
+/**
+ * Public chinish listing: all non-dominated purchasable plans in the tier,
+ * sorted by final commercial price → RAM → CPU → Disk.
+ * Curated slots are preferred seed order only; they do not hide rational peers.
+ */
 export async function resolveStorefrontTierOffers(
   tier: StorefrontChinishTier,
 ): Promise<{
   availableCount: number;
   offers: PublicPlanOffer[];
+  diagnostics: StorefrontDominanceDiagnostics;
 }> {
   const [slots, settings] = await Promise.all([
     prisma.storefrontAssortmentSlot.findMany({
@@ -486,7 +601,6 @@ export async function resolveStorefrontTierOffers(
     kahkeshanMinDiskGb: settings.kahkeshanMinDiskGb,
   };
   const priceBands = priceBandsFromSettings(settings);
-  const assortmentStyle = settings.assortmentStyle;
 
   const slotItems = [...slots]
     .sort((a, b) => {
@@ -496,123 +610,114 @@ export async function resolveStorefrontTierOffers(
     .map((slot) => slot.catalogItem)
     .filter((item): item is ProviderCatalogItem => item != null);
 
-  // Extra catalog pool for Iran/abroad fill when curated slots are thin.
-  const fillPool = await prisma.providerCatalogItem.findMany({
-    where: {
-      provider: { in: ["ARVAN", "PARSPACK"] },
-      source: "API_CATALOG",
-      active: true,
-      available: true,
-      status: "ACTIVE",
-      OR: [
-        { providerHourlyPriceIrr: { gt: 0n } },
-        { providerMonthlyPriceIrr: { gt: 0n } },
-      ],
-    },
-    orderBy: [{ vcpu: "asc" }, { ramMb: "asc" }, { diskGb: "asc" }],
-    take: 240,
-  });
+  // Full catalog pool for the tier — public listing is not capped to a curated 3/24.
+  const [arvanPool, parsPackPool] = await Promise.all([
+    prisma.providerCatalogItem.findMany({
+      where: {
+        provider: "ARVAN",
+        source: "API_CATALOG",
+        active: true,
+        available: true,
+        status: "ACTIVE",
+        OR: [
+          { providerHourlyPriceIrr: { gt: 0n } },
+          { providerMonthlyPriceIrr: { gt: 0n } },
+        ],
+      },
+      orderBy: [{ vcpu: "asc" }, { ramMb: "asc" }, { diskGb: "asc" }],
+      take: 5000,
+    }),
+    prisma.providerCatalogItem.findMany({
+      where: {
+        provider: "PARSPACK",
+        source: "API_CATALOG",
+        active: true,
+        available: true,
+        status: "ACTIVE",
+        OR: [
+          { providerHourlyPriceIrr: { gt: 0n } },
+          { providerMonthlyPriceIrr: { gt: 0n } },
+        ],
+      },
+      orderBy: [{ vcpu: "asc" }, { ramMb: "asc" }, { diskGb: "asc" }],
+      take: 5000,
+    }),
+  ]);
+  const fillPool = [...arvanPool, ...parsPackPool];
 
-  const publishCandidates = [...slotItems, ...fillPool].filter((item) => {
+  const byId = new Map<string, ProviderCatalogItem>();
+  for (const item of [...slotItems, ...fillPool]) {
+    if (!byId.has(item.id)) byId.set(item.id, item);
+  }
+  const publishCandidates = [...byId.values()].filter((item) => {
     const vcpu = item.vcpu ?? 0;
     const ramGb = item.ramMb == null ? 0 : Math.ceil(item.ramMb / 1024);
-    const diskGb = item.diskGb ?? 0;
     if (vcpu <= 0 || ramGb <= 0) return false;
     return (
-      classifyStorefrontCapacityTier(
-        { vcpu, ramGb, diskGb },
-        capacityRules,
-      ) === tier
+      classifyStorefrontCapacityTier({ vcpu, ramGb }, capacityRules) === tier
     );
   });
   await publishCatalogItems(publishCandidates);
 
   let context = await loadPricingContext();
-  const selectedItems: ProviderCatalogItem[] = [];
-  const selected: PublicPlanOffer[] = [];
-  const usedIds = new Set<string>();
-  const seenResources = new Set<string>();
+  const rawRows: OfferDominanceRow[] = [];
+  const seenOfferIds = new Set<string>();
 
-  function tryPush(item: ProviderCatalogItem) {
-    if (usedIds.has(item.id) || selected.length >= STOREFRONT_DISPLAY_LIMIT) {
-      return false;
-    }
+  function consider(item: ProviderCatalogItem) {
     const offer = buildOfferForItem(item, tier, context);
-    if (!offer || !offer.available) return false;
+    if (!offer) return;
     if (!offerMatchesStorefrontTier(offer, tier, capacityRules, priceBands)) {
-      return false;
+      return;
     }
-    const fingerprint = `${offer.vcpu ?? 0}:${offer.ramGb ?? 0}:${offer.storageGb ?? 0}`;
-    if (seenResources.has(fingerprint)) return false;
-    usedIds.add(item.id);
-    seenResources.add(fingerprint);
-    selectedItems.push(item);
-    selected.push(offer);
-    return true;
+    if (seenOfferIds.has(offer.id)) return;
+    seenOfferIds.add(offer.id);
+    rawRows.push(toDominanceRow(offer, item));
   }
 
-  for (const item of slotItems) {
-    tryPush(item);
-  }
+  for (const item of slotItems) consider(item);
+  for (const item of publishCandidates) consider(item);
 
-  function fillZone(zone: StorefrontLocationZone) {
-    let guard = 0;
-    while (
-      zoneCount(selected, zone) < STOREFRONT_ZONE_TARGET &&
-      selected.length < STOREFRONT_DISPLAY_LIMIT &&
-      guard < fillPool.length
-    ) {
-      guard += 1;
-      const next = fillPool.find((item) => {
-        if (usedIds.has(item.id)) return false;
-        if (storefrontLocationZone(item.regionCode) !== zone) return false;
-        const vcpu = item.vcpu ?? 0;
-        const ramGb = item.ramMb == null ? 0 : Math.ceil(item.ramMb / 1024);
-        const diskGb = item.diskGb ?? 0;
-        if (vcpu <= 0 || ramGb <= 0) return false;
-        return (
-          classifyStorefrontCapacityTier(
-            { vcpu, ramGb, diskGb },
-            capacityRules,
-          ) === tier
-        );
-      });
-      if (!next) break;
-      if (!tryPush(next)) {
-        usedIds.add(next.id);
-      }
-    }
-  }
-
-  fillZone("IRAN");
-  fillZone("ABROAD");
-
-  // Rebuild after publish so SKU_UNPUBLISHED becomes PURCHASABLE.
+  // Rebuild after publish so SKU_UNPUBLISHED becomes PURCHASABLE where possible.
   context = await loadPricingContext();
-  const refreshed = selectedItems
-    .flatMap((item) => {
-      const rebuilt = buildOfferForItem(item, tier, context);
-      if (!rebuilt) return [];
-      if (
-        !offerMatchesStorefrontTier(
-          rebuilt,
-          tier,
-          capacityRules,
-          priceBands,
-        )
-      ) {
-        return [];
-      }
-      return [rebuilt];
-    })
-    .sort((a, b) =>
-      compareOffersByAssortmentStyle(a, b, assortmentStyle),
-    );
+  const refreshedRows: OfferDominanceRow[] = [];
+  for (const row of rawRows) {
+    const rebuilt = buildOfferForItem(row.item, tier, context);
+    if (!rebuilt) continue;
+    if (
+      !offerMatchesStorefrontTier(rebuilt, tier, capacityRules, priceBands)
+    ) {
+      continue;
+    }
+    refreshedRows.push(toDominanceRow(rebuilt, row.item));
+  }
+
+  const { offers: rationalized, diagnostics } =
+    applyDominanceToOffers(refreshedRows);
+  const capped =
+    rationalized.length > STOREFRONT_DISPLAY_LIMIT
+      ? rationalized.slice(0, STOREFRONT_DISPLAY_LIMIT)
+      : rationalized;
 
   return {
-    availableCount: refreshed.length,
-    offers: withStorefrontDisplayTitles(refreshed),
+    availableCount: capped.length,
+    offers: withStorefrontDisplayTitles(capped),
+    diagnostics,
   };
+}
+
+export async function getStorefrontDominanceDiagnostics(): Promise<
+  Record<StorefrontChinishTier, StorefrontDominanceDiagnostics>
+> {
+  const entries = await Promise.all(
+    STOREFRONT_TIERS.map(async (tier) => {
+      const result = await resolveStorefrontTierOffers(tier);
+      return [tier, result.diagnostics] as const;
+    }),
+  );
+  return Object.fromEntries(entries) as Record<
+    StorefrontChinishTier,
+    StorefrontDominanceDiagnostics
+  >;
 }
 
 export async function listPublicStorefrontTiers(): Promise<{
@@ -808,6 +913,7 @@ export async function getStorefrontAssortmentAdminView(): Promise<
         primary: rows.filter((row) => row.role === "PRIMARY"),
         reserve: rows.filter((row) => row.role === "RESERVE"),
         preview: resolved.offers,
+        dominance: resolved.diagnostics,
       };
     }),
   );

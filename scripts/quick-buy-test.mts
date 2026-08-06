@@ -27,8 +27,11 @@ test("cloud and ready purchase routes stay provider-separated before login", asy
   assert.doesNotMatch(chinish, /همگام‌شده/);
   assert.doesNotMatch(chinish, /سیستم‌عامل‌های مجاز/);
   assert.match(quoteButton, /ثبت سفارش/);
-  assert.match(chinish, /امن و آمادهٔ راه‌اندازی با پرچین/);
-  assert.match(chinish, /زمان تحویل تقریبی: فوری/);
+  assert.match(chinish, /زمان تحویل: فوری/);
+  assert.match(chinish, /جزئیات خدمات/);
+  assert.match(chinish, /ParchinDetailsDialog/);
+  assert.match(quoteButton, /goToLogin|login\?next=/);
+  assert.doesNotMatch(chinish, /زمان تحویل تقریبی/);
 });
 
 test("customer recommendation UI does not reveal infrastructure providers", async () => {

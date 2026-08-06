@@ -53,9 +53,14 @@ export type FinanceProductMarkupInput = {
 export type FinanceParchinInput = {
   level: ParchinLevel;
   title: string;
+  subtitle?: string | null;
   description: string | null;
   priceRial: bigint;
   active: boolean;
+  includedServices?: string[];
+  excludedServices?: string[];
+  supportWindow?: string | null;
+  firstResponseTarget?: string | null;
 };
 
 export type FinanceConfigurationInput = {
@@ -125,9 +130,14 @@ export function financeConfigurationSnapshot(input: FinanceConfigurationInput) {
     parchin: input.parchin.map((item) => ({
       level: item.level,
       title: item.title,
+      subtitle: item.subtitle ?? null,
       description: item.description,
       priceRial: item.priceRial.toString(),
       active: item.active,
+      includedServices: item.includedServices ?? [],
+      excludedServices: item.excludedServices ?? [],
+      supportWindow: item.supportWindow ?? null,
+      firstResponseTarget: item.firstResponseTarget ?? null,
     })),
     priceDisplay: input.priceDisplay,
   };
@@ -292,10 +302,21 @@ export async function readFinanceConfiguration() {
     },
     parchin: parchin.map((row) => ({
       level: row.level,
+      version: row.version,
       title: row.title,
+      subtitle: row.subtitle,
       description: row.description,
       priceRial: row.priceRial.toString(),
       active: row.active,
+      includedServices: Array.isArray(row.includedServices)
+        ? row.includedServices
+        : [],
+      excludedServices: Array.isArray(row.excludedServices)
+        ? row.excludedServices
+        : [],
+      supportWindow: row.supportWindow,
+      firstResponseTarget: row.firstResponseTarget,
+      effectiveFrom: row.effectiveFrom.toISOString(),
     })),
     priceDisplay: {
       showHourlyPrice: storefront?.showHourlyPrice ?? true,
@@ -405,13 +426,25 @@ export async function applyFinanceConfiguration(params: {
       },
     });
     for (const item of input.parchin) {
+      const existing = await tx.parchinPricingConfig.findUnique({
+        where: { level: item.level },
+      });
+      const nextVersion = (existing?.version ?? 1) + 1;
       await tx.parchinPricingConfig.update({
         where: { level: item.level },
         data: {
           title: item.title,
+          subtitle: item.subtitle ?? existing?.subtitle ?? null,
           description: item.description,
           priceRial: item.priceRial,
           active: item.active,
+          includedServices: item.includedServices ?? undefined,
+          excludedServices: item.excludedServices ?? undefined,
+          supportWindow: item.supportWindow ?? existing?.supportWindow ?? null,
+          firstResponseTarget:
+            item.firstResponseTarget ?? existing?.firstResponseTarget ?? null,
+          version: nextVersion,
+          effectiveFrom: new Date(),
           updatedById: actorUserId,
         },
       });
@@ -535,10 +568,27 @@ function financeInputFromSnapshot(snapshot: unknown): FinanceConfigurationInput 
       return {
         level: item.level as ParchinLevel,
         title: String(item.title ?? ""),
+        subtitle: typeof item.subtitle === "string" ? item.subtitle : null,
         description:
           typeof item.description === "string" ? item.description : null,
         priceRial: BigInt(String(item.priceRial ?? "0")),
         active: item.active === true,
+        includedServices: Array.isArray(item.includedServices)
+          ? item.includedServices.filter(
+              (entry): entry is string => typeof entry === "string",
+            )
+          : [],
+        excludedServices: Array.isArray(item.excludedServices)
+          ? item.excludedServices.filter(
+              (entry): entry is string => typeof entry === "string",
+            )
+          : [],
+        supportWindow:
+          typeof item.supportWindow === "string" ? item.supportWindow : null,
+        firstResponseTarget:
+          typeof item.firstResponseTarget === "string"
+            ? item.firstResponseTarget
+            : null,
       };
     }),
     priceDisplay: {
@@ -675,10 +725,18 @@ function candidateAsPricingConfigs(
       .map((item, index) => ({
         id: `parchin:${item.level}`,
         level: item.level,
+        version: 1,
         title: item.title,
+        subtitle: item.subtitle ?? null,
         description: item.description,
         priceRial: item.priceRial,
+        includedServices: item.includedServices ?? [],
+        excludedServices: item.excludedServices ?? [],
+        serviceLimits: {},
+        supportWindow: item.supportWindow ?? null,
+        firstResponseTarget: item.firstResponseTarget ?? null,
         active: item.active,
+        effectiveFrom: now,
         sortOrder: index,
         updatedById: null,
         createdAt: now,
@@ -763,9 +821,18 @@ export async function previewFinanceImpact(input: FinanceConfigurationInput) {
     parchin: current.parchin.map((item) => ({
       level: item.level,
       title: item.title,
+      subtitle: item.subtitle,
       description: item.description,
       priceRial: BigInt(item.priceRial),
       active: item.active,
+      includedServices: Array.isArray(item.includedServices)
+        ? (item.includedServices as string[])
+        : [],
+      excludedServices: Array.isArray(item.excludedServices)
+        ? (item.excludedServices as string[])
+        : [],
+      supportWindow: item.supportWindow,
+      firstResponseTarget: item.firstResponseTarget,
     })),
     priceDisplay: current.priceDisplay,
   };
