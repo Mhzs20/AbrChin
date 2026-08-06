@@ -255,27 +255,23 @@ export function toStorefrontSettingsView(
     priceBandsToman: {
       NO: {
         min: rialToTomanNumber(bands.NO.minMonthlyPriceRial),
-        max:
-          bands.NO.maxMonthlyPriceRial == null
-            ? ""
-            : rialToTomanNumber(bands.NO.maxMonthlyPriceRial),
+        max: toTierMaxToman(bands.NO.maxMonthlyPriceRial),
       },
       OSTOVAR: {
         min: rialToTomanNumber(bands.OSTOVAR.minMonthlyPriceRial),
-        max:
-          bands.OSTOVAR.maxMonthlyPriceRial == null
-            ? ""
-            : rialToTomanNumber(bands.OSTOVAR.maxMonthlyPriceRial),
+        max: toTierMaxToman(bands.OSTOVAR.maxMonthlyPriceRial),
       },
       KAHKESHAN: {
         min: rialToTomanNumber(bands.KAHKESHAN.minMonthlyPriceRial),
-        max:
-          bands.KAHKESHAN.maxMonthlyPriceRial == null
-            ? ""
-            : rialToTomanNumber(bands.KAHKESHAN.maxMonthlyPriceRial),
+        max: toTierMaxToman(bands.KAHKESHAN.maxMonthlyPriceRial),
       },
     },
   };
+}
+
+function toTierMaxToman(maxRial: bigint | null | undefined): number | "" {
+  if (maxRial == null) return "";
+  return rialToTomanNumber(maxRial);
 }
 
 export async function getStorefrontAssortmentSettings() {
