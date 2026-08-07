@@ -1481,28 +1481,31 @@ export function ConversationBuilder({
                             setQuotes([]);
                           }}
                         >
-                          <option value={1}>۱ ماه</option>
+                          <option value={1}>۱ ماه — بدون تخفیف دوره</option>
                           <option value={3}>۳ ماه · تا ۵٪ تخفیف</option>
                           <option value={6}>۶ ماه · تا ۱۰٪ تخفیف</option>
                           <option value={12}>۱۲ ماه · تا ۲۰٪ تخفیف</option>
                         </select>
                       </label>
-                      <label>
-                        کد تخفیف سرور (اختیاری)
-                        <input
-                          value={couponCode}
-                          onChange={(event) =>
-                            setCouponCode(event.target.value.toUpperCase())
-                          }
-                          onBlur={() => {
-                            setQuotesResolved(false);
-                            setQuotes([]);
-                            setQuotesRetry((current) => current + 1);
-                          }}
-                          placeholder="مثلاً LAUNCH20"
-                          maxLength={32}
-                        />
-                      </label>
+                      <details className="ready-server-coupon">
+                        <summary>کد تخفیف دارید؟</summary>
+                        <label>
+                          کد تخفیف سرور
+                          <input
+                            value={couponCode}
+                            onChange={(event) =>
+                              setCouponCode(event.target.value.toUpperCase())
+                            }
+                            onBlur={() => {
+                              setQuotesResolved(false);
+                              setQuotes([]);
+                              setQuotesRetry((current) => current + 1);
+                            }}
+                            placeholder="مثلاً LAUNCH20"
+                            maxLength={32}
+                          />
+                        </label>
+                      </details>
                     </div>
                   ) : null}
                   {!deliveryConfigured ? (

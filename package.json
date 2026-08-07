@@ -25,7 +25,7 @@
     "test:connection-check": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/arvan-connection-check-test.mts",
     "test:catalog-sync": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/catalog-sync-test.mts",
     "test:wallet-activation": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/wallet-activation-postgres-test.mts",
-    "test:customer-navigation": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/customer-wallet-navigation-test.mts",
+    "test:customer-navigation": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/customer-wallet-navigation-test.mts scripts/wallet-first-checkout-test.mts",
     "test:delivery-credential": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/delivery-credential-postgres-test.mts",
     "test:admin-operations": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/admin-operations-postgres-test.mts",
     "test:financial-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/financial-postgres-test.mts",

@@ -34,11 +34,14 @@ function ResultInner() {
         const data = await response.json();
         if (cancelled) return;
         setDetail(data.topUp?.status || "");
-        setResumePath(
+        const apiResume =
           typeof data.topUp?.resumePath === "string"
             ? data.topUp.resumePath
-            : null,
-        );
+            : null;
+        // Prefer explicit quote returnTo from checkout; never wipe it with null.
+        if (apiResume) {
+          setResumePath(apiResume);
+        }
         setRetryable(Boolean(data.topUp?.retryable));
         if (data.topUp?.status === "SUCCEEDED" || data.topUp?.status === "FAILED" || data.topUp?.status === "CANCELED" || attempts >= 8) {
           window.clearInterval(timer);
@@ -111,8 +114,14 @@ function ResultInner() {
           </button>
         ) : null}
         {resumePath && (status === "success" || detail === "SUCCEEDED") ? (
-          <Link className="button button-primary" href={resumePath}>
-            ادامه مسیر فعال‌سازی
+          <Link
+            className="button button-primary"
+            href={resumePath}
+            onClick={() => {
+              window.sessionStorage.removeItem("abrchin.walletTopup.returnTo");
+            }}
+          >
+            ادامه خرید
           </Link>
         ) : null}
         <Link className="button button-primary" href="/account/wallet">کیف پول</Link>
