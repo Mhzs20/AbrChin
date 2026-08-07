@@ -7,7 +7,8 @@ import {
   normalizeEmail,
   validatePersonName,
 } from "@/lib/identity/names";
-import type { PublicUser } from "@/lib/session";
+import type { PublicUser } from "@/lib/session-user";
+import { toPublicUser } from "@/lib/session-user";
 import { WalletError } from "@/lib/wallet/errors";
 
 export type CompleteRegistrationInput = {
@@ -43,7 +44,6 @@ export async function completeCustomerRegistration(
     user.lastName === last.value &&
     user.email === email.email
   ) {
-    const { toPublicUser } = await import("@/lib/session");
     return toPublicUser(user);
   }
 
@@ -83,7 +83,6 @@ export async function completeCustomerRegistration(
         registrationCompletedAt: now,
       },
     });
-    const { toPublicUser } = await import("@/lib/session");
     return toPublicUser(updated);
   } catch (error) {
     if (

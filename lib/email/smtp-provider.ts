@@ -13,7 +13,11 @@ export type SmtpConfig = {
 };
 
 export class SmtpEmailProvider implements EmailProvider {
-  constructor(private readonly config: SmtpConfig) {}
+  private readonly config: SmtpConfig;
+
+  constructor(config: SmtpConfig) {
+    this.config = config;
+  }
 
   async send(input: SendEmailInput): Promise<void> {
     const transporter = nodemailer.createTransport({

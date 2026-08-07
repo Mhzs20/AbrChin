@@ -6,15 +6,15 @@ export type SendEmailInput = {
 };
 
 export class EmailDeliveryError extends Error {
+  readonly code: "misconfigured" | "delivery_failed" | "timeout";
+
   constructor(
-    public readonly code:
-      | "misconfigured"
-      | "delivery_failed"
-      | "timeout",
+    code: "misconfigured" | "delivery_failed" | "timeout",
     message: string,
   ) {
     super(message);
     this.name = "EmailDeliveryError";
+    this.code = code;
   }
 }
 

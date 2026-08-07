@@ -1,92 +1,24 @@
 import { cookies, headers } from "next/headers";
 import type { NextRequest } from "next/server";
-import type { User } from "@prisma/client";
 
-import { effectiveUserRole } from "@/lib/admin/eligibility";
 import { getClientIp } from "@/lib/client-ip";
-import { generateSessionToken, hashWithSecret } from "@/lib/crypto";
-import { prisma } from "@/lib/db";
-import { assertServerSecrets, getEnv } from "@/lib/env";
+import { getEnv } from "@/lib/env";
 import { SESSION_COOKIE_NAME, sessionCookieOptions } from "@/lib/session-cookie";
-import { isSessionRecordValid } from "@/lib/session-rules";
+import {
+  createUserSession,
+  findValidSession,
+  revokeSessionByToken,
+  sessionMaxAgeSeconds,
+} from "@/lib/session-store";
+import { toPublicUser, type PublicUser } from "@/lib/session-user";
 
-export type PublicUser = {
-  id: string;
-  mobile: string;
-  displayName: string | null;
-  firstName: string | null;
-  lastName: string | null;
-  email: string | null;
-  emailVerifiedAt: string | null;
-  registrationCompletedAt: string | null;
-  registrationComplete: boolean;
-  role: User["role"];
-  mobileVerifiedAt: string | null;
-};
-
-export function toPublicUser(user: User): PublicUser {
-  const role = effectiveUserRole(user);
-  return {
-    id: user.id,
-    mobile: user.mobile,
-    displayName: user.displayName,
-    firstName: user.firstName ?? null,
-    lastName: user.lastName ?? null,
-    email: user.email ?? null,
-    emailVerifiedAt: user.emailVerifiedAt?.toISOString() ?? null,
-    registrationCompletedAt: user.registrationCompletedAt?.toISOString() ?? null,
-    registrationComplete:
-      role === "ADMIN" || user.registrationCompletedAt != null,
-    // Live allowlist re-check: stale ADMIN DB role is not enough after revoke.
-    role,
-    mobileVerifiedAt: user.mobileVerifiedAt?.toISOString() ?? null,
-  };
-}
-
-function sessionMaxAgeSeconds() {
-  return getEnv().sessionTtlDays * 24 * 60 * 60;
-}
-
-export async function createUserSession(userId: string, meta?: { ip?: string | null; userAgent?: string | null }) {
-  const env = assertServerSecrets();
-  const token = generateSessionToken();
-  const tokenHash = hashWithSecret(token, env.sessionSecret);
-  const expiresAt = new Date(Date.now() + sessionMaxAgeSeconds() * 1000);
-
-  await prisma.session.create({
-    data: {
-      userId,
-      tokenHash,
-      expiresAt,
-      ipAddress: meta?.ip?.slice(0, 64) || null,
-      userAgent: meta?.userAgent?.slice(0, 255) || null,
-    },
-  });
-
-  return { token, expiresAt };
-}
-
-export async function revokeSessionByToken(token: string) {
-  const env = assertServerSecrets();
-  const tokenHash = hashWithSecret(token, env.sessionSecret);
-  await prisma.session.updateMany({
-    where: { tokenHash, revokedAt: null },
-    data: { revokedAt: new Date() },
-  });
-}
-
-export async function findValidSession(token: string) {
-  const env = assertServerSecrets();
-  const tokenHash = hashWithSecret(token, env.sessionSecret);
-  const session = await prisma.session.findUnique({
-    where: { tokenHash },
-    include: { user: true },
-  });
-
-  if (!isSessionRecordValid(session)) return null;
-  if (session.user.accountStatus === "BLOCKED") return null;
-  return session;
-}
+export type { PublicUser } from "@/lib/session-user";
+export { toPublicUser } from "@/lib/session-user";
+export {
+  createUserSession,
+  findValidSession,
+  revokeSessionByToken,
+} from "@/lib/session-store";
 
 export async function getSessionTokenFromCookies(): Promise<string | null> {
   const jar = await cookies();

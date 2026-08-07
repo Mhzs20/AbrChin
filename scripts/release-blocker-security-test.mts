@@ -128,10 +128,10 @@ test("guards, session public user, and command actors re-check admin eligibility
   const guards = await readFile("lib/auth/guards.ts", "utf8");
   const receipt = await readFile("lib/admin/command-receipt.ts", "utf8");
   const auth = await readFile("lib/auth-service.ts", "utf8");
-  const session = await readFile("lib/session.ts", "utf8");
+  const sessionUser = await readFile("lib/session-user.ts", "utf8");
   assert.match(guards, /isEligibleAdmin/);
   assert.match(receipt, /isEligibleAdmin/);
-  assert.match(session, /effectiveUserRole/);
+  assert.match(sessionUser, /effectiveUserRole/);
   assert.match(auth, /role: nextRole/);
   assert.match(auth, /UserRole\.CUSTOMER/);
 });
