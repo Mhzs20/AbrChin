@@ -189,7 +189,7 @@ export function toPlanSnapshot(
 ): PlanSnapshot {
   const createdAt = params?.createdAt ?? new Date();
   const expiresAt =
-    params?.expiresAt ?? new Date(createdAt.getTime() + 10 * 60 * 1000);
+    params?.expiresAt ?? new Date(createdAt.getTime() + 60 * 60 * 1000);
   return {
     code: plan.code,
     title: plan.title,

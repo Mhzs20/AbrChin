@@ -116,8 +116,8 @@ export default async function ReadyServerQuotePage({
           </span>
           <h1 id="ready-quote-title">{quote.title}</h1>
           <p>
-            قیمت، ظرفیت، موقعیت و سیستم‌عامل این انتخاب برای چند دقیقه قفل
-            شده‌اند. تغییر بعدی پرچین این تعهد را عوض نمی‌کند.
+            قیمت، ظرفیت، موقعیت و سیستم‌عامل این انتخاب به‌مدت ۶۰ دقیقه برای شما
+            قفل شده‌اند. تغییر بعدی پرچین این تعهد را عوض نمی‌کند.
           </p>
         </div>
         <Link className="button button-quiet" href="/cloud-servers">

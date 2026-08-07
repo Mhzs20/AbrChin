@@ -289,7 +289,7 @@ async function createPaidOrderFixture(mobile: string) {
   const pricedPlan = await getActivePlanByCode(plan.code);
   assert.ok(pricedPlan);
   const createdAt = new Date();
-  const quoteExpiresAt = new Date(createdAt.getTime() + 10 * 60 * 1000);
+  const quoteExpiresAt = new Date(createdAt.getTime() + 60 * 60 * 1000);
   const user = await prisma.user.create({ data: { mobile } });
   await prisma.wallet.create({
     data: { userId: user.id, availableBalance: tomanToRial(2_000_000), status: WalletStatus.ACTIVE },
@@ -438,7 +438,7 @@ async function createManualOrderFixture(mobile: string) {
   const pricedPlan = await getActivePlanByCode(plan.code);
   assert.ok(pricedPlan);
   const createdAt = new Date();
-  const quoteExpiresAt = new Date(createdAt.getTime() + 10 * 60 * 1_000);
+  const quoteExpiresAt = new Date(createdAt.getTime() + 60 * 60 * 1_000);
   const user = await prisma.user.create({ data: { mobile } });
   await prisma.wallet.create({
     data: {

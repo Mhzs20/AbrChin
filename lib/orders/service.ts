@@ -17,10 +17,10 @@ import { WalletError } from "@/lib/wallet/errors";
 import {
   resolvePlanPricing,
   samePlanConfigurationSnapshot,
-  samePriceSnapshot,
 } from "@/lib/pricing/plan-pricing";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import { assertPublicSaleEnabled } from "@/lib/infrastructure/public-sale-policy";
+import { InfrastructureError } from "@/lib/infrastructure/errors";
 import {
   resolveProviderSelectionDefaults,
   revalidateLockedSelection,
@@ -30,6 +30,7 @@ import {
   bindInventoryReservationToOrderTx,
   releaseInventoryReservationForOrder,
 } from "@/lib/infrastructure/preprovisioned-inventory";
+import { rejectIfQuoteExpired } from "@/lib/orders/quote-expiration";
 import {
   absenceAuditMatchesAttempt,
   assessRefundResourceSafety,
@@ -55,7 +56,12 @@ const PURCHASABLE_QUOTE_STATUSES: RecommendationQuoteStatus[] = [
   RecommendationQuoteStatus.SELECTED,
 ];
 
-async function lockAndRevalidateLegacyOrder(plan: {
+/**
+ * Legacy orders without a RecommendationQuote still need provider/route
+ * availability. Customer sale price is not recomputed here — AbrChin bears
+ * commercial risk for the locked order amount while the quote/order TTL holds.
+ */
+async function lockAndRevalidateLegacyOrderAvailability(plan: {
   provider: "ARVAN" | "PARSPACK";
   providerApiVersion: string;
   productKind: "CLOUD_SERVER" | "READY_INSTANT_SERVER";
@@ -67,10 +73,10 @@ async function lockAndRevalidateLegacyOrder(plan: {
     providerMonthlyPriceIrr: bigint | null;
   } | null;
 }, adapterOverride?: CloudProviderAdapter) {
-  if (!plan.catalogItem?.providerMonthlyPriceIrr) {
+  if (!plan.catalogItem) {
     throw new WalletError(
       "quote_unavailable",
-      "قیمت ارائه‌دهنده برای این سفارش قدیمی قابل تأیید نیست.",
+      "ظرفیت این سفارش قدیمی دیگر قابل تأیید نیست.",
     );
   }
   const defaults =
@@ -84,26 +90,35 @@ async function lockAndRevalidateLegacyOrder(plan: {
             region: plan.regionCode,
           })
       : null;
-  const current = await revalidateLockedSelection(
-    {
-      provider: plan.provider,
-      providerApiVersion: plan.providerApiVersion,
-      productKind: plan.productKind,
-      region: plan.regionCode,
-      externalPlanId: plan.catalogItem.externalPlanId ?? plan.sizeCode,
-      externalImageId: plan.imageCode,
-      externalNetworkId: defaults?.externalNetworkId ?? null,
-      externalSecurityId: defaults?.externalSecurityId ?? null,
-    },
-    adapterOverride,
-  );
-  if (
-    current.monthlyPriceIrr !== plan.catalogItem.providerMonthlyPriceIrr
-  ) {
-    throw new WalletError(
-      "quote_price_changed",
-      "قیمت این سفارش قدیمی تغییر کرده و باید Quote تازه ساخته شود.",
+  try {
+    const current = await revalidateLockedSelection(
+      {
+        provider: plan.provider,
+        providerApiVersion: plan.providerApiVersion,
+        productKind: plan.productKind,
+        region: plan.regionCode,
+        externalPlanId: plan.catalogItem.externalPlanId ?? plan.sizeCode,
+        externalImageId: plan.imageCode,
+        externalNetworkId: defaults?.externalNetworkId ?? null,
+        externalSecurityId: defaults?.externalSecurityId ?? null,
+      },
+      adapterOverride,
     );
+    if (!current.available) {
+      throw new WalletError(
+        "quote_unavailable",
+        "ظرفیت این سفارش دیگر موجود نیست؛ مبلغی برداشت نشد.",
+      );
+    }
+  } catch (error) {
+    if (error instanceof WalletError) throw error;
+    if (error instanceof InfrastructureError) {
+      throw new WalletError(
+        "quote_unavailable",
+        "ظرفیت یا مسیر تأمین این سفارش دیگر قابل تحویل نیست.",
+      );
+    }
+    throw error;
   }
 }
 
@@ -130,7 +145,14 @@ export async function createServiceOrderByPlanId(
   );
 }
 
-export async function createServiceOrderFromQuote(userId: string, quoteId: string) {
+export async function createServiceOrderFromQuote(
+  userId: string,
+  quoteId: string,
+  options?: {
+    /** Test-only provider fixture; production calls never pass this. */
+    providerAdapter?: CloudProviderAdapter;
+  },
+) {
   const preflight = await prisma.recommendationQuote.findUnique({
     where: { id: quoteId },
     select: {
@@ -144,6 +166,7 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
       externalSecurityId: true,
       providerMonthlyPriceIrr: true,
       preprovisionedInventoryItemId: true,
+      expiresAt: true,
       plan: {
         select: {
           billingModel: true,
@@ -159,7 +182,7 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
           },
         },
       },
-      session: { select: { userId: true } },
+      session: { select: { userId: true, expiresAt: true } },
     },
   });
   if (
@@ -174,6 +197,11 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
   ) {
     throw new WalletError("invalid_quote", "پیشنهاد انتخاب‌شده پیدا نشد.");
   }
+  await rejectIfQuoteExpired({
+    quoteId,
+    quoteExpiresAt: preflight.expiresAt,
+    sessionExpiresAt: preflight.session.expiresAt,
+  });
   if (preflight.plan.billingModel === "PAYG_WALLET") {
     throw new WalletError(
       "direct_checkout_not_allowed",
@@ -188,11 +216,29 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
   const preprovisioned =
     preflight.plan.offerSource === "PREPROVISIONED_INVENTORY";
   const manualAdmin = preflight.plan.offerSource === "MANUAL_ADMIN";
-  const livePrice = preprovisioned || manualAdmin
-    ? {
-        monthlyPriceIrr: preflight.providerMonthlyPriceIrr,
-      }
-    : await revalidateLockedSelection({
+  // Availability only — customer sale price stays locked on the quote.
+  if (preprovisioned) {
+    if (!preflight.preprovisionedInventoryItemId) {
+      throw new WalletError(
+        "quote_unavailable",
+        "رزرو موجودی این پیشنهاد دیگر معتبر نیست.",
+      );
+    }
+  } else if (manualAdmin) {
+    if (
+      (preflight.plan.catalogItem?.manualAvailableUnits ?? 0) <= 0 ||
+      !preflight.plan.catalogItem?.manualPriceValidUntil ||
+      preflight.plan.catalogItem.manualPriceValidUntil.getTime() <= Date.now()
+    ) {
+      throw new WalletError(
+        "quote_unavailable",
+        "ظرفیت دستی این پیشنهاد تمام یا منقضی شده است.",
+      );
+    }
+  } else {
+    try {
+      const live = await revalidateLockedSelection(
+        {
           provider: preflight.provider,
           providerApiVersion: preflight.providerApiVersion,
           productKind: preflight.productKind,
@@ -201,21 +247,27 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
           externalImageId: preflight.externalImageId,
           externalNetworkId: preflight.externalNetworkId,
           externalSecurityId: preflight.externalSecurityId,
-        });
-  if (
-    !livePrice ||
-    (preprovisioned && !preflight.preprovisionedInventoryItemId) ||
-    (manualAdmin &&
-      ((preflight.plan.catalogItem?.manualAvailableUnits ?? 0) <= 0 ||
-        !preflight.plan.catalogItem?.manualPriceValidUntil ||
-        preflight.plan.catalogItem.manualPriceValidUntil.getTime() <= Date.now())) ||
-    preflight.providerMonthlyPriceIrr == null ||
-    livePrice.monthlyPriceIrr !== preflight.providerMonthlyPriceIrr
-  ) {
-    throw new WalletError(
-      "quote_price_changed",
-      "قیمت این پیشنهاد تغییر کرده؛ پیشنهاد تازه را دریافت کنید.",
-    );
+        },
+        options?.providerAdapter,
+      );
+      if (!live.available) {
+        throw new WalletError(
+          "quote_unavailable",
+          "ظرفیت این پیشنهاد دیگر موجود نیست.",
+        );
+      }
+      // Provider cost may differ; AbrChin bears commercial risk for 60 minutes.
+      void live.monthlyPriceIrr;
+    } catch (error) {
+      if (error instanceof WalletError) throw error;
+      if (error instanceof InfrastructureError) {
+        throw new WalletError(
+          "quote_unavailable",
+          "مسیر تأمین یا ظرفیت این پیشنهاد دیگر قابل تحویل نیست.",
+        );
+      }
+      throw error;
+    }
   }
   return prisma.$transaction(async (tx) => {
     const quote = await tx.recommendationQuote.findUnique({
@@ -311,7 +363,9 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
       quote.termMonths === 12
         ? quote.termMonths
         : 1;
-    const currentPricing =
+    // Structural availability only. Live commercial recomputation must NOT
+    // replace or reject the locked customer amount during the quote TTL.
+    const structuralPricing =
       (manualAdmin || (pricingConfig?.enabled && productPricing?.enabled)) &&
       parchin?.active
         ? resolvePlanPricing(quote.plan, manualAdmin ? null : pricingConfig, {
@@ -328,19 +382,13 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
             couponCode: quote.couponCodeSnapshot,
           })
         : null;
-    if (!currentPricing) {
+    if (!structuralPricing) {
       throw new WalletError(
         "quote_unavailable",
         "ظرفیت این پیشنهاد دیگر موجود نیست؛ پرداخت متوقف شد.",
       );
     }
-    if (!samePriceSnapshot(currentPricing, quote)) {
-      throw new WalletError(
-        "quote_price_changed",
-        "قیمت این پیشنهاد تغییر کرده؛ پیشنهاد تازه را دریافت کنید.",
-      );
-    }
-    if (!samePlanConfigurationSnapshot(quote.plan, currentPricing, quote.planSnapshot)) {
+    if (!samePlanConfigurationSnapshot(quote.plan, structuralPricing, quote.planSnapshot)) {
       throw new WalletError(
         "quote_configuration_changed",
         "تنظیمات این پیشنهاد تغییر کرده؛ پیشنهاد تازه را دریافت کنید.",
@@ -349,6 +397,10 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
 
     await ensureWalletForUser(userId, tx);
     const snapshot = quote.planSnapshot as Prisma.InputJsonValue;
+    const lockedParchinLevel =
+      quote.parchinLevel ??
+      quote.plan.minimumParchinLevel ??
+      "PARCHIN_START";
     const order = await tx.serviceOrder.create({
       data: {
         userId,
@@ -356,7 +408,7 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
         description: quote.plan.description,
         amount: quote.amountRial,
         termMonths,
-        termDiscountBps: currentPricing.termDiscountBps,
+        termDiscountBps: quote.termDiscountBps,
         couponCodeSnapshot: quote.couponCodeSnapshot,
         currency: "IRR",
         status: ServiceOrderStatus.PENDING_PAYMENT,
@@ -368,7 +420,7 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
         provider: quote.plan.provider,
         providerApiVersion: quote.plan.providerApiVersion,
         productKind: quote.plan.productKind,
-        parchinLevel: currentPricing.parchinLevel,
+        parchinLevel: lockedParchinLevel,
         parchinServiceSnapshot:
           quote.parchinServiceSnapshot === null ||
           quote.parchinServiceSnapshot === undefined
@@ -462,6 +514,22 @@ export async function payOrderWithWallet(
       });
     }
     const quote = existing?.recommendationQuote;
+    if (quote) {
+      await rejectIfQuoteExpired({
+        quoteId: quote.id,
+        quoteExpiresAt: quote.expiresAt,
+        orderQuoteExpiresAt: existing?.quoteExpiresAt,
+        sessionExpiresAt: undefined,
+      });
+    } else if (
+      existing?.quoteExpiresAt &&
+      existing.quoteExpiresAt.getTime() <= Date.now()
+    ) {
+      throw new WalletError(
+        "quote_expired",
+        "اعتبار قیمت این سفارش تمام شده؛ قیمت را دوباره دریافت کنید.",
+      );
+    }
     if (
       quote?.provider &&
       quote.providerApiVersion &&
@@ -477,34 +545,44 @@ export async function payOrderWithWallet(
         // The exact resource was already observed and atomically reserved.
         // Payment revalidates the reservation inside its debit transaction.
       } else {
-        const current = await revalidateLockedSelection(
-          {
-            provider: quote.provider,
-            providerApiVersion: quote.providerApiVersion,
-            productKind: quote.productKind,
-            region: quote.providerRegion,
-            externalPlanId: quote.externalPlanId,
-            externalImageId: quote.externalImageId,
-            externalNetworkId: quote.externalNetworkId,
-            externalSecurityId: quote.externalSecurityId,
-          },
-          options?.providerAdapter,
-        );
-        if (
-          quote.providerMonthlyPriceIrr == null ||
-          current.monthlyPriceIrr !== quote.providerMonthlyPriceIrr
-        ) {
-          throw new WalletError(
-            "quote_price_changed",
-            "قیمت این پیشنهاد تغییر کرده؛ پیشنهاد تازه را دریافت کنید.",
+        try {
+          const current = await revalidateLockedSelection(
+            {
+              provider: quote.provider,
+              providerApiVersion: quote.providerApiVersion,
+              productKind: quote.productKind,
+              region: quote.providerRegion,
+              externalPlanId: quote.externalPlanId,
+              externalImageId: quote.externalImageId,
+              externalNetworkId: quote.externalNetworkId,
+              externalSecurityId: quote.externalSecurityId,
+            },
+            options?.providerAdapter,
           );
+          if (!current.available) {
+            throw new WalletError(
+              "quote_unavailable",
+              "ظرفیت این پیشنهاد دیگر موجود نیست؛ مبلغی برداشت نشد.",
+            );
+          }
+          // Provider cost may have moved; locked customer amount still applies.
+          void current.monthlyPriceIrr;
+        } catch (error) {
+          if (error instanceof WalletError) throw error;
+          if (error instanceof InfrastructureError) {
+            throw new WalletError(
+              "quote_unavailable",
+              "مسیر تأمین یا ظرفیت این پیشنهاد دیگر قابل تحویل نیست؛ مبلغی برداشت نشد.",
+            );
+          }
+          throw error;
         }
       }
     } else if (
       existing?.plan?.catalogItem &&
       existing.plan.offerSource !== "MANUAL_ADMIN"
     ) {
-      await lockAndRevalidateLegacyOrder(
+      await lockAndRevalidateLegacyOrderAvailability(
         existing.plan,
         options?.providerAdapter,
       );

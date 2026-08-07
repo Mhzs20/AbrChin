@@ -413,9 +413,9 @@ test("customer quote response excludes provider and base price", () => {
   );
 });
 
-test("quote snapshot is complete and expires exactly after ten minutes", () => {
+test("quote snapshot is complete and expires exactly after sixty minutes", () => {
   const createdAt = new Date("2026-07-29T12:00:00.000Z");
-  const expiresAt = new Date("2026-07-29T12:10:00.000Z");
+  const expiresAt = new Date("2026-07-29T13:00:00.000Z");
   const snapshot = toPlanSnapshot(
     {
       id: "plan-1",
@@ -454,7 +454,40 @@ test("quote snapshot is complete and expires exactly after ten minutes", () => {
   assert.equal(snapshot.currency, "IRR");
   assert.equal(
     new Date(snapshot.expiresAt).getTime() - new Date(snapshot.createdAt).getTime(),
-    10 * 60 * 1000,
+    60 * 60 * 1000,
+  );
+  const defaultSnapshot = toPlanSnapshot(
+    {
+      id: "plan-1",
+      code: "CLOUD_1",
+      title: "Cloud",
+      description: null,
+      provider: "PARSPACK",
+      regionCode: "tehran11",
+      sizeCode: "irLinuxVPS4",
+      imageCode: "ubuntu24-cloudinit-qcow2",
+      deliveryMode: "RAW",
+      deliveryEstimateMinutes: 15,
+      parchinIncluded: true,
+      pricing: {
+        catalogItemId: "catalog-1",
+        providerBasePriceRial: 5_000_000n,
+        markupBasisPoints: 2500,
+        finalPriceRial: 6_250_000n,
+        currency: "IRR",
+        providerPriceCheckedAt: syncedAt,
+        vcpu: 2,
+        ramGb: 4,
+        storageGb: 50,
+        available: true,
+      },
+    } as never,
+    { createdAt },
+  );
+  assert.equal(
+    new Date(defaultSnapshot.expiresAt).getTime() -
+      new Date(defaultSnapshot.createdAt).getTime(),
+    60 * 60 * 1000,
   );
 });
 

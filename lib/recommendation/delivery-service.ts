@@ -24,7 +24,7 @@ import {
 import { transitionProductFlowTx } from "@/lib/product-flow/service";
 import type { ProductFlowState } from "@/lib/product-flow/state-machine";
 import { buildRecommendation } from "@/lib/recommendation/engine";
-import { selectQuotes } from "@/lib/recommendation/quote-service";
+import { selectQuotes, RECOMMENDATION_QUOTE_VALIDITY_MS } from "@/lib/recommendation/quote-service";
 import {
   ConversationRevisionConflictError,
   requireConversationAccess,
@@ -123,7 +123,7 @@ export async function getConversationDeliveryOptions(input: {
     recommendation,
     plans,
     now,
-    new Date(now.getTime() + 10 * 60 * 1000),
+    new Date(now.getTime() + RECOMMENDATION_QUOTE_VALIDITY_MS),
     { budget: answers.budget },
   );
   if (selected.length === 0) {

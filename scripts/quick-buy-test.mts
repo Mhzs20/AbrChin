@@ -57,13 +57,15 @@ test("checkout locks the quoted amount and rejects expired quotes", async () => 
   const ordersRoute = await readFile("app/api/orders/route.ts", "utf8");
 
   assert.match(service, /quoteExpiresAt/);
-  assert.match(quoteService, /10 \* 60 \* 1000/);
+  assert.match(quoteService, /60 \* 60 \* 1000/);
   assert.match(service, /createServiceOrderFromQuote/);
   assert.match(service, /recommendationQuoteId/);
   assert.match(service, /quote\.session\.userId !== userId/);
   assert.match(payment, /quote_expired/);
   assert.match(payment, /quote_mismatch/);
   assert.match(payment, /samePlanConfigurationSnapshot/);
+  assert.doesNotMatch(payment, /samePriceSnapshot/);
+  assert.doesNotMatch(payment, /quote_price_changed/);
   assert.match(payment, /RecommendationQuoteStatus\.CONVERTED/);
   assert.match(payment, /const amountRial = order\.amount/);
   assert.doesNotMatch(payment, /const amountRial = plan\.salePriceRial/);
