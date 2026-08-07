@@ -76,17 +76,24 @@ test("checkout labels stay Persian and wallet-first", async () => {
   assert.doesNotMatch(checkout, />\s*OS\s*</);
 });
 
-test("configuration and upgrade presentation use polished shells", async () => {
+test("configuration and upgrade presentation use design-system shells", async () => {
   const css = await readFile("app/globals.css", "utf8");
   const conversationCss = await readFile("app/conversation.css", "utf8");
   const upgrade = await readFile(
     "components/account/service-upgrade-panels.tsx",
     "utf8",
   );
-  assert.match(css, /service-upgrade-panel/);
-  assert.match(css, /quote-lock-banner/);
-  assert.match(css, /appearance:\s*none/);
-  assert.match(conversationCss, /\[dir="rtl"\] \.delivery-config-grid select/);
-  assert.match(upgrade, /service-upgrade-panel/);
+  const checkout = await readFile(
+    "components/account/order-checkout-panel.tsx",
+    "utf8",
+  );
+  assert.doesNotMatch(css, /service-upgrade-panel/);
+  assert.doesNotMatch(css, /order-checkout\.product-card::before/);
+  assert.doesNotMatch(css, /linear-gradient\(135deg, #e8f7f3/);
+  assert.doesNotMatch(conversationCss, /appearance:\s*none/);
+  assert.match(upgrade, /product-section/);
+  assert.match(upgrade, /product-stat-grid/);
+  assert.match(upgrade, /product-row-card/);
   assert.match(upgrade, /order-wallet-summary/);
+  assert.match(checkout, /product-section order-checkout/);
 });

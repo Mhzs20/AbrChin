@@ -264,7 +264,7 @@ export function OrderCheckoutPanel({
   const unavailable = checkoutError === "unavailable";
 
   return (
-    <section className="product-card order-checkout" style={{ marginTop: 16 }}>
+    <section className="product-section order-checkout" style={{ marginTop: 16 }}>
       <h2 style={{ marginTop: 0 }}>خلاصه خرید از کیف پول</h2>
 
       {expiresAt ? (

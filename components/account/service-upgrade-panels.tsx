@@ -153,76 +153,86 @@ export function ServiceUpgradeChooser({
   }
 
   return (
-    <div className="service-upgrade-shell">
-      <section className="service-upgrade-panel">
-        <div>
-          <h2 style={{ margin: 0 }}>ارتقای سرور</h2>
-          <p style={{ margin: "8px 0 0" }}>
-            سرور: <strong dir="ltr">{serverName}</strong>
-          </p>
-        </div>
+    <section className="product-section">
+      <h2 className="product-section-title">ارتقای سرور</h2>
+      <p style={{ marginTop: 0 }}>
+        سرور: <strong dir="ltr">{serverName}</strong>
+      </p>
 
-        {current ? (
-          <section aria-label="منابع فعلی">
-            <h3 style={{ margin: "0 0 8px", fontSize: "1rem" }}>منابع فعلی</h3>
-            <div className="service-upgrade-resources">
-              <span>
-                <small>پردازنده</small>
-                <strong dir="ltr">{current.vcpu} vCPU</strong>
-              </span>
-              <span>
-                <small>حافظه</small>
-                <strong dir="ltr">{current.ramGb} GB</strong>
-              </span>
-              <span>
-                <small>دیسک</small>
-                <strong dir="ltr">{current.diskGb} GB</strong>
-              </span>
-            </div>
-          </section>
-        ) : null}
-
-        {loading ? <p>در حال بارگذاری گزینه‌های مجاز…</p> : null}
-        {error ? <p style={{ color: "crimson" }}>{error}</p> : null}
-
-        {!loading && targets.length === 0 && !error ? (
-          <p>فعلاً مقصد ارتقای قابل فروش برای این سرور در دسترس نیست.</p>
-        ) : null}
-
-        <ul className="service-upgrade-target-list">
-          {targets.map((target) => (
-            <li key={target.planId}>
-              <strong>{target.planTitle}</strong>
-              <div className="service-upgrade-resources">
-                <span>
-                  <small>پردازنده</small>
-                  <strong dir="ltr">{target.vcpu} vCPU</strong>
-                </span>
-                <span>
-                  <small>حافظه</small>
-                  <strong dir="ltr">{target.ramGb} GB</strong>
-                </span>
-                <span>
-                  <small>دیسک</small>
-                  <strong dir="ltr">{target.diskGb} GB</strong>
-                </span>
+      {current ? (
+        <section aria-label="منابع فعلی">
+          <h3 className="product-section-title">منابع فعلی</h3>
+          <div className="product-stat-grid">
+            <div className="product-stat-card">
+              <div className="product-stat-card-label">پردازنده</div>
+              <div className="product-stat-card-value" dir="ltr">
+                {current.vcpu} vCPU
               </div>
-              <span>
-                هزینه ارتقا: <strong>{target.upgradeChargeTomanFa}</strong> تومان
-              </span>
-              <button
-                type="button"
-                className="product-btn product-btn--primary"
-                disabled={busy || !target.available}
-                onClick={() => void createQuote(target.planId)}
-              >
-                {target.available ? "ادامه و دریافت پیش‌فاکتور" : "ناموجود"}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
-    </div>
+            </div>
+            <div className="product-stat-card">
+              <div className="product-stat-card-label">حافظه</div>
+              <div className="product-stat-card-value" dir="ltr">
+                {current.ramGb} GB
+              </div>
+            </div>
+            <div className="product-stat-card">
+              <div className="product-stat-card-label">دیسک</div>
+              <div className="product-stat-card-value" dir="ltr">
+                {current.diskGb} GB
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {loading ? <p>در حال بارگذاری گزینه‌های مجاز…</p> : null}
+      {error ? <p className="product-error">{error}</p> : null}
+
+      {!loading && targets.length === 0 && !error ? (
+        <p className="product-empty">
+          فعلاً مقصد ارتقای قابل فروش برای این سرور در دسترس نیست.
+        </p>
+      ) : null}
+
+      <div className="product-row-list" style={{ display: "grid", gap: 12 }}>
+        {targets.map((target) => (
+          <article className="product-row-card" key={target.planId}>
+            <strong>{target.planTitle}</strong>
+            <div className="product-stat-grid" style={{ marginTop: 10 }}>
+              <div className="product-stat-card">
+                <div className="product-stat-card-label">پردازنده</div>
+                <div className="product-stat-card-value" dir="ltr">
+                  {target.vcpu} vCPU
+                </div>
+              </div>
+              <div className="product-stat-card">
+                <div className="product-stat-card-label">حافظه</div>
+                <div className="product-stat-card-value" dir="ltr">
+                  {target.ramGb} GB
+                </div>
+              </div>
+              <div className="product-stat-card">
+                <div className="product-stat-card-label">دیسک</div>
+                <div className="product-stat-card-value" dir="ltr">
+                  {target.diskGb} GB
+                </div>
+              </div>
+            </div>
+            <p style={{ margin: "10px 0" }}>
+              هزینه ارتقا: <strong>{target.upgradeChargeTomanFa}</strong> تومان
+            </p>
+            <button
+              type="button"
+              className="product-btn product-btn--primary"
+              disabled={busy || !target.available}
+              onClick={() => void createQuote(target.planId)}
+            >
+              {target.available ? "ادامه و دریافت پیش‌فاکتور" : "ناموجود"}
+            </button>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -316,16 +326,15 @@ export function ServiceUpgradeQuotePanel({
   }
 
   return (
-    <div className="service-upgrade-shell">
-      <section className="service-upgrade-panel order-checkout">
-        <div>
-          <h2 style={{ margin: 0 }}>پیش‌فاکتور ارتقا</h2>
-          {!expired && !quote.paid ? (
-            <p className="order-checkout-lock" style={{ marginTop: 8 }}>
-              <QuoteCountdown expiresAt={quote.expiresAt} prominent />
-            </p>
-          ) : null}
-        </div>
+    <section className="product-section order-checkout">
+      <div>
+        <h2 className="product-section-title">پیش‌فاکتور ارتقا</h2>
+        {!expired && !quote.paid ? (
+          <p className="order-checkout-lock">
+            <QuoteCountdown expiresAt={quote.expiresAt} prominent />
+          </p>
+        ) : null}
+      </div>
 
         <section className="order-checkout-summary" aria-label="منابع">
           <div className="order-checkout-summary-row">
@@ -423,7 +432,6 @@ export function ServiceUpgradeQuotePanel({
       >
         بازگشت به انتخاب منابع
       </Link>
-      </section>
-    </div>
+    </section>
   );
 }

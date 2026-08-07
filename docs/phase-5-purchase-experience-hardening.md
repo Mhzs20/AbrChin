@@ -25,30 +25,28 @@ Catalog → Delivery config → 60-minute locked quote → Wallet → Top-up →
 | 13 | Top-up → same quote | Pass | Pass |
 | 14 | Expiry keeps credit | Pass | Pass |
 | 15 | Cancel refund preview | Pass (Provider leak) | Pass |
-| 16 | Upgrade cost preview | Pass | Pass (polished) |
+| 16 | Upgrade cost preview | Pass | Pass (product-* shells) |
 | 17 | Financial idempotency | Partial (top-up create) | Pass (client keys) |
 | 18 | Blockers near cause | Partial | Improved (customer wording) |
 | 19 | No provider leaks | Partial | Pass on customer surfaces |
-| 20 | RTL controls | Partial risk | Improved (`appearance` + RTL padding) |
+| 20 | RTL controls | Partial risk | Pass (native DS controls; no custom chrome) |
 
-## Design
+**Design:** Additive gradient/shadow polish was removed. Customer surfaces now use the existing AbrChin product design system (`product-section`, `product-stat-*`, `product-row-card`, `product-btn`, existing `order-checkout-*` / `quote-lock-banner` / `ready-quote-*`).
 
-Polished customer configuration + checkout presentation only:
+## Live screenshots
 
-- Quote lock banner (explicit ۶۰ دقیقه)
-- Checkout card / wallet summary / shortfall emphasis
-- Delivery `<select>` RTL-safe chevrons
-- Upgrade quote/chooser aligned to checkout visual language
+Captured from the running app at `http://localhost:3010` (not static HTML demos), after seeding customer fixtures:
 
-Screenshots:
+| File | Live state |
+|---|---|
+| `configuration-desktop.png` / `configuration-mobile.png` | `/cloud-servers?plan=…` delivery form expanded |
+| `checkout-sufficient.png` | Locked 60‑minute quote, wallet covers amount |
+| `checkout-insufficient.png` | Exact shortfall + top-up CTA |
+| `quote-expired.png` | Expired quote refresh UI |
+| `cancel-refund-preview.png` | Cancel confirm dialog with refund math |
+| `upgrade-quote.png` | Upgrade quote with 60‑minute lock |
 
-- `configuration-desktop.png`
-- `configuration-mobile.png`
-- `checkout-sufficient.png`
-- `checkout-insufficient.png`
-- `quote-expired.png`
-- `cancel-refund-preview.png`
-- `upgrade-quote.png`
+Artifact path: `/opt/cursor/artifacts/screenshots/`.
 
 ## Regression
 
