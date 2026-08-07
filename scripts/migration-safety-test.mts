@@ -258,3 +258,62 @@ test("storefront dominance and parchin v3 migration is additive", async () => {
   assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
   assert.doesNotMatch(migration, /DELETE FROM/i);
 });
+
+test("commercial pricing v3 migration is additive and preserves financial history", async () => {
+  const migration = await readFile(
+    "prisma/migrations/20260806200000_commercial_pricing_v3/migration.sql",
+    "utf8",
+  );
+  assert.match(migration, /CREATE TABLE "FinanceConfigurationRevision"/);
+  assert.match(migration, /markupBasisPoints" SET DEFAULT 4286/);
+  assert.match(
+    migration,
+    /UPDATE "ProviderPricingConfig"[\s\S]*SET "markupBasisPoints" = 4286[\s\S]*WHERE "markupBasisPoints" = 23333/,
+  );
+  assert.doesNotMatch(migration, /\bDROP TABLE\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM/i);
+  assert.doesNotMatch(migration, /UPDATE "ServiceOrder"/);
+  assert.doesNotMatch(migration, /UPDATE "RecommendationQuote"/);
+  assert.doesNotMatch(migration, /UPDATE "Wallet"/);
+  assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
+  assert.doesNotMatch(migration, /UPDATE "Payment/);
+});
+
+test("profit curve operational accounting migration is additive", async () => {
+  const migration = await readFile(
+    "prisma/migrations/20260807010000_profit_curve_operational_accounting/migration.sql",
+    "utf8",
+  );
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "AccountingJournalEntry"/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "AccountingJournalLine"/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "OperatingExpense"/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "ProfitCurveConfiguration"/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "ProfitCurveBand"/);
+  assert.match(migration, /minimumPostDiscountGrossMarginBps/);
+  assert.match(migration, /commercialEconomicsSnapshot/);
+  assert.match(migration, /NEEDS_RECONCILIATION/);
+  assert.match(migration, /pcband_0_50m/);
+  assert.match(migration, /pcband_250m_plus/);
+  assert.match(migration, /targetGrossMarginBps.*7000|7000/);
+  assert.doesNotMatch(migration, /\bDROP TABLE\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM/i);
+  assert.doesNotMatch(migration, /UPDATE "ServiceOrder"/);
+  assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
+  assert.doesNotMatch(migration, /UPDATE "Payment/);
+});
+
+test("operating expense draft idempotency migration is additive", async () => {
+  const migration = await readFile(
+    "prisma/migrations/20260807020000_operating_expense_draft_idempotency/migration.sql",
+    "utf8",
+  );
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "idempotencyKey"/);
+  assert.match(migration, /OperatingExpense_idempotencyKey_key/);
+  assert.doesNotMatch(migration, /\bDROP TABLE\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM/i);
+  assert.doesNotMatch(migration, /UPDATE "OperatingExpense"/);
+  assert.doesNotMatch(migration, /UPDATE "AccountingJournalEntry"/);
+});

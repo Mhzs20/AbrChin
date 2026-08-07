@@ -31,6 +31,10 @@ console.log(
     {
       ok: counts.errors.length === 0,
       dryRun: counts.dryRun,
+      recordsScanned: counts.recordsScanned,
+      entriesToCreate: counts.entriesToCreate,
+      alreadyPosted: counts.alreadyPosted,
+      needsReconciliation: counts.needsReconciliation,
       walletTopUps: counts.walletTopUps,
       walletTopUpRefunds: counts.walletTopUpRefunds,
       servicePurchases: counts.servicePurchases,

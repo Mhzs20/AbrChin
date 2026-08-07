@@ -59,10 +59,17 @@ npm run test:all
 
 - تست و انتشار Image به‌صورت دستی و کنترل‌شده از روی SHA تأییدشده انجام می‌شود؛
   این Repository به GitHub Actions یا Deploy خودکار متکی نیست.
-- Image همان Commit با Tag کوتاه SHA روی سرور ساخته و با Compose جایگزین می‌شود.
-- Compose شامل `web`، `worker` و `db` است؛ Postgres پورت عمومی ندارد.
-- سرویس وب فقط روی `127.0.0.1:3010` در دسترس است و Nginx ترافیک عمومی را عبور می‌دهد.
-- قبل از start، `prisma migrate deploy` در entrypoint اجرا می‌شود.
+- Canonical deploy: `ops/deploy.sh` با `.env.production` و
+  `compose.production.yaml` (جزئیات: `docs/production-deployment.md`).
+- Default: `DEPLOY_IMAGE_SOURCE=local` — Image immutable روی سرور Build می‌شود؛
+  `docker compose pull` اجرا نمی‌شود.
+- Compose شامل `db`، `web`، `worker` و `catalog-sync` است؛ Postgres پورت عمومی
+  ندارد؛ وب فقط روی `127.0.0.1:3010` است.
+- Migration gate صریح در deploy قبل از Start سرویس‌های App اجرا می‌شود.
+  Web entrypoint به‌صورت پیش‌فرض Schema را روی Restart عادی mutate نمی‌کند
+  (`ABRCHIN_RUN_MIGRATE_ON_START=false`).
+- Accounting backfill خودکار نیست؛ پس از Health با
+  `npm run accounting:backfill -- --dry-run` و سپس real run.
 - برای bootstrap: `./ops/bootstrap-production.sh`
 - برای backup: `./ops/backup-postgres.sh`
 - نمونه Env: `.env.production.example`
@@ -72,11 +79,11 @@ npm run test:all
 - `Dockerfile`
 - `compose.production.yaml`
 - `ops/deploy.sh`
+- `ops/backup-postgres.sh`
 - `ops/nginx/abrchin.conf`
 
-Runbook فعال‌سازی مرحله‌ای، Deploy با Termius و تست Founder در
-`docs/launch-runbook.md` است. `/api/health` فقط Liveness و `/api/readiness`
-Readiness وب، دیتابیس و Worker است.
+Runbook فعال‌سازی مرحله‌ای و تست Founder در `docs/launch-runbook.md` است.
+`/api/health` فقط Liveness و `/api/readiness` Readiness وب، دیتابیس و Worker است.
 
 ## هویت بصری
 

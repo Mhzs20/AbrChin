@@ -7,48 +7,122 @@
 
 `compose.production.yaml` شامل:
 
-- PostgreSQL 16 با Volume پایدار
-- Next.js Web
+- PostgreSQL 16 با Volume پایدار (بدون پورت عمومی)
+- Next.js Web فقط روی `127.0.0.1:3010`
 - Worker برای Provisioning، Billing Settlement، Dunning و Reconciliation
 - Scheduler مستقل Read-only برای Catalog Sync؛ این Process هیچ Provisioning
   یا Provider Mutation اجرا نمی‌کند
 
-## Bootstrap
+همهٔ `web` / `worker` / `catalog-sync` باید همان Image immutable
+`ABRCHIN_IMAGE` را داشته باشند.
 
-1. `.env.production.example` را بدون Commit به `.env` کپی و Secretها را وارد
-   کنید.
-2. SHA تأییدشده `origin/main` و Image را قفل کنید.
-3. `docker compose ... config --quiet` را اجرا کنید.
-4. فقط `prisma migrate deploy` مجاز است؛ `migrate dev` یا Reset در Production
-   ممنوع است.
-5. پس از Migration، Web، Worker و `catalog-sync` را با همان Image/SHA بالا
-   بیاورید.
+## Environment contract
 
-## Secret و Environment
+Production directory: `/opt/abrchin`
 
-- `POSTGRES_PASSWORD`, `DATABASE_URL`
-- `SESSION_SECRET`
-- `CREDENTIAL_ENCRYPTION_KEY`
-- `KAVENEGAR_API_KEY` در صورت OTP واقعی
-- `ZIBAL_MERCHANT` یا `ZARINPAL_MERCHANT_ID`
-- `PAYMENT_CALLBACK_BASE_URL`
-- `ADMIN_MOBILES`
-- `ARVAN_API_KEY` و/یا `PARSPACK_API_TOKEN`
-- `PARSPACK_PRICE_CURRENCY`, `PARSPACK_PRICE_AMOUNT_UNIT`
-- `BILLING_WORKER_INTERVAL_MS`
+```text
+APP_DIR=/opt/abrchin
+ENV_FILE=.env.production
+COMPOSE_FILE=compose.production.yaml
+ABRCHIN_IMAGE=abrchin:<immutable-sha>
+DEPLOY_IMAGE_SOURCE=local|registry   # default: local
+BACKUP_BEFORE_DEPLOY=1|0             # default: 1
+```
 
-مقدار Secret در Shell output، Log، Screenshot یا Admin response چاپ نمی‌شود.
+هر فرمان Compose Production باید `--env-file .env.production` داشته باشد.
+Secretها را در Shell، Log یا Screenshot چاپ نکنید.
 
-## Migration gate
+## Migration contract
 
-پیش از Deploy:
+- Production فقط `prisma migrate deploy` را اجرا می‌کند.
+- `prisma migrate dev` و `prisma migrate reset` ممنوع‌اند.
+- Gate صریح Migration داخل `ops/deploy.sh` قبل از Start سرویس‌های App اجرا
+  می‌شود (one-shot از همان Image کاندید، بدون Start کردن Next.js).
+- Web entrypoint به‌صورت پیش‌فرض Migration را روی Restart عادی اجرا نمی‌کند
+  (`ABRCHIN_RUN_MIGRATE_ON_START=false`). فقط برای Bootstrap/Recovery آن را
+  `true` کنید.
 
-- Fresh migration روی PostgreSQL ایزوله پاس شود.
-- Upgrade از Schema قبلی با داده Wallet/Order/Resource پاس شود.
-- Backfill Cadence سرویس فعال Non-retroactive باشد.
-- Planهای Cloud جدید Hourly و Serviceهای موجود روی Snapshot قبلی بمانند.
-- Migration هیچ Sale/Mutation Gate را باز نکند.
-- Rollback کد Database/Volume را حذف نکند.
+## Deploy (canonical)
+
+Default Founder procedure = local immutable image build on the server:
+
+```bash
+cd /opt/abrchin
+
+git fetch --prune origin
+git checkout main
+git pull --ff-only origin main
+
+TARGET_SHA="$(git rev-parse HEAD)"
+
+export APP_DIR="/opt/abrchin"
+export ENV_FILE=".env.production"
+export COMPOSE_FILE="compose.production.yaml"
+export ABRCHIN_IMAGE="abrchin:${TARGET_SHA:0:12}"
+export DEPLOY_IMAGE_SOURCE="local"
+export BACKUP_BEFORE_DEPLOY="1"
+
+chmod +x ops/deploy.sh ops/backup-postgres.sh
+./ops/deploy.sh
+```
+
+`ops/deploy.sh` sequence:
+
+1. Acquire host deploy lock (`flock`)
+2. Validate files / git / compose config
+3. Build (local) or pull (registry) candidate image; inspect before touching app
+4. Start/verify `db` only
+5. PostgreSQL backup (when `BACKUP_BEFORE_DEPLOY=1`)
+6. Explicit `prisma migrate deploy` one-shot
+7. Start `web` + `worker` + `catalog-sync` on the same image
+8. Local `/api/health` + `/api/readiness`
+9. Public health/readiness/storefront checks
+10. Verify all three app containers share `ABRCHIN_IMAGE`
+11. Keep previous tagged image for rollback window (no aggressive prune)
+
+Registry mode:
+
+```bash
+export DEPLOY_IMAGE_SOURCE="registry"
+export ABRCHIN_IMAGE="ghcr.io/example/abrchin:<immutable-sha>"
+./ops/deploy.sh
+```
+
+Never pull `:latest`.
+
+## Profit Curve after deploy
+
+Migration `20260807010000_profit_curve_operational_accounting` seeds
+`ProfitCurveConfiguration(enabled=true)` with the five approved bands.
+**New sales use the seeded Curve immediately after migrate deploy** — no
+separate Founder publish is required for default activation.
+
+Human Finance Center publish still requires typed confirmation
+`تایید حاشیه بالا` when any margin ≥ 70%.
+
+## Accounting backfill (explicit, post-health)
+
+Do **not** run accounting backfill from app startup or DB migration.
+
+After deploy health is green:
+
+```bash
+# Dry-run first (writes = 0)
+docker compose --env-file .env.production -f compose.production.yaml \
+  exec -T web npm run accounting:backfill -- --dry-run
+```
+
+Review JSON: `recordsScanned`, `entriesToCreate`, `alreadyPosted`,
+`needsReconciliation`, `errors`.
+
+Only then:
+
+```bash
+docker compose --env-file .env.production -f compose.production.yaml \
+  exec -T web npm run accounting:backfill
+```
+
+Second real run must create zero duplicates (`entriesToCreate=0`).
 
 ## Gateها
 
@@ -64,36 +138,59 @@ ARVAN_MUTATIONS_ENABLED=false
 MANUAL_READY_PUBLIC_SALE_ENABLED=true
 ```
 
-Sale و Mutation مستقل هستند. Sale فقط Listing/Estimate/Wallet Top-up/Activation
-را مجاز می‌کند. Mutation فقط هنگام Dispatch واقعی و پس از Admin Approval
-بررسی می‌شود. Sale باز با Mutation بسته به معنی Fulfillment دستی کنترل‌شده
-است، نه Provider Healthy یا Provision خودکار.
+Do not turn Provider mutation on as part of deploy.
 
 ## Post-deploy read-only checks
 
-- `/api/health` برای Liveness
-- `/api/readiness` برای Database و Worker heartbeat
-- `docker compose --env-file .env.production -f compose.production.yaml ps
-  catalog-sync` برای Running بودن Scheduler مستقل
-- آخرین `ServiceConnectionCheck` در Admin
-- Arvan Connection Check با GET احرازشده و بدون Mutation
-- Catalog/Rate freshness بدون Auto-publish
-- Operations Center با ۱۲ Queue مالی و عملیاتی
+```bash
+cd /opt/abrchin
+export ABRCHIN_IMAGE="abrchin:$(git rev-parse --short=12 HEAD)"
 
-این Checkها مجوز Public Sale نیستند.
+docker compose \
+  --env-file .env.production \
+  -f compose.production.yaml \
+  ps db web worker catalog-sync
+
+curl -fsS http://127.0.0.1:3010/api/health
+curl -fsS http://127.0.0.1:3010/api/readiness
+
+curl -fsS -o /dev/null https://abrchin.ir/api/health
+curl -fsS -o /dev/null https://abrchin.ir/api/readiness
+curl -fsS -o /dev/null https://abrchin.ir/cloud-servers
+```
+
+## Backup و Rollback
+
+`ops/backup-postgres.sh` قبل از Migration (از طریق deploy) اجرا می‌شود.
+Rollback کد از Image قبلی انجام می‌شود؛ Database و Volume Reset نمی‌شوند.
+هرگز:
+
+```text
+docker compose down -v
+prisma migrate reset
+```
+
+این Release migrationها Additive و Forward-only هستند؛ Image قبلی معمولاً روی
+Schema مهاجرت‌شده قابل اجرا است (جدول/ستون‌های جدید را نادیده می‌گیرد). اگر
+Failure **قبل از Migration** باشد، deploy script Image قبلی را Restore می‌کند.
+اگر Failure **بعد از Migration** باشد، auto-restore اجباری نیست؛ DB دست‌نخورده
+می‌ماند و Founder باید Restore دستی Image یا Forward-fix را انتخاب کند.
+
+Manual code rollback (DB preserved):
 
 ```bash
-curl --fail --silent --show-error https://abrchin.ir/api/health
-curl --fail --silent --show-error https://abrchin.ir/api/readiness
-curl --fail --silent --show-error https://abrchin.ir/cloud-servers >/dev/null
+cd /opt/abrchin
+PREVIOUS_IMAGE="abrchin:<previous-sha>"
+sed -i "s|^ABRCHIN_IMAGE=.*$|ABRCHIN_IMAGE=${PREVIOUS_IMAGE}|" .env.production
+export ABRCHIN_IMAGE="$PREVIOUS_IMAGE"
 docker compose --env-file .env.production -f compose.production.yaml \
-  ps web worker catalog-sync db
+  up -d --no-deps --force-recreate --wait --wait-timeout 120 \
+  web worker catalog-sync
+curl -fsS http://127.0.0.1:3010/api/health
+curl -fsS http://127.0.0.1:3010/api/readiness
 ```
 
 ## Catalog Sync خواندنی
-
-Image Production فایل `dist/catalog-sync/catalog-sync.js` را دارد. فرمان‌های
-زیر داخل `abrchin-web` اجرا می‌شوند و به Worker یا فایل‌های تست وابسته نیستند:
 
 ```bash
 docker compose --env-file .env.production -f compose.production.yaml \
@@ -101,54 +198,20 @@ docker compose --env-file .env.production -f compose.production.yaml \
 
 docker compose --env-file .env.production -f compose.production.yaml \
   exec -T web npm run sync:catalog:arvan
-
-# اختیاری: هر دو Provider، مستقل و به ترتیب ثابت
-docker compose --env-file .env.production -f compose.production.yaml \
-  exec -T web npm run sync:catalog:all
 ```
 
-هر خط نتیجه JSON فقط فیلدهای امن زیر را دارد:
+## Secret و Environment
 
-```text
-event, readOnly, ok, provider, apiVersion, status,
-startedAt, completedAt, durationMs, catalogVersion,
-counts, failureCodes | safeError
-```
+- `POSTGRES_PASSWORD`, `DATABASE_URL`
+- `SESSION_SECRET`
+- `CREDENTIAL_ENCRYPTION_KEY`
+- `KAVENEGAR_API_KEY` در صورت OTP واقعی
+- `ZIBAL_MERCHANT` یا `ZARINPAL_MERCHANT_ID`
+- `PAYMENT_CALLBACK_BASE_URL`
+- `ADMIN_MOBILES`
+- `ARVAN_API_KEY` و/یا `PARSPACK_API_TOKEN`
+- `PARSPACK_PRICE_CURRENCY`, `PARSPACK_PRICE_AMOUNT_UNIT`
+- `BILLING_WORKER_INTERVAL_MS`
+- `ABRCHIN_IMAGE`
 
-`counts` شامل Region، Plan، Image، Network، Security، Catalog Item، Priced،
-Unavailable، Stale، Invalid Price و Invalid Resource است. Token، Authorization
-Header، URL دارای Secret و Response خام چاپ یا ذخیره نمی‌شوند. Status غیر
-`SUCCEEDED` Exit Code غیرصفر دارد، اما دادهٔ سالم قبلی حذف نمی‌شود.
-
-سرویس `catalog-sync` همین مسیر را با `CATALOG_SYNC_INTERVAL_MS` اجرا می‌کند.
-فرمان‌های دستی بالا برای Sync فوری هستند و به Restart سرویس
-`abrchin-worker` وابسته نیستند.
-
-## Founder test
-
-ترتیب Cloud PAYG باید دقیقاً باشد:
-
-```text
-Wallet Top-up
-→ Estimate
-→ Activation Request
-→ Admin Approval 1
-→ Controlled Provision
-→ Provider Confirmation / Billing Start
-→ Admin Verification
-→ Admin Approval 2
-→ Secure Delivery
-→ Wallet Settlement
-→ Reconciliation
-```
-
-Callback شارژ، Wallet Credit، Approval، Provision، Delivery و Settlement باید
-در Retry/Concurrency تکراری نشوند. کمبود موجودی فقط Invoice/Outstanding،
-Notification و Suspension Review می‌سازد؛ Auto-delete/terminate ممنوع است.
-
-## Backup و Rollback
-
-`ops/backup-postgres.sh` پیش از Migration اجرا و نتیجه Restore آن بررسی شود.
-Rollback کد از Image قبلی انجام می‌شود؛ Database و Volume Reset نمی‌شوند.
-Migrationهای Forward-only باقی می‌مانند و نسخه قبلی باید جدول‌های جدید را
-نادیده بگیرد.
+مقدار Secret در Shell output، Log، Screenshot یا Admin response چاپ نمی‌شود.

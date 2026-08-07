@@ -281,6 +281,29 @@ Resolver خالص: `lib/pricing/profit-curve.ts` → `resolveProfitCurve`.
 در Transition، موتور با `infrastructureSaleRialOverride` فروش دقیق ثابت را
 حفظ می‌کند.
 
+### Activation after migration
+
+Migration
+`20260807010000_profit_curve_operational_accounting` seeds
+`ProfitCurveConfiguration(id=default, enabled=true)` with the five approved
+bands. After `prisma migrate deploy`, new API-catalog sales immediately use the
+seeded Curve (no separate Founder publish is required to activate defaults).
+
+Human Finance publish still requires typed confirmation `تایید حاشیه بالا`
+when any configured/provider margin is ≥ 70%.
+
+### Accepted release characteristic (P2, non-blocking)
+
+During a smoothing transition, infrastructure customer sale may remain flat
+while Provider cost rises, so absolute gross profit Rial declines. This is
+intentional (no sale-price reversal, no negative GP). Do not redesign.
+
+### Unpublished catalog browse estimate (P2, non-blocking)
+
+Display-only fallback for unpriced catalog rows may omit the Profit Curve and
+use the launch default markup. Those rows are never purchasable
+(`purchasable` requires engine pricing) and cannot create a Quote.
+
 ### کف حاشیه پس از تخفیف
 
 `minimumPostDiscountGrossMarginBps` پیش‌فرض `2000` (۲۰٪). تخفیف درخواستی،

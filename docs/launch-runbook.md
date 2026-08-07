@@ -74,72 +74,50 @@ MANUAL_READY_PUBLIC_SALE_ENABLED=true
 
 ## Deploy با Termius
 
-`FINAL_SHA` را دقیقاً برابر SHA تأییدشدهٔ `origin/main` قرار دهید. این دستورات
-Volume دیتابیس را حذف نمی‌کنند و از Reset استفاده نمی‌کنند.
+Canonical deploy uses `ops/deploy.sh` with `.env.production`.
+This does not delete the DB volume and never runs migrate reset.
 
 ```bash
 set -Eeuo pipefail
 cd /opt/abrchin
 
-FINAL_SHA="REPLACE_WITH_APPROVED_MAIN_SHA"
-git fetch origin
-test "$(git rev-parse origin/main)" = "$FINAL_SHA"
+git fetch --prune origin
+git checkout main
+git pull --ff-only origin main
+
+TARGET_SHA="$(git rev-parse HEAD)"
 test -z "$(git status --porcelain)"
 
-PREVIOUS_IMAGE="$(docker inspect --format='{{.Config.Image}}' abrchin-web 2>/dev/null || true)"
-printf 'previous_image_recorded=%s\n' "${PREVIOUS_IMAGE:+true}"
+export APP_DIR="/opt/abrchin"
+export ENV_FILE=".env.production"
+export COMPOSE_FILE="compose.production.yaml"
+export ABRCHIN_IMAGE="abrchin:${TARGET_SHA:0:12}"
+export DEPLOY_IMAGE_SOURCE="local"
+export BACKUP_BEFORE_DEPLOY="1"
 
-git switch main
-git merge --ff-only "$FINAL_SHA"
-test "$(git rev-parse HEAD)" = "$FINAL_SHA"
-
-SHORT_SHA="$(git rev-parse --short=7 HEAD)"
-NEW_IMAGE="abrchin:${SHORT_SHA}"
-docker build --pull -t "$NEW_IMAGE" -f Dockerfile .
-
-if grep -q '^ABRCHIN_IMAGE=' .env; then
-  sed -i "s|^ABRCHIN_IMAGE=.*$|ABRCHIN_IMAGE=${NEW_IMAGE}|" .env
-else
-  printf '\nABRCHIN_IMAGE=%s\n' "$NEW_IMAGE" >> .env
-fi
-chmod 600 .env
-
-docker compose --env-file .env -f compose.production.yaml config --quiet
-docker compose --env-file .env -f compose.production.yaml up -d db
-docker compose --env-file .env -f compose.production.yaml run --rm --no-deps web \
-  node ./node_modules/prisma/build/index.js migrate deploy
-docker compose --env-file .env -f compose.production.yaml up -d \
-  --no-deps --force-recreate web worker
-
-for attempt in $(seq 1 30); do
-  curl -fsS http://127.0.0.1:3010/api/health >/dev/null && \
-  curl -fsS http://127.0.0.1:3010/api/readiness >/dev/null && break
-  test "$attempt" -lt 30
-  sleep 2
-done
-
-docker compose --env-file .env -f compose.production.yaml ps
-docker inspect --format '{{.Name}} image={{.Config.Image}} started={{.State.StartedAt}}' \
-  abrchin-web abrchin-worker
-curl -fsS http://127.0.0.1:3010/api/health
-curl -fsS http://127.0.0.1:3010/api/readiness
-docker compose --env-file .env -f compose.production.yaml logs \
-  --since=10m --tail=200 web worker
+chmod +x ops/deploy.sh ops/backup-postgres.sh
+./ops/deploy.sh
 ```
+
+See `docs/production-deployment.md` for registry mode, migration contract,
+accounting dry-run backfill, and Profit Curve activation notes.
 
 ### Rollback کد بدون حذف Database
 
-Migration این نسخه Forward-only و Additive است؛ در Rollback کد، Database و
-Volume دست‌نخورده می‌مانند. مقدار ثبت‌شدهٔ `PREVIOUS_IMAGE` را استفاده کنید:
+Migrationهای این Release Forward-only و Additive هستند؛ در Rollback کد،
+Database و Volume دست‌نخورده می‌مانند. هرگز `docker compose down -v` یا
+`prisma migrate reset` اجرا نکنید.
 
 ```bash
 set -Eeuo pipefail
 cd /opt/abrchin
 ROLLBACK_IMAGE="REPLACE_WITH_PREVIOUS_IMAGE"
 test -n "$ROLLBACK_IMAGE"
-sed -i "s|^ABRCHIN_IMAGE=.*$|ABRCHIN_IMAGE=${ROLLBACK_IMAGE}|" .env
-docker compose --env-file .env -f compose.production.yaml up -d \
-  --no-deps --force-recreate web worker
+sed -i "s|^ABRCHIN_IMAGE=.*$|ABRCHIN_IMAGE=${ROLLBACK_IMAGE}|" .env.production
+export ABRCHIN_IMAGE="$ROLLBACK_IMAGE"
+docker compose --env-file .env.production -f compose.production.yaml \
+  up -d --no-deps --force-recreate --wait --wait-timeout 120 \
+  web worker catalog-sync
 curl -fsS http://127.0.0.1:3010/api/health
 curl -fsS http://127.0.0.1:3010/api/readiness
 ```

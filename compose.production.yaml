@@ -42,6 +42,8 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       HOSTNAME: 0.0.0.0
       PORT: "3010"
+      # Explicit migration gate lives in ops/deploy.sh. Keep false in steady state.
+      ABRCHIN_RUN_MIGRATE_ON_START: ${ABRCHIN_RUN_MIGRATE_ON_START:-false}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set}
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY must be set}

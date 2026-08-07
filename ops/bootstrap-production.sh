@@ -4,6 +4,16 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
+ENV_FILE="${ENV_FILE:-.env.production}"
+COMPOSE_FILE="${COMPOSE_FILE:-compose.production.yaml}"
+
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
 required=(
   ABRCHIN_IMAGE
   POSTGRES_DB
@@ -34,8 +44,24 @@ if [[ "${#SESSION_SECRET}" -lt 16 ]]; then
   exit 1
 fi
 
-echo "[bootstrap] starting compose stack"
-docker compose -f compose.production.yaml up -d
+compose() {
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
+echo "[bootstrap] validating compose"
+compose config --quiet
+
+echo "[bootstrap] starting db"
+compose up -d db --wait --wait-timeout 120
+
+echo "[bootstrap] migration gate (bootstrap recovery may also set ABRCHIN_RUN_MIGRATE_ON_START=true)"
+compose run --rm --no-deps \
+  -e ABRCHIN_RUN_MIGRATE_ON_START=false \
+  web \
+  node ./node_modules/prisma/build/index.js migrate deploy
+
+echo "[bootstrap] starting app services"
+compose up -d --remove-orphans --wait --wait-timeout 180 web worker catalog-sync
 
 echo "[bootstrap] waiting for health"
 for _ in $(seq 1 40); do
@@ -47,5 +73,5 @@ for _ in $(seq 1 40); do
 done
 
 echo "[bootstrap] healthcheck failed" >&2
-docker compose -f compose.production.yaml ps >&2 || true
+compose ps >&2 || true
 exit 1

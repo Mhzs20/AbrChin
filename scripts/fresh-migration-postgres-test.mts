@@ -28,6 +28,25 @@ await withIsolatedPostgres("fresh", async (databaseUrl) => {
       ),
       "fresh schema must include the Billing Runtime Safety migration",
     );
+    for (const required of [
+      "20260806200000_commercial_pricing_v3",
+      "20260806210000_storefront_dominance_parchin_v3",
+      "20260807010000_profit_curve_operational_accounting",
+      "20260807020000_operating_expense_draft_idempotency",
+    ]) {
+      assert.ok(
+        migrations.some((migration) => migration.migration_name === required),
+        `fresh schema must include ${required}`,
+      );
+    }
+    const curve = await db.profitCurveConfiguration.findUnique({
+      where: { id: "default" },
+      include: { bands: { orderBy: { sortOrder: "asc" } } },
+    });
+    assert.ok(curve?.enabled, "default profit curve must be seeded enabled");
+    assert.equal(curve?.bands.length, 5);
+    assert.equal(curve?.bands[0]?.targetGrossMarginBps, 7000);
+    assert.equal(curve?.bands[4]?.targetGrossMarginBps, 3000);
     assert.equal(
       await db.providerBillingContractVersion.count({
         where: {

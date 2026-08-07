@@ -17,6 +17,14 @@ import { prisma } from "@/lib/db";
 
 export type AccountingBackfillCounts = {
   dryRun: boolean;
+  /** Total historical source rows examined. */
+  recordsScanned: number;
+  /** Rows that would create a new journal entry (idempotency key absent). */
+  entriesToCreate: number;
+  /** Rows whose idempotency key already exists (safe no-op on real run). */
+  alreadyPosted: number;
+  /** Purchases/renewals expected to post as NEEDS_RECONCILIATION (missing/unbalanced provider cost). */
+  needsReconciliation: number;
   walletTopUps: number;
   walletTopUpRefunds: number;
   servicePurchases: number;
@@ -30,9 +38,47 @@ export type AccountingBackfillOptions = {
   dryRun?: boolean;
 };
 
+async function journalExists(idempotencyKey: string): Promise<boolean> {
+  const existing = await prisma.accountingJournalEntry.findUnique({
+    where: { idempotencyKey },
+    select: { id: true },
+  });
+  return existing != null;
+}
+
+function orderNeedsReconciliation(order: {
+  planSnapshot?: unknown;
+  recommendationQuote?: {
+    providerBasePriceRialSnapshot?: bigint | null;
+    providerMonthlyPriceIrr?: bigint | null;
+    lineItemsSnapshot?: unknown;
+  } | null;
+}): boolean {
+  const quoteCost =
+    order.recommendationQuote?.providerBasePriceRialSnapshot ??
+    order.recommendationQuote?.providerMonthlyPriceIrr ??
+    null;
+  if (quoteCost != null && quoteCost > 0n) return false;
+  const plan =
+    order.planSnapshot && typeof order.planSnapshot === "object"
+      ? (order.planSnapshot as Record<string, unknown>)
+      : null;
+  const planCostRaw =
+    plan?.providerBasePriceRialSnapshot ?? plan?.estimatedProviderCostRial;
+  if (typeof planCostRaw === "string" || typeof planCostRaw === "number") {
+    try {
+      return BigInt(planCostRaw) <= 0n;
+    } catch {
+      return true;
+    }
+  }
+  return true;
+}
+
 /**
  * Idempotent historical backfill. Uses the same posting helpers as live hooks.
  * Never invents provider cost from the current catalog — snapshots only.
+ * Never runs automatically from app startup or DB migration.
  */
 export async function runAccountingBackfill(
   options: AccountingBackfillOptions = {},
@@ -40,6 +86,10 @@ export async function runAccountingBackfill(
   const dryRun = options.dryRun === true;
   const counts: AccountingBackfillCounts = {
     dryRun,
+    recordsScanned: 0,
+    entriesToCreate: 0,
+    alreadyPosted: 0,
+    needsReconciliation: 0,
     walletTopUps: 0,
     walletTopUpRefunds: 0,
     servicePurchases: 0,
@@ -49,13 +99,24 @@ export async function runAccountingBackfill(
     errors: [],
   };
 
+  const track = async (idempotencyKey: string) => {
+    counts.recordsScanned += 1;
+    if (await journalExists(idempotencyKey)) {
+      counts.alreadyPosted += 1;
+      return "exists" as const;
+    }
+    counts.entriesToCreate += 1;
+    return "create" as const;
+  };
+
   const topUps = await prisma.walletTopUp.findMany({
     where: { status: TopUpStatus.SUCCEEDED },
     orderBy: { createdAt: "asc" },
   });
   for (const topUp of topUps) {
     try {
-      if (!dryRun) await postWalletTopUpSucceeded(topUp);
+      const state = await track(`wallet-topup:${topUp.id}:succeeded:v1`);
+      if (!dryRun && state === "create") await postWalletTopUpSucceeded(topUp);
       counts.walletTopUps += 1;
     } catch (error) {
       counts.errors.push({
@@ -72,7 +133,10 @@ export async function runAccountingBackfill(
   });
   for (const refund of topUpRefunds) {
     try {
-      if (!dryRun) {
+      const state = await track(
+        `wallet-topup:${refund.walletTopUpId}:refunded:v1`,
+      );
+      if (!dryRun && state === "create") {
         await postWalletTopUpRefunded({
           id: refund.id,
           walletTopUpId: refund.walletTopUpId,
@@ -98,7 +162,16 @@ export async function runAccountingBackfill(
   });
   for (const order of paidOrders) {
     try {
-      if (!dryRun) await postServicePurchaseCompleted(order);
+      const state = await track(`service-order:${order.id}:purchase:v1`);
+      if (
+        orderNeedsReconciliation({
+          planSnapshot: order.planSnapshot,
+          recommendationQuote: order.recommendationQuote,
+        })
+      ) {
+        counts.needsReconciliation += 1;
+      }
+      if (!dryRun && state === "create") await postServicePurchaseCompleted(order);
       counts.servicePurchases += 1;
     } catch (error) {
       counts.errors.push({
@@ -116,7 +189,8 @@ export async function runAccountingBackfill(
   });
   for (const order of refundedOrders) {
     try {
-      if (!dryRun) {
+      const state = await track(`refund:${order.id}:completed:v1`);
+      if (!dryRun && state === "create") {
         await postServiceRefundCompleted(order);
       }
       counts.serviceRefunds += 1;
@@ -135,7 +209,14 @@ export async function runAccountingBackfill(
   });
   for (const quote of renewals) {
     try {
-      if (!dryRun) await postServiceRenewalCompleted(quote);
+      const state = await track(`service-renewal:${quote.id}:paid:v1`);
+      if (
+        quote.providerBasePriceRialSnapshot == null ||
+        quote.providerBasePriceRialSnapshot <= 0n
+      ) {
+        counts.needsReconciliation += 1;
+      }
+      if (!dryRun && state === "create") await postServiceRenewalCompleted(quote);
       counts.renewals += 1;
     } catch (error) {
       counts.errors.push({
@@ -152,7 +233,8 @@ export async function runAccountingBackfill(
   });
   for (const expense of expenses) {
     try {
-      if (!dryRun) {
+      const state = await track(`manual-expense:${expense.id}:posted:v1`);
+      if (!dryRun && state === "create") {
         await postManualExpensePosted({
           id: expense.id,
           amountRial: expense.amountRial,
