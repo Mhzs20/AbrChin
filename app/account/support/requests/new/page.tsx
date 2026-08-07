@@ -13,9 +13,16 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function NewSupportRequestPage() {
+export default async function NewSupportRequestPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ instanceId?: string; orderId?: string }>;
+}) {
   const user = await requireCustomerPage();
-  const instances = await getUserServices(user.id);
+  const [{ instanceId, orderId }, instances] = await Promise.all([
+    searchParams,
+    getUserServices(user.id),
+  ]);
 
   return (
     <>
@@ -42,6 +49,8 @@ export default async function NewSupportRequestPage() {
           name: item.name,
           ipv4: item.ipv4,
         }))}
+        initialInstanceId={typeof instanceId === "string" ? instanceId : ""}
+        initialOrderId={typeof orderId === "string" ? orderId : ""}
       />
     </>
   );

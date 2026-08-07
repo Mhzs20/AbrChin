@@ -333,3 +333,16 @@ test("rate limit bucket migration is additive and PAYG repair is forward-only", 
   assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
   assert.doesNotMatch(migration, /UPDATE "RecommendationQuote"/);
 });
+
+test("support request migration is additive", async () => {
+  const migration = await readFile(
+    "prisma/migrations/20260807140000_support_requests/migration.sql",
+    "utf8",
+  );
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "SupportRequest"/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "SupportRequestMessage"/);
+  assert.doesNotMatch(migration, /\bDROP TABLE\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM/i);
+  assert.doesNotMatch(migration, /UPDATE "ServiceOrder"/);
+});

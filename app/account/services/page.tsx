@@ -46,6 +46,9 @@ export default async function AccountServicesPage() {
       instanceId: null as string | null,
       infraStatus: item.infrastructureOrder.status,
       canRequestChange: false,
+      vcpu: null as number | null,
+      ramGb: null as number | null,
+      diskGb: null as number | null,
     })),
     ...instances.map((service) => ({
       kind: "instance" as const,
@@ -65,6 +68,9 @@ export default async function AccountServicesPage() {
       instanceId: service.id,
       infraStatus: service.infrastructureOrder.status,
       canRequestChange: service.status === "ACTIVE",
+      vcpu: service.infrastructureOrder.plan.vcpu ?? null,
+      ramGb: service.infrastructureOrder.plan.ramGb ?? null,
+      diskGb: service.infrastructureOrder.plan.storageGb ?? null,
     })),
   ];
 
@@ -98,7 +104,15 @@ export default async function AccountServicesPage() {
             جزئیات
           </Link>
           {service.canRequestChange && service.instanceId ? (
-            <ServiceChangeRequestButtons instanceId={service.instanceId} />
+            <ServiceChangeRequestButtons
+              instanceId={service.instanceId}
+              serverName={service.name}
+              currentResources={{
+                vcpu: service.vcpu,
+                ramGb: service.ramGb,
+                diskGb: service.diskGb,
+              }}
+            />
           ) : null}
         </span>
       ),
@@ -123,7 +137,15 @@ export default async function AccountServicesPage() {
           جزئیات
         </Link>
         {service.canRequestChange && service.instanceId ? (
-          <ServiceChangeRequestButtons instanceId={service.instanceId} />
+          <ServiceChangeRequestButtons
+            instanceId={service.instanceId}
+            serverName={service.name}
+            currentResources={{
+              vcpu: service.vcpu,
+              ramGb: service.ramGb,
+              diskGb: service.diskGb,
+            }}
+          />
         ) : null}
       </span>
     ),

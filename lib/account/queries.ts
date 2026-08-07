@@ -207,13 +207,27 @@ export async function getAccountOverview(userId: string) {
   };
 }
 
-export async function getUserOrders(userId: string) {
-  const orders = await prisma.serviceOrder.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    include: { infrastructureOrder: { include: { plan: true } } },
-  });
-  return orders;
+export async function getUserOrders(
+  userId: string,
+  options?: { page?: number; pageSize?: number },
+) {
+  const page = Math.max(1, options?.page ?? 1);
+  const pageSize = Math.min(50, Math.max(1, options?.pageSize ?? 20));
+  const where = { userId };
+  const [total, orders] = await Promise.all([
+    prisma.serviceOrder.count({ where }),
+    prisma.serviceOrder.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        plan: true,
+        infrastructureOrder: { include: { plan: true } },
+      },
+    }),
+  ]);
+  return { orders, total, page, pageSize };
 }
 
 export async function getUserServices(userId: string) {

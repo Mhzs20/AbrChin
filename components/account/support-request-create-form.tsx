@@ -11,15 +11,20 @@ const CATEGORIES = Object.keys(SUPPORT_CATEGORY_LABELS);
 
 export function SupportRequestCreateForm({
   instances,
+  initialInstanceId = "",
+  initialOrderId = "",
 }: {
   instances: Array<{ id: string; name: string; ipv4: string | null }>;
+  initialInstanceId?: string;
+  initialOrderId?: string;
 }) {
   const router = useRouter();
   const { showToast } = useToast();
   const [category, setCategory] = useState(CATEGORIES[0] ?? "OTHER");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
-  const [cloudInstanceId, setCloudInstanceId] = useState("");
+  const [cloudInstanceId, setCloudInstanceId] = useState(initialInstanceId);
+  const [serviceOrderId] = useState(initialOrderId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -36,6 +41,7 @@ export function SupportRequestCreateForm({
           subject,
           description,
           cloudInstanceId: cloudInstanceId || null,
+          serviceOrderId: serviceOrderId || null,
         }),
       });
       const data = (await response.json()) as {

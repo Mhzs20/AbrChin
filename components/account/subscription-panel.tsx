@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 
+import { ConfirmDialog } from "@/components/product/confirm-dialog";
 import { QuoteCountdown } from "@/components/quote-countdown";
+import { formatTomanFa } from "@/lib/money";
 
 type RenewalQuote = {
   id: string;
@@ -14,25 +16,29 @@ type RenewalQuote = {
   expiresAt: string;
 };
 
-function toman(value: string) {
-  return (BigInt(value) / 10n).toLocaleString("fa-IR");
-}
-
 export function SubscriptionPanel({
   instanceId,
   status: initialStatus,
   currentPeriodEnd: initialPeriodEnd,
   graceEndsAt,
+  previousPeriodAmountRial = null,
+  serverName = null,
+  resourcesLabel = null,
 }: {
   instanceId: string;
   status: string;
   currentPeriodEnd: string;
   graceEndsAt: string;
+  /** Last paid period amount (source order or previous renewal), rial string. */
+  previousPeriodAmountRial?: string | null;
+  serverName?: string | null;
+  resourcesLabel?: string | null;
 }) {
   const [status, setStatus] = useState(initialStatus);
   const [currentPeriodEnd, setCurrentPeriodEnd] = useState(initialPeriodEnd);
   const [quote, setQuote] = useState<RenewalQuote | null>(null);
   const [loading, setLoading] = useState(false);
+  const [confirmPay, setConfirmPay] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -76,8 +82,8 @@ export function SubscriptionPanel({
       setStatus(body.subscription.status);
       setCurrentPeriodEnd(body.subscription.currentPeriodEnd);
       setQuote(null);
-      setMessage("تمدید با قیمت تأییدشده انجام شد و Snapshot مستقل ثبت شد.");
-      await loadQuote();
+      setConfirmPay(false);
+      setMessage("تمدید با قیمت تأییدشده انجام شد و دوره جدید ثبت شد.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "تمدید ممکن نیست.");
     } finally {
@@ -93,6 +99,11 @@ export function SubscriptionPanel({
     TERMINATED: "خاتمه‌یافته",
   };
 
+  const previous = previousPeriodAmountRial ? BigInt(previousPeriodAmountRial) : null;
+  const current = quote ? BigInt(quote.finalPriceRial) : null;
+  const delta =
+    previous != null && current != null ? current - previous : null;
+
   return (
     <div>
       <p>وضعیت اشتراک: <strong>{statusLabels[status] ?? status}</strong></p>
@@ -104,11 +115,47 @@ export function SubscriptionPanel({
           پایان مهلت پرداخت: <strong>{new Date(graceEndsAt).toLocaleString("fa-IR")}</strong>
         </p>
       ) : null}
+      {serverName ? (
+        <p>
+          سرور: <strong dir="ltr">{serverName}</strong>
+        </p>
+      ) : null}
+      {resourcesLabel ? (
+        <p>
+          منابع فعلی: <strong dir="ltr">{resourcesLabel}</strong>
+        </p>
+      ) : null}
       {quote ? (
         <>
+          {previous != null ? (
+            <p>
+              مبلغ دوره قبل:{" "}
+              <strong>{formatTomanFa(previous)} تومان</strong>
+            </p>
+          ) : null}
           <p>
-            قیمت فعلی تمدید: <strong>{toman(quote.finalPriceRial)} تومان</strong>
+            مبلغ تمدید فعلی:{" "}
+            <strong>{formatTomanFa(BigInt(quote.finalPriceRial))} تومان</strong>
           </p>
+          {delta != null ? (
+            <p>
+              اختلاف:{" "}
+              <strong>
+                {delta === 0n
+                  ? "بدون تغییر"
+                  : `${delta > 0n ? "+" : "−"}${formatTomanFa(
+                      delta < 0n ? -delta : delta,
+                    )} تومان`}
+              </strong>
+              {delta !== 0n ? (
+                <small>
+                  {" "}
+                  (به‌خاطر به‌روزرسانی قیمت فروش فعلی؛ هزینه تأمین‌کننده نمایش
+                  داده نمی‌شود)
+                </small>
+              ) : null}
+            </p>
+          ) : null}
           <p>
             دوره جدید تا {new Date(quote.periodEnd).toLocaleString("fa-IR")} ·{" "}
             <QuoteCountdown expiresAt={quote.expiresAt} />
@@ -116,8 +163,9 @@ export function SubscriptionPanel({
           <button
             type="button"
             className="product-btn product-btn--primary"
+            style={{ minHeight: 44 }}
             disabled={loading || status === "CANCELED" || status === "TERMINATED"}
-            onClick={renew}
+            onClick={() => setConfirmPay(true)}
           >
             {loading ? "در حال تمدید..." : "تأیید قیمت و پرداخت با کیف پول"}
           </button>
@@ -126,15 +174,44 @@ export function SubscriptionPanel({
         <button
           type="button"
           className="product-btn product-btn--quiet"
+          style={{ minHeight: 44 }}
           disabled={loading}
           onClick={loadQuote}
         >
           {loading ? "در حال دریافت قیمت..." : "دریافت قیمت تمدید"}
         </button>
       )}
-      <p style={{ fontSize: 13 }}>تمدید خودکار وجود ندارد؛ هر تمدید فقط بعد از نمایش و تأیید قیمت انجام می‌شود.</p>
+      <p style={{ fontSize: 13 }}>
+        تمدید خودکار وجود ندارد؛ هر تمدید فقط بعد از نمایش و تأیید قیمت انجام
+        می‌شود.
+      </p>
       {message ? <p className="product-success">{message}</p> : null}
       {error ? <p className="product-error">{error}</p> : null}
+
+      <ConfirmDialog
+        open={confirmPay}
+        title="تأیید پرداخت تمدید"
+        loading={loading}
+        confirmLabel="پرداخت از کیف پول"
+        cancelLabel="انصراف"
+        onCancel={() => setConfirmPay(false)}
+        onConfirm={() => void renew()}
+      >
+        {quote ? (
+          <>
+            <p>
+              مبلغ قابل‌پرداخت:{" "}
+              <strong>
+                {formatTomanFa(BigInt(quote.finalPriceRial))} تومان
+              </strong>
+            </p>
+            <p>
+              دوره جدید تا{" "}
+              {new Date(quote.periodEnd).toLocaleString("fa-IR")}
+            </p>
+          </>
+        ) : null}
+      </ConfirmDialog>
     </div>
   );
 }
