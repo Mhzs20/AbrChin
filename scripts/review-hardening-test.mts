@@ -89,7 +89,7 @@ test("delivery configuration is real, locked and snapshotted before quote", asyn
   assert.match(delivery, /customer_confirmed_delivery_configuration/);
   assert.match(delivery, /invalid_access_method_for_image/);
   assert.match(deliveryRoute, /expectedRevision/);
-  assert.match(client, /تأیید تنظیم تحویل و دریافت Quote/);
+  assert.match(client, /تأیید تنظیمات و دریافت قیمت قفل‌شده/);
   assert.match(client, /WINDOWS_PASSWORD/);
   assert.match(
     payment,
