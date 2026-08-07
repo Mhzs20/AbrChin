@@ -60,21 +60,14 @@ cd "$APP_DIR"
 [[ -f "$COMPOSE_FILE" ]] || die "compose file missing: $COMPOSE_FILE"
 [[ -x ./ops/backup-postgres.sh || -f ./ops/backup-postgres.sh ]] || die "ops/backup-postgres.sh missing"
 
-# Preserve CLI/export overrides before sourcing the env file. Compose interpolates
-# ${VAR} from the process environment before --env-file, so we must load
-# production values into the process — but never let a stale ABRCHIN_IMAGE in
-# the file clobber the candidate the Founder just exported.
-_candidate_image="${ABRCHIN_IMAGE:-}"
-_candidate_source="${DEPLOY_IMAGE_SOURCE:-}"
-_candidate_backup="${BACKUP_BEFORE_DEPLOY:-}"
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
-[[ -n "$_candidate_image" ]] && ABRCHIN_IMAGE="$_candidate_image"
-[[ -n "$_candidate_source" ]] && DEPLOY_IMAGE_SOURCE="$_candidate_source"
-[[ -n "$_candidate_backup" ]] && BACKUP_BEFORE_DEPLOY="$_candidate_backup"
-unset _candidate_image _candidate_source _candidate_backup
+# ENV_FILE is a Docker Compose dotenv, not a Bash script.
+# Never `source` / `.` it: values such as `PARSPACK_API_TOKEN=Bearer …` are
+# legal for Compose but are NOT valid shell assignments and will break deploy
+# before build/migration. App and DB secrets load only through:
+#   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ...
+# Script control knobs come from explicit exports or the defaults above
+# (APP_DIR, ENV_FILE, COMPOSE_FILE, ABRCHIN_IMAGE, DEPLOY_IMAGE_SOURCE,
+# BACKUP_BEFORE_DEPLOY, …).
 
 : "${ABRCHIN_IMAGE:?ABRCHIN_IMAGE must be set to an immutable image tag (never :latest)}"
 case "$ABRCHIN_IMAGE" in

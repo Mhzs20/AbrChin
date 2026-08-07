@@ -29,9 +29,13 @@ DEPLOY_IMAGE_SOURCE=local|registry   # default: local
 BACKUP_BEFORE_DEPLOY=1|0             # default: 1
 ```
 
-هر فرمان Compose Production باید `--env-file .env.production` داشته باشد.
-`ops/deploy.sh` همچنین `.env.production` را source می‌کند تا مقدارهای
-ambient Shell (مثل `DATABASE_URL` لوکال) نتوانند Interpolation را منحرف کنند.
+هر فرمان Compose Production باید `--env-file "$ENV_FILE"` داشته باشد
+(پیش‌فرض سازگار: `.env.production`؛ Production فعلی ابرچین ممکن است
+`ENV_FILE=.env` باشد). `ops/deploy.sh` هرگز فایل env را با Bash `source`
+نمی‌کند — dotenv ممکن است شامل مقادیری مثل `PARSPACK_API_TOKEN=Bearer …`
+باشد که برای Compose معتبرند ولی برای Shell نیستند. متغیرهای کنترل Deploy
+باید صریحاً export شوند (`APP_DIR`, `ENV_FILE`, `COMPOSE_FILE`,
+`ABRCHIN_IMAGE`, `DEPLOY_IMAGE_SOURCE`, `BACKUP_BEFORE_DEPLOY`).
 Secretها را در Shell، Log یا Screenshot چاپ نکنید.
 
 ## Migration contract

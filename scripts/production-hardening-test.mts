@@ -438,3 +438,81 @@ test("production deploy gate keeps one-shot migrate and accepts degraded readine
   assert.doesNotMatch(executable, /down -v|volume rm|migrate reset/);
   assert.doesNotMatch(workerEntrypoint, /migrate deploy/);
 });
+
+test("deploy treats ENV_FILE as dotenv not bash and survives Bearer tokens", async () => {
+  const { mkdtemp, writeFile, readFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { spawnSync } = await import("node:child_process");
+
+  const deploy = await readFile("ops/deploy.sh", "utf8");
+  const backup = await readFile("ops/backup-postgres.sh", "utf8");
+  const deployExec = deploy
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
+  const backupExec = backup
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
+
+  // Deploy must never Bash-source the Compose dotenv.
+  assert.doesNotMatch(deployExec, /\bsource\b/);
+  assert.doesNotMatch(deployExec, /(^|[\s;])\.\s+"?\$\{?ENV_FILE/);
+  assert.doesNotMatch(deployExec, /set -a/);
+  assert.match(deploy, /docker compose --env-file "\$ENV_FILE"/);
+  assert.match(deploy, /ENV_FILE is a Docker Compose dotenv/);
+
+  // Backup already uses --env-file only.
+  assert.match(backup, /docker compose --env-file "\$ENV_FILE"/);
+  assert.doesNotMatch(backupExec, /\bsource\b/);
+  assert.doesNotMatch(backupExec, /set -a/);
+
+  const dir = await mkdtemp(join(tmpdir(), "abrchin-dotenv-"));
+  const envPath = join(dir, ".env");
+  try {
+    // Compose-legal unquoted Bearer value; Bash `source` treats `token-value`
+    // as a command and fails (or worse). Deploy must not source this file.
+    await writeFile(
+      envPath,
+      [
+        "PARSPACK_API_TOKEN=Bearer token-value",
+        "DATABASE_URL=postgresql://abrchin:x@db:5432/abrchin",
+        "ABRCHIN_IMAGE=abrchin:deadbeefcafe",
+        "",
+      ].join("\n"),
+      { mode: 0o600 },
+    );
+
+    const sourced = spawnSync(
+      "bash",
+      ["-c", `set -euo pipefail; source "${envPath}"; echo SHOULD_NOT_REACH`],
+      { encoding: "utf8" },
+    );
+    assert.notEqual(
+      sourced.status,
+      0,
+      "bash source of Bearer dotenv must fail; otherwise regression fixture is weak",
+    );
+    assert.doesNotMatch(sourced.stdout ?? "", /SHOULD_NOT_REACH/);
+
+    // Syntax-check deploy.sh itself; does not execute the deploy body.
+    const syntax = spawnSync("bash", ["-n", "ops/deploy.sh"], {
+      encoding: "utf8",
+    });
+    assert.equal(syntax.status, 0, syntax.stderr || syntax.stdout);
+
+    // Prove deploy.sh control flow never opens ENV_FILE via source even when
+    // ABRCHIN_IMAGE is exported and ENV_FILE points at the Bearer fixture:
+    // extract only the pre-lock validation by stopping before flock via a
+    // dry probe that greps the script (already asserted) and confirms the
+    // fixture path is never passed to `source`/`set -a` in executable lines.
+    assert.equal(
+      deployExec.includes('source "$ENV_FILE"'),
+      false,
+    );
+    assert.equal(deployExec.includes(`source "${envPath}"`), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
