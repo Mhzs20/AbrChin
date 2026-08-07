@@ -1,213 +1,28 @@
-import {
-  InfrastructureProductKind,
-  InfrastructureProvider,
-  ParchinLevel,
-} from "@prisma/client";
-
-import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
-import { prisma } from "@/lib/db";
-import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
-import { readRequestMeta } from "@/lib/session";
+import { jsonError, rejectCrossOrigin } from "@/lib/http";
 
-function bps(value: unknown, max: number): number {
-  if (!Number.isInteger(value) || Number(value) < 0 || Number(value) > max) {
-    throw new Error("invalid_bps");
-  }
-  return Number(value);
-}
-
-function money(value: unknown): bigint {
-  if (typeof value !== "string" || !/^\d+$/.test(value)) {
-    throw new Error("invalid_money");
-  }
-  return BigInt(value);
-}
-
-function positiveDays(value: unknown): number {
-  if (!Number.isInteger(value) || Number(value) < 1 || Number(value) > 90) {
-    throw new Error("invalid_lifecycle_days");
-  }
-  return Number(value);
-}
-
+/**
+ * Legacy commerce pricing write path.
+ *
+ * Blocked: independent writes here diverge from FinanceConfigurationRevision
+ * and can leave tax / product markup / Parchin half-synced with provider
+ * margins. All Admin finance mutation must go through the atomic Financial
+ * Center endpoint.
+ */
 export async function PATCH(request: Request) {
   const rejected = rejectCrossOrigin(request);
   if (rejected) return rejected;
 
   try {
-    const admin = await requireAdminUser();
-    const meta = await readRequestMeta(request);
-    const body = (await request.json()) as {
-      taxBps?: unknown;
-      reminderDaysBeforeDue?: unknown;
-      suspendGraceDaysAfterZero?: unknown;
-      deleteDaysAfterSuspend?: unknown;
-      compassServicePrices?: Record<string, unknown>;
-      productMarkups?: Array<Record<string, unknown>>;
-      parchin?: Array<Record<string, unknown>>;
-    };
-    const taxBps = bps(body.taxBps, 10_000);
-    const reminderDaysBeforeDue = positiveDays(body.reminderDaysBeforeDue);
-    const suspendGraceDaysAfterZero = positiveDays(
-      body.suspendGraceDaysAfterZero,
+    await requireAdminUser();
+    return jsonError(
+      "این مسیر قیمت‌گذاری منسوخ شده است. تنظیمات مالی را فقط از مرکز مالی (/api/admin/finance/configuration) ذخیره کن.",
+      410,
+      { code: "legacy_pricing_endpoint_retired" },
     );
-    const deleteDaysAfterSuspend = positiveDays(body.deleteDaysAfterSuspend);
-    const serviceCodes = [
-      "SITE_MIGRATION",
-      "INITIAL_SETUP",
-      "DOMAIN_SSL",
-      "BACKUP_RESTORE",
-      "ARCHITECTURE_LIGHT",
-    ] as const;
-    const compassServicePrices: Record<string, string> = {};
-    for (const code of serviceCodes) {
-      const raw = body.compassServicePrices?.[code];
-      compassServicePrices[code] = money(raw ?? "0").toString();
-    }
-    const products = (body.productMarkups ?? []).map((config) => {
-      if (
-        !Object.values(InfrastructureProvider).includes(
-          config.provider as InfrastructureProvider,
-        ) ||
-        !Object.values(InfrastructureProductKind).includes(
-          config.productKind as InfrastructureProductKind,
-        ) ||
-        config.apiVersion !== "v1"
-      ) {
-        throw new Error("invalid_product_pricing");
-      }
-      return {
-        provider: config.provider as InfrastructureProvider,
-        productKind: config.productKind as InfrastructureProductKind,
-        apiVersion: "v1",
-        markupBasisPoints: bps(config.markupBasisPoints, 100_000),
-        enabled: config.enabled === true,
-      };
-    });
-    const parchin = (body.parchin ?? []).map((config) => {
-      if (
-        !Object.values(ParchinLevel).includes(config.level as ParchinLevel)
-      ) {
-        throw new Error("invalid_parchin");
-      }
-      return {
-        level: config.level as ParchinLevel,
-        title:
-          typeof config.title === "string" ? config.title.trim() : "",
-        description:
-          typeof config.description === "string"
-            ? config.description.trim()
-            : null,
-        priceRial: money(config.priceRial),
-        active: config.active === true,
-      };
-    });
-    if (parchin.some((config) => !config.title)) {
-      throw new Error("invalid_parchin");
-    }
-    if (
-      !parchin.some(
-        (config) =>
-          config.level === ParchinLevel.PARCHIN_START && config.active,
-      )
-    ) {
-      return jsonError("پرچین شروع باید فعال بماند.", 400);
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await tx.commercePricingConfig.upsert({
-        where: { id: "default" },
-        update: {
-          taxBps,
-          reminderDaysBeforeDue,
-          suspendGraceDaysAfterZero,
-          deleteDaysAfterSuspend,
-          compassServicePrices,
-          updatedById: admin.id,
-        },
-        create: {
-          id: "default",
-          taxBps,
-          reminderDaysBeforeDue,
-          suspendGraceDaysAfterZero,
-          deleteDaysAfterSuspend,
-          compassServicePrices,
-          updatedById: admin.id,
-        },
-      });
-      for (const config of products) {
-        await tx.productPricingConfig.upsert({
-          where: {
-            provider_apiVersion_productKind: {
-              provider: config.provider,
-              apiVersion: config.apiVersion,
-              productKind: config.productKind,
-            },
-          },
-          update: {
-            markupBasisPoints: config.markupBasisPoints,
-            enabled: config.enabled,
-            updatedById: admin.id,
-          },
-          create: {
-            ...config,
-            updatedById: admin.id,
-          },
-        });
-      }
-      for (const config of parchin) {
-        await tx.parchinPricingConfig.update({
-          where: { level: config.level },
-          data: {
-            title: config.title,
-            description: config.description,
-            priceRial: config.priceRial,
-            active: config.active,
-            updatedById: admin.id,
-          },
-        });
-      }
-      await writeAuditLog(
-        {
-          actorUserId: admin.id,
-          action: AuditActions.PLAN_UPDATE,
-          entityType: "commerce_pricing",
-          entityId: "default",
-          afterData: {
-            taxBps,
-            reminderDaysBeforeDue,
-            suspendGraceDaysAfterZero,
-            deleteDaysAfterSuspend,
-            compassServicePrices,
-            products,
-            parchin: parchin.map((item) => ({
-              ...item,
-              priceRial: item.priceRial.toString(),
-            })),
-          },
-          ip: meta.ip,
-          userAgent: meta.userAgent,
-        },
-        tx,
-      );
-    });
-    return jsonOk({ ok: true });
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);
-    if (
-      error instanceof Error &&
-      [
-        "invalid_bps",
-        "invalid_money",
-        "invalid_product_pricing",
-        "invalid_parchin",
-        "invalid_lifecycle_days",
-      ].includes(error.message)
-    ) {
-      return jsonError("تنظیم مالی معتبر نیست.", 400);
-    }
     return jsonError("ذخیره تنظیمات مالی ممکن نیست.", 500);
   }
 }

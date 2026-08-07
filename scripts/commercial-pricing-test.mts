@@ -464,3 +464,102 @@ test("hourly/daily equivalents are ceil divisions of the billed month", () => {
     dailyRial: 0n,
   });
 });
+
+// ---------------------------------------------------------------------------
+// Audit regressions — Card/Quote/Checkout parity + PAYG isolation
+// ---------------------------------------------------------------------------
+
+test("card one-month final equals quote final for fixture commercial inputs", () => {
+  const fixture = {
+    providerMonthlyPriceIrr: 10_000_000n,
+    providerMarkupBps: 4_286,
+    productMarkupBps: 500,
+    parchinLevel: "PARCHIN_START" as const,
+    parchinPriceIrr: 5_000_000n,
+    taxBps: 1_000,
+    couponDiscountBps: null,
+    couponCode: null,
+  };
+  const month = computeCommercialPriceBreakdown({
+    ...fixture,
+    termMonths: 1,
+  });
+  for (const term of [1, 3, 6, 12] as const) {
+    const termPrice = computeCommercialPriceBreakdown({
+      ...fixture,
+      termMonths: term,
+    });
+    if (term === 1) {
+      assert.equal(termPrice.finalPriceRial, month.finalPriceRial);
+    } else {
+      assert.ok(termPrice.finalPriceRial > 0n);
+      assert.equal(termPrice.termMonths, term);
+    }
+    // Renewal always one prepaid month without term discount.
+    assert.equal(termPrice.renewalPriceRial, month.finalPriceRial);
+  }
+  const coupon = computeCommercialPriceBreakdown({
+    ...fixture,
+    termMonths: 12,
+    couponDiscountBps: 2_500,
+    couponCode: "SAVE25",
+  });
+  const termOnly = computeCommercialPriceBreakdown({
+    ...fixture,
+    termMonths: 12,
+  });
+  // Coupon replaces term discount rather than stacking.
+  assert.notEqual(coupon.finalPriceRial, termOnly.finalPriceRial);
+  assert.equal(coupon.discountSource, "coupon");
+  assert.equal(termOnly.discountSource, "term");
+  assert.equal(
+    computeCommercialPriceBreakdown({ ...fixture, termMonths: 1 }).discountSource,
+    "none",
+  );
+});
+
+test("legacy pricing write endpoints are retired (410)", async () => {
+  const pricing = await readFile(
+    "app/api/admin/infrastructure/pricing/route.ts",
+    "utf8",
+  );
+  const markup = await readFile(
+    "app/api/admin/infrastructure/providers/markup/route.ts",
+    "utf8",
+  );
+  assert.match(pricing, /requireAdminUser/);
+  assert.match(pricing, /410/);
+  assert.match(pricing, /legacy_pricing_endpoint_retired/);
+  assert.doesNotMatch(pricing, /prisma\.\$transaction/);
+  assert.match(markup, /requireAdminUser/);
+  assert.match(markup, /410/);
+  assert.match(markup, /legacy_markup_endpoint_retired/);
+  assert.doesNotMatch(markup, /providerPricingConfig\.upsert/);
+});
+
+test("public storefront payloads zero markup/tax basis points", async () => {
+  const assortment = await readFile(
+    "lib/storefront/assortment-service.ts",
+    "utf8",
+  );
+  const plans = await readFile("lib/orders/plans.ts", "utf8");
+  assert.match(assortment, /markupBasisPoints: 0/);
+  assert.match(assortment, /taxBasisPoints: 0/);
+  assert.match(plans, /markupBasisPoints: 0/);
+  assert.match(plans, /taxBasisPoints: 0/);
+  // Branding must not advertise a higher Parchin while billing START.
+  assert.doesNotMatch(assortment, /brandingLevel/);
+  assert.doesNotMatch(assortment, /brandingContract/);
+  assert.match(assortment, /billedContract/);
+});
+
+test("PAYG cannot charge prepaid storefront checkout", async () => {
+  const orders = await readFile("lib/orders/service.ts", "utf8");
+  const ensure = await readFile(
+    "lib/storefront/ensure-sale-plans.ts",
+    "utf8",
+  );
+  assert.match(orders, /PAYG_WALLET/);
+  assert.match(ensure, /PREPAID_TERM/);
+  assert.match(ensure, /PAYG_WALLET/);
+});

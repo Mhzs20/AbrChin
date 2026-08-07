@@ -402,7 +402,7 @@ test("all Admin Operations queues use disjoint eligible predicates and controlle
     queues.find((queue) => queue.key === key)?.items ?? [];
   assert.deepEqual(
     new Set(queues.map((queue) => queue.key)).size,
-    12,
+    13,
   );
   assert.equal(items("walletPaymentReview")[0]?.id, paymentReview.id);
   assert.equal(

@@ -46,6 +46,7 @@ export async function PATCH(request: Request) {
         revisionId: body.rollbackToRevisionId,
         actorUserId: admin.id,
         reason: typeof body.reason === "string" ? body.reason : null,
+        idempotencyKey,
         meta,
       });
       const configuration = await readFinanceConfiguration();
@@ -61,6 +62,7 @@ export async function PATCH(request: Request) {
     const revision = await applyFinanceConfiguration({
       input,
       actorUserId: admin.id,
+      idempotencyKey,
       meta,
     });
     const configuration = await readFinanceConfiguration();

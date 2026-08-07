@@ -78,7 +78,37 @@ test("wallet top-up to estimate, activation and Admin approval stays mutation-fr
       amountUnit: "RIAL",
       providerHourlyPriceIrr: 10_000n,
       providerMonthlyPriceIrr: 7_300_000n,
+      payloadHash: `hash-${suffix}`,
       lastSyncedAt: new Date(),
+    },
+  });
+  await db.providerRegionConfig.create({
+    data: {
+      provider: "ARVAN",
+      apiVersion: "v1",
+      regionCode: catalog.regionCode,
+      displayName: `Fixture ${catalog.regionCode}`,
+      source: "ADMIN",
+      syncEnabled: true,
+      saleEnabled: true,
+    },
+  });
+  await db.providerCatalogState.upsert({
+    where: { provider: "ARVAN" },
+    update: {
+      lastCatalogSync: new Date(),
+      lastSyncStatus: "SUCCEEDED",
+      freshnessSlaSeconds: 900,
+      enabled: true,
+    },
+    create: {
+      id: "ARVAN",
+      provider: "ARVAN",
+      apiVersion: "v1",
+      enabled: true,
+      lastCatalogSync: new Date(),
+      lastSyncStatus: "SUCCEEDED",
+      freshnessSlaSeconds: 900,
     },
   });
   const policy = await db.billingPolicyVersion.create({
@@ -183,6 +213,7 @@ test("wallet top-up to estimate, activation and Admin approval stays mutation-fr
       externalSecurityId: "default-security",
       providerHourlyPriceIrr: 10_000n,
       providerMonthlyPriceIrr: 7_300_000n,
+      providerPayloadHash: catalog.payloadHash,
       quotedAt: new Date(),
       expiresAt: new Date(Date.now() + 600_000),
     },

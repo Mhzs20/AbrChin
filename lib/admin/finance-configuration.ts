@@ -134,6 +134,8 @@ export function financeConfigurationSnapshot(input: FinanceConfigurationInput) {
       description: item.description,
       priceRial: item.priceRial.toString(),
       active: item.active,
+      // Snapshot must always hold concrete service lists so rollback restores
+      // a valid contract. Callers must merge omitted fields before snapshotting.
       includedServices: item.includedServices ?? [],
       excludedServices: item.excludedServices ?? [],
       supportWindow: item.supportWindow ?? null,
@@ -141,6 +143,93 @@ export function financeConfigurationSnapshot(input: FinanceConfigurationInput) {
     })),
     priceDisplay: input.priceDisplay,
   };
+}
+
+function asStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+/**
+ * Finance Center price/title publishes often omit service-list fields.
+ * Merge live contract fields so snapshots stay complete and rollback cannot
+ * wipe included/excluded services.
+ */
+export function mergeParchinInputWithExisting(
+  incoming: FinanceParchinInput,
+  existing: {
+    title: string;
+    subtitle: string | null;
+    description: string | null;
+    priceRial: bigint;
+    active: boolean;
+    includedServices: unknown;
+    excludedServices: unknown;
+    supportWindow: string | null;
+    firstResponseTarget: string | null;
+  } | null,
+): FinanceParchinInput {
+  const existingIncluded = asStringList(existing?.includedServices);
+  const existingExcluded = asStringList(existing?.excludedServices);
+  const included =
+    incoming.includedServices !== undefined
+      ? incoming.includedServices
+      : existingIncluded;
+  const excluded =
+    incoming.excludedServices !== undefined
+      ? incoming.excludedServices
+      : existingExcluded;
+  return {
+    level: incoming.level,
+    title: incoming.title,
+    subtitle:
+      incoming.subtitle !== undefined
+        ? incoming.subtitle
+        : (existing?.subtitle ?? null),
+    description: incoming.description,
+    priceRial: incoming.priceRial,
+    active: incoming.active,
+    includedServices: included,
+    excludedServices: excluded,
+    supportWindow:
+      incoming.supportWindow !== undefined
+        ? incoming.supportWindow
+        : (existing?.supportWindow ?? null),
+    firstResponseTarget:
+      incoming.firstResponseTarget !== undefined
+        ? incoming.firstResponseTarget
+        : (existing?.firstResponseTarget ?? null),
+  };
+}
+
+export function parchinContractMateriallyChanged(
+  existing: {
+    title: string;
+    subtitle: string | null;
+    description: string | null;
+    priceRial: bigint;
+    active: boolean;
+    includedServices: unknown;
+    excludedServices: unknown;
+    supportWindow: string | null;
+    firstResponseTarget: string | null;
+  },
+  next: FinanceParchinInput,
+): boolean {
+  return (
+    existing.title !== next.title ||
+    (existing.subtitle ?? null) !== (next.subtitle ?? null) ||
+    (existing.description ?? null) !== (next.description ?? null) ||
+    existing.priceRial !== next.priceRial ||
+    existing.active !== next.active ||
+    JSON.stringify(asStringList(existing.includedServices)) !==
+      JSON.stringify(next.includedServices ?? []) ||
+    JSON.stringify(asStringList(existing.excludedServices)) !==
+      JSON.stringify(next.excludedServices ?? []) ||
+    (existing.supportWindow ?? null) !== (next.supportWindow ?? null) ||
+    (existing.firstResponseTarget ?? null) !==
+      (next.firstResponseTarget ?? null)
+  );
 }
 
 export function validateFinanceConfiguration(
@@ -342,6 +431,7 @@ export async function applyFinanceConfiguration(params: {
   input: FinanceConfigurationInput;
   actorUserId: string | null;
   rollbackOfId?: string | null;
+  idempotencyKey?: string | null;
   meta?: { ip?: string | null; userAgent?: string | null };
 }) {
   const { input, actorUserId } = params;
@@ -355,10 +445,45 @@ export async function applyFinanceConfiguration(params: {
       "قیمت Card و Quote برای یک ماه برابر نشد؛ انتشار متوقف شد.",
     );
   }
-  const snapshot = financeConfigurationSnapshot(input);
+
+  const existingParchinRows = await prisma.parchinPricingConfig.findMany({
+    where: { level: { in: input.parchin.map((item) => item.level) } },
+  });
+  const existingByLevel = new Map(
+    existingParchinRows.map((row) => [row.level, row]),
+  );
+  const mergedParchin = input.parchin.map((item) =>
+    mergeParchinInputWithExisting(item, existingByLevel.get(item.level) ?? null),
+  );
+  const mergedInput: FinanceConfigurationInput = {
+    ...input,
+    parchin: mergedParchin,
+  };
+  const snapshot = financeConfigurationSnapshot(mergedInput);
+  const auditIdempotencyKey = params.idempotencyKey
+    ? `finance-config:${params.idempotencyKey}`
+    : null;
 
   return prisma.$transaction(async (tx) => {
-    for (const item of input.providers) {
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended('finance-configuration-publish', 0)
+      )::text AS locked
+    `;
+
+    if (auditIdempotencyKey && actorUserId) {
+      const prior = await tx.auditLog.findUnique({
+        where: { idempotencyKey: auditIdempotencyKey },
+      });
+      if (prior?.entityId) {
+        const priorRevision = await tx.financeConfigurationRevision.findUnique({
+          where: { id: prior.entityId },
+        });
+        if (priorRevision) return priorRevision;
+      }
+    }
+
+    for (const item of mergedInput.providers) {
       const markupBasisPoints = grossMarginBpsToMarkupBps(
         item.targetGrossMarginBps,
       );
@@ -381,7 +506,7 @@ export async function applyFinanceConfiguration(params: {
         },
       });
     }
-    for (const item of input.productMarkups) {
+    for (const item of mergedInput.productMarkups) {
       await tx.productPricingConfig.upsert({
         where: {
           provider_apiVersion_productKind: {
@@ -408,43 +533,52 @@ export async function applyFinanceConfiguration(params: {
     await tx.commercePricingConfig.upsert({
       where: { id: "default" },
       update: {
-        taxBps: input.taxBps,
-        reminderDaysBeforeDue: input.reminderDaysBeforeDue,
-        suspendGraceDaysAfterZero: input.suspendGraceDaysAfterZero,
-        deleteDaysAfterSuspend: input.deleteDaysAfterSuspend,
-        compassServicePrices: input.compassServicePrices,
+        taxBps: mergedInput.taxBps,
+        reminderDaysBeforeDue: mergedInput.reminderDaysBeforeDue,
+        suspendGraceDaysAfterZero: mergedInput.suspendGraceDaysAfterZero,
+        deleteDaysAfterSuspend: mergedInput.deleteDaysAfterSuspend,
+        compassServicePrices: mergedInput.compassServicePrices,
         updatedById: actorUserId,
       },
       create: {
         id: "default",
-        taxBps: input.taxBps,
-        reminderDaysBeforeDue: input.reminderDaysBeforeDue,
-        suspendGraceDaysAfterZero: input.suspendGraceDaysAfterZero,
-        deleteDaysAfterSuspend: input.deleteDaysAfterSuspend,
-        compassServicePrices: input.compassServicePrices,
+        taxBps: mergedInput.taxBps,
+        reminderDaysBeforeDue: mergedInput.reminderDaysBeforeDue,
+        suspendGraceDaysAfterZero: mergedInput.suspendGraceDaysAfterZero,
+        deleteDaysAfterSuspend: mergedInput.deleteDaysAfterSuspend,
+        compassServicePrices: mergedInput.compassServicePrices,
         updatedById: actorUserId,
       },
     });
-    for (const item of input.parchin) {
+    for (const item of mergedInput.parchin) {
       const existing = await tx.parchinPricingConfig.findUnique({
         where: { level: item.level },
       });
-      const nextVersion = (existing?.version ?? 1) + 1;
+      if (!existing) {
+        throw new FinanceConfigurationError(
+          "invalid_configuration",
+          `سطح پرچین ${item.level} پیدا نشد.`,
+        );
+      }
+      const changed = parchinContractMateriallyChanged(existing, item);
+      const nextVersion = changed
+        ? (existing.version ?? 1) + 1
+        : (existing.version ?? 1);
       await tx.parchinPricingConfig.update({
         where: { level: item.level },
         data: {
           title: item.title,
-          subtitle: item.subtitle ?? existing?.subtitle ?? null,
+          subtitle: item.subtitle ?? existing.subtitle ?? null,
           description: item.description,
           priceRial: item.priceRial,
           active: item.active,
-          includedServices: item.includedServices ?? undefined,
-          excludedServices: item.excludedServices ?? undefined,
-          supportWindow: item.supportWindow ?? existing?.supportWindow ?? null,
+          includedServices: item.includedServices ?? [],
+          excludedServices: item.excludedServices ?? [],
+          supportWindow: item.supportWindow ?? existing.supportWindow ?? null,
           firstResponseTarget:
-            item.firstResponseTarget ?? existing?.firstResponseTarget ?? null,
+            item.firstResponseTarget ?? existing.firstResponseTarget ?? null,
           version: nextVersion,
-          effectiveFrom: new Date(),
+          ...(changed ? { effectiveFrom: new Date() } : {}),
           updatedById: actorUserId,
         },
       });
@@ -452,23 +586,23 @@ export async function applyFinanceConfiguration(params: {
     await tx.storefrontAssortmentSettings.upsert({
       where: { id: "default" },
       update: {
-        showHourlyPrice: input.priceDisplay.showHourlyPrice,
-        showDailyPrice: input.priceDisplay.showDailyPrice,
-        showMonthlyPrice: input.priceDisplay.showMonthlyPrice,
+        showHourlyPrice: mergedInput.priceDisplay.showHourlyPrice,
+        showDailyPrice: mergedInput.priceDisplay.showDailyPrice,
+        showMonthlyPrice: mergedInput.priceDisplay.showMonthlyPrice,
         updatedById: actorUserId,
       },
       create: {
         id: "default",
-        showHourlyPrice: input.priceDisplay.showHourlyPrice,
-        showDailyPrice: input.priceDisplay.showDailyPrice,
-        showMonthlyPrice: input.priceDisplay.showMonthlyPrice,
+        showHourlyPrice: mergedInput.priceDisplay.showHourlyPrice,
+        showDailyPrice: mergedInput.priceDisplay.showDailyPrice,
+        showMonthlyPrice: mergedInput.priceDisplay.showMonthlyPrice,
         updatedById: actorUserId,
       },
     });
     const revision = await tx.financeConfigurationRevision.create({
       data: {
         actorUserId,
-        reason: input.reason?.trim() || null,
+        reason: mergedInput.reason?.trim() || null,
         rollbackOfId: params.rollbackOfId ?? null,
         snapshot: snapshot as Prisma.InputJsonValue,
       },
@@ -481,6 +615,7 @@ export async function applyFinanceConfiguration(params: {
           entityType: "finance_configuration_revision",
           entityId: revision.id,
           afterData: snapshot,
+          idempotencyKey: auditIdempotencyKey,
           ip: params.meta?.ip ?? undefined,
           userAgent: params.meta?.userAgent ?? undefined,
         },
@@ -495,6 +630,7 @@ export async function rollbackFinanceConfiguration(params: {
   revisionId: string;
   actorUserId: string | null;
   reason?: string | null;
+  idempotencyKey?: string | null;
   meta?: { ip?: string | null; userAgent?: string | null };
 }) {
   const revision = await prisma.financeConfigurationRevision.findUnique({
@@ -514,6 +650,7 @@ export async function rollbackFinanceConfiguration(params: {
     input,
     actorUserId: params.actorUserId,
     rollbackOfId: revision.id,
+    idempotencyKey: params.idempotencyKey,
     meta: params.meta,
   });
 }
@@ -565,6 +702,16 @@ function financeInputFromSnapshot(snapshot: unknown): FinanceConfigurationInput 
         : {},
     parchin: parchin.map((row) => {
       const item = row as Record<string, unknown>;
+      const included = Array.isArray(item.includedServices)
+        ? item.includedServices.filter(
+            (entry): entry is string => typeof entry === "string",
+          )
+        : [];
+      const excluded = Array.isArray(item.excludedServices)
+        ? item.excludedServices.filter(
+            (entry): entry is string => typeof entry === "string",
+          )
+        : [];
       return {
         level: item.level as ParchinLevel,
         title: String(item.title ?? ""),
@@ -573,16 +720,11 @@ function financeInputFromSnapshot(snapshot: unknown): FinanceConfigurationInput 
           typeof item.description === "string" ? item.description : null,
         priceRial: BigInt(String(item.priceRial ?? "0")),
         active: item.active === true,
-        includedServices: Array.isArray(item.includedServices)
-          ? item.includedServices.filter(
-              (entry): entry is string => typeof entry === "string",
-            )
-          : [],
-        excludedServices: Array.isArray(item.excludedServices)
-          ? item.excludedServices.filter(
-              (entry): entry is string => typeof entry === "string",
-            )
-          : [],
+        // Empty arrays in older Finance Center snapshots mean "fields were
+        // omitted", not "wipe services". Leave undefined so merge restores
+        // live contract lists on rollback.
+        includedServices: included.length > 0 ? included : undefined,
+        excludedServices: excluded.length > 0 ? excluded : undefined,
         supportWindow:
           typeof item.supportWindow === "string" ? item.supportWindow : null,
         firstResponseTarget:

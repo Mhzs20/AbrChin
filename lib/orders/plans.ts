@@ -274,8 +274,9 @@ export function toPublicPlanOffer(
     normalizedAmountUnit: "RIAL",
     billingIntervals:
       plan.pricing.finalPriceRial > 0n ? (["MONTHLY"] as const) : [],
-    markupBasisPoints: plan.pricing.markupBasisPoints,
-    taxBasisPoints: plan.pricing.taxBasisPoints,
+    // Public customers must not see markup/tax basis points.
+    markupBasisPoints: 0,
+    taxBasisPoints: 0,
     catalogStatus: plan.catalogItem.status,
     purchaseState: "PURCHASABLE",
     deliveryEstimateMinutes: plan.deliveryEstimateMinutes,
@@ -703,10 +704,9 @@ function catalogItemPublicOffer(input: {
     normalizedCurrencyCode: "IRR",
     normalizedAmountUnit: "RIAL",
     billingIntervals: monthlyPriceRial > 0n ? (["MONTHLY"] as const) : [],
-    markupBasisPoints:
-      input.priced?.markupBasisPoints ?? DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
-    taxBasisPoints:
-      input.priced?.taxBasisPoints ?? input.fallbackTaxBasisPoints,
+    // Public customers must not see markup/tax basis points.
+    markupBasisPoints: 0,
+    taxBasisPoints: 0,
     catalogStatus,
     purchaseState: input.purchaseState,
     deliveryEstimateMinutes: 15,

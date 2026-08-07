@@ -403,3 +403,43 @@ test("Task 2 migration is additive and backfills Parchin contracts", async () =>
   assert.match(schema, /includedServices\s+Json/);
   assert.match(schema, /ostovarMinDiskGb\s+Int\s+@default\(0\)/);
 });
+
+test("Tehran cheaper equal-or-better plan hides dominated weaker plan", () => {
+  const a = candidate({
+    id: "tehran-a",
+    locationKey: "تهران ایران",
+    vcpu: 1,
+    ramGb: 2,
+    diskGb: 40,
+    finalMonthlyPriceRial: 8_000_000n,
+    checkedAtMs: 2_000,
+  });
+  const b = candidate({
+    id: "tehran-b",
+    locationKey: "تهران ایران",
+    vcpu: 1,
+    ramGb: 1,
+    diskGb: 25,
+    finalMonthlyPriceRial: 9_000_000n,
+    checkedAtMs: 1_000,
+  });
+  assert.equal(planDominates(a, b), true);
+  const filtered = filterDominatedPlans([a, b]);
+  assert.equal(filtered.kept.length, 1);
+  assert.equal(filtered.kept[0]?.id, "tehran-a");
+  assert.equal(
+    filtered.removed.some((row) => row.candidateId === "tehran-b"),
+    true,
+  );
+});
+
+test("assortment brands only the billed Parchin level", async () => {
+  const source = await readFile(
+    "lib/storefront/assortment-service.ts",
+    "utf8",
+  );
+  assert.match(source, /billedContract/);
+  assert.doesNotMatch(source, /brandingContract/);
+  assert.doesNotMatch(source, /storefrontParchinForTier\(tier\)/);
+  assert.match(source, /pricingParchinLevel = "PARCHIN_START"/);
+});

@@ -166,7 +166,9 @@ export async function createRenewalQuote(params: {
   const currentPricing =
     config?.enabled && productConfig?.enabled && parchin?.active
       ? resolvePlanPricing(subscription.plan, config, {
-          productMarkupBasisPoints: productConfig.markupBasisPoints,
+          productMarkupBasisPoints:
+            subscription.plan.skuMarkupBasisPoints ??
+            productConfig.markupBasisPoints,
           taxBasisPoints: commerce?.taxBps ?? 1000,
           parchinLevel,
           parchinPriceRial: parchin.priceRial,
@@ -313,7 +315,9 @@ export async function payRenewalQuote(params: {
     const currentPricing =
       config?.enabled && productConfig?.enabled && parchin?.active
         ? resolvePlanPricing(subscription.plan, config, {
-            productMarkupBasisPoints: productConfig.markupBasisPoints,
+            productMarkupBasisPoints:
+              subscription.plan.skuMarkupBasisPoints ??
+              productConfig.markupBasisPoints,
             taxBasisPoints: commerce?.taxBps ?? 1000,
             parchinLevel,
             parchinPriceRial: parchin.priceRial,

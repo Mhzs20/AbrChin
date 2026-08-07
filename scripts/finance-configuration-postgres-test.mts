@@ -304,3 +304,143 @@ test("legacy markup repair converts exactly 23333 and preserves custom rows", as
   });
   assert.equal(fresh?.markupBasisPoints, 4_286);
 });
+
+test("price-only publish preserves Parchin services and skips version bump", async (t) => {
+  if (!db) {
+    t.skip("requires isolated PostgreSQL");
+    return;
+  }
+  const suffix = Date.now().toString(36);
+  const admin = await db.user.create({
+    data: {
+      mobile: `0904${suffix.slice(-7).padStart(7, "0")}`,
+      role: UserRole.ADMIN,
+    },
+  });
+
+  const seededServices = ["ساخت سرور پس از تأیید ظرفیت", "نصب سیستم‌عامل انتخابی"];
+  await db.parchinPricingConfig.update({
+    where: { level: "PARCHIN_START" },
+    data: {
+      includedServices: seededServices,
+      excludedServices: ["مانیتورینگ مستمر"],
+      version: 3,
+      title: "پرچین نو",
+      subtitle: null,
+      description: null,
+      supportWindow: null,
+      firstResponseTarget: null,
+      priceRial: 5_000_000n,
+      active: true,
+    },
+  });
+
+  // Keep ACTIVE/STABLE fields aligned with baseInput so a price-only publish
+  // does not look like a material contract change on those rows either.
+  await db.parchinPricingConfig.update({
+    where: { level: "PARCHIN_ACTIVE" },
+    data: {
+      title: "پرچین استوار",
+      subtitle: null,
+      description: null,
+      supportWindow: null,
+      firstResponseTarget: null,
+      priceRial: 15_000_000n,
+      active: true,
+      includedServices: ["خدمت فعال"],
+      excludedServices: ["غیر فعال"],
+    },
+  });
+  await db.parchinPricingConfig.update({
+    where: { level: "PARCHIN_STABLE" },
+    data: {
+      title: "پرچین کهکشان",
+      subtitle: null,
+      description: null,
+      supportWindow: null,
+      firstResponseTarget: null,
+      priceRial: 50_000_000n,
+      active: true,
+      includedServices: ["خدمت پایدار"],
+      excludedServices: ["غیر پایدار"],
+    },
+  });
+
+  const before = await db.parchinPricingConfig.findUnique({
+    where: { level: "PARCHIN_START" },
+  });
+  assert.equal(before?.version, 3);
+
+  // Finance Center-style body: price/title only, no service lists.
+  const input = baseInput(3_000);
+  input.reason = "price-only";
+  input.parchin = input.parchin.map((row) => ({
+    level: row.level,
+    title: row.title,
+    description: row.description,
+    priceRial: row.priceRial,
+    active: row.active,
+  }));
+  const revision = await applyFinanceConfiguration({
+    input,
+    actorUserId: admin.id,
+    idempotencyKey: `finance-price-only-${suffix}`,
+  });
+  assert.ok(revision.id);
+
+  const after = await db.parchinPricingConfig.findUnique({
+    where: { level: "PARCHIN_START" },
+  });
+  assert.equal(after?.version, 3, "unchanged contract must not bump version");
+  assert.deepEqual(after?.includedServices, seededServices);
+
+  const snapshot = revision.snapshot as {
+    parchin: Array<{ level: string; includedServices: string[] }>;
+  };
+  const startSnap = snapshot.parchin.find(
+    (row) => row.level === "PARCHIN_START",
+  );
+  assert.ok(startSnap);
+  assert.deepEqual(startSnap.includedServices, seededServices);
+
+  // Idempotent replay returns the same revision.
+  const replay = await applyFinanceConfiguration({
+    input,
+    actorUserId: admin.id,
+    idempotencyKey: `finance-price-only-${suffix}`,
+  });
+  assert.equal(replay.id, revision.id);
+
+  // Rollback of a snapshot that omitted services must not wipe them.
+  const wipedStyle = baseInput(3_100);
+  wipedStyle.reason = "will-rollback";
+  const mid = await applyFinanceConfiguration({
+    input: wipedStyle,
+    actorUserId: admin.id,
+  });
+  // Force an empty-list snapshot like the old Finance Center bug.
+  await db.financeConfigurationRevision.update({
+    where: { id: mid.id },
+    data: {
+      snapshot: {
+        ...(mid.snapshot as object),
+        parchin: (
+          (mid.snapshot as { parchin: Array<Record<string, unknown>> }).parchin
+        ).map((row) => ({
+          ...row,
+          includedServices: [],
+          excludedServices: [],
+        })),
+      },
+    },
+  });
+  await rollbackFinanceConfiguration({
+    revisionId: mid.id,
+    actorUserId: admin.id,
+  });
+  const restored = await db.parchinPricingConfig.findUnique({
+    where: { level: "PARCHIN_START" },
+  });
+  assert.ok(Array.isArray(restored?.includedServices));
+  assert.ok((restored?.includedServices as string[]).length > 0);
+});

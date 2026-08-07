@@ -153,8 +153,9 @@ Endpointهای قدیمی (`/api/admin/infrastructure/pricing`,
 - ساعتی/روزانه «معادل مصرف» است: `ceil(final/720)` و `ceil(final/30)` از
   `deriveUsageEquivalentPrices` — مدل پرداخت نیست و در UI با برچسب «معادل»
   نمایش داده می‌شود.
-- پرچین Tier کارت فقط برچسب برندینگ است؛ مبلغ کارت با پرچین Minimum پلن
-  (شروع) محاسبه می‌شود چون Quote همان را شارژ می‌کند.
+- عنوان، فهرست خدمات و مبلغ Dialog پرچین باید همان سطح صورتحساب‌شده
+  (Minimum پلن / شروع) باشد؛ برندینگ سطح بالاتر روی کارتی که START شارژ
+  می‌شود ممنوع است.
 - CTA «ثبت سفارش» و Style آن دست‌نخورده ماند.
 
 ## تست‌ها
@@ -187,13 +188,15 @@ Endpointهای قدیمی (`/api/admin/infrastructure/pricing`,
 ## نکات Task شماره ۳
 
 - Endpointهای Legacy قیمت (`/api/admin/infrastructure/pricing` و
-  `providers/markup`) هنوز زنده‌اند؛ اگر مصرف‌کننده دیگری ندارند می‌توان
-  آن‌ها را به مسیر اتمیک Redirect یا حذف کرد.
-- PAYG (`lib/billing/activation.ts`) هنوز Estimate ساعتی مستقل دارد.
+  `providers/markup`) بازنشسته شده‌اند و با HTTP 410 به مسیر اتمیک
+  `/api/admin/finance/configuration` هدایت می‌شوند؛ نوشتن مستقل دیگر ممکن نیست.
+- PAYG (`lib/billing/activation.ts`) هنوز Estimate ساعتی مستقل دارد و از
+  مسیر خرید Prepaid فروشگاه عمومی جدا است.
 - Impact preview روی ۲۴ پلن آخر نمونه‌گیری می‌کند؛ در صورت رشد کاتالوگ،
   صفحه‌بندی/انتخاب هوشمند نمونه را اضافه کنید.
 - Finance Center UI هنوز ویرایش کامل فهرست خدمات پرچین را ساده نگه داشته؛
-  قرارداد از Migration Backfill می‌شود و Publish نسخه را بالا می‌برد.
+  Publish سمت سرور فهرست زنده را Merge می‌کند تا Snapshot کامل بماند و
+  Version فقط با تغییر واقعی قرارداد بالا برود.
 
 
 ## Dominated Plan Detection (Task 2)

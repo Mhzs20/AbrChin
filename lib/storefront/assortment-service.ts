@@ -51,7 +51,6 @@ import {
 import {
   isStorefrontDisplayFresh,
   storefrontLocationLabel,
-  storefrontParchinForTier,
   storefrontServerTitle,
 } from "@/lib/storefront/presentation";
 import {
@@ -189,7 +188,8 @@ function toPublicOffer(input: {
     }),
     deliveryMode: "MANAGED",
     productKind: input.item.productKind,
-    parchinLevel: input.priced?.parchinLevel ?? storefrontParchinForTier(input.tier),
+    // Always the billed level when priced; never advertise a higher package.
+    parchinLevel: input.priced?.parchinLevel ?? "PARCHIN_START",
     parchinTitle: input.parchinTitle,
     regionCode: input.item.regionCode,
     locationLabel: storefrontLocationLabel(input.item.regionCode),
@@ -224,8 +224,9 @@ function toPublicOffer(input: {
     normalizedCurrencyCode: "IRR",
     normalizedAmountUnit: "RIAL",
     billingIntervals: monthlyPriceRial > 0n ? (["MONTHLY"] as const) : [],
-    markupBasisPoints: input.priced?.markupBasisPoints ?? DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
-    taxBasisPoints: input.priced?.taxBasisPoints ?? input.fallbackTaxBasisPoints,
+    // Supplier economics stay server-side; public payloads must not leak bps.
+    markupBasisPoints: 0,
+    taxBasisPoints: 0,
     catalogStatus: !input.catalogFresh ? "STALE" : input.item.status,
     purchaseState: input.purchaseState,
     deliveryEstimateMinutes: 0,
@@ -371,9 +372,9 @@ function buildOfferForItem(
       config.apiVersion === item.apiVersion &&
       config.productKind === item.productKind,
   );
-  // Money math must match the quote exactly: quotes charge the plan's
-  // minimum Parchin (START for storefront SKUs). The tier's Parchin level
-  // stays label-only branding on the card.
+  // Card, dialog, quote and checkout must advertise AND charge the same
+  // Parchin level. Storefront SKUs lock to the plan minimum (START); never
+  // brand a higher tier package while billing START.
   const pricingParchinLevel = "PARCHIN_START" as const;
   const priced =
     providerPricing && productPricing
@@ -392,21 +393,20 @@ function buildOfferForItem(
       : null;
   const fallbackTaxBasisPoints = context.commerce?.taxBps ?? 1000;
 
-  const brandingLevel = storefrontParchinForTier(tier);
-  const brandingContract =
-    context.parchinContractByLevel.get(brandingLevel) ?? null;
+  const billedContract =
+    context.parchinContractByLevel.get(pricingParchinLevel) ?? null;
   const traits = extractCatalogCommercialTraits({
     transfer: item.transfer,
     rawPayload: item.rawPayload,
   });
-  const parchinTitle = brandingContract?.title || undefined;
-  const parchinSubtitle = brandingContract?.subtitle || undefined;
-  const parchinSummary = brandingContract
-    ? oneLineParchinSummary(brandingContract)
+  const parchinTitle = billedContract?.title || undefined;
+  const parchinSubtitle = billedContract?.subtitle || undefined;
+  const parchinSummary = billedContract
+    ? oneLineParchinSummary(billedContract)
     : undefined;
-  const parchinIncludedServices = brandingContract?.includedServices;
-  const parchinExcludedServices = brandingContract?.excludedServices;
-  const parchinMonthlyPriceRial = brandingContract?.monthlyPriceRial;
+  const parchinIncludedServices = billedContract?.includedServices;
+  const parchinExcludedServices = billedContract?.excludedServices;
+  const parchinMonthlyPriceRial = billedContract?.monthlyPriceRial;
   const diskTypeLabel = traits.diskTypeKey;
   const ipv4Available =
     traits.ipv4Key == null ? null : traits.ipv4Key === "yes";
