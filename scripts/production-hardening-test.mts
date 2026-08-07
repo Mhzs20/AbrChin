@@ -431,6 +431,10 @@ test("production deploy gate keeps one-shot migrate and accepts degraded readine
     gateIdx,
   );
   assert.ok(migratedIdx > gateIdx && migrateCmdIdx > migratedIdx);
-  assert.doesNotMatch(deploy, /down -v|volume rm|migrate reset/);
+  const executable = deploy
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
+  assert.doesNotMatch(executable, /down -v|volume rm|migrate reset/);
   assert.doesNotMatch(workerEntrypoint, /migrate deploy/);
 });
