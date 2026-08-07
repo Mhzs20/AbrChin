@@ -21,24 +21,27 @@ export default async function UpgradeQuotePage({
 }) {
   const user = await requireCustomerPage();
   const { id } = await params;
+
+  let quote;
   try {
-    const quote = await getUpgradeQuoteForCustomer({
+    quote = await getUpgradeQuoteForCustomer({
       resourceChangeRequestId: id,
       userId: user.id,
     });
-    return (
-      <>
-        <PageHeader
-          title="پیش‌فاکتور ارتقا"
-          description="مبلغ قفل‌شده، تأثیر روی کیف پول و زمان اعمال را قبل از برداشت ببین."
-        />
-        <ServiceUpgradeQuotePanel quoteId={id} initialQuote={quote} />
-      </>
-    );
   } catch (error) {
     if (error instanceof WalletError && error.code === "not_found") {
       notFound();
     }
     throw error;
   }
+
+  return (
+    <>
+      <PageHeader
+        title="پیش‌فاکتور ارتقا"
+        description="مبلغ قفل‌شده، تأثیر روی کیف پول و زمان اعمال را قبل از برداشت ببین."
+      />
+      <ServiceUpgradeQuotePanel quoteId={id} initialQuote={quote} />
+    </>
+  );
 }

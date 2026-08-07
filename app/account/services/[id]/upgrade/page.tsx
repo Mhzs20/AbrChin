@@ -34,7 +34,7 @@ export default async function ServiceUpgradePage({
     <>
       <PageHeader
         title="ارتقای سرور"
-        description="منابع فعلی را ببین و فقط مقصدهای مجاز ارائه‌دهنده را انتخاب کن."
+        description="منابع فعلی را ببین و فقط مقصدهای مجاز بزرگ‌تر را انتخاب کن."
       />
       <ServiceUpgradeChooser
         instanceId={instance.id}

@@ -74,7 +74,10 @@ export async function POST(request: Request) {
           idempotencyKey:
             readIdempotencyKey(request) ?? "",
         })
-      : await createTopUpIntent(user.id, amountToman, { couponCode });
+      : await createTopUpIntent(user.id, amountToman, {
+          couponCode,
+          idempotencyKey: readIdempotencyKey(request) ?? undefined,
+        });
     return jsonOk({
       topUp: {
         id: result.topUp.id,

@@ -209,7 +209,7 @@ export function ReadyCloudCatalog({
               }
             />
             <small className="quick-plan-validity">
-              بعد از انتخاب، قیمت و ظرفیت دوباره بررسی و برای ۱۰ دقیقه قفل می‌شود.
+              بعد از انتخاب، قیمت برای ۶۰ دقیقه قفل می‌شود.
             </small>
           </article>
         ))}

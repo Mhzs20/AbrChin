@@ -2,7 +2,7 @@
 
 import { LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 type TopUpFormProps = {
   gatewayAvailable: boolean;
@@ -33,6 +33,7 @@ export function TopUpForm({
   const [couponCode, setCouponCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const submitKey = useRef<string | null>(null);
 
   const selected = custom ? Number.parseInt(custom, 10) : amount;
 
@@ -42,9 +43,13 @@ export function TopUpForm({
     setLoading(true);
     setError("");
     try {
+      submitKey.current ??= `customer-topup-create:${crypto.randomUUID()}`;
       const response = await fetch("/api/wallet/topups", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": submitKey.current,
+        },
         body: JSON.stringify({
           amountToman: selected,
           couponCode: couponCode.trim() || null,

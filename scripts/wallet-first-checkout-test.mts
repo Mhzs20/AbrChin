@@ -72,9 +72,15 @@ test("wallet-first checkout removes direct gateway CTA and uses wallet CTAs", as
   assert.match(checkout, /کسری/);
   assert.match(checkout, /جمع قفل‌شده/);
 
-  assert.match(countdown, /این قیمت تا ساعت/);
+  assert.match(countdown, /۶۰ دقیقه/);
+  assert.match(countdown, /تا ساعت/);
   assert.doesNotMatch(countdown, /قبل از پرداخت دوباره بررسی/);
   assert.doesNotMatch(checkout, /قبل از پرداخت دوباره بررسی/);
+  assert.match(checkout, /Idempotency-Key/);
+  assert.match(
+    await readFile("components/topup-form.tsx", "utf8"),
+    /customer-topup-create/,
+  );
 
   assert.match(
     expired,

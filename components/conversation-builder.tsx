@@ -792,7 +792,7 @@ export function ConversationBuilder({
     syncSelection?: boolean;
   }) {
     if (!sessionId || !input.planId || !input.imageAssetId) {
-      setQuotesError("یک Region، سرور و سیستم‌عامل معتبر انتخاب کن.");
+      setQuotesError("یک موقعیت، سرور و سیستم‌عامل معتبر انتخاب کن.");
       return;
     }
     const nextServerName = input.serverName ?? serverName;
@@ -886,18 +886,21 @@ export function ConversationBuilder({
       preferred?.images[0];
     if (!preferred?.id || !image?.id) return;
     autoDeliveryAttempted.current = true;
-    setSelectedDeliveryPlanId(preferred.id);
-    setSelectedImageAssetId(image.id);
-    setAccessMethod(
-      image.windows ? "WINDOWS_PASSWORD" : "ONE_TIME_PASSWORD",
-    );
-    setServerName((current) =>
-      current && isValidCustomerServerName(current)
-        ? current
-        : generateCustomerServerName(),
-    );
-    setServerNameTouched(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const nextAccess = image.windows
+      ? "WINDOWS_PASSWORD"
+      : "ONE_TIME_PASSWORD";
+    const nextNameSeed = generateCustomerServerName();
+    queueMicrotask(() => {
+      setSelectedDeliveryPlanId(preferred.id);
+      setSelectedImageAssetId(image.id);
+      setAccessMethod(nextAccess);
+      setServerName((current) =>
+        current && isValidCustomerServerName(current)
+          ? current
+          : nextNameSeed,
+      );
+      setServerNameTouched(false);
+    });
   }, [
     deliveryConfigured,
     deliveryOptions,
@@ -1505,6 +1508,10 @@ export function ConversationBuilder({
                             maxLength={32}
                           />
                         </label>
+                        <p className="ready-server-coupon-note">
+                          با کد تخفیف خرید سرور، تخفیف دوره‌ای حذف و درصد کد اعمال
+                          می‌شود.
+                        </p>
                       </details>
                     </div>
                   ) : null}

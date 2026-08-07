@@ -296,7 +296,7 @@ async function lockAndRevalidatePlan(
   ) {
     throw new WalletError(
       "quote_unavailable",
-      "روش دسترسی برای این Image پشتیبانی نمی‌شود.",
+      "روش دسترسی برای این سیستم‌عامل پشتیبانی نمی‌شود.",
     );
   }
   if (

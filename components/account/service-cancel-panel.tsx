@@ -182,8 +182,8 @@ export function ServiceCancelPanel({
       ) : null}
       {lifecycle === "TERMINATION_FAILED" ? (
         <p className="product-error" role="alert">
-          خاتمه خودکار Provider ناموفق بود؛ ابرچین باید خاتمه را تکمیل کند. تا
-          آن زمان مبلغی به کیف پول برنمی‌گردد.
+          خاتمه خودکار سرور کامل نشد؛ ابرچین باید خاتمه را تکمیل کند. تا آن زمان
+          مبلغی به کیف پول برنمی‌گردد.
         </p>
       ) : null}
       {message ? <p className="product-success">{message}</p> : null}

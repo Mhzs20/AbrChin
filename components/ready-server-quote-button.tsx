@@ -2,7 +2,7 @@
 
 import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   generateCustomerServerName,
@@ -115,10 +115,6 @@ export function ReadyServerQuoteButton({
     6: "۶ ماه — تا ۱۰٪ تخفیف",
     12: "۱۲ ماه — تا ۲۰٪ تخفیف",
   };
-  const selectedImage = useMemo(
-    () => options?.images.find((image) => image.id === imageAssetId) ?? null,
-    [imageAssetId, options],
-  );
   const serverNameValid = isValidCustomerServerName(serverName);
   const accessLabel =
     accessMethod === "WINDOWS_PASSWORD"

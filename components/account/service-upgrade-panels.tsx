@@ -153,58 +153,86 @@ export function ServiceUpgradeChooser({
   }
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div>
-        <h2 style={{ margin: 0 }}>ارتقای سرور</h2>
-        <p style={{ margin: "8px 0 0" }}>
-          سرور: <strong dir="ltr">{serverName}</strong>
-        </p>
-      </div>
+    <section className="product-section">
+      <h2 className="product-section-title">ارتقای سرور</h2>
+      <p style={{ marginTop: 0 }}>
+        سرور: <strong dir="ltr">{serverName}</strong>
+      </p>
 
       {current ? (
-        <section>
-          <h3 style={{ margin: "0 0 8px", fontSize: "1rem" }}>منابع فعلی</h3>
-          <p dir="ltr" style={{ margin: 0, fontWeight: 600 }}>
-            {formatResources(current)}
-          </p>
+        <section aria-label="منابع فعلی">
+          <h3 className="product-section-title">منابع فعلی</h3>
+          <div className="product-stat-grid">
+            <div className="product-stat-card">
+              <div className="product-stat-card-label">پردازنده</div>
+              <div className="product-stat-card-value" dir="ltr">
+                {current.vcpu} vCPU
+              </div>
+            </div>
+            <div className="product-stat-card">
+              <div className="product-stat-card-label">حافظه</div>
+              <div className="product-stat-card-value" dir="ltr">
+                {current.ramGb} GB
+              </div>
+            </div>
+            <div className="product-stat-card">
+              <div className="product-stat-card-label">دیسک</div>
+              <div className="product-stat-card-value" dir="ltr">
+                {current.diskGb} GB
+              </div>
+            </div>
+          </div>
         </section>
       ) : null}
 
       {loading ? <p>در حال بارگذاری گزینه‌های مجاز…</p> : null}
-      {error ? <p style={{ color: "crimson" }}>{error}</p> : null}
+      {error ? <p className="product-error">{error}</p> : null}
 
       {!loading && targets.length === 0 && !error ? (
-        <p>فعلاً مقصد ارتقای قابل فروش برای این سرور در دسترس نیست.</p>
+        <p className="product-empty">
+          فعلاً مقصد ارتقای قابل فروش برای این سرور در دسترس نیست.
+        </p>
       ) : null}
 
-      <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 12 }}>
+      <div className="product-row-list" style={{ display: "grid", gap: 12 }}>
         {targets.map((target) => (
-          <li
-            key={target.planId}
-            style={{
-              borderTop: "1px solid color-mix(in oklab, var(--product-ink) 12%, transparent)",
-              paddingTop: 12,
-            }}
-          >
-            <div style={{ display: "grid", gap: 6 }}>
-              <strong>{target.planTitle}</strong>
-              <span dir="ltr">{formatResources(target)}</span>
-              <span>
-                هزینه ارتقا: <strong>{target.upgradeChargeTomanFa}</strong> تومان
-              </span>
-              <button
-                type="button"
-                className="product-btn"
-                disabled={busy || !target.available}
-                onClick={() => void createQuote(target.planId)}
-              >
-                {target.available ? "ادامه و دریافت پیش‌فاکتور" : "ناموجود"}
-              </button>
+          <article className="product-row-card" key={target.planId}>
+            <strong>{target.planTitle}</strong>
+            <div className="product-stat-grid" style={{ marginTop: 10 }}>
+              <div className="product-stat-card">
+                <div className="product-stat-card-label">پردازنده</div>
+                <div className="product-stat-card-value" dir="ltr">
+                  {target.vcpu} vCPU
+                </div>
+              </div>
+              <div className="product-stat-card">
+                <div className="product-stat-card-label">حافظه</div>
+                <div className="product-stat-card-value" dir="ltr">
+                  {target.ramGb} GB
+                </div>
+              </div>
+              <div className="product-stat-card">
+                <div className="product-stat-card-label">دیسک</div>
+                <div className="product-stat-card-value" dir="ltr">
+                  {target.diskGb} GB
+                </div>
+              </div>
             </div>
-          </li>
+            <p style={{ margin: "10px 0" }}>
+              هزینه ارتقا: <strong>{target.upgradeChargeTomanFa}</strong> تومان
+            </p>
+            <button
+              type="button"
+              className="product-btn product-btn--primary"
+              disabled={busy || !target.available}
+              onClick={() => void createQuote(target.planId)}
+            >
+              {target.available ? "ادامه و دریافت پیش‌فاکتور" : "ناموجود"}
+            </button>
+          </article>
         ))}
-      </ul>
-    </div>
+      </div>
+    </section>
   );
 }
 
@@ -298,58 +326,62 @@ export function ServiceUpgradeQuotePanel({
   }
 
   return (
-    <div style={{ display: "grid", gap: 16, maxWidth: 640 }}>
+    <section className="product-section order-checkout">
       <div>
-        <h2 style={{ margin: 0 }}>پیش‌فاکتور ارتقا</h2>
+        <h2 className="product-section-title">پیش‌فاکتور ارتقا</h2>
         {!expired && !quote.paid ? (
-          <div style={{ marginTop: 8 }}>
+          <p className="order-checkout-lock">
             <QuoteCountdown expiresAt={quote.expiresAt} prominent />
-          </div>
+          </p>
         ) : null}
       </div>
 
-      <section style={{ display: "grid", gap: 8 }}>
-        <div>
-          <small>منابع فعلی</small>
-          <p dir="ltr" style={{ margin: 0, fontWeight: 600 }}>
-            {formatResources(quote.current)}
-          </p>
-        </div>
-        <div>
-          <small>منابع جدید</small>
-          <p dir="ltr" style={{ margin: 0, fontWeight: 600 }}>
-            {formatResources(quote.target)}
-          </p>
-          <p style={{ margin: "4px 0 0" }}>{quote.target.planTitle}</p>
-        </div>
-        <div>
-          <small>تغییر مؤثر</small>
-          <p dir="ltr" style={{ margin: 0 }}>
-            +{quote.delta.vcpu} vCPU / +{quote.delta.ramGb} GB RAM / +
-            {quote.delta.diskGb} GB Disk
-          </p>
-        </div>
-      </section>
+        <section className="order-checkout-summary" aria-label="منابع">
+          <div className="order-checkout-summary-row">
+            <span>منابع فعلی</span>
+            <strong dir="ltr">{formatResources(quote.current)}</strong>
+          </div>
+          <div className="order-checkout-summary-row">
+            <span>منابع جدید</span>
+            <strong dir="ltr">{formatResources(quote.target)}</strong>
+          </div>
+          <div className="order-checkout-summary-row">
+            <span>پلن مقصد</span>
+            <strong>{quote.target.planTitle}</strong>
+          </div>
+          <div className="order-checkout-summary-row">
+            <span>تغییر مؤثر</span>
+            <strong dir="ltr">
+              +{quote.delta.vcpu} vCPU / +{quote.delta.ramGb} GB / +
+              {quote.delta.diskGb} GB
+            </strong>
+          </div>
+        </section>
 
-      <section style={{ display: "grid", gap: 6 }}>
-        <p style={{ margin: 0 }}>
-          هزینه ارتقا: <strong>{quote.upgradeChargeTomanFa}</strong> تومان
-        </p>
-        <p style={{ margin: 0 }}>
-          موجودی کیف پول: <strong>{quote.walletBalanceTomanFa}</strong> تومان
-        </p>
-        {quote.walletBalanceAfterTomanFa && !expired && !quote.paid ? (
-          <p style={{ margin: 0 }}>
-            مانده پس از ارتقا:{" "}
-            <strong>{quote.walletBalanceAfterTomanFa}</strong> تومان
-          </p>
-        ) : null}
-        {shortfall > 0n && !expired && !quote.paid ? (
-          <p style={{ margin: 0 }}>
-            کسری: <strong>{quote.shortfallTomanFa}</strong> تومان
-          </p>
-        ) : null}
-      </section>
+        <section className="order-wallet-summary" aria-label="تأثیر کیف پول">
+          <div className="order-wallet-row">
+            <span>هزینه ارتقا</span>
+            <strong>{quote.upgradeChargeTomanFa} تومان</strong>
+          </div>
+          <div className="order-wallet-row">
+            <span>موجودی کیف پول</span>
+            <strong className="order-wallet-balance">
+              {quote.walletBalanceTomanFa} تومان
+            </strong>
+          </div>
+          {quote.walletBalanceAfterTomanFa && !expired && !quote.paid ? (
+            <div className="order-wallet-row">
+              <span>مانده پس از ارتقا</span>
+              <strong>{quote.walletBalanceAfterTomanFa} تومان</strong>
+            </div>
+          ) : null}
+          {shortfall > 0n && !expired && !quote.paid ? (
+            <div className="order-wallet-row order-wallet-row--shortfall">
+              <span>کسری</span>
+              <strong>{quote.shortfallTomanFa} تومان</strong>
+            </div>
+          ) : null}
+        </section>
 
       {quote.paid ? (
         <p style={{ color: "var(--product-success, green)" }}>
@@ -400,6 +432,6 @@ export function ServiceUpgradeQuotePanel({
       >
         بازگشت به انتخاب منابع
       </Link>
-    </div>
+    </section>
   );
 }
