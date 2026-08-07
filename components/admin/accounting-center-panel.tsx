@@ -770,7 +770,9 @@ export function AccountingCenterPanel() {
                   height={height}
                   rx={2}
                   fill={
-                    row.grossProfitRial.startsWith("-") ? "#c62828" : "#1565c0"
+                    (row.grossProfitRial ?? "").startsWith("-")
+                      ? "#c62828"
+                      : "#1565c0"
                   }
                 />
               );
