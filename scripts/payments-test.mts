@@ -316,6 +316,17 @@ test("gateway config rules and audit", async (t) => {
   process.env.ZARINPAL_MERCHANT_ID = "test-zarinpal-merchant";
 
   await ensureGatewayConfigsSeeded();
+  // Prior suites may have flipped the default gateway on the shared DB.
+  // Re-assert the seed invariant before reading it.
+  await prisma.paymentGatewayConfig.updateMany({ data: { isDefault: false } });
+  await prisma.paymentGatewayConfig.update({
+    where: { provider: PaymentGatewayProvider.ZIBAL },
+    data: { isDefault: true, enabled: true, priority: 10 },
+  });
+  await prisma.paymentGatewayConfig.update({
+    where: { provider: PaymentGatewayProvider.ZARINPAL },
+    data: { priority: 20 },
+  });
   const configs = await prisma.paymentGatewayConfig.findMany({ orderBy: { priority: "asc" } });
   const zibal = configs.find((row) => row.provider === PaymentGatewayProvider.ZIBAL);
   const zarinpal = configs.find((row) => row.provider === PaymentGatewayProvider.ZARINPAL);
