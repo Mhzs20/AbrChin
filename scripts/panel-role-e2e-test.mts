@@ -221,7 +221,7 @@ test("panel role E2E: OTP, pages, APIs, and live session roles stay separated", 
   assert.equal(refreshedRole.status, 200);
   assert.equal(
     ((await refreshedRole.json()) as { user: { role: string } }).user.role,
-    "ADMIN",
-    "an existing session must read the user's current database role",
+    "CUSTOMER",
+    "stale ADMIN role without ADMIN_MOBILES allowlist must not grant admin",
   );
 });
