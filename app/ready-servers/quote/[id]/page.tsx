@@ -245,6 +245,11 @@ export default async function ReadyServerQuotePage({
               <p>
                 پیش‌فاکتور حفظ شد. برای پرداخت و ادامه همین انتخاب وارد شو.
               </p>
+              <p className="ready-quote-login-legal">
+                با ادامه،{" "}
+                <Link href="/terms">شرایط استفاده</Link> و{" "}
+                <Link href="/refund-policy">سیاست بازپرداخت</Link> را می‌پذیری.
+              </p>
               <Link
                 className="button button-primary"
                 href={`/login?next=${encodeURIComponent(next)}`}

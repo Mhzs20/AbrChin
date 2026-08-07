@@ -40,9 +40,18 @@ const navigation: NavigationItem[] = [
   { href: "/help", label: "راهنما و ارتباط", shortLabel: "راهنما", icon: CircleHelp },
 ];
 
+/** Keep support on mobile; drop about + help to stay at 5 tabs. */
 const mobileNavigation = navigation.filter(
-  (item) => item.href !== "/about" && item.href !== "/support",
+  (item) => item.href !== "/about" && item.href !== "/help",
 );
+
+const footerLinks = [
+  { href: "/terms", label: "شرایط استفاده" },
+  { href: "/privacy", label: "حریم خصوصی" },
+  { href: "/refund-policy", label: "بازپرداخت" },
+  { href: "/service-policy", label: "سیاست خدمات" },
+  { href: "/support", label: "پشتیبانی" },
+] as const;
 
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === href;
@@ -141,6 +150,17 @@ export function SiteShell({ children }: { children: ReactNode }) {
             {children}
           </div>
         </main>
+
+        <footer className="site-footer">
+          <nav className="site-footer-links" aria-label="پیوندهای حقوقی">
+            {footerLinks.map((item) => (
+              <Link key={item.href} href={item.href}>
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+          <span className="site-footer-copy">© ۱۴۰۵ ابرچین</span>
+        </footer>
 
         <nav className="mobile-navigation" aria-label="منوی موبایل">
           {mobileNavigation.map((item) => {

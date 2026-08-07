@@ -4,6 +4,7 @@ import {
   Bell,
   BookOpen,
   Building2,
+  CircleHelp,
   CreditCard,
   FileText,
   LayoutDashboard,
@@ -78,6 +79,7 @@ const moneyNav: NavItem[] = [
 ];
 
 const advancedNav: NavItem[] = [
+  { href: "/admin/support", label: "پشتیبانی", icon: CircleHelp },
   { href: "/admin/instances", label: "سرورهای تحویل‌شده", icon: Server },
   { href: "/admin/users", label: "کاربران", icon: Users },
   { href: "/admin/notifications", label: "اعلان‌ها", icon: Bell },

@@ -200,6 +200,13 @@ export function OrderCheckoutPanel({
         </div>
       ) : null}
 
+      <p className="order-checkout-legal">
+        با ادامه خرید،{" "}
+        <Link href="/terms">شرایط استفاده</Link> و{" "}
+        <Link href="/refund-policy">سیاست بازپرداخت</Link> را می‌پذیری. ساخت و
+        تحویل پس از تأیید ابرچین انجام می‌شود.
+      </p>
+
       <div className="order-checkout-actions">
         {walletReady ? (
           <button

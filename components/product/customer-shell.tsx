@@ -38,7 +38,7 @@ const mainNav: NavItem[] = [
 
 const secondaryNav: NavItem[] = [
   { href: "/account/profile", label: "پروفایل", icon: User },
-  { href: "/account/support", label: "راهنما و پشتیبانی", icon: CircleHelp },
+  { href: "/account/support", label: "درخواست پشتیبانی", icon: CircleHelp },
 ];
 
 const drawerGroups = [

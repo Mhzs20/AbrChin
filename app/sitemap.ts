@@ -9,6 +9,10 @@ const routes = [
   "/about",
   "/help",
   "/status",
+  "/terms",
+  "/privacy",
+  "/refund-policy",
+  "/service-policy",
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -17,6 +21,17 @@ export default function sitemap(): MetadataRoute.Sitemap {
     lastModified: new Date(),
     changeFrequency: route === "" ? "weekly" : "monthly",
     priority:
-      route === "" ? 1 : route === "/cloud-servers" ? 0.9 : route === "/compass" ? 0.8 : 0.7,
+      route === ""
+        ? 1
+        : route === "/cloud-servers"
+          ? 0.9
+          : route === "/compass"
+            ? 0.8
+            : route === "/terms" ||
+                route === "/privacy" ||
+                route === "/refund-policy" ||
+                route === "/service-policy"
+              ? 0.5
+              : 0.7,
   }));
 }

@@ -246,6 +246,11 @@ export default async function ReadyServerQuotePage({
                 پیش‌فاکتور قفل شد. برای دیدن موجودی کیف پول، مبلغ قابل‌پرداخت و
                 ثبت سفارش همین انتخاب وارد شو.
               </p>
+              <p className="ready-quote-login-legal">
+                با ادامه،{" "}
+                <Link href="/terms">شرایط استفاده</Link> و{" "}
+                <Link href="/refund-policy">سیاست بازپرداخت</Link> را می‌پذیری.
+              </p>
               <Link
                 className="button button-primary"
                 href={`/login?next=${encodeURIComponent(next)}`}
