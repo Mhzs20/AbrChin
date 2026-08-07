@@ -25,7 +25,9 @@ export function QuoteCountdown({ expiresAt }: { expiresAt: string }) {
   const remaining = remainingLabel(expiresAt, now);
   return (
     <span aria-live="polite">
-      {remaining.expired ? "اعتبار قیمت تمام شد؛ پیشنهادها را تازه کن." : `اعتبار قیمت: ${remaining.label}`}
+      {remaining.expired
+        ? "اعتبار قیمت قفل‌شده تمام شد؛ قیمت را تازه کن."
+        : `اعتبار قیمت قفل‌شده: ${remaining.label}`}
     </span>
   );
 }

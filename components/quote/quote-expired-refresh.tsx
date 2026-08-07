@@ -61,8 +61,8 @@ export function QuoteExpiredRefresh({
     <section className="ready-quote-page page-view" aria-labelledby="quote-expired-title">
       <header className="ready-quote-heading">
         <div>
-          <span className="eyebrow">Quote منقضی</span>
-          <h1 id="quote-expired-title">اعتبار این قیمت تمام شده</h1>
+          <span className="eyebrow">پیش‌فاکتور منقضی</span>
+          <h1 id="quote-expired-title">اعتبار این قیمت قفل‌شده تمام شده</h1>
           <p>
             برای ادامه خرید باید قیمت را با نرخ فعلی دوباره قفل کنی. مشاهدهٔ صفحه
             به‌تنهایی قیمت تازه نمی‌سازد.

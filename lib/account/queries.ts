@@ -1,4 +1,9 @@
-import { InfrastructureOrderStatus, ServiceOrderStatus } from "@prisma/client";
+import {
+  InfrastructureOrderStatus,
+  ServiceOrderStatus,
+  SubscriptionStatus,
+  SupportRequestStatus,
+} from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { getInfrastructureStage } from "@/lib/labels/infrastructure";
@@ -10,8 +15,20 @@ export async function getAccountOverview(userId: string) {
   const now = new Date();
   const utcDayStart = new Date(now);
   utcDayStart.setUTCHours(0, 0, 0, 0);
-  const [wallet, activeServices, pendingOrders, latestOrder, latestService, recentTransactions, todayUsage, latestSettlement, pendingResourceChanges, outstanding] =
-    await Promise.all([
+  const [
+    wallet,
+    activeServices,
+    pendingOrders,
+    latestOrder,
+    latestService,
+    recentTransactions,
+    todayUsage,
+    latestSettlement,
+    pendingResourceChanges,
+    outstanding,
+    openSupportRequests,
+    nearestRenewalSub,
+  ] = await Promise.all([
       prisma.wallet.findUnique({ where: { userId } }),
       prisma.cloudInstance.count({ where: { userId, status: "ACTIVE" } }),
       prisma.infrastructureOrder.count({
@@ -93,6 +110,24 @@ export async function getAccountOverview(userId: string) {
         where: { userId, status: { in: ["OPEN", "PARTIALLY_PAID"] } },
         _sum: { remainingAmountRial: true },
       }),
+      prisma.supportRequest.count({
+        where: {
+          userId,
+          status: {
+            in: [SupportRequestStatus.OPEN, SupportRequestStatus.IN_PROGRESS],
+          },
+        },
+      }),
+      prisma.serviceSubscription.findFirst({
+        where: {
+          userId,
+          status: {
+            in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE],
+          },
+        },
+        orderBy: { currentPeriodEnd: "asc" },
+        include: { cloudInstance: { select: { name: true } } },
+      }),
     ]);
   const currentResources = latestService?.resourceVersions[0] ?? null;
   const billingSnapshot = latestService?.billingPolicySnapshots[0] ?? null;
@@ -116,6 +151,13 @@ export async function getAccountOverview(userId: string) {
     walletBalanceRial: wallet?.availableBalance ?? 0n,
     activeServices,
     pendingOrders,
+    openSupportRequests,
+    nearestRenewal: nearestRenewalSub
+      ? {
+          instanceName: nearestRenewalSub.cloudInstance.name,
+          currentPeriodEnd: nearestRenewalSub.currentPeriodEnd.toISOString(),
+        }
+      : null,
     latestOrder: latestOrder
       ? {
           id: latestOrder.id,

@@ -622,6 +622,8 @@ model User {
   operatingExpensesPosted     OperatingExpense[]                  @relation("OperatingExpensePostedBy")
   operatingExpensesReversed   OperatingExpense[]                  @relation("OperatingExpenseReversedBy")
   profitCurveUpdated          ProfitCurveConfiguration[]          @relation("ProfitCurveUpdatedBy")
+  supportRequests             SupportRequest[]
+  supportMessages             SupportRequestMessage[]             @relation("SupportMessageAuthor")
 }
 
 model OtpChallenge {
@@ -821,6 +823,7 @@ model ServiceOrder {
   reservedInventoryItems PreprovisionedInventoryItem[] @relation("InventoryReservedOrder")
   assignedInventoryItems PreprovisionedInventoryItem[] @relation("InventoryAssignedOrder")
   purchaseTopUps         WalletTopUp[]
+  supportRequests        SupportRequest[]
   orderPayment           OrderPayment?
   activationRequest      ActivationRequest?
 
@@ -1287,6 +1290,7 @@ model CloudInstance {
   billingReconciliations BillingReconciliation[]
   dunningCases           DunningCase[]
   billingAdjustments     BillingAdjustment[]
+  supportRequests        SupportRequest[]
 
   @@index([userId, createdAt])
   @@index([status])
@@ -2617,4 +2621,66 @@ model ProfitCurveBand {
 
   @@unique([configurationId, sortOrder])
   @@index([configurationId, minProviderCostRial])
+}
+
+enum SupportRequestStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum SupportRequestPriority {
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum SupportRequestCategory {
+  DELIVERY
+  ACCESS
+  BILLING
+  RENEWAL
+  CHANGE
+  OTHER
+}
+
+/// Minimal production support requests for purchased Parchin contracts.
+model SupportRequest {
+  id              String                 @id @default(cuid())
+  userId          String
+  cloudInstanceId String?
+  serviceOrderId  String?
+  category        SupportRequestCategory
+  subject         String
+  description     String
+  status          SupportRequestStatus   @default(OPEN)
+  priority        SupportRequestPriority @default(NORMAL)
+  /// Snapshotted from linked service purchase; customer cannot self-elevate.
+  parchinLevel    ParchinLevel?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cloudInstance   CloudInstance?         @relation(fields: [cloudInstanceId], references: [id], onDelete: SetNull)
+  serviceOrder    ServiceOrder?          @relation(fields: [serviceOrderId], references: [id], onDelete: SetNull)
+  messages        SupportRequestMessage[]
+
+  @@index([userId, createdAt])
+  @@index([status, priority, createdAt])
+  @@index([cloudInstanceId])
+  @@index([serviceOrderId])
+}
+
+model SupportRequestMessage {
+  id           String         @id @default(cuid())
+  requestId    String
+  authorUserId String
+  body         String
+  isStaff      Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  request      SupportRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  author       User           @relation("SupportMessageAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
+
+  @@index([requestId, createdAt])
+  @@index([authorUserId])
 }

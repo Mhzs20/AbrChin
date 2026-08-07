@@ -10,6 +10,11 @@ import {
   readyServerImageLabel,
   readyServerLocation,
 } from "@/lib/cloud-servers/catalog";
+import {
+  accessMethodLabel,
+  effectiveTermDiscountLabel,
+  termDiscountCeilingLabel,
+} from "@/lib/labels/customer";
 import { formatTomanFa } from "@/lib/money";
 import { readParchinServiceSnapshot } from "@/lib/parchin/service-contract";
 import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
@@ -22,7 +27,7 @@ import { getCurrentUser } from "@/lib/session";
 import { getWalletForUser } from "@/lib/wallet/ensure-wallet";
 
 export const metadata: Metadata = {
-  title: "Quote سرور آماده | ابرچین",
+  title: "پیش‌فاکتور سرور ابری | ابرچین",
   robots: { index: false, follow: false },
 };
 
@@ -95,6 +100,9 @@ export default async function ReadyServerQuotePage({
   const parchinContract = readParchinServiceSnapshot(
     quoteRecord.parchinServiceSnapshot,
   );
+  const taxItem = quote.lineItems.find((item) => item.type === "TAX");
+  const effectiveDiscount = effectiveTermDiscountLabel(quote.termDiscountBps);
+  const ceilingDiscount = termDiscountCeilingLabel(quote.termMonths);
   const next = `/cloud-servers/quote/${quote.id}`;
   const wallet = user ? await getWalletForUser(user.id) : null;
 
@@ -104,12 +112,12 @@ export default async function ReadyServerQuotePage({
         <div>
           <span className="eyebrow">
             <LockKeyhole size={15} aria-hidden="true" />
-            Quote قفل‌شده
+            قیمت قفل‌شده
           </span>
           <h1 id="ready-quote-title">{quote.title}</h1>
           <p>
-            قیمت، ظرفیت، موقعیت و سیستم‌عامل این انتخاب برای ۱۰ دقیقه Snapshot
-            شده‌اند. تغییر بعدی پرچین در Admin این تعهد را عوض نمی‌کند.
+            قیمت، ظرفیت، موقعیت و سیستم‌عامل این انتخاب برای چند دقیقه قفل
+            شده‌اند. تغییر بعدی پرچین این تعهد را عوض نمی‌کند.
           </p>
         </div>
         <Link className="button button-quiet" href="/cloud-servers">
@@ -133,9 +141,13 @@ export default async function ReadyServerQuotePage({
             <span><small>پردازنده</small><strong dir="ltr">{quote.vcpu ?? "—"} vCPU</strong></span>
             <span><small>حافظه</small><strong dir="ltr">{quote.ramGb ?? "—"} GB</strong></span>
             <span><small>فضای دیسک</small><strong dir="ltr">{quote.storageGb ?? "—"} GB</strong></span>
+            <span><small>موقعیت</small><strong>{location}</strong></span>
             <span><small>سیستم‌عامل</small><strong dir="ltr">{lockedOsLabel}</strong></span>
             {accessMethod ? (
-              <span><small>روش دسترسی</small><strong dir="ltr">{accessMethod}</strong></span>
+              <span>
+                <small>روش دسترسی</small>
+                <strong>{accessMethodLabel(accessMethod)}</strong>
+              </span>
             ) : null}
             {serverName ? (
               <span><small>نام سرور</small><strong dir="ltr">{serverName}</strong></span>
@@ -144,16 +156,49 @@ export default async function ReadyServerQuotePage({
               <small>مدت</small>
               <strong>{quote.termMonths.toLocaleString("fa-IR")} ماه</strong>
             </span>
+            {effectiveDiscount ? (
+              <span>
+                <small>تخفیف</small>
+                <strong>{effectiveDiscount}</strong>
+              </span>
+            ) : ceilingDiscount ? (
+              <span>
+                <small>تخفیف دوره</small>
+                <strong>{ceilingDiscount}</strong>
+              </span>
+            ) : null}
+            {taxItem ? (
+              <span>
+                <small>مالیات</small>
+                <strong>{formatTomanFa(BigInt(taxItem.amountRial))} تومان</strong>
+              </span>
+            ) : null}
+            <span>
+              <small>مبلغ قابل‌پرداخت</small>
+              <strong>{formatTomanFa(quoteRecord.amountRial)} تومان</strong>
+            </span>
+            <span>
+              <small>مبلغ تمدید</small>
+              <strong>
+                {formatTomanFa(quoteRecord.renewalAmountRial)} تومان
+              </strong>
+            </span>
             <span>
               <small>تحویل</small>
-              <strong>فوری پس از تأیید ظرفیت</strong>
+              <strong>
+                تحویل پس از تأیید ظرفیت؛ در صورت موجود بودن ظرفیت معمولاً سریع
+                انجام می‌شود
+              </strong>
             </span>
           </div>
 
           {parchinContract ? (
             <div className="ready-quote-parchin">
               <h2>{parchinContract.title}</h2>
-              <p>{parchinContract.description}</p>
+              <p>
+                نسخه {parchinContract.version.toLocaleString("fa-IR")} —{" "}
+                {parchinContract.description}
+              </p>
               <h3>شامل می‌شود</h3>
               <ul>
                 {parchinContract.includedServices.map((item) => (
@@ -198,8 +243,8 @@ export default async function ReadyServerQuotePage({
           ) : (
             <div className="ready-quote-login">
               <p>
-                Quote قفل شد. برای دیدن موجودی کیف پول، مبلغ قابل‌پرداخت و ثبت
-                سفارش همین انتخاب وارد شو.
+                پیش‌فاکتور قفل شد. برای دیدن موجودی کیف پول، مبلغ قابل‌پرداخت و
+                ثبت سفارش همین انتخاب وارد شو.
               </p>
               <Link
                 className="button button-primary"

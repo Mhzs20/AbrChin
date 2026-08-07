@@ -26,126 +26,85 @@ export default async function AccountOverviewPage() {
 
   const overview = await getAccountOverview(user.id);
   const greeting = user.displayName;
+  const nearestRenewalLabel = overview.nearestRenewal
+    ? `${overview.nearestRenewal.instanceName} · ${new Date(
+        overview.nearestRenewal.currentPeriodEnd,
+      ).toLocaleDateString("fa-IR")}`
+    : null;
+
+  if (overview.isNewUser) {
+    return (
+      <>
+        <PageHeader
+          title={greeting ? `سلام، ${greeting}` : "سلام"}
+          description="حساب شما آماده شروع است"
+          actions={
+            <Link href="/cloud-servers" className="product-btn product-btn--primary">
+              انتخاب سرور
+            </Link>
+          }
+        />
+        <SectionCard title="شروع">
+          <EmptyState
+            title="هنوز سرویسی ندارید"
+            description="یک سرور انتخاب کنید تا پیش‌فاکتور، پرداخت و تحویل را از همین حساب دنبال کنید."
+            action={
+              <Link href="/cloud-servers" className="product-btn product-btn--primary">
+                انتخاب سرور
+              </Link>
+            }
+          />
+        </SectionCard>
+      </>
+    );
+  }
 
   return (
     <>
       <PageHeader
         title={greeting ? `سلام، ${greeting}` : "سلام"}
-        description="خلاصه وضعیت حساب، کیف پول و سرویس‌های شما"
+        description="خلاصه وضعیت سرویس‌ها، تمدید، کیف پول و پشتیبانی"
         actions={
-          overview.isNewUser ? (
-            <Link href="/cloud-servers" className="product-btn product-btn--primary">
-              انتخاب راهکار و شروع
-            </Link>
-          ) : (
-            <Link href="/account/services" className="product-btn product-btn--primary">
-              مشاهده سرویس‌ها
-            </Link>
-          )
+          <Link href="/account/services" className="product-btn product-btn--primary">
+            مشاهده سرویس‌ها
+          </Link>
         }
       />
 
       <div className="product-stat-grid">
-        <StatCard label="موجودی کیف پول" value={<MoneyDisplay amount={formatTomanFa(overview.walletBalanceRial)} />} />
-        <StatCard label="مصرف امروز UTC" value={<MoneyDisplay amount={formatTomanFa(overview.billing.todayUsageRial)} />} />
-        <StatCard label="سرویس‌های فعال" value={overview.activeServices.toLocaleString("fa-IR")} />
-        <StatCard label="سفارش‌های در جریان" value={overview.pendingOrders.toLocaleString("fa-IR")} />
-      </div>
-
-      <SectionCard title="Billing مصرفی">
-        <p>
-          {overview.billing.displayMode !== "DAILY" ? (
-            <>
-              تخمین ساعتی:{" "}
-              <strong>
-                {overview.billing.hourlyEstimateRial == null
-                  ? "—"
-                  : `${formatTomanFa(overview.billing.hourlyEstimateRial)} تومان`}
-              </strong>
-            </>
-          ) : null}
-          {overview.billing.displayMode === "BOTH" ? " · " : null}
-          {overview.billing.displayMode !== "HOURLY" ? (
-            <>
-              تخمین ۲۴ ساعت:{" "}
-              <strong>
-                {overview.billing.dailyEstimateRial == null
-                  ? "—"
-                  : `${formatTomanFa(overview.billing.dailyEstimateRial)} تومان`}
-              </strong>
-            </>
-          ) : null}
-        </p>
-        <p>
-          Cadence مالی:{" "}
-          <strong>
-            {overview.billing.cadence === "HOURLY"
-              ? "تسویه ساعتی"
-              : overview.billing.cadence === "DAILY"
-                ? "تسویه روزانه"
-                : "—"}
-          </strong>
-          {" · "}
-          Settlement بعدی:{" "}
-          <strong>
-            {overview.billing.nextSettlementAt
-              ? new Date(
-                  overview.billing.nextSettlementAt,
-                ).toLocaleString("fa-IR")
-              : "—"}
-          </strong>
-        </p>
-        <p>
-          Runway تقریبی:{" "}
-          <strong>
-            {overview.billing.runwaySeconds == null
-              ? "—"
-              : `${Number(overview.billing.runwaySeconds / 3_600n).toLocaleString("fa-IR")} ساعت`}
-          </strong>
-          {" · "}
-          تغییر منابع در انتظار:{" "}
-          <strong>{overview.billing.pendingResourceChanges.toLocaleString("fa-IR")}</strong>
-        </p>
-        <p>
-          بدهی باز:{" "}
-          <strong>{formatTomanFa(overview.billing.outstandingRial)} تومان</strong>
-          {" · "}
-          آخرین Settlement:{" "}
-          <strong>
-            {overview.billing.latestSettlement
-              ? `${new Date(overview.billing.latestSettlement.periodEnd).toLocaleString("fa-IR")} — ${overview.billing.latestSettlement.status}`
-              : "—"}
-          </strong>
-        </p>
-        {overview.billing.currentResources ? (
-          <p>
-            منابع فعلی:{" "}
-            <strong dir="ltr">
-              {overview.billing.currentResources.vcpu} vCPU /{" "}
-              {Math.floor(overview.billing.currentResources.ramMb / 1024)} GB
-              RAM / {overview.billing.currentResources.diskGb} GB Disk
-            </strong>
-          </p>
-        ) : null}
-        <small>
-          Estimate قطعی نیست؛ Traffic و Add-onهای قابل‌اندازه‌گیری پس از دریافت
-          داده معتبر در Invoice نهایی ثبت می‌شوند.
-        </small>
-      </SectionCard>
-
-      {overview.isNewUser ? (
-        <SectionCard title="شروع کار">
-          <EmptyState
-            title="هنوز سرویسی ندارید"
-            description="منابع را انتخاب کنید، Estimate را ببینید و در صورت نیاز Wallet را شارژ کنید."
-            action={
-              <Link href="/cloud-servers" className="product-btn product-btn--primary">
-                انتخاب منابع
+        <StatCard
+          label="سرویس‌های فعال"
+          value={overview.activeServices.toLocaleString("fa-IR")}
+        />
+        <StatCard
+          label="نزدیک‌ترین تمدید"
+          value={nearestRenewalLabel ?? "تمدیدی در صف نیست"}
+        />
+        <StatCard
+          label="موجودی کیف پول"
+          value={<MoneyDisplay amount={formatTomanFa(overview.walletBalanceRial)} />}
+        />
+        <StatCard
+          label="درخواست‌های پشتیبانی باز"
+          value={overview.openSupportRequests.toLocaleString("fa-IR")}
+          action={
+            <Link href="/account/support" className="product-btn product-btn--quiet">
+              پشتیبانی
+            </Link>
+          }
+        />
+        <StatCard
+          label="سفارش‌های نیازمند توجه"
+          value={overview.pendingOrders.toLocaleString("fa-IR")}
+          action={
+            overview.pendingOrders > 0 ? (
+              <Link href="/account/orders" className="product-btn product-btn--quiet">
+                مشاهده سفارش‌ها
               </Link>
-            }
-          />
-        </SectionCard>
-      ) : null}
+            ) : undefined
+          }
+        />
+      </div>
 
       {overview.latestOrder ? (
         <SectionCard title="آخرین سفارش">
@@ -163,7 +122,15 @@ export default async function AccountOverviewPage() {
 
       <SectionCard title="آخرین تراکنش‌ها">
         {overview.recentTransactions.length === 0 ? (
-          <EmptyState title="تراکنشی ثبت نشده" />
+          <EmptyState
+            title="تراکنشی ثبت نشده"
+            description="پس از شارژ کیف پول یا پرداخت سفارش، تراکنش‌ها اینجا دیده می‌شوند."
+            action={
+              <Link href="/account/wallet/topup" className="product-btn product-btn--quiet">
+                شارژ کیف پول
+              </Link>
+            }
+          />
         ) : (
           <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 12 }}>
             {overview.recentTransactions.map((tx) => (
