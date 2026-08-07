@@ -8,6 +8,7 @@ import {
 } from "@/lib/admin/command-receipt";
 import { AuditActions, writeAuditLog } from "@/lib/audit/service";
 import { prisma } from "@/lib/db";
+import { upgradeQuoteHasFinancialCommitment } from "@/lib/orders/upgrade-quote";
 import { WalletError } from "@/lib/wallet/errors";
 
 export async function approveResourceChangeRequest(input: {
@@ -53,6 +54,7 @@ export async function approveResourceChangeRequest(input: {
       }
       if (
         request.incrementalBufferRial > 0n &&
+        !upgradeQuoteHasFinancialCommitment(request.estimateSnapshot) &&
         (!request.cloudInstance.user.wallet ||
           request.cloudInstance.user.wallet.availableBalance <
             request.incrementalBufferRial)

@@ -121,7 +121,9 @@ function ResultInner() {
               window.sessionStorage.removeItem("abrchin.walletTopup.returnTo");
             }}
           >
-            ادامه خرید
+            {resumePath.includes("/account/upgrade/")
+              ? "ادامه ارتقا"
+              : "ادامه خرید"}
           </Link>
         ) : null}
         <Link className="button button-primary" href="/account/wallet">کیف پول</Link>

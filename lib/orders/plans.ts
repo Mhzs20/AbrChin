@@ -297,7 +297,7 @@ export function toPublicPlanOffer(
   };
 }
 
-async function pricingConfigs() {
+export async function pricingConfigs() {
   const [providers, products, commerce, parchin, profitCurveRow] =
     await Promise.all([
       prisma.providerPricingConfig.findMany(),
