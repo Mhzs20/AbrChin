@@ -20,6 +20,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ConversationCloud } from "@/components/conversation-cloud";
 import { QuickCloudPlans } from "@/components/quick-cloud-plans";
 import {
+  generateCustomerServerName,
+  isValidCustomerServerName,
+} from "@/lib/infrastructure/image-identity";
+import {
   parchinLevelRank,
   parchinLevels,
   recommendedParchinLevel,
@@ -99,6 +103,7 @@ type DeliveryOption = {
   images: Array<{
     id: string;
     label: string;
+    displayName?: string;
     windows: boolean;
   }>;
 };
@@ -168,7 +173,8 @@ export function ConversationBuilder({
   const [accessMethod, setAccessMethod] = useState<
     "ONE_TIME_PASSWORD" | "SSH_KEY" | "WINDOWS_PASSWORD"
   >("ONE_TIME_PASSWORD");
-  const [sshKeyName, setSshKeyName] = useState("");
+  const [serverName, setServerName] = useState("");
+  const [serverNameTouched, setServerNameTouched] = useState(false);
   const [deliveryConfigured, setDeliveryConfigured] = useState(false);
   const [savingDelivery, setSavingDelivery] = useState(false);
   const [deliveryRetry, setDeliveryRetry] = useState(0);
@@ -477,6 +483,7 @@ export function ConversationBuilder({
         const body = (await response.json()) as {
           options?: DeliveryOption[];
           revision?: number;
+          defaultServerName?: string;
           error?: string;
         };
         if (!response.ok) {
@@ -498,6 +505,10 @@ export function ConversationBuilder({
         setAccessMethod(
           image?.windows ? "WINDOWS_PASSWORD" : "ONE_TIME_PASSWORD",
         );
+        setServerName(
+          body.defaultServerName || generateCustomerServerName(),
+        );
+        setServerNameTouched(false);
         setQuotesError(null);
         setDeliveryOptionsResolved(true);
       })
@@ -764,7 +775,8 @@ export function ConversationBuilder({
     setSelectedDeliveryPlanId("");
     setSelectedImageAssetId("");
     setAccessMethod("ONE_TIME_PASSWORD");
-    setSshKeyName("");
+    setServerName("");
+    setServerNameTouched(false);
     setDeliveryConfigured(false);
     autoDeliveryAttempted.current = false;
     setDeliveryRetry(0);
@@ -775,7 +787,7 @@ export function ConversationBuilder({
     planId: string;
     imageAssetId: string;
     accessMethod: "ONE_TIME_PASSWORD" | "SSH_KEY" | "WINDOWS_PASSWORD";
-    sshKeyName?: string;
+    serverName?: string;
     /** Mirror the auto-picked selection into the form controls. */
     syncSelection?: boolean;
   }) {
@@ -783,10 +795,20 @@ export function ConversationBuilder({
       setQuotesError("یک Region، سرور و سیستم‌عامل معتبر انتخاب کن.");
       return;
     }
+    const nextServerName = input.serverName ?? serverName;
+    if (!isValidCustomerServerName(nextServerName)) {
+      setQuotesError("نام سرور معتبر نیست.");
+      return;
+    }
+    if (input.accessMethod === "SSH_KEY") {
+      setQuotesError("انتخاب کلید SSH فعلاً برای خرید مستقیم در دسترس نیست.");
+      return;
+    }
     if (input.syncSelection) {
       setSelectedDeliveryPlanId(input.planId);
       setSelectedImageAssetId(input.imageAssetId);
       setAccessMethod(input.accessMethod);
+      setServerName(nextServerName);
     }
     setSavingDelivery(true);
     setQuotesError(null);
@@ -802,10 +824,8 @@ export function ConversationBuilder({
             imageAssetId: input.imageAssetId,
             parchinLevel: selectedParchinLevel,
             accessMethod: input.accessMethod,
-            sshKeyName:
-              input.accessMethod === "SSH_KEY"
-                ? (input.sshKeyName ?? sshKeyName)
-                : null,
+            serverName: nextServerName.trim(),
+            sshKeyName: null,
           }),
         },
       );
@@ -845,7 +865,7 @@ export function ConversationBuilder({
       planId: selectedDeliveryPlanId,
       imageAssetId: selectedImageAssetId,
       accessMethod,
-      sshKeyName,
+      serverName,
     });
   }
 
@@ -854,7 +874,6 @@ export function ConversationBuilder({
       !showResult ||
       deliveryConfigured ||
       !deliveryOptionsResolved ||
-      savingDelivery ||
       autoDeliveryAttempted.current
     ) {
       return;
@@ -865,28 +884,24 @@ export function ConversationBuilder({
     const image =
       preferred?.images.find((item) => !item.windows) ??
       preferred?.images[0];
-    if (!sessionId || !preferred?.id || !image?.id) return;
+    if (!preferred?.id || !image?.id) return;
     autoDeliveryAttempted.current = true;
-    // Defer past the render commit so delivery-state updates never cascade
-    // synchronously inside the effect.
-    const timer = setTimeout(() => {
-      void confirmDeliveryWith({
-        planId: preferred.id,
-        imageAssetId: image.id,
-        accessMethod: image.windows
-          ? "WINDOWS_PASSWORD"
-          : "ONE_TIME_PASSWORD",
-        syncSelection: true,
-      });
-    }, 0);
-    return () => clearTimeout(timer);
+    setSelectedDeliveryPlanId(preferred.id);
+    setSelectedImageAssetId(image.id);
+    setAccessMethod(
+      image.windows ? "WINDOWS_PASSWORD" : "ONE_TIME_PASSWORD",
+    );
+    setServerName((current) =>
+      current && isValidCustomerServerName(current)
+        ? current
+        : generateCustomerServerName(),
+    );
+    setServerNameTouched(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     deliveryConfigured,
     deliveryOptions,
     deliveryOptionsResolved,
-    savingDelivery,
-    sessionId,
     showResult,
   ]);
 
@@ -1364,73 +1379,65 @@ export function ConversationBuilder({
                             >
                               {selectedDeliveryOption?.images.map((image) => (
                                 <option key={image.id} value={image.id}>
-                                  {image.label}
+                                  {image.displayName || image.label}
                                 </option>
                               ))}
                             </select>
                           </label>
+                          <label>
+                            نام سرور
+                            <input
+                              maxLength={64}
+                              dir="ltr"
+                              placeholder="abrchin-x8k2"
+                              value={serverName}
+                              aria-invalid={
+                                serverNameTouched &&
+                                !isValidCustomerServerName(serverName)
+                              }
+                              onChange={(event) => {
+                                setServerNameTouched(true);
+                                setServerName(event.target.value);
+                              }}
+                            />
+                          </label>
                         </div>
+                        {serverNameTouched &&
+                        !isValidCustomerServerName(serverName) ? (
+                          <small role="alert">
+                            نام سرور باید ۲ تا ۶۴ کاراکتر حرف یا عدد باشد.
+                          </small>
+                        ) : null}
 
                         <div
                           className="result-direction"
-                          aria-label="روش دسترسی امن"
+                          aria-label="روش دسترسی"
                         >
                           {selectedDeliveryImage?.windows ? (
                             <button className="is-active" type="button">
-                              رمز یک‌بارمصرف Windows
+                              رمز عبور ویندوز
                             </button>
                           ) : (
-                            <>
-                              <button
-                                className={
-                                  accessMethod === "ONE_TIME_PASSWORD"
-                                    ? "is-active"
-                                    : ""
-                                }
-                                type="button"
-                                onClick={() =>
-                                  setAccessMethod("ONE_TIME_PASSWORD")
-                                }
-                              >
-                                رمز یک‌بارمصرف
-                              </button>
-                              <button
-                                className={
-                                  accessMethod === "SSH_KEY"
-                                    ? "is-active"
-                                    : ""
-                                }
-                                type="button"
-                                onClick={() => setAccessMethod("SSH_KEY")}
-                              >
-                                کلید SSH
-                              </button>
-                            </>
+                            <button className="is-active" type="button">
+                              رمز عبور امن
+                            </button>
                           )}
                         </div>
-                        {accessMethod === "SSH_KEY" ? (
-                          <div className="delivery-config-grid">
-                            <label>
-                              نام کلید SSH ثبت‌شده
-                              <input
-                                dir="ltr"
-                                maxLength={128}
-                                value={sshKeyName}
-                                onChange={(event) =>
-                                  setSshKeyName(event.target.value)
-                                }
-                                placeholder="my-production-key"
-                              />
-                            </label>
-                          </div>
-                        ) : null}
+                        <details className="ready-server-advanced">
+                          <summary>تنظیمات پیشرفته</summary>
+                          <p>
+                            ورود با رمز عبور امن به‌صورت پیش‌فرض فعال است. انتخاب
+                            کلید SSH برای خرید مستقیم فعلاً در دسترس نیست.
+                          </p>
+                        </details>
 
                         <button
                           className="button button-primary delivery-config-submit"
                           disabled={
                             savingDelivery ||
                             !selectedImageAssetId ||
-                            (accessMethod === "SSH_KEY" && !sshKeyName.trim())
+                            !isValidCustomerServerName(serverName) ||
+                            accessMethod === "SSH_KEY"
                           }
                           type="button"
                           onClick={() => void confirmDelivery()}

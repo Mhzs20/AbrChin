@@ -4,11 +4,11 @@ import { TERM_DISCOUNT_BPS } from "@/lib/pricing/commercial-engine";
 export function accessMethodLabel(value: string | null | undefined): string {
   switch (value) {
     case "ONE_TIME_PASSWORD":
-      return "رمز یک‌بارمصرف";
+      return "رمز عبور امن";
     case "SSH_KEY":
       return "کلید SSH";
     case "WINDOWS_PASSWORD":
-      return "رمز ویندوز";
+      return "رمز عبور ویندوز";
     default:
       return value?.trim() ? value : "—";
   }

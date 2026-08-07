@@ -1,4 +1,5 @@
 import { arvanRegionPresentation } from "@/lib/infrastructure/arvan/regions";
+import { customerImageLabelFromCode } from "@/lib/infrastructure/image-identity";
 
 export const READY_SERVER_PLAN_PREFIX = "READY_PARSPACK_";
 
@@ -128,13 +129,7 @@ export function readyServerLocation(regionCode: string) {
 }
 
 export function readyServerImageLabel(imageCode: string) {
-  const labels: Record<string, string> = {
-    "ubuntu24-cloudinit-qcow2": "Ubuntu 24 LTS",
-    "ubuntu22-cloudinit-qcow2": "Ubuntu 22 LTS",
-    "debian13-cloudinit-qcow2": "Debian 13",
-    "debian12-cloudinit-qcow2": "Debian 12",
-  };
-  return labels[imageCode] ?? "Linux Cloud";
+  return customerImageLabelFromCode(imageCode);
 }
 
 export function readyServerSortOrder(params: {

@@ -45,7 +45,7 @@
     "test:readiness": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/product-flow-test.mts",
     "test:account-admin": "node --experimental-strip-types --test scripts/account-admin-test.mts",
     "test:panel-role-e2e": "node --experimental-strip-types --test --test-concurrency=1 scripts/panel-role-e2e-test.mts",
-    "test:recommendation": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/recommendation-test.mts scripts/provider-ranking-test.mts scripts/product-flow-test.mts scripts/quick-buy-test.mts scripts/ready-cloud-servers-test.mts scripts/credential-vault-test.mts scripts/subscription-test.mts scripts/storefront-dominance-parchin-test.mts",
+    "test:recommendation": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/recommendation-test.mts scripts/provider-ranking-test.mts scripts/product-flow-test.mts scripts/quick-buy-test.mts scripts/ready-cloud-servers-test.mts scripts/credential-vault-test.mts scripts/subscription-test.mts scripts/storefront-dominance-parchin-test.mts scripts/delivery-os-ssh-ux-test.mts",
     "test:providers": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/multi-provider-test.mts scripts/provider-flow-behavior-test.mts scripts/review-hardening-test.mts",
     "test:postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/postgres-migration-test.mts",
     "preflight:1r": "node --experimental-strip-types scripts/preflight-1r.mts",

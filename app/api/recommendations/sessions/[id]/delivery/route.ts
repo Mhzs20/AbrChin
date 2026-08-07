@@ -111,6 +111,8 @@ export async function PATCH(
         | "WINDOWS_PASSWORD",
       sshKeyName:
         typeof body.sshKeyName === "string" ? body.sshKeyName : null,
+      serverName:
+        typeof body.serverName === "string" ? body.serverName : null,
       userId: user?.id ?? null,
       guestToken,
     });
@@ -138,6 +140,7 @@ export async function PATCH(
         "ssh_key_name_required",
         "ssh_key_not_found",
         "invalid_access_method_for_image",
+        "invalid_server_name",
       ].includes(error.message);
     return jsonError(
       forbidden

@@ -36,6 +36,12 @@ import type {
 } from "@/lib/recommendation/types";
 import { ensureStorefrontSaleReady } from "@/lib/storefront/ensure-sale-plans";
 import { WalletError } from "@/lib/wallet/errors";
+import {
+  generateCustomerServerName,
+  isCustomerSshSelfServeEnabled,
+  normalizeCustomerImageIdentity,
+  normalizeCustomerServerName,
+} from "@/lib/infrastructure/image-identity";
 
 function asAnswers(value: Prisma.JsonValue): RecommendationAnswers {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -150,16 +156,9 @@ export async function getConversationDeliveryOptions(input: {
       ),
     ),
   ];
-  const regionKeys = [
-    ...new Set(
-      selected.map(
-        ({ plan }) => `${plan.provider}:${plan.regionCode}`,
-      ),
-    ),
-  ];
-  const [matchedImages, regionImages] = await Promise.all([
+  const matchedImages =
     imageCodes.length > 0
-      ? prisma.providerCatalogAsset.findMany({
+      ? await prisma.providerCatalogAsset.findMany({
           where: {
             provider: {
               in: [
@@ -175,31 +174,15 @@ export async function getConversationDeliveryOptions(input: {
           },
           orderBy: [{ regionCode: "asc" }, { name: "asc" }],
         })
-      : Promise.resolve([]),
-    prisma.providerCatalogAsset.findMany({
-      where: {
-        OR: regionKeys.map((key) => {
-          const [provider, regionCode] = key.split(":");
-          return {
-            provider: provider as InfrastructureProvider,
-            apiVersion: "v1",
-            regionCode,
-            kind: "IMAGE" as const,
-            status: "ACTIVE" as const,
-            available: true,
-          };
-        }),
-      },
-      orderBy: [{ name: "asc" }],
-      take: 200,
-    }),
-  ]);
+      : [];
   const itemById = new Map(catalogItems.map((item) => [item.id, item]));
 
   return {
     revision: session.revision,
     minimumParchinLevel,
     selectedParchinLevel,
+    defaultServerName: generateCustomerServerName(),
+    sshSelfServeAvailable: isCustomerSshSelfServeEnabled(),
     options: selected.map(({ role, plan }) => {
       assertPlanPublicSale(plan);
       const compatible = itemById.get(plan.catalogItemId ?? "")
@@ -209,25 +192,12 @@ export async function getConversationDeliveryOptions(input: {
             (code): code is string => typeof code === "string",
           )
         : [];
-      let planImages = matchedImages.filter(
+      const planImages = matchedImages.filter(
         (image) =>
           image.provider === plan.provider &&
           image.regionCode === plan.regionCode &&
           allowedCodes.includes(image.externalId),
       );
-      // Catalog image-code drift must not blank OS selection for a valid plan.
-      if (planImages.length === 0) {
-        const regional = regionImages.filter(
-          (image) =>
-            image.provider === plan.provider &&
-            image.regionCode === plan.regionCode,
-        );
-        const linuxFirst = [
-          ...regional.filter((image) => !/windows/i.test(image.name)),
-          ...regional.filter((image) => /windows/i.test(image.name)),
-        ];
-        planImages = linuxFirst.slice(0, 12);
-      }
       return {
         id: plan.id,
         role,
@@ -236,11 +206,27 @@ export async function getConversationDeliveryOptions(input: {
         vcpu: plan.pricing.vcpu,
         ramGb: plan.pricing.ramGb,
         storageGb: plan.pricing.storageGb,
-        images: planImages.map((image) => ({
-          id: image.id,
-          label: image.name,
-          windows: /windows/i.test(image.name),
-        })),
+        sshSelfServeAvailable: isCustomerSshSelfServeEnabled(),
+        images: planImages.map((image) => {
+          const identity = normalizeCustomerImageIdentity({
+            name: image.name,
+            externalId: image.externalId,
+            rawPayload: image.rawPayload,
+          });
+          return {
+            id: image.id,
+            label: identity.displayName,
+            displayName: identity.displayName,
+            distribution: identity.distribution,
+            version: identity.version,
+            architecture: identity.architecture,
+            windows: identity.windows,
+            defaultAccessMethod: identity.windows
+              ? ("WINDOWS_PASSWORD" as const)
+              : ("ONE_TIME_PASSWORD" as const),
+            sshSelectable: false,
+          };
+        }),
       };
     }),
   };
@@ -254,6 +240,7 @@ export async function configureConversationDelivery(input: {
   parchinLevel: ParchinLevel;
   accessMethod: "ONE_TIME_PASSWORD" | "SSH_KEY" | "WINDOWS_PASSWORD";
   sshKeyName?: string | null;
+  serverName?: string | null;
   userId?: string | null;
   guestToken?: string | null;
 }) {
@@ -277,12 +264,20 @@ export async function configureConversationDelivery(input: {
   const answers = asAnswers(session.answers);
   const minimumParchinLevel = recommendedParchinLevel(answers);
   assertParchinLevelAllowed(input.parchinLevel, minimumParchinLevel);
-  if (
-    input.accessMethod === "SSH_KEY" &&
-    !/^[a-zA-Z0-9._-]{1,128}$/.test(input.sshKeyName ?? "")
-  ) {
-    throw new Error("ssh_key_name_required");
+  if (input.accessMethod === "SSH_KEY") {
+    if (!isCustomerSshSelfServeEnabled()) {
+      throw new WalletError(
+        "quote_unavailable",
+        "انتخاب کلید SSH فعلاً برای خرید مستقیم در دسترس نیست.",
+      );
+    }
+    if (!/^[a-zA-Z0-9._-]{1,128}$/.test(input.sshKeyName ?? "")) {
+      throw new Error("ssh_key_name_required");
+    }
   }
+  const serverName =
+    normalizeCustomerServerName(input.serverName) ??
+    generateCustomerServerName();
   try {
     await ensureStorefrontSaleReady();
   } catch (error) {
@@ -306,6 +301,11 @@ export async function configureConversationDelivery(input: {
     );
   }
   assertPlanPublicSale(plan);
+  const compatibleCodes = Array.isArray(plan.catalogItem?.compatibleImageCodes)
+    ? plan.catalogItem.compatibleImageCodes.filter(
+        (code): code is string => typeof code === "string",
+      )
+    : [];
   const image = await prisma.providerCatalogAsset.findFirst({
     where: {
       id: input.imageAssetId,
@@ -315,17 +315,23 @@ export async function configureConversationDelivery(input: {
       kind: "IMAGE",
       status: "ACTIVE",
       available: true,
+      ...(compatibleCodes.length > 0
+        ? { externalId: { in: compatibleCodes } }
+        : {}),
     },
   });
-  // Image query already scopes provider/region/ACTIVE. Compatible-code lists
-  // from sync are often incomplete; do not blank Launch delivery on drift.
   if (!image) {
     throw new WalletError(
       "quote_unavailable",
       "سیستم‌عامل انتخاب‌شده با این سرور سازگار نیست.",
     );
   }
-  const isWindows = /windows/i.test(image.name);
+  const imageIdentity = normalizeCustomerImageIdentity({
+    name: image.name,
+    externalId: image.externalId,
+    rawPayload: image.rawPayload,
+  });
+  const isWindows = imageIdentity.windows;
   const rawImage =
     image.rawPayload &&
     typeof image.rawPayload === "object" &&
@@ -425,7 +431,7 @@ export async function configureConversationDelivery(input: {
     externalPlanId,
     externalImageId: image.externalId,
     imageAssetId: image.id,
-    operatingSystem: image.name,
+    operatingSystem: imageIdentity.displayName,
     accessMethod: input.accessMethod,
     sshKeyName:
       input.accessMethod === "SSH_KEY" ? lockedSshKey?.name : null,
@@ -435,6 +441,7 @@ export async function configureConversationDelivery(input: {
       input.accessMethod === "SSH_KEY"
         ? lockedSshKey?.fingerprint
         : null,
+    serverName,
     startupScriptCode: null,
     backupAddon: null,
     externalNetworkId: defaults.externalNetworkId,
