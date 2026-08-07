@@ -30,6 +30,8 @@ BACKUP_BEFORE_DEPLOY=1|0             # default: 1
 ```
 
 هر فرمان Compose Production باید `--env-file .env.production` داشته باشد.
+`ops/deploy.sh` همچنین `.env.production` را source می‌کند تا مقدارهای
+ambient Shell (مثل `DATABASE_URL` لوکال) نتوانند Interpolation را منحرف کنند.
 Secretها را در Shell، Log یا Screenshot چاپ نکنید.
 
 ## Migration contract
