@@ -163,8 +163,9 @@ test("draft expense excluded; posted included; reversal works", async (t) => {
       role: UserRole.ADMIN,
     },
   });
+  const expenseDate = new Date();
   const draft = await createDraftExpense({
-    date: new Date(),
+    date: expenseDate,
     amountRial: 80_000n,
     category: OperatingExpenseCategory.HOSTING_OPERATIONS,
     title: "Hosting bill",
@@ -173,7 +174,7 @@ test("draft expense excluded; posted included; reversal works", async (t) => {
     idempotencyKey: `opex-create-${suffix}`,
   });
   const draftReplay = await createDraftExpense({
-    date: new Date(),
+    date: expenseDate,
     amountRial: 80_000n,
     category: OperatingExpenseCategory.HOSTING_OPERATIONS,
     title: "Hosting bill",
