@@ -75,7 +75,8 @@ import {
   recommendedParchinLevel,
 } from "@/lib/parchin/recommendation";
 
-export const RECOMMENDATION_QUOTE_VALIDITY_MS = 10 * 60 * 1000;
+/** Customer-purchasable infrastructure quotes lock the customer price for exactly 60 minutes. */
+export const RECOMMENDATION_QUOTE_VALIDITY_MS = 60 * 60 * 1000;
 const READY_SERVER_PROFILE_SOURCE = "READY_SERVER";
 const CLOUD_SERVER_PROFILE_SOURCE = "CLOUD_SERVER";
 
@@ -1025,7 +1026,7 @@ async function createCatalogServerQuote(params: {
             : plan.offerSource === "MANUAL_ADMIN"
               ? "قیمت و موجودی دستی این سرور برای Quote بررسی شده است."
             : "قیمت و ظرفیت همین سرور پیش از ساخت Quote دوباره بررسی شده است.",
-          "منابع، موقعیت و سیستم‌عامل در Quote ده‌دقیقه‌ای قفل شده‌اند.",
+          "منابع، موقعیت و سیستم‌عامل در Quote شصت‌دقیقه‌ای قفل شده‌اند.",
           "پرچین پایه بخشی اجباری از تحویل امن این سرور است.",
         ],
         profileSnapshot,

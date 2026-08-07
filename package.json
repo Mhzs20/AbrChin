@@ -40,7 +40,7 @@
     "test:migration-upgrade": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/upgrade-migration-postgres-test.mts",
     "test:secret-scan": "node --experimental-strip-types scripts/secret-scan.mts",
     "test:payments": "node --experimental-strip-types --test scripts/payments-test.mts",
-    "test:infrastructure": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/infrastructure-test.mts scripts/worker-test.mts scripts/production-hardening-test.mts scripts/parspack-contract-test.mts scripts/provider-pricing-test.mts scripts/commercial-pricing-test.mts scripts/migration-safety-test.mts",
+    "test:infrastructure": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/infrastructure-test.mts scripts/locked-quote-contract-test.mts scripts/worker-test.mts scripts/production-hardening-test.mts scripts/parspack-contract-test.mts scripts/provider-pricing-test.mts scripts/commercial-pricing-test.mts scripts/migration-safety-test.mts",
     "test:worker-runtime": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/worker-runtime-test.mts",
     "test:readiness": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/product-flow-test.mts",
     "test:account-admin": "node --experimental-strip-types --test scripts/account-admin-test.mts",

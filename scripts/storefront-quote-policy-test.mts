@@ -31,15 +31,22 @@ test("stale catalogs fail closed and customer requests never trigger a full sync
   assert.match(quotes, /quote_revalidation_failed/);
 });
 
-test("quote checkout keeps the SKU markup snapshot and guest continuation", async () => {
-  const [checkout, payment, login] = await Promise.all([
+test("quote checkout locks the customer amount and does not reprice on payment", async () => {
+  const [checkout, payment, login, quoteService] = await Promise.all([
     readFile("lib/orders/service.ts", "utf8"),
     readFile("lib/orders/pay-order-tx.ts", "utf8"),
     readFile("components/login-form.tsx", "utf8"),
+    readFile("lib/recommendation/quote-service.ts", "utf8"),
   ]);
 
-  assert.match(checkout, /quote\.plan\.skuMarkupBasisPoints \?\? productPricing!\.markupBasisPoints/);
-  assert.match(payment, /plan\.skuMarkupBasisPoints \?\? productPricing!\.markupBasisPoints/);
+  assert.match(quoteService, /RECOMMENDATION_QUOTE_VALIDITY_MS = 60 \* 60 \* 1000/);
+  assert.match(checkout, /amount: quote\.amountRial/);
+  assert.match(checkout, /rejectIfQuoteExpired/);
+  assert.doesNotMatch(checkout, /samePriceSnapshot/);
+  assert.doesNotMatch(checkout, /quote_price_changed/);
+  assert.match(payment, /const amountRial = order\.amount/);
+  assert.doesNotMatch(payment, /samePriceSnapshot/);
+  assert.doesNotMatch(payment, /quote_price_changed/);
   assert.match(login, /sessions\/claim/);
   assert.match(login, /requestedNext\?\.startsWith\("\/"\)/);
   assert.match(login, /!requestedNext\.startsWith\("\/\/"\)/);

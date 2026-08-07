@@ -18,7 +18,6 @@ import { WalletError } from "@/lib/wallet/errors";
 import {
   resolvePlanPricing,
   samePlanConfigurationSnapshot,
-  samePriceSnapshot,
 } from "@/lib/pricing/plan-pricing";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import { assertPublicSaleEnabled } from "@/lib/infrastructure/public-sale-policy";
@@ -253,51 +252,16 @@ export async function executePayOrderWithWalletTx(
       "ظرفیت این سفارش دیگر موجود نیست؛ پرداخت متوقف شد.",
     );
   }
-  const snapshot = (order.planSnapshot ?? {}) as Record<string, unknown>;
-  const lockedSnapshot = order.recommendationQuote
-    ? order.recommendationQuote
-    : {
-        catalogItemId:
-          typeof snapshot.catalogItemId === "string" ? snapshot.catalogItemId : null,
-        providerBasePriceRialSnapshot:
-          typeof snapshot.providerBasePriceRialSnapshot === "string"
-            ? BigInt(snapshot.providerBasePriceRialSnapshot)
-            : null,
-        markupBasisPointsSnapshot:
-          typeof snapshot.markupBasisPointsSnapshot === "number"
-            ? snapshot.markupBasisPointsSnapshot
-            : null,
-        finalPriceRialSnapshot:
-          typeof snapshot.finalPriceRialSnapshot === "string"
-            ? BigInt(snapshot.finalPriceRialSnapshot)
-            : null,
-        currencySnapshot:
-          typeof snapshot.currency === "string" ? snapshot.currency : null,
-        parchinLevel:
-          typeof snapshot.parchinLevel === "string"
-            ? (snapshot.parchinLevel as typeof parchinLevel)
-            : null,
-        parchinPriceIrr:
-          typeof snapshot.parchinPriceRialSnapshot === "string"
-            ? BigInt(snapshot.parchinPriceRialSnapshot)
-            : null,
-        taxBasisPointsSnapshot:
-          typeof snapshot.taxBasisPointsSnapshot === "number"
-            ? snapshot.taxBasisPointsSnapshot
-            : null,
-        taxAmountIrr:
-          typeof snapshot.taxAmountRialSnapshot === "string"
-            ? BigInt(snapshot.taxAmountRialSnapshot)
-            : null,
-      };
-  if (
-    !samePriceSnapshot(currentPricing, lockedSnapshot) ||
-    currentPricing.finalPriceRial !== order.amount
-  ) {
-    throw new WalletError(
-      "quote_price_changed",
-      "قیمت تغییر کرده است؛ پیش از پرداخت قیمت تازه را تأیید کنید.",
-    );
+  // Locked customer amount is authoritative for the 60-minute quote TTL.
+  // Live commercial recomputation (markup/tax/Parchin/provider sale price)
+  // must not reject payment or change the wallet debit.
+  if (order.recommendationQuote) {
+    if (order.recommendationQuote.amountRial !== order.amount) {
+      throw new WalletError(
+        "quote_mismatch",
+        "جزئیات سفارش با پیشنهاد قفل‌شده همخوان نیست.",
+      );
+    }
   }
   if (!samePlanConfigurationSnapshot(plan, currentPricing, order.planSnapshot)) {
     throw new WalletError(
@@ -505,7 +469,10 @@ export async function executePayOrderWithWalletTx(
       provider: plan.provider,
       providerApiVersion: plan.providerApiVersion,
       productKind: plan.productKind,
-      parchinLevel: currentPricing.parchinLevel,
+      parchinLevel:
+        order.parchinLevel ??
+        order.recommendationQuote?.parchinLevel ??
+        currentPricing.parchinLevel,
       providerSelectionSnapshot: {
         provider: plan.provider,
         providerApiVersion: plan.providerApiVersion,
@@ -528,7 +495,10 @@ export async function executePayOrderWithWalletTx(
         deliveryConfiguration:
           order.recommendationQuote?.deliveryConfigurationSnapshot ??
           null,
-        parchinLevel: currentPricing.parchinLevel,
+        parchinLevel:
+          order.parchinLevel ??
+          order.recommendationQuote?.parchinLevel ??
+          currentPricing.parchinLevel,
         preprovisionedInventoryItemId: inventory?.id ?? null,
         providerResourceId: inventory?.providerResourceId ?? null,
         manualInventoryReserved: manualAdmin,

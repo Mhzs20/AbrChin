@@ -1511,6 +1511,10 @@ export async function runProvisioningWorkerCycle(
   const { releaseExpiredInventoryReservations } = await import(
     "@/lib/infrastructure/preprovisioned-inventory"
   );
+  const { expireDueLockedQuotes } = await import(
+    "@/lib/orders/quote-expiration"
+  );
+  await expireDueLockedQuotes();
   await releaseExpiredInventoryReservations();
   const dispatched = await dispatchApprovedProvisionCommands(1);
   await reconcileProvisioningDispatches();

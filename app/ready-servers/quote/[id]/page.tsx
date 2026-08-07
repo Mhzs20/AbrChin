@@ -116,7 +116,8 @@ export default async function ReadyServerQuotePage({
           </span>
           <h1 id="quote-title">{quote.title}</h1>
           <p>
-            قیمت، ظرفیت، موقعیت، سیستم‌عامل و پرچین برای چند دقیقه قفل شده‌اند.
+            قیمت، ظرفیت، موقعیت، سیستم‌عامل و پرچین به‌مدت ۶۰ دقیقه برای شما قفل
+            شده‌اند.
           </p>
         </div>
         <Link className="button button-quiet" href="/ready-servers">
