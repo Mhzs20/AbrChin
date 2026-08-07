@@ -18,12 +18,12 @@ export async function POST(request: Request) {
     };
     const instanceId =
       typeof body.instanceId === "string" ? body.instanceId.trim() : "";
-    const action =
-      body.action === "UPGRADE" || body.action === "TERMINATE"
-        ? body.action
-        : null;
+    const action = body.action === "TERMINATE" ? body.action : null;
     if (!instanceId || !action) {
-      return jsonError("درخواست تغییر معتبر نیست.", 400);
+      return jsonError(
+        "برای ارتقا از مسیر قیمت‌دار «ارتقای سرور» استفاده کن.",
+        400,
+      );
     }
 
     const instance = await prisma.cloudInstance.findFirst({

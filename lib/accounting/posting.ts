@@ -614,6 +614,53 @@ export async function postPrepaidCancellationRefund(
   });
 }
 
+/**
+ * Wallet debit for a locked mid-term upgrade quote.
+ * Posts wallet liability release against infrastructure revenue for the
+ * locked upgrade charge (idempotent per resource-change request).
+ */
+export async function postPrepaidUpgradeCharge(
+  input: {
+    resourceChangeRequestId: string;
+    amountRial: bigint;
+    ledgerEntryId: string;
+    occurredAt: Date;
+    billingModel: "PREPAID_TERM" | "PAYG_WALLET";
+  },
+  tx?: Db,
+) {
+  if (input.amountRial <= 0n) return null;
+  return postJournalEntry({
+    eventType: "resource_upgrade_charged",
+    referenceType: "resource_change_request",
+    referenceId: input.resourceChangeRequestId,
+    idempotencyKey: `resource-change:${input.resourceChangeRequestId}:upgrade:v1`,
+    occurredAt: input.occurredAt,
+    quality: AccountingQuality.FINAL,
+    metadata: {
+      kind: "resource_upgrade",
+      billingModel: input.billingModel,
+      amountRial: input.amountRial.toString(),
+      ledgerEntryId: input.ledgerEntryId,
+    },
+    lines: [
+      {
+        accountCode: "CUSTOMER_WALLET_LIABILITY",
+        debitRial: input.amountRial,
+        creditRial: 0n,
+        description: "آزادسازی بدهی کیف پول بابت ارتقا منابع",
+      },
+      {
+        accountCode: "INFRASTRUCTURE_REVENUE",
+        debitRial: 0n,
+        creditRial: input.amountRial,
+        description: "درآمد ارتقا منابع سرور",
+      },
+    ],
+    tx,
+  });
+}
+
 export async function postServiceRefundCompleted(
   order: ServiceOrder & {
     recommendationQuote?: {

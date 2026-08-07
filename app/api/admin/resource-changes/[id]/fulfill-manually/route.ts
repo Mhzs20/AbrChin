@@ -2,6 +2,10 @@ import { ResourceChangeStatus, ResourceVersionState } from "@prisma/client";
 
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
 import { completeCancellationAfterTermination } from "@/lib/orders/customer-cancel-service";
+import {
+  parseUpgradeQuoteSnapshot,
+  upgradeQuoteHasFinancialCommitment,
+} from "@/lib/orders/upgrade-quote";
 import { recordProviderConfirmedResourceVersion } from "@/lib/billing/resource-timeline";
 import { prisma } from "@/lib/db";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
@@ -32,7 +36,10 @@ export async function POST(
 
     const change = await prisma.resourceChangeRequest.findUnique({
       where: { id },
-      include: { cloudInstance: true },
+      include: {
+        cloudInstance: { include: { subscription: true } },
+        plan: true,
+      },
     });
     if (!change) return jsonError("درخواست پیدا نشد.", 404);
     if (
@@ -80,6 +87,113 @@ export async function POST(
         ok: true,
         action: "TERMINATE",
         refund,
+      });
+    }
+
+    const upgradeSnap = parseUpgradeQuoteSnapshot(change.estimateSnapshot);
+    if (action === "UPGRADE" || upgradeSnap) {
+      if (!upgradeQuoteHasFinancialCommitment(change.estimateSnapshot)) {
+        return jsonError(
+          "قبل از انجام ارتقا باید مبلغ قفل‌شده از کیف پول برداشت شده باشد.",
+          409,
+        );
+      }
+      if (
+        change.status !== ResourceChangeStatus.APPROVED &&
+        change.status !== ResourceChangeStatus.PROVIDER_MUTATION_PENDING
+      ) {
+        return jsonError(
+          "ارتقا پس از تأیید Admin قابل انجام است.",
+          409,
+        );
+      }
+
+      const target = upgradeSnap?.target;
+      const resolvedVcpu =
+        Number.isInteger(vcpu) && vcpu > 0
+          ? vcpu
+          : target?.vcpu ?? change.plan.vcpu ?? 1;
+      const resolvedRamMb =
+        Number.isInteger(ramMb) && ramMb > 0
+          ? ramMb
+          : target
+            ? target.ramGb * 1024
+            : (change.plan.ramGb ?? 1) * 1024;
+      const resolvedDiskGb =
+        Number.isInteger(diskGb) && diskGb >= 0
+          ? diskGb
+          : target?.diskGb ?? change.plan.storageGb ?? 0;
+
+      await prisma.resourceChangeRequest.update({
+        where: { id: change.id },
+        data: { status: ResourceChangeStatus.PROVIDER_MUTATION_PENDING },
+      });
+
+      const version = await recordProviderConfirmedResourceVersion({
+        cloudInstanceId: change.cloudInstanceId,
+        planId: change.planId,
+        state: ResourceVersionState.ACTIVE,
+        resources: {
+          vcpu: resolvedVcpu,
+          ramMb: resolvedRamMb,
+          diskGb: resolvedDiskGb,
+          ipv4Count: 1,
+          backupEnabled: false,
+          snapshotCount: 0,
+        },
+        providerEventId: `manual-fulfill:${id}`,
+        providerConfirmedAt: new Date(),
+        idempotencyKey,
+        sourceChangeRequestId: change.id,
+      });
+
+      await prisma.$transaction(async (tx) => {
+        await tx.cloudInstance.update({
+          where: { id: change.cloudInstanceId },
+          data: {
+            size: change.plan.sizeCode,
+          },
+        });
+        await tx.infrastructureOrder.update({
+          where: { id: change.cloudInstance.infrastructureOrderId },
+          data: { planId: change.planId },
+        });
+        if (change.cloudInstance.subscription) {
+          await tx.serviceSubscription.update({
+            where: { id: change.cloudInstance.subscription.id },
+            data: {
+              planId: change.planId,
+              renewalPriceRial:
+                change.plan.renewalPriceRial ??
+                change.cloudInstance.subscription.renewalPriceRial,
+            },
+          });
+        }
+      });
+
+      await writeAuditLog({
+        actorUserId: admin.id,
+        action: AuditActions.RESOURCE_CHANGE_APPROVED,
+        entityType: "ResourceChangeRequest",
+        entityId: change.id,
+        afterData: {
+          status: "APPLIED",
+          action: "UPGRADE",
+          manualFulfillment: true,
+          note: note || null,
+          resourceVersionId: version.id,
+          targetPlanId: change.planId,
+          financiallyCommitted: true,
+        },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+        idempotencyKey: `audit:fulfill:${idempotencyKey}`,
+      });
+
+      return jsonOk({
+        ok: true,
+        action: "UPGRADE",
+        resourceVersionId: version.id,
       });
     }
 

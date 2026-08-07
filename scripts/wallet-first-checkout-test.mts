@@ -83,7 +83,7 @@ test("wallet-first checkout removes direct gateway CTA and uses wallet CTAs", as
   assert.match(expired, /دریافت قیمت جدید/);
   assert.match(expired, /کسر نمی‌شود/);
 
-  assert.match(topupResult, /ادامه خرید/);
+  assert.match(topupResult, /ادامه خرید|ادامه ارتقا/);
   assert.match(topupResult, /abrchin\.walletTopup\.returnTo/);
   // Must not wipe sessionStorage returnTo with null resumePath.
   assert.match(topupResult, /if \(apiResume\)/);
