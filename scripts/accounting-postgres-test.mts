@@ -170,7 +170,18 @@ test("draft expense excluded; posted included; reversal works", async (t) => {
     title: "Hosting bill",
     description: "test",
     actorUserId: admin.id,
+    idempotencyKey: `opex-create-${suffix}`,
   });
+  const draftReplay = await createDraftExpense({
+    date: new Date(),
+    amountRial: 80_000n,
+    category: OperatingExpenseCategory.HOSTING_OPERATIONS,
+    title: "Hosting bill",
+    description: "test",
+    actorUserId: admin.id,
+    idempotencyKey: `opex-create-${suffix}`,
+  });
+  assert.equal(draft.id, draftReplay.id);
   assert.equal(draft.status, "DRAFT");
   const beforePost = await computeAccountingKpis({
     from: new Date(Date.now() - 86_400_000),
@@ -226,6 +237,17 @@ test("missing provider cost → NEEDS_RECONCILIATION", async (t) => {
   });
   const posted = await postServicePurchaseCompleted(order);
   assert.equal(posted.quality, AccountingQuality.NEEDS_RECONCILIATION);
+  const { buildOrderProfitabilityRows } = await import(
+    "../lib/accounting/reports.ts"
+  );
+  const rows = await buildOrderProfitabilityRows({
+    orderStatus: "PAID" as never,
+  });
+  const row = rows.find((item) => item.orderId === order.id);
+  assert.ok(row);
+  assert.equal(row!.missingProviderCost || row!.quality === "NEEDS_RECONCILIATION", true);
+  assert.equal(row!.grossProfitRial, null);
+  assert.equal(row!.effectiveMarginBps, null);
 });
 
 test("backfill idempotency", async (t) => {

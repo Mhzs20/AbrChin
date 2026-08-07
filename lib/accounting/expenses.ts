@@ -14,6 +14,10 @@ import {
 } from "@/lib/accounting/posting";
 import { writeAuditLog } from "@/lib/audit/service";
 import { prisma } from "@/lib/db";
+import {
+  IdempotencyConflictError,
+  idempotencyFingerprint,
+} from "@/lib/idempotency";
 
 export class OperatingExpenseError extends Error {
   readonly code: string;
@@ -35,6 +39,10 @@ export type CreateDraftExpenseInput = {
   reference?: string | null;
   notes?: string | null;
   actorUserId: string;
+  /** Required for Admin POST retries — unique per draft create attempt. */
+  idempotencyKey?: string | null;
+  ip?: string | null;
+  userAgent?: string | null;
 };
 
 export type PostExpenseInput = {
@@ -93,19 +101,123 @@ export async function createDraftExpense(input: CreateDraftExpenseInput) {
   if (title.length < 2) {
     throw new OperatingExpenseError("invalid_title", "عنوان هزینه نامعتبر است.");
   }
-  return prisma.operatingExpense.create({
-    data: {
-      date: input.date,
-      amountRial: input.amountRial,
-      category: input.category,
-      title,
-      description: input.description?.trim() || null,
-      vendor: input.vendor?.trim() || null,
-      reference: input.reference?.trim() || null,
-      notes: input.notes?.trim() || null,
-      status: OperatingExpenseStatus.DRAFT,
-      createdById: input.actorUserId,
-    },
+  if (title.length > 200) {
+    throw new OperatingExpenseError("invalid_title", "عنوان هزینه بیش از حد طولانی است.");
+  }
+  const description = input.description?.trim() || null;
+  const vendor = input.vendor?.trim() || null;
+  const reference = input.reference?.trim() || null;
+  const notes = input.notes?.trim() || null;
+  if (description && description.length > 2_000) {
+    throw new OperatingExpenseError(
+      "invalid_description",
+      "توضیح هزینه بیش از حد طولانی است.",
+    );
+  }
+  if (vendor && vendor.length > 200) {
+    throw new OperatingExpenseError("invalid_vendor", "نام تأمین‌کننده بیش از حد طولانی است.");
+  }
+  if (reference && reference.length > 200) {
+    throw new OperatingExpenseError("invalid_reference", "مرجع هزینه بیش از حد طولانی است.");
+  }
+  if (notes && notes.length > 2_000) {
+    throw new OperatingExpenseError("invalid_notes", "یادداشت هزینه بیش از حد طولانی است.");
+  }
+
+  const idempotencyKey = input.idempotencyKey?.trim() || null;
+  const requestFingerprint = idempotencyFingerprint({
+    date: input.date.toISOString(),
+    amountRial: input.amountRial.toString(),
+    category: input.category,
+    title,
+    description,
+    vendor,
+    reference,
+    notes,
+  });
+
+  return prisma.$transaction(async (tx) => {
+    if (idempotencyKey) {
+      await tx.$queryRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${`opex-draft:${idempotencyKey}`}, 0)
+        )::text AS locked
+      `;
+      const existing = await tx.operatingExpense.findUnique({
+        where: { idempotencyKey },
+      });
+      if (existing) {
+        const prior = await tx.auditLog.findUnique({
+          where: { idempotencyKey: `opex-draft:${idempotencyKey}` },
+        });
+        const priorFp =
+          prior?.beforeData &&
+          typeof prior.beforeData === "object" &&
+          !Array.isArray(prior.beforeData)
+            ? String(
+                (prior.beforeData as Record<string, unknown>).requestFingerprint ??
+                  "",
+              )
+            : "";
+        if (priorFp && priorFp !== requestFingerprint) {
+          throw new IdempotencyConflictError();
+        }
+        return existing;
+      }
+    }
+
+    try {
+      const expense = await tx.operatingExpense.create({
+        data: {
+          date: input.date,
+          amountRial: input.amountRial,
+          category: input.category,
+          title,
+          description,
+          vendor,
+          reference,
+          notes,
+          status: OperatingExpenseStatus.DRAFT,
+          createdById: input.actorUserId,
+          idempotencyKey,
+        },
+      });
+      await writeAuditLog(
+        {
+          actorUserId: input.actorUserId,
+          action: "operating_expense_draft_created",
+          entityType: "operating_expense",
+          entityId: expense.id,
+          beforeData: { requestFingerprint },
+          afterData: {
+            id: expense.id,
+            amountRial: expense.amountRial.toString(),
+            category: expense.category,
+            title: expense.title,
+            status: expense.status,
+          },
+          ip: input.ip,
+          userAgent: input.userAgent,
+          idempotencyKey: idempotencyKey
+            ? `opex-draft:${idempotencyKey}`
+            : null,
+        },
+        tx,
+      );
+      return expense;
+    } catch (error) {
+      const code =
+        error && typeof error === "object" && "code" in error
+          ? String((error as { code?: string }).code)
+          : "";
+      if (code === "P2002" && idempotencyKey) {
+        const raced = await tx.operatingExpense.findUniqueOrThrow({
+          where: { idempotencyKey },
+        });
+        return raced;
+      }
+      throw error;
+    }
   });
 }
 

@@ -7,7 +7,12 @@ import {
   listOperatingExpenses,
 } from "@/lib/accounting/expenses";
 import { accountingJsonOk } from "@/lib/accounting/serialize";
-import { jsonError, rejectCrossOrigin } from "@/lib/http";
+import { isIdempotencyConflictError } from "@/lib/idempotency";
+import {
+  jsonError,
+  readIdempotencyKey,
+  rejectCrossOrigin,
+} from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +52,10 @@ export async function POST(request: Request) {
   if (rejected) return rejected;
   try {
     const admin = await requireAdminUser();
+    const idempotencyKey = readIdempotencyKey(request);
+    if (!idempotencyKey) {
+      return jsonError("شناسه یکتای درخواست الزامی است.", 400);
+    }
     const body = (await request.json()) as Record<string, unknown>;
     const amountRaw = String(body.amountRial ?? "");
     if (!/^\d+$/.test(amountRaw)) {
@@ -73,6 +82,9 @@ export async function POST(request: Request) {
       reference: typeof body.reference === "string" ? body.reference : null,
       notes: typeof body.notes === "string" ? body.notes : null,
       actorUserId: admin.id,
+      idempotencyKey,
+      ip: request.headers.get("x-forwarded-for"),
+      userAgent: request.headers.get("user-agent"),
     });
     return accountingJsonOk({
       expense: {
@@ -88,6 +100,11 @@ export async function POST(request: Request) {
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);
+    if (isIdempotencyConflictError(error)) {
+      return jsonError("کلید یکتایی با بدنه متفاوت قبلاً استفاده شده است.", 409, {
+        code: "idempotency_conflict",
+      });
+    }
     if (error instanceof OperatingExpenseError) {
       return jsonError(error.message, 400, { code: error.code });
     }

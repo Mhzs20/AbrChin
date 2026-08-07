@@ -32,6 +32,7 @@ type KpiTotals = {
   operatingExpenseRial: string;
   operatingProfitRial: string;
   effectiveMarginBps: number | null;
+  grossProfitExact?: boolean;
 };
 
 type OrderRow = {
@@ -47,7 +48,7 @@ type OrderRow = {
   taxRial: string;
   netSalesExclTaxRial: string;
   providerCogsRial: string;
-  grossProfitRial: string;
+  grossProfitRial: string | null;
   effectiveMarginBps: number | null;
   quality: string | null;
   missingProviderCost: boolean;
@@ -221,6 +222,10 @@ export function AccountingCenterPanel() {
   const [previousKpis, setPreviousKpis] = useState<KpiTotals | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [needsReconciliation, setNeedsReconciliation] = useState(0);
+  const [needsReconciliationAmount, setNeedsReconciliationAmount] =
+    useState("0");
+  const [ordersMissingCost, setOrdersMissingCost] = useState(0);
+  const [dataCompletenessBps, setDataCompletenessBps] = useState(10_000);
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -278,6 +283,9 @@ export function AccountingCenterPanel() {
           kpis: KpiTotals;
           rows: OrderRow[];
           needsReconciliationCount: number;
+          needsReconciliationAmountRial?: string;
+          ordersMissingCostSnapshot?: number;
+          dataCompletenessBps?: number;
         };
         previousKpis?: KpiTotals | null;
       };
@@ -290,6 +298,15 @@ export function AccountingCenterPanel() {
       setOrders(overviewBody.overview?.rows ?? []);
       setNeedsReconciliation(
         overviewBody.overview?.needsReconciliationCount ?? 0,
+      );
+      setNeedsReconciliationAmount(
+        overviewBody.overview?.needsReconciliationAmountRial ?? "0",
+      );
+      setOrdersMissingCost(
+        overviewBody.overview?.ordersMissingCostSnapshot ?? 0,
+      );
+      setDataCompletenessBps(
+        overviewBody.overview?.dataCompletenessBps ?? 10_000,
       );
 
       if (expensesRes.ok) {
@@ -361,7 +378,10 @@ export function AccountingCenterPanel() {
       }
       const response = await fetch("/api/admin/accounting/expenses", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
         body: JSON.stringify({
           date: new Date(expenseForm.date).toISOString(),
           amountRial: (BigInt(toman) * 10n).toString(),
@@ -541,7 +561,7 @@ export function AccountingCenterPanel() {
             }
             onClick={() => setView("recognized")}
           >
-            درآمد شناسایی‌شده
+            درآمد شناسایی‌شده (مدیریتی)
           </button>
         </div>
 
@@ -690,8 +710,22 @@ export function AccountingCenterPanel() {
               <span>حاشیه موثر</span>
               <strong>{bpsLabel(kpis.effectiveMarginBps)}</strong>
               <small>
-                {needsReconciliation.toLocaleString("fa-IR")} مورد نیاز به تطبیق
+                کامل بودن داده{" "}
+                {(dataCompletenessBps / 100).toLocaleString("fa-IR", {
+                  maximumFractionDigits: 1,
+                })}
+                ٪ · {needsReconciliation.toLocaleString("fa-IR")} مورد تطبیق ·{" "}
+                {ordersMissingCost.toLocaleString("fa-IR")} بدون هزینه Snapshot ·{" "}
+                {formatToman(needsReconciliationAmount)} نیازمند تطبیق
               </small>
+              {kpis.grossProfitExact === false ? (
+                <StatusBadge label="سود قطعی نیست" tone="warning" />
+              ) : (
+                <StatusBadge
+                  label={view === "booked" ? "ثبت‌شده" : "شناسایی‌شده (پیش‌بینی)"}
+                  tone="info"
+                />
+              )}
             </div>
           ) : null}
         </div>
@@ -722,9 +756,10 @@ export function AccountingCenterPanel() {
           >
             {orders.slice(0, 24).map((row, index) => {
               const x = 10 + index * 12;
+              const profitBasis = row.grossProfitRial ?? row.netSalesExclTaxRial;
               const height = Math.min(
                 40,
-                Math.max(4, Number(BigInt(row.grossProfitRial) / 10_000_000n)),
+                Math.max(4, Number(BigInt(profitBasis) / 10_000_000n)),
               );
               return (
                 <rect
@@ -789,8 +824,16 @@ export function AccountingCenterPanel() {
                       <td className="money-tone money-tone--cost">
                         {formatToman(row.providerCogsRial)}
                       </td>
-                      <td>{formatToman(row.grossProfitRial)}</td>
-                      <td>{bpsLabel(row.effectiveMarginBps)}</td>
+                      <td>
+                        {row.grossProfitRial == null || row.missingProviderCost
+                          ? "— (نیاز به تطبیق)"
+                          : formatToman(row.grossProfitRial)}
+                      </td>
+                      <td>
+                        {row.grossProfitRial == null
+                          ? "—"
+                          : bpsLabel(row.effectiveMarginBps)}
+                      </td>
                       <td>
                         <StatusBadge
                           label={
@@ -1101,7 +1144,10 @@ export function AccountingCenterPanel() {
               <div>
                 <dt>سود ناخالص</dt>
                 <dd className="money-tone money-tone--sale">
-                  {formatToman(selectedOrder.grossProfitRial)}
+                  {selectedOrder.grossProfitRial == null ||
+                  selectedOrder.missingProviderCost
+                    ? "— (بدون هزینه Provider قابل محاسبه نیست)"
+                    : formatToman(selectedOrder.grossProfitRial)}
                 </dd>
               </div>
             </dl>

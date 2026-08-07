@@ -2571,6 +2571,8 @@ model OperatingExpense {
   reversedAt      DateTime?
   journalEntryId  String?                  @unique
   reversalReason  String?
+  /** Optional client Idempotency-Key for draft-create retries. */
+  idempotencyKey  String?                  @unique
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
   createdBy       User                     @relation("OperatingExpenseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)

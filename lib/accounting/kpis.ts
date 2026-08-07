@@ -24,6 +24,11 @@ export type AccountingKpiTotals = {
   operatingProfitRial: bigint;
   /** Gross profit / net sales, in basis points. Null when net sales is zero. */
   effectiveMarginBps: number | null;
+  /**
+   * True when totals include only FINAL/ESTIMATED qualities (exact GP safe).
+   * False when caller explicitly included NEEDS_RECONCILIATION.
+   */
+  grossProfitExact: boolean;
 };
 
 export type KpiQuery = {
@@ -156,7 +161,6 @@ export async function computeAccountingKpis(
     [
       AccountingQuality.FINAL,
       AccountingQuality.ESTIMATED,
-      AccountingQuality.NEEDS_RECONCILIATION,
     ];
 
   const entries = await prisma.accountingJournalEntry.findMany({
@@ -183,6 +187,9 @@ export async function computeAccountingKpis(
   let contra = 0n;
   let cogs = 0n;
   let opex = 0n;
+  const includesNeedsReconciliation = qualities.includes(
+    AccountingQuality.NEEDS_RECONCILIATION,
+  );
 
   for (const entry of entries) {
     // Reversed originals are excluded from booked/recognized moving totals;
@@ -285,5 +292,7 @@ export async function computeAccountingKpis(
     operatingExpenseRial: opex,
     operatingProfitRial: operatingProfit,
     effectiveMarginBps: marginBps(grossProfit, netSales),
+    // Incomplete cost snapshots must not be presented as exact profit.
+    grossProfitExact: !includesNeedsReconciliation,
   };
 }

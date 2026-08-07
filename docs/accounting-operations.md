@@ -47,16 +47,17 @@ Opex: `GATEWAY_FEES`, `SMS_EXPENSE`, `SUPPORT_OPERATIONS`,
 `FINAL` | `ESTIMATED` | `NEEDS_RECONCILIATION` | `REVERSED`
 
 اگر Snapshot هزینه Provider نباشد: سود دقیق ساخته نمی‌شود؛
-`NEEDS_RECONCILIATION`. Dashboard درصد کامل بودن و مبلغ نیازمند تطبیق را
-نشان می‌دهد.
+`NEEDS_RECONCILIATION`. Dashboard درصد کامل بودن، تعداد/مبلغ نیازمند تطبیق و
+سفارش‌های بدون هزینه Snapshot را نشان می‌دهد و برای آن سفارش‌ها سود ناخالص
+دقیق نمایش داده نمی‌شود.
 
 ## KPIها
 
-- Gross billed = مبلغ نهایی مشتری با مالیات
-- Tax collected = جمع خطوط TAX
-- Net sales excl tax = Infra + Parchin + Addon − Term − Coupon − Refund adj
+- Gross billed = Infra + Parchin + Addon revenue (قبل از تخفیف؛ بدون مالیات)
+- Tax collected = جمع خطوط TAX_PAYABLE
+- Net sales excl tax = Gross billed − Term/Coupon/Sales refund
 - Provider COGS = Infra cost + Addon cost (Snapshot)
-- Gross profit = Net sales − COGS
+- Gross profit = Net sales − COGS (فقط روی کیفیت FINAL/ESTIMATED پیش‌فرض)
 - Operating profit = Gross − Posted opex
 - Effective margin = Gross / Net sales
 
@@ -65,16 +66,23 @@ Opex: `GATEWAY_FEES`, `SMS_EXPENSE`, `SUPPORT_OPERATIONS`,
 
 ## Booked در برابر Recognized
 
-- **فروش ثبت‌شده**: کل فروش در زمان خرید موفق.
-- **درآمد شناسایی‌شده**: مستقیم خطی روی مدت ۳/۶/۱۲ ماه؛ مالیات خارج از
-  شناسایی درآمد؛ COGS همگام وقتی Snapshot اجازه دهد. سفارش بدون دادهٔ دوره
-  Estimated / Needs Reconciliation است؛ تاریخ جعلی ساخته نمی‌شود.
+- **فروش ثبت‌شده (Booked)**: کل فروش در زمان خرید موفق در Journal ثبت می‌شود
+  (مدل Deferred-Revenue واقعی برای کل مبلغ استفاده نمی‌شود؛ `DEFERRED_REVENUE`
+  فقط برای Snapshot نامتوازن / نیاز به تطبیق است).
+- **درآمد شناسایی‌شده (Recognized)**: یک **نمای مدیریتی / Projection** است؛
+  مستقیم خطی روی مدت ۱/۳/۶/۱۲ ماه روی همان Journal محاسبه می‌شود و سند جداگانه
+  شناسایی درآمد نمی‌سازد. مالیات خارج از شناسایی درآمد است؛ COGS همگام وقتی
+  Snapshot اجازه دهد. این نما نباید دوباره به‌عنوان درآمد حسابداری اضافه شود.
+
+اگر Snapshot هزینه Provider نباشد: سود دقیق ساخته نمی‌شود؛
+`NEEDS_RECONCILIATION`. Dashboard درصد کامل بودن و مبلغ نیازمند تطبیق را
+نشان می‌دهد و سود ناخالص دقیق برای آن سفارش نشان داده نمی‌شود.
 
 ## هزینه‌های دستی
 
 Draft روی P&L اثر ندارد. Posted اثر دارد و مستقیم Edit/Delete نمی‌شود.
 اصلاح = Reverse + Expense جدید. AuditLog کامل. دستهٔ COGS خودکار Provider
-مجاز نیست.
+مجاز نیست. ایجاد Draft با `Idempotency-Key` از double-submit محافظت می‌شود.
 
 ## UI و گزارش
 

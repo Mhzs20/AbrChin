@@ -247,16 +247,15 @@ export function computeCommercialPriceBreakdown(
     if (input.infrastructureSaleRialOverride <= input.providerMonthlyPriceIrr) {
       throw new Error("invalid_infrastructure_sale_override");
     }
-    monthlyMarkupIrr =
-      input.infrastructureSaleRialOverride - input.providerMonthlyPriceIrr;
-    // Prefer the configured provider markup share; remainder is product.
-    const providerShare = multiplyBpsRoundUp(
-      input.providerMonthlyPriceIrr,
-      input.providerMarkupBps,
-    );
+    // Override is the curve-held *provider* infrastructure sale only.
+    // Product/SKU markup remains additive once on top — never swallowed.
     monthlyProviderMarkupIrr =
-      providerShare <= monthlyMarkupIrr ? providerShare : monthlyMarkupIrr;
-    monthlyProductMarkupIrr = monthlyMarkupIrr - monthlyProviderMarkupIrr;
+      input.infrastructureSaleRialOverride - input.providerMonthlyPriceIrr;
+    monthlyProductMarkupIrr = multiplyBpsRoundUp(
+      input.providerMonthlyPriceIrr,
+      input.productMarkupBps,
+    );
+    monthlyMarkupIrr = monthlyProviderMarkupIrr + monthlyProductMarkupIrr;
   } else {
     // Combined ceil first (legacy-stable totals); the provider/product split is
     // derived from it so the two parts always sum exactly to the total.

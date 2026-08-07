@@ -43,7 +43,8 @@ export type OrderProfitabilityRow = {
   taxRial: bigint;
   netSalesExclTaxRial: bigint;
   providerCogsRial: bigint;
-  grossProfitRial: bigint;
+  /** Null when provider cost is missing — never show invented exact profit. */
+  grossProfitRial: bigint | null;
   effectiveMarginBps: number | null;
   quality: AccountingQuality | null;
   missingProviderCost: boolean;
@@ -53,6 +54,11 @@ export type AccountingOverview = {
   kpis: AccountingKpiTotals;
   orderCount: number;
   needsReconciliationCount: number;
+  /** Sum of net sales for orders needing reconciliation / missing cost. */
+  needsReconciliationAmountRial: bigint;
+  ordersMissingCostSnapshot: number;
+  /** 0–10000 bps of orders with usable FINAL/ESTIMATED cost data. */
+  dataCompletenessBps: number;
   rows: OrderProfitabilityRow[];
 };
 
@@ -201,7 +207,10 @@ export async function buildOrderProfitabilityRows(
     }
 
     const netSales = grossBilled - contra;
-    const grossProfit = netSales - cogs;
+    const incomplete =
+      missingProviderCost ||
+      quality === AccountingQuality.NEEDS_RECONCILIATION;
+    const grossProfit = incomplete ? null : netSales - cogs;
     rows.push({
       orderId: order.id,
       paidAt: order.paidAt?.toISOString() ?? null,
@@ -216,7 +225,8 @@ export async function buildOrderProfitabilityRows(
       netSalesExclTaxRial: netSales,
       providerCogsRial: cogs,
       grossProfitRial: grossProfit,
-      effectiveMarginBps: marginBps(grossProfit, netSales),
+      effectiveMarginBps:
+        grossProfit == null ? null : marginBps(grossProfit, netSales),
       quality,
       missingProviderCost,
     });
@@ -233,28 +243,55 @@ export async function buildAccountingOverview(
       from: filters.from,
       to: filters.to,
       view: filters.view ?? "booked",
-      qualities: filters.dataQuality ? [filters.dataQuality] : undefined,
+      // Default KPI totals stay FINAL-only so incomplete cost snapshots cannot
+      // invent exact gross profit. Callers may still filter explicitly.
+      qualities: filters.dataQuality
+        ? [filters.dataQuality]
+        : [AccountingQuality.FINAL, AccountingQuality.ESTIMATED],
     }),
     buildOrderProfitabilityRows(filters),
   ]);
 
+  const needsRows = rows.filter(
+    (row) =>
+      row.quality === AccountingQuality.NEEDS_RECONCILIATION ||
+      row.missingProviderCost,
+  );
+  const missingCostRows = rows.filter((row) => row.missingProviderCost);
+  const completeCount = rows.length - needsRows.length;
+  const dataCompletenessBps =
+    rows.length === 0
+      ? 10_000
+      : Math.round((completeCount * 10_000) / rows.length);
+
   return {
     kpis,
     orderCount: rows.length,
-    needsReconciliationCount: rows.filter(
-      (row) =>
-        row.quality === AccountingQuality.NEEDS_RECONCILIATION ||
-        row.missingProviderCost,
-    ).length,
+    needsReconciliationCount: needsRows.length,
+    needsReconciliationAmountRial: needsRows.reduce(
+      (sum, row) => sum + row.netSalesExclTaxRial,
+      0n,
+    ),
+    ordersMissingCostSnapshot: missingCostRows.length,
+    dataCompletenessBps,
     rows,
   };
 }
 
-function csvEscape(value: string): string {
-  if (/[",\n\r]/.test(value)) {
-    return `"${value.replaceAll('"', '""')}"`;
+/**
+ * Escape CSV cells for Excel/LibreOffice safety:
+ * - quote commas/quotes/newlines
+ * - neutralize formula injection for leading = + - @ TAB CR
+ */
+export function csvEscape(value: string): string {
+  let cell = value;
+  if (/^[=+\-@\t\r]/.test(cell)) {
+    cell = `'${cell}`;
   }
-  return value;
+  if (/[",\n\r]/.test(cell)) {
+    return `"${cell.replaceAll('"', '""')}"`;
+  }
+  return cell;
 }
 
 export function orderProfitabilityToCsv(rows: OrderProfitabilityRow[]): string {
@@ -301,8 +338,10 @@ export function orderProfitabilityToCsv(rows: OrderProfitabilityRow[]): string {
         rialToToman(row.netSalesExclTaxRial).toString(),
         row.providerCogsRial.toString(),
         rialToToman(row.providerCogsRial).toString(),
-        row.grossProfitRial.toString(),
-        rialToToman(row.grossProfitRial).toString(),
+        row.grossProfitRial == null ? "" : row.grossProfitRial.toString(),
+        row.grossProfitRial == null
+          ? ""
+          : rialToToman(row.grossProfitRial).toString(),
         row.effectiveMarginBps?.toString() ?? "",
         row.quality ?? "",
         row.missingProviderCost ? "true" : "false",

@@ -114,3 +114,11 @@ test("CSV BOM helper marker for Persian Excel", () => {
   assert.match(csv, /amountRial/);
   assert.match(csv, /amountToman/);
 });
+
+test("CSV formula injection escape", async () => {
+  const { csvEscape } = await import("../lib/accounting/reports.ts");
+  assert.equal(csvEscape("=1+1"), "'=1+1");
+  assert.equal(csvEscape("+profit"), "'+profit");
+  assert.equal(csvEscape("-1"), "'-1");
+  assert.equal(csvEscape("@sum"), "'@sum");
+});
