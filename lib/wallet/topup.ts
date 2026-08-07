@@ -397,7 +397,7 @@ async function createTopUpIntentRial(
 export async function createTopUpIntent(
   userId: string,
   amountTomanRaw: unknown,
-  options: { couponCode?: string | null } = {},
+  options: { couponCode?: string | null; idempotencyKey?: string } = {},
 ) {
   const amountToman = assertPositiveIntegerToman(amountTomanRaw);
   if (amountToman < MIN_TOPUP_TOMAN || amountToman > MAX_TOPUP_TOMAN) {
@@ -426,6 +426,7 @@ export async function createTopUpIntent(
   return createTopUpIntentRial(userId, amountRial, {
     couponCode,
     bonusRialSnapshot,
+    idempotencyKey: options.idempotencyKey,
   });
 }
 

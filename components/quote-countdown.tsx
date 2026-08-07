@@ -55,15 +55,15 @@ export function QuoteCountdown({
   if (prominent) {
     return (
       <span className="quote-lock-banner" aria-live="polite">
-        این قیمت تا ساعت {remaining.lockedUntil} برای شما قفل است
-        <small>({remaining.label})</small>
+        این قیمت برای ۶۰ دقیقه قفل است — تا ساعت {remaining.lockedUntil}
+        <small>مانده: {remaining.label}</small>
       </span>
     );
   }
 
   return (
     <span aria-live="polite">
-      این قیمت تا ساعت {remaining.lockedUntil} برای شما قفل است (
+      قیمت ۶۰ دقیقه‌ای قفل‌شده تا ساعت {remaining.lockedUntil} (
       {remaining.label})
     </span>
   );

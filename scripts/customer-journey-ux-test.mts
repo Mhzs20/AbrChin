@@ -84,10 +84,15 @@ test("destructive confirm path exists for termination", async () => {
     "components/account/service-change-request-buttons.tsx",
     "utf8",
   );
-  assert.match(buttons, /ConfirmDialog/);
-  assert.match(buttons, /تأیید درخواست حذف سرور/);
-  assert.match(buttons, /درخواست حذف/);
-  assert.match(buttons, /پشتیبان/);
+  const cancelPanel = await readFile(
+    "components/account/service-cancel-panel.tsx",
+    "utf8",
+  );
+  assert.match(buttons, /ارتقای سرور/);
+  assert.match(buttons, /لغو سرویس/);
+  assert.match(cancelPanel, /ConfirmDialog/);
+  assert.match(cancelPanel, /لغو سرویس و بازگشت/);
+  assert.match(cancelPanel, /مبلغ قابل بازگشت/);
   const dialog = await readFile("components/product/confirm-dialog.tsx", "utf8");
   assert.match(dialog, /Escape/);
   assert.match(dialog, /aria-modal/);

@@ -975,14 +975,36 @@
 
 .delivery-config-grid select,
 .delivery-config-grid input {
-  min-height: 42px;
-  padding: 0 12px;
+  min-height: 44px;
+  padding-block: 0;
+  padding-inline: 12px 36px;
   border: 1px solid var(--line-strong);
-  border-radius: 11px;
+  border-radius: 12px;
   background: #fff;
   color: var(--navy-900);
   font-size: 13px;
   font-weight: 500;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #5b6b82 50%),
+    linear-gradient(135deg, #5b6b82 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% - 2px),
+    calc(100% - 12px) calc(50% - 2px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+[dir="rtl"] .delivery-config-grid select {
+  background-position:
+    18px calc(50% - 2px),
+    12px calc(50% - 2px);
+  padding-inline: 36px 12px;
+}
+
+.delivery-config-grid input {
+  background-image: none;
+  padding-inline: 12px;
 }
 
 .delivery-config-submit {

@@ -32,7 +32,7 @@ function purchaseDisabledReason(offer: PublicPlanOffer) {
     return "فروش این موقعیت هنوز فعال نیست";
   }
   if (offer.purchaseState === "CATALOG_STALE") {
-    return "در انتظار همگام‌سازی دوبارهٔ کاتالوگ";
+    return "فهرست سرورها در حال به‌روزرسانی است؛ کمی بعد دوباره امتحان کن";
   }
   if (offer.purchaseState === "UNAVAILABLE") return "در حال حاضر ناموجود";
   return undefined;

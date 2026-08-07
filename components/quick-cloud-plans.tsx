@@ -163,7 +163,7 @@ export function QuickCloudPlans({
               {plan.expiresAt ? (
                 <QuoteCountdown expiresAt={plan.expiresAt} />
               ) : (
-                "قیمت پس از انتخاب ۱۰ دقیقه قفل می‌شود و پیش از پرداخت دوباره بررسی خواهد شد."
+                "قیمت پس از انتخاب برای ۶۰ دقیقه قفل می‌شود."
               )}
             </small>
           </article>

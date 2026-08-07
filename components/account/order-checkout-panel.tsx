@@ -168,7 +168,12 @@ export function OrderCheckoutPanel({
   async function createOrder(): Promise<{ id: string } | null> {
     const createRes = await fetch("/api/orders", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key":
+          paymentKey.current ??
+          (paymentKey.current = `quote-checkout-ui:${quoteId ?? planId ?? crypto.randomUUID()}`),
+      },
       body: JSON.stringify(quoteId ? { quoteId } : { planId }),
     });
     const createBody = (await createRes.json()) as {
@@ -278,19 +283,19 @@ export function OrderCheckoutPanel({
           <strong>{summary.locationLabel}</strong>
         </div>
         <div className="order-checkout-summary-row">
-          <span>CPU</span>
+          <span>پردازنده</span>
           <strong dir="ltr">{summary.vcpu ?? "—"} vCPU</strong>
         </div>
         <div className="order-checkout-summary-row">
-          <span>RAM</span>
+          <span>حافظه</span>
           <strong dir="ltr">{summary.ramGb ?? "—"} GB</strong>
         </div>
         <div className="order-checkout-summary-row">
-          <span>Disk</span>
+          <span>دیسک</span>
           <strong dir="ltr">{summary.storageGb ?? "—"} GB</strong>
         </div>
         <div className="order-checkout-summary-row">
-          <span>OS</span>
+          <span>سیستم‌عامل</span>
           <strong dir="ltr">{summary.operatingSystem}</strong>
         </div>
         <div className="order-checkout-summary-row">
