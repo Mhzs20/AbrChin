@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { PageHeader, SectionCard, StatusBadge } from "@/components/product";
+import { MoneyDisplay, PageHeader, SectionCard, StatusBadge } from "@/components/product";
 import { OrderCheckoutPanel } from "@/components/account/order-checkout-panel";
 import { requireCustomerPage } from "@/lib/auth/guards";
 import { deliveryModeLabel } from "@/lib/labels/infrastructure";
@@ -45,7 +45,8 @@ export default async function AccountOrderPlanPage({ params }: { params: Promise
           {plan.vcpu ? <span className="product-tech">{plan.vcpu} vCPU</span> : null}
           {plan.ramGb ? <span className="product-tech">{plan.ramGb} GB RAM</span> : null}
           {plan.storageGb ? <span className="product-tech">{plan.storageGb} GB فضا</span> : null}
-          <span className="product-tech">ماه اول {formatTomanFa(plan.salePriceRial)} تومان</span>
+          <span className="product-tech">ماه اول</span>{" "}
+          <MoneyDisplay amount={formatTomanFa(plan.salePriceRial)} />
         </div>
         <div style={{ fontSize: 13, color: "var(--product-muted)" }}>
           تمدید ماهانه:{" "}

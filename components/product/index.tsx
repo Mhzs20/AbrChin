@@ -194,7 +194,7 @@ export function MoneyDisplay({
         : undefined;
   return (
     <span className={toneClass}>
-      <span className="product-tech">{amount}</span> {suffix}
+      <span className="product-money">{amount}</span> {suffix}
     </span>
   );
 }

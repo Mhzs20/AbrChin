@@ -88,12 +88,21 @@ export default async function RecommendationQuoteCheckoutPage({
           {quote.vcpu ? <span className="product-tech">{quote.vcpu} vCPU</span> : null}
           {quote.ramGb ? <span className="product-tech">{quote.ramGb} GB RAM</span> : null}
           {quote.storageGb ? <span className="product-tech">{quote.storageGb} GB فضا</span> : null}
-          <span className="product-tech">
-            {quote.termMonths.toLocaleString("fa-IR")} ماهه{" "}
-            {formatTomanFa(quoteRecord.amountRial)} تومان
+          <span>
+            <span className="product-tech">
+              {quote.termMonths.toLocaleString("fa-IR")} ماهه
+            </span>{" "}
+            <span className="product-money">
+              {formatTomanFa(quoteRecord.amountRial)}
+            </span>{" "}
+            تومان
           </span>
-          <span className="product-tech">
-            تمدید دستی {formatTomanFa(quoteRecord.renewalAmountRial)} تومان
+          <span>
+            تمدید دستی{" "}
+            <span className="product-money">
+              {formatTomanFa(quoteRecord.renewalAmountRial)}
+            </span>{" "}
+            تومان
           </span>
           {quote.termDiscountBps > 0 ? (
             <span className="product-tech">

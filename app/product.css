@@ -365,6 +365,15 @@
   font-size: 13px;
 }
 
+/* Customer-facing money — Mikhak / Persian numerals, never monospace. */
+.product-money {
+  font-family: "Mikhak", Tahoma, sans-serif;
+  font-weight: 700;
+  font-variant-numeric: normal;
+  unicode-bidi: isolate;
+  letter-spacing: 0;
+}
+
 .product-empty,
 .product-error {
   padding: var(--product-space-4);

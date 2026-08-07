@@ -89,7 +89,10 @@ export function LoginForm() {
       });
       const data = (await response.json()) as {
         error?: string;
-        user?: { role: "ADMIN" | "CUSTOMER" };
+        user?: {
+          role: "ADMIN" | "CUSTOMER";
+          registrationComplete?: boolean;
+        };
       };
 
       if (!response.ok) {
@@ -122,9 +125,17 @@ export function LoginForm() {
         requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
           ? requestedNext
           : null;
-      router.replace(
-        data.user?.role === "ADMIN" ? "/admin" : safeNext ?? "/account",
-      );
+
+      if (data.user?.role === "ADMIN") {
+        router.replace("/admin");
+      } else if (data.user && data.user.registrationComplete === false) {
+        const qs = safeNext
+          ? `?next=${encodeURIComponent(safeNext)}`
+          : "";
+        router.replace(`/register/complete${qs}`);
+      } else {
+        router.replace(safeNext ?? "/account");
+      }
       router.refresh();
     } catch {
       setError("ارتباط با سرور برقرار نشد.");

@@ -346,3 +346,25 @@ test("support request migration is additive", async () => {
   assert.doesNotMatch(migration, /DELETE FROM/i);
   assert.doesNotMatch(migration, /UPDATE "ServiceOrder"/);
 });
+
+test("customer identity email verification migration is additive and backfills existing users", async () => {
+  const migration = await readFile(
+    "prisma/migrations/20260807150000_customer_identity_email_verification/migration.sql",
+    "utf8",
+  );
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "firstName"/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "lastName"/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "email"/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "emailVerifiedAt"/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS "registrationCompletedAt"/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "EmailVerificationChallenge"/);
+  assert.match(
+    migration,
+    /SET "registrationCompletedAt" = COALESCE\("registrationCompletedAt", "createdAt"\)/,
+  );
+  assert.doesNotMatch(migration, /\bDROP TABLE\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM/i);
+  assert.doesNotMatch(migration, /UPDATE "ServiceOrder"/);
+  assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
+});

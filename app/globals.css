@@ -4166,13 +4166,13 @@ a:focus-visible {
 
 /* Admin: sale price = blue, buy/provider cost = green */
 .money-tone--sale,
-.money-tone--sale .product-tech {
+.money-tone--sale .product-money {
   color: #1565c0;
   font-weight: 700;
 }
 
 .money-tone--cost,
-.money-tone--cost .product-tech {
+.money-tone--cost .product-money {
   color: #2e7d32;
   font-weight: 700;
 }

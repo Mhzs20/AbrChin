@@ -33,6 +33,7 @@ await withIsolatedPostgres("fresh", async (databaseUrl) => {
       "20260806210000_storefront_dominance_parchin_v3",
       "20260807010000_profit_curve_operational_accounting",
       "20260807020000_operating_expense_draft_idempotency",
+      "20260807150000_customer_identity_email_verification",
     ]) {
       assert.ok(
         migrations.some((migration) => migration.migration_name === required),
