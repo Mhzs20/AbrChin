@@ -113,8 +113,9 @@ Do **not** run accounting backfill from app startup or DB migration.
 After deploy health is green:
 
 ```bash
-# Dry-run first (writes = 0)
-docker compose --env-file .env.production -f compose.production.yaml \
+# Dry-run first (writes = 0). Use the same ENV_FILE as production deploy
+# (historically /opt/abrchin/.env; deploy default remains .env.production).
+docker compose --env-file .env -f compose.production.yaml \
   exec -T web npm run accounting:backfill -- --dry-run
 ```
 
@@ -124,7 +125,7 @@ Review JSON: `recordsScanned`, `entriesToCreate`, `alreadyPosted`,
 Only then:
 
 ```bash
-docker compose --env-file .env.production -f compose.production.yaml \
+docker compose --env-file .env -f compose.production.yaml \
   exec -T web npm run accounting:backfill
 ```
 

@@ -55,7 +55,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
-    "accounting:backfill": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/accounting-backfill.mts"
+    "accounting:backfill": "node dist/accounting/accounting-backfill.js",
+    "accounting:backfill:source": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/accounting-backfill.mts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

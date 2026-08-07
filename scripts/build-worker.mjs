@@ -20,6 +20,11 @@ const targets = [
     outfile: "dist/catalog-sync/catalog-sync-scheduler.js",
     label: "catalog-sync-scheduler",
   },
+  {
+    entry: "scripts/accounting-backfill.mts",
+    outfile: "dist/accounting/accounting-backfill.js",
+    label: "accounting-backfill",
+  },
 ];
 
 for (const target of targets) {

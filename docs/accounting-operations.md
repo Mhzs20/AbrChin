@@ -94,13 +94,19 @@ CSV: UTF-8 BOM، ستون ریال خام + تومان خوانا، ISO timestam
 
 ## Backfill
 
-Never runs from app startup or DB migration. After production health is green:
+Never runs from app startup or DB migration. Production uses the compiled
+runtime artifact `dist/accounting/accounting-backfill.js` (built with the
+worker/catalog-sync esbuild pipeline). After production health is green:
 
 ```bash
-npm run accounting:backfill -- --dry-run
+docker compose --env-file .env -f compose.production.yaml \
+  exec -T web npm run accounting:backfill -- --dry-run
 # review: recordsScanned, entriesToCreate, alreadyPosted, needsReconciliation, errors
-npm run accounting:backfill
+docker compose --env-file .env -f compose.production.yaml \
+  exec -T web npm run accounting:backfill
 ```
+
+Local/source variant (dev only): `npm run accounting:backfill:source -- --dry-run`.
 
 Idempotent؛ از Snapshot تاریخی استفاده می‌کند؛ قیمت جاری Provider را برای
 ساخت COGS تاریخی query نمی‌کند. Missing historical provider cost →

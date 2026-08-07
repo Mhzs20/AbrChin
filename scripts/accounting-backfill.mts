@@ -1,7 +1,15 @@
+#!/usr/bin/env node
+/**
+ * Production accounting backfill entry.
+ * Built by scripts/build-worker.mjs → dist/accounting/accounting-backfill.js
+ * Never auto-runs from app startup, migration, or deploy.
+ */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 function loadEnvFile() {
+  // Optional local convenience only. Production relies on Compose-injected
+  // process.env.DATABASE_URL (there is typically no /app/.env in the image).
   const envPath = resolve(process.cwd(), ".env");
   try {
     for (const line of readFileSync(envPath, "utf8").split("\n")) {
@@ -14,15 +22,25 @@ function loadEnvFile() {
       if (!process.env[key]) process.env[key] = value;
     }
   } catch {
-    // Optional in CI; DATABASE_URL may already be present.
+    // Missing .env is expected in production containers.
   }
 }
 
 loadEnvFile();
 
+if (!process.env.DATABASE_URL) {
+  console.error(
+    JSON.stringify({
+      ok: false,
+      error: "DATABASE_URL is required",
+    }),
+  );
+  process.exit(1);
+}
+
 const dryRun = process.argv.includes("--dry-run");
 
-const { runAccountingBackfill } = await import("../lib/accounting/backfill.ts");
+const { runAccountingBackfill } = await import("@/lib/accounting/backfill");
 
 const counts = await runAccountingBackfill({ dryRun });
 

@@ -80,6 +80,30 @@ test("production catalog sync commands use a compiled runtime bundle", () => {
   );
 });
 
+test("production accounting backfill uses compiled runtime artifact", () => {
+  const accountingBundle = resolve("dist/accounting/accounting-backfill.js");
+  assert.equal(existsSync(accountingBundle), true);
+  const source = readFileSync(accountingBundle, "utf8");
+  const packageJson = readFileSync("package.json", "utf8");
+  const dockerfile = readFileSync("Dockerfile", "utf8");
+  const buildScript = readFileSync("scripts/build-worker.mjs", "utf8");
+  assert.equal(source.includes("test-resolve-hook"), false);
+  assert.equal(source.includes("@/"), false);
+  assert.equal(source.includes("--experimental-strip-types"), false);
+  assert.match(
+    packageJson,
+    /"accounting:backfill": "node dist\/accounting\/accounting-backfill\.js"/,
+  );
+  assert.doesNotMatch(
+    packageJson.match(/"accounting:backfill": "[^"]+"/)?.[0] ?? "",
+    /test-resolve-hook/,
+  );
+  assert.match(dockerfile, /\/app\/dist\/accounting \.\/dist\/accounting/);
+  assert.doesNotMatch(dockerfile, /COPY[\s\S]*scripts\/test-resolve-hook/);
+  assert.match(buildScript, /dist\/accounting\/accounting-backfill\.js/);
+  assert.match(buildScript, /scripts\/accounting-backfill\.mts/);
+});
+
 test("compiled catalog sync fails safely before network access when unconfigured", async () => {
   await new Promise<void>((resolvePromise, reject) => {
     const child = spawn("node", [catalogSyncBundle, "parspack"], {

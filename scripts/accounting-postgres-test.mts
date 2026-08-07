@@ -267,3 +267,48 @@ test("backfill idempotency", async (t) => {
   assert.ok(Array.isArray(second.errors));
   assert.equal(second.errors.length, 0);
 });
+
+test("compiled accounting backfill dry-run works without test-resolve-hook", async (t) => {
+  if (!db || !databaseUrl) {
+    t.skip("requires isolated PostgreSQL");
+    return;
+  }
+  const { existsSync } = await import("node:fs");
+  const { spawnSync } = await import("node:child_process");
+  const { resolve } = await import("node:path");
+  const artifact = resolve("dist/accounting/accounting-backfill.js");
+  if (!existsSync(artifact)) {
+    t.skip("accounting backfill artifact not built yet");
+    return;
+  }
+
+  const beforeJournals = await db.accountingJournalEntry.count();
+  const result = spawnSync(process.execPath, [artifact, "--dry-run"], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      DATABASE_URL: databaseUrl,
+    },
+    maxBuffer: 5 * 1024 * 1024,
+  });
+  assert.equal(
+    result.status,
+    0,
+    result.stderr || result.stdout || "compiled backfill failed",
+  );
+  const payload = JSON.parse(result.stdout) as Record<string, unknown>;
+  assert.equal(payload.ok, true);
+  assert.equal(payload.dryRun, true);
+  assert.equal(typeof payload.recordsScanned, "number");
+  assert.equal(typeof payload.entriesToCreate, "number");
+  assert.equal(typeof payload.alreadyPosted, "number");
+  assert.equal(typeof payload.needsReconciliation, "number");
+  assert.equal(typeof payload.errorCount, "number");
+  assert.ok(Array.isArray(payload.errors));
+  const afterJournals = await db.accountingJournalEntry.count();
+  assert.equal(
+    afterJournals,
+    beforeJournals,
+    "dry-run must create zero journal entries",
+  );
+});

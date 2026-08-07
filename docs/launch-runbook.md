@@ -100,7 +100,8 @@ chmod +x ops/deploy.sh ops/backup-postgres.sh
 ```
 
 See `docs/production-deployment.md` for registry mode, migration contract,
-accounting dry-run backfill, and Profit Curve activation notes.
+compiled accounting dry-run backfill (`npm run accounting:backfill -- --dry-run`
+inside the web container), and Profit Curve activation notes.
 
 ### Rollback کد بدون حذف Database
 
