@@ -94,14 +94,17 @@ CSV: UTF-8 BOM، ستون ریال خام + تومان خوانا، ISO timestam
 
 ## Backfill
 
+Never runs from app startup or DB migration. After production health is green:
+
 ```bash
+npm run accounting:backfill -- --dry-run
+# review: recordsScanned, entriesToCreate, alreadyPosted, needsReconciliation, errors
 npm run accounting:backfill
-# یا dry-run:
-node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/accounting-backfill.mts --dry-run
 ```
 
 Idempotent؛ از Snapshot تاریخی استفاده می‌کند؛ قیمت جاری Provider را برای
-ساخت COGS تاریخی query نمی‌کند؛ در Startup اپ به‌صورت خودکار اجرا نمی‌شود.
+ساخت COGS تاریخی query نمی‌کند. Missing historical provider cost →
+`NEEDS_RECONCILIATION`, not invented profit.
 
 ## اتصال به منحنی سود
 
