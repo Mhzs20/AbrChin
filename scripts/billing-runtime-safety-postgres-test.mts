@@ -7,6 +7,7 @@ import { PrismaClient } from "@prisma/client";
 import { serializeProviderBillingContract } from "../lib/billing/provider-contract.ts";
 import { FakeCloudProviderAdapter } from "../lib/infrastructure/fake-cloud-provider-adapter.ts";
 import { processProvisioningJob } from "../lib/infrastructure/provisioning-service.ts";
+import { allowAdminMobile } from "./test-admin-allowlist.mts";
 
 if (
   process.env.ABRCHIN_ISOLATED_TEST !== "1" ||
@@ -27,9 +28,11 @@ async function seedRuntimeFixture(input: { verifiedContract: boolean }) {
   const suffix = randomBytes(5).toString("hex");
   const contractVersion = Number.parseInt(suffix.slice(0, 6), 16) + 1;
   const now = new Date();
+  const adminMobile = `runtime-admin-${suffix}`;
+  allowAdminMobile(adminMobile);
   const [customer, admin] = await Promise.all([
     db.user.create({ data: { mobile: `runtime-customer-${suffix}` } }),
-    db.user.create({ data: { mobile: `runtime-admin-${suffix}`, role: "ADMIN" } }),
+    db.user.create({ data: { mobile: adminMobile, role: "ADMIN" } }),
   ]);
   const policy = await db.billingPolicyVersion.create({
     data: {

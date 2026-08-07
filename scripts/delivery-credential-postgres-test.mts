@@ -10,6 +10,7 @@ import {
   revealInstanceCredential,
 } from "../lib/security/instance-credentials.ts";
 import { encryptCredential } from "../lib/security/credential-vault.ts";
+import { allowAdminMobile } from "./test-admin-allowlist.mts";
 
 const db =
   process.env.ABRCHIN_ISOLATED_TEST === "1" && process.env.DATABASE_URL
@@ -23,12 +24,15 @@ test("retryable delivery, concurrent approval and atomic one-time reveal", async
   }
   process.env.CREDENTIAL_ENCRYPTION_KEY = randomBytes(32).toString("base64");
   const suffix = Date.now().toString(36);
+  const adminMobile = `0913${suffix.slice(-7).padStart(7, "0")}`;
+  const restoreAllowlist = allowAdminMobile(adminMobile);
+  t.after(restoreAllowlist);
   const [customer, otherCustomer, admin] = await Promise.all([
     db.user.create({ data: { mobile: `0911${suffix.slice(-7).padStart(7, "0")}` } }),
     db.user.create({ data: { mobile: `0912${suffix.slice(-7).padStart(7, "0")}` } }),
     db.user.create({
       data: {
-        mobile: `0913${suffix.slice(-7).padStart(7, "0")}`,
+        mobile: adminMobile,
         role: UserRole.ADMIN,
       },
     }),

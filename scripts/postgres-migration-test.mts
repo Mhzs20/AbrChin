@@ -25,6 +25,7 @@ import {
 
 import { FakeCloudProviderAdapter } from "../lib/infrastructure/fake-cloud-provider-adapter.ts";
 import { calculateQuotePricing } from "../lib/pricing/quote-line-items.ts";
+import { allowAdminMobile } from "./test-admin-allowlist.mts";
 
 const execFileAsync = promisify(execFile);
 const baseUrl = process.env.POSTGRES_TEST_DATABASE_URL;
@@ -2582,6 +2583,7 @@ try {
       mobileVerifiedAt: now,
     },
   });
+  allowAdminMobile("09120000001");
   await db.providerCatalogItem.create({
     data: {
       id: "migration-arvan-catalog",

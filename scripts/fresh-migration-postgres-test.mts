@@ -62,7 +62,7 @@ await withIsolatedPostgres("fresh", async (databaseUrl) => {
       JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
       JOIN pg_namespace ON pg_namespace.oid = pg_type.typnamespace
       WHERE pg_type.typname = 'ProviderBillingContractStatus'
-        AND pg_namespace.nspname = 'public'
+        AND pg_namespace.nspname = current_schema()
       ORDER BY enumsortorder ASC
     `;
     assert.deepEqual(

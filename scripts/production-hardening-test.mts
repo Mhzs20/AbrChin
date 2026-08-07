@@ -422,10 +422,15 @@ test("production deploy gate keeps one-shot migrate and accepts degraded readine
   assert.match(deploy, /local_readiness_acceptable/);
   assert.match(deploy, /status" == "degraded"/);
   assert.match(deploy, /MIGRATED=1/);
-  // Migration flag must be set before migrate runs (partial-apply safety).
-  const migratedIdx = deploy.indexOf("MIGRATED=1");
-  const migrateCmdIdx = deploy.indexOf("prisma migrate deploy");
-  assert.ok(migratedIdx > 0 && migrateCmdIdx > migratedIdx);
+  // Migration flag must be set before the one-shot migrate command runs.
+  const gateIdx = deploy.indexOf("Explicit migration gate");
+  assert.ok(gateIdx > 0);
+  const migratedIdx = deploy.indexOf("MIGRATED=1", gateIdx);
+  const migrateCmdIdx = deploy.indexOf(
+    "node ./node_modules/prisma/build/index.js migrate deploy",
+    gateIdx,
+  );
+  assert.ok(migratedIdx > gateIdx && migrateCmdIdx > migratedIdx);
   assert.doesNotMatch(deploy, /down -v|volume rm|migrate reset/);
   assert.doesNotMatch(workerEntrypoint, /migrate deploy/);
 });

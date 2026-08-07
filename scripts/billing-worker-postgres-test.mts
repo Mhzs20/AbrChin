@@ -10,6 +10,8 @@ import {
   type ResourceVersionState,
 } from "@prisma/client";
 
+import { allowAdminMobile } from "./test-admin-allowlist.mts";
+
 import { applyProviderBillingAdjustment } from "../lib/billing/adjustments.ts";
 import {
   approveControlledSuspensionRequest,
@@ -801,9 +803,11 @@ test("usage billing worker is crash-safe, split-aware and wallet-safe", async (t
       }),
       0,
     );
+    const suspensionAdminMobile = "09600000001";
+    allowAdminMobile(suspensionAdminMobile);
     const suspensionAdmin = await db.user.create({
       data: {
-        mobile: "09600000001",
+        mobile: suspensionAdminMobile,
         role: "ADMIN",
       },
     });
@@ -966,9 +970,11 @@ test("usage billing worker is crash-safe, split-aware and wallet-safe", async (t
     });
     await runFixture(fixture);
     const invoice = await invoiceFor(fixture.instance.id);
+    const adminMobile = `097${String(fixtureCounter).padStart(8, "0")}`;
+    allowAdminMobile(adminMobile);
     const admin = await db.user.create({
       data: {
-        mobile: `097${String(fixtureCounter).padStart(8, "0")}`,
+        mobile: adminMobile,
         role: "ADMIN",
       },
     });

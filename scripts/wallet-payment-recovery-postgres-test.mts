@@ -27,6 +27,7 @@ import {
   retryTopUpPayment,
   verifyAndSettleTopUpAttempt,
 } from "../lib/wallet/topup.ts";
+import { allowAdminMobile } from "./test-admin-allowlist.mts";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required for wallet payment recovery tests");
@@ -184,9 +185,12 @@ async function creditLedgerCount(topUpId: string) {
 }
 
 test("wallet top-up recovery is PostgreSQL-backed and idempotent", async (t) => {
+  const adminMobile = `099${Date.now().toString().slice(-8)}`;
+  const restoreAllowlist = allowAdminMobile(adminMobile);
+  t.after(restoreAllowlist);
   const admin = await db.user.create({
     data: {
-      mobile: `099${Date.now().toString().slice(-8)}`,
+      mobile: adminMobile,
       role: "ADMIN",
     },
   });

@@ -12,6 +12,7 @@ import {
   type FinanceConfigurationInput,
 } from "../lib/admin/finance-configuration.ts";
 import { HIGH_MARGIN_CONFIRMATION_PHRASE } from "../lib/pricing/commercial-engine.ts";
+import { allowAdminMobile } from "./test-admin-allowlist.mts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const db =
@@ -87,9 +88,12 @@ test("finance configuration publishes atomically with a revision", async (t) => 
     return;
   }
   const suffix = Date.now().toString(36);
+  const adminMobile = `0903${suffix.slice(-7).padStart(7, "0")}`;
+  const restoreAllowlist = allowAdminMobile(adminMobile);
+  t.after(restoreAllowlist);
   const admin = await db.user.create({
     data: {
-      mobile: `0903${suffix.slice(-7).padStart(7, "0")}`,
+      mobile: adminMobile,
       role: UserRole.ADMIN,
     },
   });
@@ -311,9 +315,12 @@ test("price-only publish preserves Parchin services and skips version bump", asy
     return;
   }
   const suffix = Date.now().toString(36);
+  const adminMobile = `0904${suffix.slice(-7).padStart(7, "0")}`;
+  const restoreAllowlist = allowAdminMobile(adminMobile);
+  t.after(restoreAllowlist);
   const admin = await db.user.create({
     data: {
-      mobile: `0904${suffix.slice(-7).padStart(7, "0")}`,
+      mobile: adminMobile,
       role: UserRole.ADMIN,
     },
   });

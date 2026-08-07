@@ -17,6 +17,7 @@ import { startInitialUsageBillingTx } from "../lib/billing/start.ts";
 import { dispatchApprovedProvision } from "../lib/infrastructure/provision-dispatch.ts";
 import { createServiceOrderFromQuote } from "../lib/orders/service.ts";
 import { creditWallet } from "../lib/wallet/ledger.ts";
+import { allowAdminMobile } from "./test-admin-allowlist.mts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const db =
@@ -35,13 +36,16 @@ test("wallet top-up to estimate, activation and Admin approval stays mutation-fr
   process.env.ARVAN_MUTATIONS_ENABLED = "false";
   process.env.ARVAN_ENABLED = "false";
 
+  const adminMobile = `0902${suffix.slice(-7).padStart(7, "0")}`;
+  const restoreAllowlist = allowAdminMobile(adminMobile);
+  t.after(restoreAllowlist);
   const [customer, admin] = await Promise.all([
     db.user.create({
       data: { mobile: `0901${suffix.slice(-7).padStart(7, "0")}` },
     }),
     db.user.create({
       data: {
-        mobile: `0902${suffix.slice(-7).padStart(7, "0")}`,
+        mobile: adminMobile,
         role: UserRole.ADMIN,
       },
     }),

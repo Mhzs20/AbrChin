@@ -8,6 +8,8 @@ import {
   UserRole,
 } from "@prisma/client";
 
+import { allowAdminMobile } from "./test-admin-allowlist.mts";
+
 import { runAccountingBackfill } from "../lib/accounting/backfill.ts";
 import {
   createDraftExpense,
@@ -157,9 +159,12 @@ test("draft expense excluded; posted included; reversal works", async (t) => {
     return;
   }
   const suffix = Date.now().toString(36);
+  const adminMobile = `0913${suffix.slice(-7).padStart(7, "0")}`;
+  const restoreAllowlist = allowAdminMobile(adminMobile);
+  t.after(restoreAllowlist);
   const admin = await db.user.create({
     data: {
-      mobile: `0913${suffix.slice(-7).padStart(7, "0")}`,
+      mobile: adminMobile,
       role: UserRole.ADMIN,
     },
   });

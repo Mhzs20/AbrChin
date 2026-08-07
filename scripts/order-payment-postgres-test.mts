@@ -10,6 +10,8 @@ import {
   WalletStatus,
 } from "@prisma/client";
 
+import { allowAdminMobile } from "./test-admin-allowlist.mts";
+
 import {
   createOrderPaymentIntent,
   finalizeOrderPaymentFromCallback,
@@ -295,9 +297,11 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
     assert.equal(review.canApprove, true);
     assert.equal(review.balance.requiresConfirmation, true);
 
+    const adminMobile = `098${suffix.slice(-8).padStart(8, "0")}`;
+    allowAdminMobile(adminMobile);
     const admin = await prisma.user.create({
       data: {
-        mobile: `098${suffix.slice(-8).padStart(8, "0")}`,
+        mobile: adminMobile,
         role: UserRole.ADMIN,
       },
     });

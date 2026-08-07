@@ -10,6 +10,7 @@ import {
 } from "../lib/billing/admin-review.ts";
 import { approveControlledSuspensionRequest } from "../lib/billing/dunning.ts";
 import { prisma as db } from "../lib/db.ts";
+import { allowAdminMobile } from "./test-admin-allowlist.mts";
 
 test("all Admin Operations queues use disjoint eligible predicates and controlled actions", async (t) => {
   if (
@@ -21,13 +22,16 @@ test("all Admin Operations queues use disjoint eligible predicates and controlle
   }
   const suffix = Date.now().toString(36);
   const now = new Date();
+  const adminMobile = `0932${suffix.slice(-7).padStart(7, "0")}`;
+  const restoreAllowlist = allowAdminMobile(adminMobile);
+  t.after(restoreAllowlist);
   const [customer, admin] = await Promise.all([
     db.user.create({
       data: { mobile: `0931${suffix.slice(-7).padStart(7, "0")}` },
     }),
     db.user.create({
       data: {
-        mobile: `0932${suffix.slice(-7).padStart(7, "0")}`,
+        mobile: adminMobile,
         role: UserRole.ADMIN,
       },
     }),

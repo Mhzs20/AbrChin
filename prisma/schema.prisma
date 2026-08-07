@@ -424,7 +424,6 @@ enum ParchinLevel {
   PARCHIN_STABLE
 }
 
-
 enum CouponType {
   SERVER_PURCHASE
   WALLET_BONUS
@@ -786,46 +785,46 @@ model PaymentGatewayAuditLog {
 }
 
 model ServiceOrder {
-  id                     String                        @id @default(cuid())
-  userId                 String
-  title                  String
-  description            String?
-  amount                 BigInt
-  termMonths             Int                           @default(1)
-  termDiscountBps        Int                           @default(0)
-  couponCodeSnapshot     String?
-  currency               String                        @default("IRR")
-  status                 ServiceOrderStatus            @default(DRAFT)
-  planCode               String?
-  planId                 String?
-  planSnapshot           Json?
-  recommendationQuoteId  String?                       @unique
-  quoteExpiresAt         DateTime?
-  provider               InfrastructureProvider?
-  providerApiVersion     String?
-  productKind            InfrastructureProductKind?
-  parchinLevel           ParchinLevel?
+  id                          String                        @id @default(cuid())
+  userId                      String
+  title                       String
+  description                 String?
+  amount                      BigInt
+  termMonths                  Int                           @default(1)
+  termDiscountBps             Int                           @default(0)
+  couponCodeSnapshot          String?
+  currency                    String                        @default("IRR")
+  status                      ServiceOrderStatus            @default(DRAFT)
+  planCode                    String?
+  planId                      String?
+  planSnapshot                Json?
+  recommendationQuoteId       String?                       @unique
+  quoteExpiresAt              DateTime?
+  provider                    InfrastructureProvider?
+  providerApiVersion          String?
+  productKind                 InfrastructureProductKind?
+  parchinLevel                ParchinLevel?
   /// Immutable Parchin service-contract snapshot copied from the locked Quote.
-  parchinServiceSnapshot Json?
+  parchinServiceSnapshot      Json?
   /// Immutable commercial economics / profit-curve audit snapshot at purchase.
   commercialEconomicsSnapshot Json?
-  productFlowState       String?
-  productFlowRevision    Int                           @default(0)
-  paidAt                 DateTime?
-  createdAt              DateTime                      @default(now())
-  updatedAt              DateTime                      @updatedAt
-  user                   User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan                   InfrastructurePlan?           @relation(fields: [planId], references: [id], onDelete: SetNull)
-  recommendationQuote    RecommendationQuote?          @relation(fields: [recommendationQuoteId], references: [id], onDelete: SetNull)
-  infrastructureOrder    InfrastructureOrder?
-  subscription           ServiceSubscription?
-  adminCommandReceipts   AdminCommandReceipt[]
-  reservedInventoryItems PreprovisionedInventoryItem[] @relation("InventoryReservedOrder")
-  assignedInventoryItems PreprovisionedInventoryItem[] @relation("InventoryAssignedOrder")
-  purchaseTopUps         WalletTopUp[]
-  supportRequests        SupportRequest[]
-  orderPayment           OrderPayment?
-  activationRequest      ActivationRequest?
+  productFlowState            String?
+  productFlowRevision         Int                           @default(0)
+  paidAt                      DateTime?
+  createdAt                   DateTime                      @default(now())
+  updatedAt                   DateTime                      @updatedAt
+  user                        User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                        InfrastructurePlan?           @relation(fields: [planId], references: [id], onDelete: SetNull)
+  recommendationQuote         RecommendationQuote?          @relation(fields: [recommendationQuoteId], references: [id], onDelete: SetNull)
+  infrastructureOrder         InfrastructureOrder?
+  subscription                ServiceSubscription?
+  adminCommandReceipts        AdminCommandReceipt[]
+  reservedInventoryItems      PreprovisionedInventoryItem[] @relation("InventoryReservedOrder")
+  assignedInventoryItems      PreprovisionedInventoryItem[] @relation("InventoryAssignedOrder")
+  purchaseTopUps              WalletTopUp[]
+  supportRequests             SupportRequest[]
+  orderPayment                OrderPayment?
+  activationRequest           ActivationRequest?
 
   @@index([userId, createdAt])
   @@index([status])
@@ -2037,17 +2036,17 @@ model ProviderCatalogItem {
 }
 
 model StorefrontAssortmentSlot {
-  id            String               @id @default(cuid())
+  id            String                @id @default(cuid())
   tier          StorefrontChinishTier
   role          StorefrontSlotRole
   sortOrder     Int
   catalogItemId String
-  enabled       Boolean              @default(true)
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+  enabled       Boolean               @default(true)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
   updatedById   String?
-  catalogItem   ProviderCatalogItem  @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
-  updatedBy     User?                @relation("StorefrontSlotUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  catalogItem   ProviderCatalogItem   @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  updatedBy     User?                 @relation("StorefrontSlotUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@unique([tier, catalogItemId])
   @@index([tier, role, sortOrder])
@@ -2056,32 +2055,32 @@ model StorefrontAssortmentSlot {
 }
 
 model StorefrontAssortmentSettings {
-  id                 String   @id @default("default")
-  autoSuggestEnabled Boolean  @default(false)
-  lastAutoAppliedAt  DateTime?
-  ostovarMinVcpu     Int      @default(6)
-  ostovarMinRamGb    Int      @default(12)
+  id                           String                    @id @default("default")
+  autoSuggestEnabled           Boolean                   @default(false)
+  lastAutoAppliedAt            DateTime?
+  ostovarMinVcpu               Int                       @default(6)
+  ostovarMinRamGb              Int                       @default(12)
   /// Legacy column — Disk is not a chinish tier axis (kept for forward-compat).
-  ostovarMinDiskGb   Int      @default(0)
-  kahkeshanMinVcpu   Int      @default(16)
-  kahkeshanMinRamGb  Int      @default(32)
+  ostovarMinDiskGb             Int                       @default(0)
+  kahkeshanMinVcpu             Int                       @default(16)
+  kahkeshanMinRamGb            Int                       @default(32)
   /// Legacy column — Disk is not a chinish tier axis (kept for forward-compat).
-  kahkeshanMinDiskGb Int      @default(0)
+  kahkeshanMinDiskGb           Int                       @default(0)
   /// Customer card price lines (display only; checkout stays prepaid monthly).
-  showHourlyPrice    Boolean  @default(true)
-  showDailyPrice     Boolean  @default(true)
-  showMonthlyPrice   Boolean  @default(true)
+  showHourlyPrice              Boolean                   @default(true)
+  showDailyPrice               Boolean                   @default(true)
+  showMonthlyPrice             Boolean                   @default(true)
   /// Monthly sale price bands in Rial (0 / null max = open).
-  noMinMonthlyPriceRial       BigInt  @default(0)
-  noMaxMonthlyPriceRial       BigInt?
-  ostovarMinMonthlyPriceRial  BigInt  @default(0)
-  ostovarMaxMonthlyPriceRial  BigInt?
-  kahkeshanMinMonthlyPriceRial BigInt @default(0)
+  noMinMonthlyPriceRial        BigInt                    @default(0)
+  noMaxMonthlyPriceRial        BigInt?
+  ostovarMinMonthlyPriceRial   BigInt                    @default(0)
+  ostovarMaxMonthlyPriceRial   BigInt?
+  kahkeshanMinMonthlyPriceRial BigInt                    @default(0)
   kahkeshanMaxMonthlyPriceRial BigInt?
-  assortmentStyle    StorefrontAssortmentStyle @default(CHEAPEST)
-  updatedAt          DateTime @updatedAt
-  updatedById        String?
-  updatedBy          User?    @relation("StorefrontSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  assortmentStyle              StorefrontAssortmentStyle @default(CHEAPEST)
+  updatedAt                    DateTime                  @updatedAt
+  updatedById                  String?
+  updatedBy                    User?                     @relation("StorefrontSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@index([updatedById])
 }
@@ -2226,44 +2225,43 @@ model ProductPricingConfig {
   @@index([productKind, enabled])
 }
 
-
 model Coupon {
-  id               String       @id @default(cuid())
-  code             String       @unique
-  type             CouponType
-  scope            CouponScope  @default(PUBLIC)
-  userId           String?
-  discountBps      Int?
-  termMonths       Int?
-  minDepositRial   BigInt?
-  bonusRial        BigInt?
-  expiresAt        DateTime?
-  maxRedemptions   Int?
-  redemptionCount  Int          @default(0)
-  active           Boolean      @default(true)
-  createdById      String?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-  user             User?        @relation("CouponForUser", fields: [userId], references: [id], onDelete: Cascade)
-  createdBy        User?        @relation("CouponCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  redemptions      CouponRedemption[]
+  id              String             @id @default(cuid())
+  code            String             @unique
+  type            CouponType
+  scope           CouponScope        @default(PUBLIC)
+  userId          String?
+  discountBps     Int?
+  termMonths      Int?
+  minDepositRial  BigInt?
+  bonusRial       BigInt?
+  expiresAt       DateTime?
+  maxRedemptions  Int?
+  redemptionCount Int                @default(0)
+  active          Boolean            @default(true)
+  createdById     String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  user            User?              @relation("CouponForUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy       User?              @relation("CouponCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  redemptions     CouponRedemption[]
 
   @@index([type, active, expiresAt])
   @@index([userId, active])
 }
 
 model CouponRedemption {
-  id              String   @id @default(cuid())
-  couponId        String
-  userId          String
-  serviceOrderId  String?
-  walletTopUpId   String?
-  amountRial      BigInt   @default(0)
-  bonusRial       BigInt   @default(0)
-  idempotencyKey  String   @unique
-  createdAt       DateTime @default(now())
-  coupon          Coupon   @relation(fields: [couponId], references: [id], onDelete: Restrict)
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  couponId       String
+  userId         String
+  serviceOrderId String?
+  walletTopUpId  String?
+  amountRial     BigInt   @default(0)
+  bonusRial      BigInt   @default(0)
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+  coupon         Coupon   @relation(fields: [couponId], references: [id], onDelete: Restrict)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([couponId, userId])
   @@index([walletTopUpId])
@@ -2271,39 +2269,39 @@ model CouponRedemption {
 }
 
 model CommercePricingConfig {
-  id                                   String   @id @default("default")
-  taxBps                               Int      @default(1000)
-  reminderDaysBeforeDue                Int      @default(7)
-  suspendGraceDaysAfterZero            Int      @default(7)
-  deleteDaysAfterSuspend               Int      @default(7)
+  id                                String   @id @default("default")
+  taxBps                            Int      @default(1000)
+  reminderDaysBeforeDue             Int      @default(7)
+  suspendGraceDaysAfterZero         Int      @default(7)
+  deleteDaysAfterSuspend            Int      @default(7)
   /// Floor gross margin (bps) after discount on infrastructure economics.
-  minimumPostDiscountGrossMarginBps    Int      @default(2000)
+  minimumPostDiscountGrossMarginBps Int      @default(2000)
   /// Admin-priced Compass service packages (code -> rial string).
-  compassServicePrices                 Json     @default("{}")
-  updatedById                          String?
-  updatedAt                            DateTime @updatedAt
+  compassServicePrices              Json     @default("{}")
+  updatedById                       String?
+  updatedAt                         DateTime @updatedAt
 }
 
 model ParchinPricingConfig {
-  id                   String       @id @default(cuid())
-  level                ParchinLevel @unique
+  id                  String       @id @default(cuid())
+  level               ParchinLevel @unique
   /// Monotonic service-contract version. Admin edits bump this; Quote/Order keep snapshots.
-  version              Int          @default(1)
-  title                String
-  subtitle             String?
-  description          String?
-  priceRial            BigInt
-  includedServices     Json         @default("[]")
-  excludedServices     Json         @default("[]")
-  serviceLimits        Json         @default("{}")
-  supportWindow        String?
-  firstResponseTarget  String?
-  active               Boolean      @default(true)
-  effectiveFrom        DateTime     @default(now())
-  sortOrder            Int          @default(0)
-  updatedById          String?
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
+  version             Int          @default(1)
+  title               String
+  subtitle            String?
+  description         String?
+  priceRial           BigInt
+  includedServices    Json         @default("[]")
+  excludedServices    Json         @default("[]")
+  serviceLimits       Json         @default("{}")
+  supportWindow       String?
+  firstResponseTarget String?
+  active              Boolean      @default(true)
+  effectiveFrom       DateTime     @default(now())
+  sortOrder           Int          @default(0)
+  updatedById         String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 }
 
 model ProviderCatalogAsset {
@@ -2569,30 +2567,32 @@ model AccountingJournalLine {
 }
 
 model OperatingExpense {
-  id              String                   @id @default(cuid())
-  date            DateTime
-  amountRial      BigInt
-  category        OperatingExpenseCategory
-  title           String
-  description     String?
-  vendor          String?
-  reference       String?
-  notes           String?
-  status          OperatingExpenseStatus   @default(DRAFT)
-  createdById     String
-  postedById      String?
-  reversedById    String?
-  postedAt        DateTime?
-  reversedAt      DateTime?
-  journalEntryId  String?                  @unique
-  reversalReason  String?
-  /** Optional client Idempotency-Key for draft-create retries. */
-  idempotencyKey  String?                  @unique
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
-  createdBy       User                     @relation("OperatingExpenseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  postedBy        User?                    @relation("OperatingExpensePostedBy", fields: [postedById], references: [id], onDelete: SetNull)
-  reversedBy      User?                    @relation("OperatingExpenseReversedBy", fields: [reversedById], references: [id], onDelete: SetNull)
+  id             String                   @id @default(cuid())
+  date           DateTime
+  amountRial     BigInt
+  category       OperatingExpenseCategory
+  title          String
+  description    String?
+  vendor         String?
+  reference      String?
+  notes          String?
+  status         OperatingExpenseStatus   @default(DRAFT)
+  createdById    String
+  postedById     String?
+  reversedById   String?
+  postedAt       DateTime?
+  reversedAt     DateTime?
+  journalEntryId String?                  @unique
+  reversalReason String?
+  /**
+   * Optional client Idempotency-Key for draft-create retries.
+   */
+  idempotencyKey String?                  @unique
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  createdBy      User                     @relation("OperatingExpenseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  postedBy       User?                    @relation("OperatingExpensePostedBy", fields: [postedById], references: [id], onDelete: SetNull)
+  reversedBy     User?                    @relation("OperatingExpenseReversedBy", fields: [reversedById], references: [id], onDelete: SetNull)
 
   @@index([status, date])
   @@index([category, date])
@@ -2647,22 +2647,22 @@ enum SupportRequestCategory {
 
 /// Minimal production support requests for purchased Parchin contracts.
 model SupportRequest {
-  id              String                 @id @default(cuid())
+  id              String                  @id @default(cuid())
   userId          String
   cloudInstanceId String?
   serviceOrderId  String?
   category        SupportRequestCategory
   subject         String
   description     String
-  status          SupportRequestStatus   @default(OPEN)
-  priority        SupportRequestPriority @default(NORMAL)
+  status          SupportRequestStatus    @default(OPEN)
+  priority        SupportRequestPriority  @default(NORMAL)
   /// Snapshotted from linked service purchase; customer cannot self-elevate.
   parchinLevel    ParchinLevel?
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
-  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  cloudInstance   CloudInstance?         @relation(fields: [cloudInstanceId], references: [id], onDelete: SetNull)
-  serviceOrder    ServiceOrder?          @relation(fields: [serviceOrderId], references: [id], onDelete: SetNull)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  user            User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cloudInstance   CloudInstance?          @relation(fields: [cloudInstanceId], references: [id], onDelete: SetNull)
+  serviceOrder    ServiceOrder?           @relation(fields: [serviceOrderId], references: [id], onDelete: SetNull)
   messages        SupportRequestMessage[]
 
   @@index([userId, createdAt])

@@ -11,6 +11,7 @@ import {
 import { getEffectiveBillingPolicy } from "../lib/billing/policy-service.ts";
 import { periodContainingUtc } from "../lib/billing/policy.ts";
 import { recordProviderConfirmedResourceVersion } from "../lib/billing/resource-timeline.ts";
+import { allowAdminMobile } from "./test-admin-allowlist.mts";
 
 if (
   process.env.ABRCHIN_ISOLATED_TEST !== "1" ||
@@ -39,11 +40,13 @@ test("Admin policy versions and controlled service cadence changes are future-on
       },
       orderBy: { version: "desc" },
     });
+  const adminMobile = `policy-admin-${suffix}`;
+  allowAdminMobile(adminMobile);
   const [customer, admin] = await Promise.all([
     db.user.create({ data: { mobile: `policy-customer-${suffix}` } }),
     db.user.create({
       data: {
-        mobile: `policy-admin-${suffix}`,
+        mobile: adminMobile,
         role: "ADMIN",
       },
     }),
