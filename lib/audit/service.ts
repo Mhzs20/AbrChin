@@ -121,6 +121,7 @@ export const AuditActions = {
   ACTIVATION_REQUESTED: "activation_requested",
   ACTIVATION_APPROVED: "activation_approved",
   RESOURCE_CHANGE_APPROVED: "resource_change_approved",
+  RESOURCE_CHANGE_REQUESTED: "resource_change_requested",
   SUSPENSION_APPROVED: "controlled_suspension_approved",
   PROVIDER_BILLING_REVIEW: "provider_billing_review",
   GATEWAY_CHANGE: "gateway_change",
