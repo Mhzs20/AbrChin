@@ -10,6 +10,7 @@ import {
   Timeline,
 } from "@/components/product";
 import { CredentialRevealPanel } from "@/components/account/credential-reveal-panel";
+import { ServiceCancelPanel } from "@/components/account/service-cancel-panel";
 import { SubscriptionPanel } from "@/components/account/subscription-panel";
 import { requireCustomerPage } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
@@ -413,6 +414,20 @@ export default async function AccountOrderDetailPage({
             }
             resourcesLabel={resourcesLabel}
           />
+        </SectionCard>
+      ) : null}
+      {!isPayg &&
+      order.infrastructureOrder?.cloudInstance?.status === "ACTIVE" &&
+      order.infrastructureOrder.cloudInstance.subscription ? (
+        <SectionCard title="لغو سرویس">
+          <div id="cancel-service">
+            <ServiceCancelPanel
+              instanceId={order.infrastructureOrder.cloudInstance.id}
+              serverName={
+                order.infrastructureOrder.cloudInstance.name || serverName || "سرور"
+              }
+            />
+          </div>
         </SectionCard>
       ) : null}
     </>

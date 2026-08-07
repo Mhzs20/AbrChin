@@ -1,15 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { ConfirmDialog } from "@/components/product/confirm-dialog";
 
 export function ServiceChangeRequestButtons({
   instanceId,
+  orderId,
   serverName,
   currentResources,
 }: {
   instanceId: string;
+  orderId?: string;
   serverName: string;
   currentResources?: {
     vcpu?: number | null;
@@ -17,31 +20,29 @@ export function ServiceChangeRequestButtons({
     diskGb?: number | null;
   } | null;
 }) {
-  const [busy, setBusy] = useState<"UPGRADE" | "TERMINATE" | null>(null);
-  const [confirm, setConfirm] = useState<"UPGRADE" | "TERMINATE" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(action: "UPGRADE" | "TERMINATE") {
-    setBusy(action);
+  async function submitUpgrade() {
+    setBusy(true);
     setMessage(null);
     setError(null);
     try {
       const response = await fetch("/api/account/resource-changes", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ instanceId, action }),
+        body: JSON.stringify({ instanceId, action: "UPGRADE" }),
       });
       const payload = (await response.json()) as { error?: string; ok?: boolean };
       if (!response.ok) {
         throw new Error(payload.error || "ثبت درخواست ممکن نشد.");
       }
       setMessage(
-        action === "UPGRADE"
-          ? "درخواست ارتقا ثبت شد. قیمت نهایی قبل از هر شارژ جداگانه تأیید می‌شود."
-          : "درخواست حذف ثبت شد و منتظر بررسی ابرچین است؛ حذف فوری انجام نمی‌شود.",
+        "درخواست ارتقا ثبت شد. قیمت نهایی قبل از هر شارژ جداگانه تأیید می‌شود.",
       );
-      setConfirm(null);
+      setConfirm(false);
     } catch (submitError) {
       setError(
         submitError instanceof Error
@@ -49,7 +50,7 @@ export function ServiceChangeRequestButtons({
           : "ثبت درخواست ممکن نشد.",
       );
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
@@ -74,22 +75,21 @@ export function ServiceChangeRequestButtons({
           type="button"
           className="product-btn product-btn--quiet"
           style={{ minHeight: 44 }}
-          disabled={busy != null}
+          disabled={busy}
           aria-label={`درخواست ارتقا برای ${serverName}`}
-          onClick={() => setConfirm("UPGRADE")}
+          onClick={() => setConfirm(true)}
         >
-          {busy === "UPGRADE" ? "…" : "درخواست ارتقا"}
+          {busy ? "…" : "درخواست ارتقا"}
         </button>
-        <button
-          type="button"
-          className="product-btn product-btn--quiet"
-          style={{ minHeight: 44 }}
-          disabled={busy != null}
-          aria-label={`درخواست حذف برای ${serverName}`}
-          onClick={() => setConfirm("TERMINATE")}
-        >
-          {busy === "TERMINATE" ? "…" : "درخواست حذف"}
-        </button>
+        {orderId ? (
+          <Link
+            className="product-btn product-btn--quiet"
+            style={{ minHeight: 44 }}
+            href={`/account/orders/${orderId}#cancel-service`}
+          >
+            لغو سرویس
+          </Link>
+        ) : null}
       </span>
       {message ? (
         <small style={{ color: "var(--product-success, green)" }}>{message}</small>
@@ -97,37 +97,13 @@ export function ServiceChangeRequestButtons({
       {error ? <small style={{ color: "crimson" }}>{error}</small> : null}
 
       <ConfirmDialog
-        open={confirm === "TERMINATE"}
-        title="تأیید درخواست حذف سرور"
-        danger
-        loading={busy === "TERMINATE"}
-        confirmLabel="ثبت درخواست حذف"
-        cancelLabel="انصراف"
-        onCancel={() => setConfirm(null)}
-        onConfirm={() => void submit("TERMINATE")}
-      >
-        <p>
-          سرور: <strong dir="ltr">{serverName}</strong>
-        </p>
-        <p>
-          این یک <strong>درخواست حذف</strong> است؛ با تأیید، سرور فوراً از بین
-          نمی‌رود و منتظر بررسی ابرچین می‌ماند.
-        </p>
-        <p>
-          قبل از حذف، از پشتیبان‌گیری داده‌های مهم خود مطمئن شوید. پس از تأیید
-          نهایی، دسترسی و اطلاعات ورود در دسترس نخواهند بود.
-        </p>
-        <p>مرحله بعد: بررسی درخواست توسط ابرچین و سپس اجرای حذف کنترل‌شده.</p>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={confirm === "UPGRADE"}
+        open={confirm}
         title="تأیید درخواست تغییر منابع"
-        loading={busy === "UPGRADE"}
+        loading={busy}
         confirmLabel="ثبت درخواست ارتقا"
         cancelLabel="انصراف"
-        onCancel={() => setConfirm(null)}
-        onConfirm={() => void submit("UPGRADE")}
+        onCancel={() => setConfirm(false)}
+        onConfirm={() => void submitUpgrade()}
       >
         <p>
           سرور: <strong dir="ltr">{serverName}</strong>

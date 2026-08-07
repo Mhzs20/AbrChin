@@ -4960,6 +4960,41 @@ a:focus-visible {
   margin-top: 10px;
 }
 
+.service-cancel-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.service-cancel-panel h3 {
+  margin: 0;
+}
+
+.service-cancel-panel--done {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #e8f5e9;
+  border: 1px solid #bfdec2;
+}
+
+.service-cancel-preview {
+  display: grid;
+  gap: 8px;
+}
+
+.service-cancel-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.92rem;
+}
+
+.service-cancel-row--total {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--product-border, #d7deea);
+  font-weight: 700;
+}
+
 .ready-quote-renewed {
   margin: 0 0 10px;
   padding: 10px 12px;

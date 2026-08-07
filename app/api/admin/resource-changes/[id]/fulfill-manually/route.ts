@@ -1,6 +1,7 @@
 import { ResourceChangeStatus, ResourceVersionState } from "@prisma/client";
 
 import { adminApiError, requireAdminUser } from "@/lib/admin/auth";
+import { completeCancellationAfterTermination } from "@/lib/orders/customer-cancel-service";
 import { recordProviderConfirmedResourceVersion } from "@/lib/billing/resource-timeline";
 import { prisma } from "@/lib/db";
 import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
@@ -36,9 +37,10 @@ export async function POST(
     if (!change) return jsonError("درخواست پیدا نشد.", 404);
     if (
       change.status !== ResourceChangeStatus.APPROVED &&
-      change.status !== ResourceChangeStatus.PROVIDER_MUTATION_PENDING
+      change.status !== ResourceChangeStatus.PROVIDER_MUTATION_PENDING &&
+      change.status !== ResourceChangeStatus.WAITING_ADMIN_APPROVAL
     ) {
-      return jsonError("ابتدا درخواست را تأیید کنید.", 409);
+      return jsonError("وضعیت درخواست برای انجام دستی مناسب نیست.", 409);
     }
 
     const action =
@@ -48,13 +50,43 @@ export async function POST(
         ? (change.requestedResources as Record<string, unknown>).action
         : null;
 
+    if (action === "TERMINATE") {
+      // Approve if still waiting so lifecycle moves CANCEL_REQUESTED → TERMINATING.
+      if (change.status === ResourceChangeStatus.WAITING_ADMIN_APPROVAL) {
+        await prisma.resourceChangeRequest.update({
+          where: { id: change.id },
+          data: {
+            status: ResourceChangeStatus.APPROVED,
+            approvedById: admin.id,
+            approvedAt: new Date(),
+          },
+        });
+      }
+      const refund = await completeCancellationAfterTermination({
+        resourceChangeRequestId: change.id,
+        actorUserId: admin.id,
+        reason:
+          note ||
+          "خاتمه دستی سرور پس از درخواست لغو مشتری و بازگشت اعتبار به کیف پول",
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+        terminalResources: {
+          vcpu: Number.isInteger(vcpu) && vcpu > 0 ? vcpu : 1,
+          ramMb: Number.isInteger(ramMb) && ramMb > 0 ? ramMb : 1024,
+          diskGb: Number.isInteger(diskGb) && diskGb >= 0 ? diskGb : 0,
+        },
+      });
+      return jsonOk({
+        ok: true,
+        action: "TERMINATE",
+        refund,
+      });
+    }
+
     const version = await recordProviderConfirmedResourceVersion({
       cloudInstanceId: change.cloudInstanceId,
       planId: change.planId,
-      state:
-        action === "TERMINATE"
-          ? ResourceVersionState.TERMINATED
-          : ResourceVersionState.ACTIVE,
+      state: ResourceVersionState.ACTIVE,
       resources: {
         vcpu: Number.isInteger(vcpu) && vcpu > 0 ? vcpu : 1,
         ramMb: Number.isInteger(ramMb) && ramMb > 0 ? ramMb : 1024,
@@ -68,13 +100,6 @@ export async function POST(
       idempotencyKey,
       sourceChangeRequestId: change.id,
     });
-
-    if (action === "TERMINATE") {
-      await prisma.cloudInstance.update({
-        where: { id: change.cloudInstanceId },
-        data: { status: "TERMINATED" },
-      });
-    }
 
     await writeAuditLog({
       actorUserId: admin.id,

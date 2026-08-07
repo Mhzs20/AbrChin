@@ -574,6 +574,46 @@ export async function postServiceRenewalCompleted(
   });
 }
 
+export async function postPrepaidCancellationRefund(
+  input: {
+    orderId: string;
+    amountRial: bigint;
+    ledgerEntryId: string;
+    occurredAt: Date;
+  },
+  tx?: Db,
+) {
+  if (input.amountRial <= 0n) return null;
+  return postJournalEntry({
+    eventType: "prepaid_cancellation_refunded",
+    referenceType: "service_order",
+    referenceId: input.orderId,
+    idempotencyKey: `refund:${input.orderId}:prepaid-cancel:v1`,
+    occurredAt: input.occurredAt,
+    quality: AccountingQuality.FINAL,
+    metadata: {
+      kind: "prepaid_cancellation",
+      amountRial: input.amountRial.toString(),
+      ledgerEntryId: input.ledgerEntryId,
+    },
+    lines: [
+      {
+        accountCode: "SALES_REFUND",
+        debitRial: input.amountRial,
+        creditRial: 0n,
+        description: "بازگشت فروش لغو دوره پیش‌پرداخت",
+      },
+      {
+        accountCode: "CUSTOMER_WALLET_LIABILITY",
+        debitRial: 0n,
+        creditRial: input.amountRial,
+        description: "اعتبار کیف پول بابت لغو سرویس",
+      },
+    ],
+    tx,
+  });
+}
+
 export async function postServiceRefundCompleted(
   order: ServiceOrder & {
     recommendationQuote?: {

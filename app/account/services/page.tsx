@@ -106,6 +106,7 @@ export default async function AccountServicesPage() {
           {service.canRequestChange && service.instanceId ? (
             <ServiceChangeRequestButtons
               instanceId={service.instanceId}
+              orderId={service.orderId}
               serverName={service.name}
               currentResources={{
                 vcpu: service.vcpu,
@@ -139,6 +140,7 @@ export default async function AccountServicesPage() {
         {service.canRequestChange && service.instanceId ? (
           <ServiceChangeRequestButtons
             instanceId={service.instanceId}
+            orderId={service.orderId}
             serverName={service.name}
             currentResources={{
               vcpu: service.vcpu,
