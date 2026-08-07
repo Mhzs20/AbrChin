@@ -85,9 +85,9 @@ export function ReadyServerQuoteButton({
   } | null>(null);
   const termLabels: Record<1 | 3 | 6 | 12, string> = {
     1: "۱ ماه — بدون تخفیف دوره",
-    3: "۳ ماه — ۵٪ تخفیف",
-    6: "۶ ماه — ۱۰٪ تخفیف",
-    12: "۱۲ ماه — ۲۰٪ تخفیف",
+    3: "۳ ماه — تا ۵٪ تخفیف",
+    6: "۶ ماه — تا ۱۰٪ تخفیف",
+    12: "۱۲ ماه — تا ۲۰٪ تخفیف",
   };
   const selectedImage = useMemo(
     () => options?.images.find((image) => image.id === imageAssetId) ?? null,
@@ -365,8 +365,9 @@ export function ReadyServerQuoteButton({
             />
           </label>
           <small>
-            با کد تخفیف خرید سرور، تخفیف ثابت ۵/۱۰/۲۰٪ دوره حذف و درصد کد اعمال
-            می‌شود. مبلغ نهایی، مالیات و تفکیک خطی روی صفحه Quote قفل می‌شود.
+            با کد تخفیف خرید سرور، تخفیف دوره‌ای حذف و درصد کد اعمال می‌شود. سقف
+            تخفیف دوره ممکن است به‌خاطر کف حاشیه سود کمتر از عدد اعلامی اعمال
+            شود. مبلغ نهایی، مالیات و تفکیک خطی روی پیش‌فاکتور قفل می‌شود.
           </small>
           {accessMethod === "SSH_KEY" ? (
             <label>

@@ -1475,9 +1475,9 @@ export function ConversationBuilder({
                           }}
                         >
                           <option value={1}>۱ ماه</option>
-                          <option value={3}>۳ ماه · ۵٪ تخفیف</option>
-                          <option value={6}>۶ ماه · ۱۰٪ تخفیف</option>
-                          <option value={12}>۱۲ ماه · ۲۰٪ تخفیف</option>
+                          <option value={3}>۳ ماه · تا ۵٪ تخفیف</option>
+                          <option value={6}>۶ ماه · تا ۱۰٪ تخفیف</option>
+                          <option value={12}>۱۲ ماه · تا ۲۰٪ تخفیف</option>
                         </select>
                       </label>
                       <label>

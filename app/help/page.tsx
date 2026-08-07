@@ -17,7 +17,7 @@ export default function HelpPage() {
         <header className="page-heading">
           <div className="eyebrow"><MessageCircleMore size={15} aria-hidden="true" /> راهنما و ارتباط</div>
           <h1 id="help-title">قبل از فعال‌سازی، همه‌چیز روشن.</h1>
-          <p>برای انتخاب منابع، Estimate مصرف، انتقال یا شروع پروژه کنارتیم.</p>
+          <p>برای انتخاب منابع، خرید دوره‌ای، انتقال یا شروع پروژه کنارتیم.</p>
         </header>
 
         <div className="contact-grid">
@@ -46,7 +46,7 @@ export default function HelpPage() {
 
         <div className="service-transparency">
           <strong>شفافیت قبل از فعال‌سازی</strong>
-          <p>منابع، Estimate ساعتی/روزانه، زمان تحویل و پوشش دقیق پرچین قبل از ثبت درخواست با تو تأیید می‌شن؛ بکاپ یا پایشِ درج‌نشده فروخته نمی‌شه.</p>
+          <p>منابع، مبلغ دوره‌ای ماهانه، زمان تحویل و پوشش دقیق پرچین قبل از پرداخت با تو تأیید می‌شن؛ بکاپ یا پایشِ درج‌نشده فروخته نمی‌شه.</p>
         </div>
       </div>
 

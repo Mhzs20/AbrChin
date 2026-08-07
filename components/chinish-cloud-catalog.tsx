@@ -264,14 +264,15 @@ export function ChinishCloudCatalog({
                   ) : null}
                   {priceDisplay.showDailyPrice && offer.dailyPriceRial ? (
                     <small>
-                      معادل روزانه {formatStorefrontToman(offer.dailyPriceRial)}{" "}
-                      تومان
+                      معادل تقریبی روزانه (مرجع):{" "}
+                      {formatStorefrontToman(offer.dailyPriceRial)} تومان
                     </small>
                   ) : null}
                   {priceDisplay.showHourlyPrice && offer.hourlyPriceRial ? (
                     <small>
-                      معادل ساعتی {formatStorefrontToman(offer.hourlyPriceRial)}{" "}
-                      تومان
+                      معادل تقریبی ساعتی (مرجع):{" "}
+                      {formatStorefrontToman(offer.hourlyPriceRial)} تومان —
+                      صورتحساب دوره‌ای ماهانه است
                     </small>
                   ) : null}
                   {!priceDisplay.showMonthlyPrice &&

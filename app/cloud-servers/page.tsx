@@ -1,4 +1,4 @@
-import { Cloud, Compass, RefreshCw, ShieldCheck, Zap } from "lucide-react";
+import { Cloud, Compass, RefreshCw, ShieldCheck, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -9,7 +9,7 @@ import { listPublicStorefrontTiers } from "@/lib/storefront/assortment-service";
 export const metadata: Metadata = {
   title: "سرور ابری ابرچین | چینش نو، استوار، کهکشان",
   description:
-    "سرور ابری با چینش روشن، قیمت شفاف ساعتی و تحویل امن. منابع را انتخاب کنید و فقط به‌اندازه مصرف از کیف پول بپردازید.",
+    "سرور ابری با خرید دوره‌ای ماهانه، قیمت شفاف و تحویل امن با پرچین. دوره‌های ۱، ۳، ۶ و ۱۲ ماهه.",
   alternates: { canonical: "/cloud-servers" },
 };
 
@@ -40,12 +40,12 @@ export default async function CloudServersPage({
             <Cloud size={15} aria-hidden="true" /> سرور ابری ابرچین
           </span>
           <h1 id="quick-buy-title">
-            سرور ابری را ساده انتخاب کنید؛ فقط به‌اندازه مصرف بپردازید.
+            سرور ابری را انتخاب کنید و دوره را پیش‌پرداخت کنید.
           </h1>
           <p>
-            پلن‌ها در سه چینش نو، استوار و کهکشان چیده شده‌اند. قیمت پایه شفاف
-            است، برآورد قبل از فعال‌سازی تازه می‌شود و تحویل با پرچین انجام
-            می‌شود.
+            پلن‌ها در سه چینش نو، استوار و کهکشان چیده شده‌اند. مبلغ قابل‌پرداخت
+            ماهانه است؛ دوره‌های ۳ / ۶ / ۱۲ ماهه تا سقف تخفیف اعلامی دارند و تحویل
+            با پرچین انجام می‌شود.
           </p>
         </div>
         <Link className="button button-quiet" href="/compass">
@@ -61,11 +61,10 @@ export default async function CloudServersPage({
           {checkedAt}
         </span>
         <span>
-          <Zap size={15} aria-hidden="true" /> قیمت ساعتی، روزانه و ماهانه
+          <Wallet size={15} aria-hidden="true" /> خرید دوره‌ای ۱ / ۳ / ۶ / ۱۲ ماهه
         </span>
         <span>
-          <ShieldCheck size={15} aria-hidden="true" /> امن و آمادهٔ راه‌اندازی با
-          پرچین
+          <ShieldCheck size={15} aria-hidden="true" /> تحویل امن با پرچین
         </span>
       </div>
 
