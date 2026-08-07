@@ -78,7 +78,10 @@ export async function PATCH(request: Request) {
             ? 409
             : error.code === "revision_not_found"
               ? 404
-              : 400;
+              : error.code === "profit_curve_not_monotonic" ||
+                  error.code === "invalid_profit_curve"
+                ? 400
+                : 400;
       return jsonError(error.message, status, { code: error.code });
     }
     if (error instanceof SyntaxError) {

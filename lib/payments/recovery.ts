@@ -383,6 +383,18 @@ export async function requestControlledTopUpRefund(
             ledgerEntryId,
           },
         });
+        const { postWalletTopUpRefunded } = await import(
+          "@/lib/accounting/posting"
+        );
+        await postWalletTopUpRefunded(
+          {
+            id: refund.id,
+            walletTopUpId: topUp.id,
+            amount: topUp.amount,
+            occurredAt: refund.requestedAt,
+          },
+          tx,
+        );
       }
 
       const snapshot: Prisma.InputJsonObject = {

@@ -215,6 +215,17 @@ async function seedDevPlan() {
       markupBasisPoints: 0,
     },
   });
+  // Legacy payment fixtures lock quotes against flat provider markup. Disable
+  // the profit curve so revalidation stays on the test-configured BPS.
+  await prisma.profitCurveConfiguration.upsert({
+    where: { id: "default" },
+    update: { enabled: false },
+    create: {
+      id: "default",
+      enabled: false,
+      minimumPostDiscountGrossMarginBps: 2_000,
+    },
+  });
   return prisma.infrastructurePlan.upsert({
     where: { code: "DEV_STARTER" },
     update: {

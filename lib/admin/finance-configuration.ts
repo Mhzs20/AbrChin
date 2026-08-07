@@ -22,6 +22,22 @@ import {
   resolveConfiguredPlanPricing,
   type PricingConfigs,
 } from "@/lib/orders/plans";
+import {
+  DEFAULT_MINIMUM_POST_DISCOUNT_GROSS_MARGIN_BPS,
+  defaultProfitCurveConfig,
+  deriveProfitCurveTransitions,
+  parseProfitCurveConfig,
+  resolveProfitCurve,
+  serializeProfitCurveConfig,
+  validateProfitCurveMonotonicity,
+  validateProfitCurveStructure,
+  type ProfitCurveConfigInput,
+} from "@/lib/pricing/profit-curve";
+import {
+  resolveProviderMarkupForPlan,
+} from "@/lib/pricing/profit-curve-apply";
+import { catalogItemBasePriceRial } from "@/lib/pricing/plan-pricing";
+import { filterDominatedPlans } from "@/lib/storefront/dominance";
 
 const PROVIDERS = [
   InfrastructureProvider.ARVAN,
@@ -77,6 +93,7 @@ export type FinanceConfigurationInput = {
     showDailyPrice: boolean;
     showMonthlyPrice: boolean;
   };
+  profitCurve?: ProfitCurveConfigInput;
   reason?: string | null;
   /** Required verbatim when any margin ≥ 70%. */
   highMarginConfirmation?: string | null;
@@ -87,6 +104,8 @@ export type FinanceConfigurationErrorCode =
   | "margin_confirmation_required"
   | "card_quote_parity_failed"
   | "invalid_configuration"
+  | "invalid_profit_curve"
+  | "profit_curve_not_monotonic"
   | "revision_not_found";
 
 export class FinanceConfigurationError extends Error {
@@ -108,7 +127,27 @@ function guardrailForProviders(providers: FinanceProviderInput[]) {
   return strongest;
 }
 
+function resolveProfitCurveOrDefault(
+  input: FinanceConfigurationInput,
+): ProfitCurveConfigInput {
+  return input.profitCurve ?? defaultProfitCurveConfig();
+}
+
+function guardrailForProvidersAndCurve(input: FinanceConfigurationInput) {
+  let strongest: "ok" | "warn" | "confirm" = guardrailForProviders(
+    input.providers,
+  );
+  const curve = resolveProfitCurveOrDefault(input);
+  for (const band of curve.bands) {
+    const { level } = evaluateMarginGuardrail(band.targetGrossMarginBps);
+    if (level === "confirm") strongest = "confirm";
+    else if (level === "warn" && strongest === "ok") strongest = "warn";
+  }
+  return strongest;
+}
+
 export function financeConfigurationSnapshot(input: FinanceConfigurationInput) {
+  const profitCurve = resolveProfitCurveOrDefault(input);
   return {
     providers: input.providers.map((item) => ({
       provider: item.provider,
@@ -142,6 +181,9 @@ export function financeConfigurationSnapshot(input: FinanceConfigurationInput) {
       firstResponseTarget: item.firstResponseTarget ?? null,
     })),
     priceDisplay: input.priceDisplay,
+    profitCurve: serializeProfitCurveConfig(profitCurve),
+    minimumPostDiscountGrossMarginBps:
+      profitCurve.minimumPostDiscountGrossMarginBps,
   };
 }
 
@@ -252,7 +294,27 @@ export function validateFinanceConfiguration(
       );
     }
   }
-  const guardrail = guardrailForProviders(input.providers);
+  const profitCurve = input.profitCurve
+    ? resolveProfitCurveOrDefault(input)
+    : null;
+  if (profitCurve) {
+    const curveIssues = validateProfitCurveStructure(profitCurve);
+    if (curveIssues.length > 0) {
+      throw new FinanceConfigurationError(
+        "invalid_profit_curve",
+        curveIssues.map((issue) => issue.message).join(" "),
+      );
+    }
+  }
+  let guardrail = guardrailForProviders(input.providers);
+  if (profitCurve) {
+    const curveGuard = guardrailForProvidersAndCurve({
+      ...input,
+      profitCurve,
+    });
+    if (curveGuard === "confirm") guardrail = "confirm";
+    else if (curveGuard === "warn" && guardrail === "ok") guardrail = "warn";
+  }
   if (
     guardrail === "confirm" &&
     !options.skipHighMarginConfirmation &&
@@ -324,12 +386,19 @@ export function validateFinanceConfiguration(
       );
     }
   }
-  return { guardrail };
+  return { guardrail, profitCurve };
 }
 
 export async function readFinanceConfiguration() {
-  const [providers, products, commerce, parchin, storefront, revisions] =
-    await Promise.all([
+  const [
+    providers,
+    products,
+    commerce,
+    parchin,
+    storefront,
+    revisions,
+    profitCurveRow,
+  ] = await Promise.all([
       prisma.providerPricingConfig.findMany({
         where: { provider: { in: [...PROVIDERS] } },
       }),
@@ -352,6 +421,10 @@ export async function readFinanceConfiguration() {
           actor: { select: { id: true, mobile: true } },
         },
       }),
+      prisma.profitCurveConfiguration.findUnique({
+        where: { id: "default" },
+        include: { bands: { orderBy: { sortOrder: "asc" } } },
+      }),
     ]);
   const byProvider = new Map(providers.map((row) => [row.provider, row]));
   const servicePrices =
@@ -360,6 +433,21 @@ export async function readFinanceConfiguration() {
     !Array.isArray(commerce.compassServicePrices)
       ? (commerce.compassServicePrices as Record<string, string>)
       : {};
+  const profitCurve: ProfitCurveConfigInput = profitCurveRow
+    ? {
+        enabled: profitCurveRow.enabled,
+        minimumPostDiscountGrossMarginBps:
+          profitCurveRow.minimumPostDiscountGrossMarginBps,
+        bands: profitCurveRow.bands.map((band) => ({
+          id: band.id,
+          sortOrder: band.sortOrder,
+          minProviderCostRial: band.minProviderCostRial,
+          maxProviderCostRial: band.maxProviderCostRial,
+          targetGrossMarginBps: band.targetGrossMarginBps,
+        })),
+      }
+    : defaultProfitCurveConfig();
+  const transitions = deriveProfitCurveTransitions(profitCurve.bands);
   return {
     providers: PROVIDERS.map((provider) => {
       const row = byProvider.get(provider);
@@ -382,6 +470,10 @@ export async function readFinanceConfiguration() {
     reminderDaysBeforeDue: commerce?.reminderDaysBeforeDue ?? 7,
     suspendGraceDaysAfterZero: commerce?.suspendGraceDaysAfterZero ?? 7,
     deleteDaysAfterSuspend: commerce?.deleteDaysAfterSuspend ?? 7,
+    minimumPostDiscountGrossMarginBps:
+      commerce?.minimumPostDiscountGrossMarginBps ??
+      profitCurve.minimumPostDiscountGrossMarginBps ??
+      DEFAULT_MINIMUM_POST_DISCOUNT_GROSS_MARGIN_BPS,
     compassServicePrices: {
       SITE_MIGRATION: servicePrices.SITE_MIGRATION ?? "15000000",
       INITIAL_SETUP: servicePrices.INITIAL_SETUP ?? "8000000",
@@ -412,6 +504,19 @@ export async function readFinanceConfiguration() {
       showDailyPrice: storefront?.showDailyPrice ?? true,
       showMonthlyPrice: storefront?.showMonthlyPrice ?? true,
     },
+    profitCurve: {
+      ...serializeProfitCurveConfig(profitCurve),
+      activeRevisionId: profitCurveRow?.activeRevisionId ?? null,
+      updatedAt: profitCurveRow?.updatedAt?.toISOString() ?? null,
+      transitions: transitions.map((t) => ({
+        bandIndex: t.bandIndex,
+        boundaryRial: t.boundaryRial.toString(),
+        previousMarginBps: t.previousMarginBps,
+        nextMarginBps: t.nextMarginBps,
+        boundarySaleRial: t.boundarySaleRial.toString(),
+        transitionEndRial: t.transitionEndRial.toString(),
+      })),
+    },
     revisions: revisions.map((row) => ({
       id: row.id,
       createdAt: row.createdAt.toISOString(),
@@ -435,10 +540,39 @@ export async function applyFinanceConfiguration(params: {
   meta?: { ip?: string | null; userAgent?: string | null };
 }) {
   const { input, actorUserId } = params;
-  validateFinanceConfiguration(input, {
+  const validated = validateFinanceConfiguration(input, {
     skipHighMarginConfirmation: Boolean(params.rollbackOfId),
   });
-  const parity = await checkCardQuoteParity(input);
+  const profitCurve =
+    validated.profitCurve ??
+    (await loadCurrentProfitCurveConfig()) ??
+    defaultProfitCurveConfig();
+  // Always structure-validate the effective curve before publish.
+  const structureIssues = validateProfitCurveStructure(profitCurve);
+  if (structureIssues.length > 0) {
+    throw new FinanceConfigurationError(
+      "invalid_profit_curve",
+      structureIssues.map((issue) => issue.message).join(" "),
+    );
+  }
+  const mergedForPublish: FinanceConfigurationInput = {
+    ...input,
+    profitCurve,
+  };
+
+  const catalogCosts = await loadSellableCatalogCostsRial();
+  const mono = validateProfitCurveMonotonicity(profitCurve.bands, {
+    catalogCostsRial: catalogCosts,
+    syntheticPoints: 2_000,
+  });
+  if (!mono.ok) {
+    throw new FinanceConfigurationError(
+      "profit_curve_not_monotonic",
+      mono.issues.map((issue) => issue.message).join(" "),
+    );
+  }
+
+  const parity = await checkCardQuoteParity(mergedForPublish);
   if (!parity.ok) {
     throw new FinanceConfigurationError(
       "card_quote_parity_failed",
@@ -456,7 +590,7 @@ export async function applyFinanceConfiguration(params: {
     mergeParchinInputWithExisting(item, existingByLevel.get(item.level) ?? null),
   );
   const mergedInput: FinanceConfigurationInput = {
-    ...input,
+    ...mergedForPublish,
     parchin: mergedParchin,
   };
   const snapshot = financeConfigurationSnapshot(mergedInput);
@@ -537,6 +671,8 @@ export async function applyFinanceConfiguration(params: {
         reminderDaysBeforeDue: mergedInput.reminderDaysBeforeDue,
         suspendGraceDaysAfterZero: mergedInput.suspendGraceDaysAfterZero,
         deleteDaysAfterSuspend: mergedInput.deleteDaysAfterSuspend,
+        minimumPostDiscountGrossMarginBps:
+          profitCurve.minimumPostDiscountGrossMarginBps,
         compassServicePrices: mergedInput.compassServicePrices,
         updatedById: actorUserId,
       },
@@ -546,6 +682,8 @@ export async function applyFinanceConfiguration(params: {
         reminderDaysBeforeDue: mergedInput.reminderDaysBeforeDue,
         suspendGraceDaysAfterZero: mergedInput.suspendGraceDaysAfterZero,
         deleteDaysAfterSuspend: mergedInput.deleteDaysAfterSuspend,
+        minimumPostDiscountGrossMarginBps:
+          profitCurve.minimumPostDiscountGrossMarginBps,
         compassServicePrices: mergedInput.compassServicePrices,
         updatedById: actorUserId,
       },
@@ -599,6 +737,41 @@ export async function applyFinanceConfiguration(params: {
         updatedById: actorUserId,
       },
     });
+
+    await tx.profitCurveConfiguration.upsert({
+      where: { id: "default" },
+      update: {
+        enabled: profitCurve.enabled,
+        minimumPostDiscountGrossMarginBps:
+          profitCurve.minimumPostDiscountGrossMarginBps,
+        updatedById: actorUserId,
+      },
+      create: {
+        id: "default",
+        enabled: profitCurve.enabled,
+        minimumPostDiscountGrossMarginBps:
+          profitCurve.minimumPostDiscountGrossMarginBps,
+        updatedById: actorUserId,
+      },
+    });
+    await tx.profitCurveBand.deleteMany({
+      where: { configurationId: "default" },
+    });
+    for (const band of [...profitCurve.bands].sort(
+      (a, b) => a.sortOrder - b.sortOrder,
+    )) {
+      await tx.profitCurveBand.create({
+        data: {
+          id: band.id && band.id.length > 0 ? band.id : undefined,
+          configurationId: "default",
+          sortOrder: band.sortOrder,
+          minProviderCostRial: band.minProviderCostRial,
+          maxProviderCostRial: band.maxProviderCostRial,
+          targetGrossMarginBps: band.targetGrossMarginBps,
+        },
+      });
+    }
+
     const revision = await tx.financeConfigurationRevision.create({
       data: {
         actorUserId,
@@ -606,6 +779,10 @@ export async function applyFinanceConfiguration(params: {
         rollbackOfId: params.rollbackOfId ?? null,
         snapshot: snapshot as Prisma.InputJsonValue,
       },
+    });
+    await tx.profitCurveConfiguration.update({
+      where: { id: "default" },
+      data: { activeRevisionId: revision.id },
     });
     if (actorUserId) {
       await writeAuditLog(
@@ -624,6 +801,49 @@ export async function applyFinanceConfiguration(params: {
     }
     return revision;
   });
+}
+
+async function loadCurrentProfitCurveConfig(): Promise<ProfitCurveConfigInput | null> {
+  const row = await prisma.profitCurveConfiguration.findUnique({
+    where: { id: "default" },
+    include: { bands: { orderBy: { sortOrder: "asc" } } },
+  });
+  if (!row || row.bands.length === 0) return null;
+  return {
+    enabled: row.enabled,
+    minimumPostDiscountGrossMarginBps: row.minimumPostDiscountGrossMarginBps,
+    bands: row.bands.map((band) => ({
+      id: band.id,
+      sortOrder: band.sortOrder,
+      minProviderCostRial: band.minProviderCostRial,
+      maxProviderCostRial: band.maxProviderCostRial,
+      targetGrossMarginBps: band.targetGrossMarginBps,
+    })),
+  };
+}
+
+async function loadSellableCatalogCostsRial(): Promise<bigint[]> {
+  const items = await prisma.providerCatalogItem.findMany({
+    where: {
+      active: true,
+      available: true,
+      status: "ACTIVE",
+      providerMonthlyPriceIrr: { gt: 0n },
+      plans: {
+        some: {
+          active: true,
+          publicationStatus: "PUBLISHED",
+          offerSource: "API_CATALOG",
+          deliveryMode: "MANAGED",
+        },
+      },
+    },
+    select: { providerMonthlyPriceIrr: true },
+    take: 5_000,
+  });
+  return items
+    .map((item) => item.providerMonthlyPriceIrr)
+    .filter((value): value is bigint => value != null && value > 0n);
 }
 
 export async function rollbackFinanceConfiguration(params: {
@@ -738,6 +958,8 @@ function financeInputFromSnapshot(snapshot: unknown): FinanceConfigurationInput 
       showDailyPrice: priceDisplay.showDailyPrice !== false,
       showMonthlyPrice: priceDisplay.showMonthlyPrice !== false,
     },
+    profitCurve:
+      parseProfitCurveConfig(value.profitCurve) ?? defaultProfitCurveConfig(),
   };
 }
 
@@ -747,9 +969,12 @@ type CandidatePricingContext = {
   parchinPriceByLevel: Map<ParchinLevel, bigint>;
   parchinActiveByLevel: Map<ParchinLevel, boolean>;
   taxBps: number;
+  profitCurve: ProfitCurveConfigInput;
+  minimumPostDiscountGrossMarginBps: number;
 };
 
 function candidateContext(input: FinanceConfigurationInput): CandidatePricingContext {
+  const profitCurve = resolveProfitCurveOrDefault(input);
   return {
     providerMarkupBps: new Map(
       input.providers.map((item) => [
@@ -773,6 +998,9 @@ function candidateContext(input: FinanceConfigurationInput): CandidatePricingCon
       input.parchin.map((item) => [item.level, item.active]),
     ),
     taxBps: input.taxBps,
+    profitCurve,
+    minimumPostDiscountGrossMarginBps:
+      profitCurve.minimumPostDiscountGrossMarginBps,
   };
 }
 
@@ -795,7 +1023,13 @@ async function samplePlansForImpact(limit = 24) {
 function priceWithContext(
   plan: Awaited<ReturnType<typeof samplePlansForImpact>>[number],
   context: CandidatePricingContext,
-): { finalPriceRial: bigint; sellable: boolean } | null {
+): {
+  finalPriceRial: bigint;
+  sellable: boolean;
+  providerCostRial: bigint | null;
+  effectiveMarginBps: number | null;
+  grossProfitRial: bigint | null;
+} | null {
   if (!plan.catalogItem) return null;
   const provider = context.providerMarkupBps.get(plan.provider);
   const product = context.productMarkupBps.get(
@@ -808,26 +1042,54 @@ function priceWithContext(
   const parchinActive = context.parchinActiveByLevel.get(parchinLevel) ?? false;
   const sellable =
     provider.enabled && (product?.enabled ?? false) && parchinActive;
+  const providerCostRial = catalogItemBasePriceRial(plan.catalogItem);
+  if (providerCostRial == null || providerCostRial <= 0n) return null;
+
+  const markup = resolveProviderMarkupForPlan({
+    plan,
+    providerMonthlyCostRial: providerCostRial,
+    providerConfigMarkupBps: provider.markupBps,
+    profitCurve: context.profitCurve,
+  });
+  const productMarkup =
+    plan.skuMarkupBasisPoints ?? product?.markupBps ?? 0;
+
   const priced = resolveCatalogItemPricing(
     plan.catalogItem,
-    { markupBasisPoints: provider.markupBps },
+    { markupBasisPoints: markup.providerMarkupBps },
     {
-      productMarkupBasisPoints:
-        plan.skuMarkupBasisPoints ?? product?.markupBps ?? 0,
+      productMarkupBasisPoints: productMarkup,
       taxBasisPoints: context.taxBps,
       parchinLevel,
       parchinPriceRial: context.parchinPriceByLevel.get(parchinLevel) ?? 0n,
       termMonths: 1,
+      minimumPostDiscountGrossMarginBps:
+        context.minimumPostDiscountGrossMarginBps,
+      infrastructureSaleRialOverride: markup.infrastructureSaleRialOverride,
     },
   );
   if (!priced) return null;
-  return { finalPriceRial: priced.finalPriceRial, sellable };
+  const infraSale =
+    priced.providerBasePriceRial + priced.markupAmountRial;
+  const grossProfit = infraSale - priced.providerBasePriceRial;
+  const effectiveMarginBps =
+    infraSale > 0n
+      ? Number((grossProfit * 10_000n + infraSale / 2n) / infraSale)
+      : null;
+  return {
+    finalPriceRial: priced.finalPriceRial,
+    sellable,
+    providerCostRial,
+    effectiveMarginBps,
+    grossProfitRial: grossProfit,
+  };
 }
 
 function candidateAsPricingConfigs(
   input: FinanceConfigurationInput,
 ): PricingConfigs {
   const now = new Date();
+  const profitCurve = resolveProfitCurveOrDefault(input);
   return {
     providers: input.providers.map((item) => ({
       id: `${item.provider.toLowerCase()}-v1`,
@@ -858,6 +1120,8 @@ function candidateAsPricingConfigs(
       reminderDaysBeforeDue: input.reminderDaysBeforeDue,
       suspendGraceDaysAfterZero: input.suspendGraceDaysAfterZero,
       deleteDaysAfterSuspend: input.deleteDaysAfterSuspend,
+      minimumPostDiscountGrossMarginBps:
+        profitCurve.minimumPostDiscountGrossMarginBps,
       compassServicePrices: input.compassServicePrices,
       updatedById: null,
       updatedAt: now,
@@ -884,6 +1148,7 @@ function candidateAsPricingConfigs(
         createdAt: now,
         updatedAt: now,
       })),
+    profitCurve,
   } as PricingConfigs;
 }
 
@@ -931,6 +1196,10 @@ export type FinanceImpactRow = {
   deltaRial: string | null;
   deltaBps: number | null;
   sellable: boolean;
+  currentEffectiveMarginBps?: number | null;
+  candidateEffectiveMarginBps?: number | null;
+  grossProfitRial?: string | null;
+  providerCostRial?: string | null;
 };
 
 /**
@@ -977,15 +1246,35 @@ export async function previewFinanceImpact(input: FinanceConfigurationInput) {
       firstResponseTarget: item.firstResponseTarget,
     })),
     priceDisplay: current.priceDisplay,
+    profitCurve:
+      parseProfitCurveConfig(current.profitCurve) ?? defaultProfitCurveConfig(),
   };
   const candidateCtx = candidateContext(input);
   const currentCtx = candidateContext(currentInput);
-  const plans = await samplePlansForImpact(24);
+  const plans = await samplePlansForImpact(200);
+  const catalogCosts = plans
+    .map((plan) =>
+      plan.catalogItem ? catalogItemBasePriceRial(plan.catalogItem) : null,
+    )
+    .filter((value): value is bigint => value != null && value > 0n);
+  const mono = validateProfitCurveMonotonicity(
+    resolveProfitCurveOrDefault(input).bands,
+    { catalogCostsRial: catalogCosts, syntheticPoints: 2_000 },
+  );
 
   const rows: FinanceImpactRow[] = [];
   let increased = 0;
   let decreased = 0;
   let unchanged = 0;
+  let marginSumCurrent = 0;
+  let marginSumCandidate = 0;
+  let marginCount = 0;
+  let minGrossProfit: bigint | null = null;
+  let maxGrossProfit: bigint | null = null;
+
+  const currentDominanceCandidates = [];
+  const candidateDominanceCandidates = [];
+
   for (const plan of plans) {
     const currentPrice = priceWithContext(plan, currentCtx);
     const candidatePrice = priceWithContext(plan, candidateCtx);
@@ -1003,6 +1292,54 @@ export async function previewFinanceImpact(input: FinanceConfigurationInput) {
       else if (deltaRial < 0n) decreased += 1;
       else unchanged += 1;
     }
+    if (
+      currentPrice?.effectiveMarginBps != null &&
+      candidatePrice?.effectiveMarginBps != null
+    ) {
+      marginSumCurrent += currentPrice.effectiveMarginBps;
+      marginSumCandidate += candidatePrice.effectiveMarginBps;
+      marginCount += 1;
+    }
+    if (candidatePrice?.grossProfitRial != null) {
+      if (minGrossProfit == null || candidatePrice.grossProfitRial < minGrossProfit) {
+        minGrossProfit = candidatePrice.grossProfitRial;
+      }
+      if (maxGrossProfit == null || candidatePrice.grossProfitRial > maxGrossProfit) {
+        maxGrossProfit = candidatePrice.grossProfitRial;
+      }
+    }
+
+    const baseTraits = {
+      id: plan.id,
+      locationKey: plan.regionCode,
+      productKind: plan.productKind,
+      deliveryMode: plan.deliveryMode,
+      purchasable: Boolean(candidatePrice?.sellable),
+      vcpu: plan.vcpu,
+      ramGb: plan.ramGb,
+      diskGb: plan.storageGb,
+      checkedAtMs: plan.updatedAt.getTime(),
+      traits: {
+        transferKey: null as string | null,
+        diskTypeKey: null as string | null,
+        ipv4Key: null as string | null,
+        ipv6Key: null as string | null,
+      },
+    };
+    if (currentFinal != null) {
+      currentDominanceCandidates.push({
+        ...baseTraits,
+        purchasable: Boolean(currentPrice?.sellable),
+        finalMonthlyPriceRial: currentFinal,
+      });
+    }
+    if (candidateFinal != null) {
+      candidateDominanceCandidates.push({
+        ...baseTraits,
+        finalMonthlyPriceRial: candidateFinal,
+      });
+    }
+
     rows.push({
       planId: plan.id,
       title: plan.title,
@@ -1012,14 +1349,35 @@ export async function previewFinanceImpact(input: FinanceConfigurationInput) {
       deltaRial: deltaRial?.toString() ?? null,
       deltaBps,
       sellable: candidatePrice?.sellable ?? false,
+      currentEffectiveMarginBps: currentPrice?.effectiveMarginBps ?? null,
+      candidateEffectiveMarginBps: candidatePrice?.effectiveMarginBps ?? null,
+      grossProfitRial: candidatePrice?.grossProfitRial?.toString() ?? null,
+      providerCostRial: candidatePrice?.providerCostRial?.toString() ?? null,
     });
   }
+
+  const currentDom = filterDominatedPlans(currentDominanceCandidates);
+  const candidateDom = filterDominatedPlans(candidateDominanceCandidates);
+  const currentDominated = currentDom.removed.filter(
+    (row) => row.reason === "DOMINATED" || row.reason === "DUPLICATE_EQUAL",
+  ).length;
+  const candidateDominated = candidateDom.removed.filter(
+    (row) => row.reason === "DOMINATED" || row.reason === "DUPLICATE_EQUAL",
+  ).length;
+
   const withDelta = rows.filter((row) => row.deltaRial != null);
   const sortedByDelta = [...withDelta].sort((a, b) => {
     const deltaA = BigInt(a.deltaRial ?? "0");
     const deltaB = BigInt(b.deltaRial ?? "0");
     return deltaA === deltaB ? 0 : deltaA > deltaB ? -1 : 1;
   });
+  const largestIncrease = sortedByDelta.find(
+    (row) => BigInt(row.deltaRial ?? "0") > 0n,
+  );
+  const largestDecrease = [...sortedByDelta]
+    .reverse()
+    .find((row) => BigInt(row.deltaRial ?? "0") < 0n);
+
   return {
     sampledPlans: rows.length,
     affectedPlans: increased + decreased,
@@ -1027,13 +1385,46 @@ export async function previewFinanceImpact(input: FinanceConfigurationInput) {
     decreasedPlans: decreased,
     unchangedPlans: unchanged,
     notSellablePlans: rows.filter((row) => !row.sellable).length,
+    plansBecomingCheaper: decreased,
+    plansBecomingMoreExpensive: increased,
+    largestIncrease: largestIncrease ?? null,
+    largestDecrease: largestDecrease ?? null,
+    averagePreviousEffectiveMarginBps:
+      marginCount > 0 ? Math.round(marginSumCurrent / marginCount) : null,
+    averageNewEffectiveMarginBps:
+      marginCount > 0 ? Math.round(marginSumCandidate / marginCount) : null,
+    minimumGrossProfitRial: minGrossProfit?.toString() ?? null,
+    maximumGrossProfitRial: maxGrossProfit?.toString() ?? null,
+    dominatedPlanCountCurrent: currentDominated,
+    dominatedPlanCountNew: candidateDominated,
+    newlyDominatedPlanCount: Math.max(0, candidateDominated - currentDominated),
+    newlyVisiblePlanCount: Math.max(0, currentDominated - candidateDominated),
+    monotonicity: {
+      ok: mono.ok,
+      sampled: mono.sampled,
+      failures: mono.issues.slice(0, 20),
+    },
     topIncreases: sortedByDelta
       .filter((row) => BigInt(row.deltaRial ?? "0") > 0n)
-      .slice(0, 5),
+      .slice(0, 10),
     topDecreases: sortedByDelta
       .filter((row) => BigInt(row.deltaRial ?? "0") < 0n)
       .reverse()
-      .slice(0, 5),
+      .slice(0, 10),
+    topAffected: sortedByDelta
+      .slice()
+      .sort((a, b) => {
+        const absA =
+          BigInt(a.deltaRial ?? "0") < 0n
+            ? -BigInt(a.deltaRial ?? "0")
+            : BigInt(a.deltaRial ?? "0");
+        const absB =
+          BigInt(b.deltaRial ?? "0") < 0n
+            ? -BigInt(b.deltaRial ?? "0")
+            : BigInt(b.deltaRial ?? "0");
+        return absA === absB ? 0 : absA > absB ? -1 : 1;
+      })
+      .slice(0, 10),
     rows,
   };
 }
@@ -1055,26 +1446,45 @@ export function simulateFinanceBreakdown(
   breakdown: CommercialPriceBreakdown;
   providerEnabled: boolean;
   productEnabled: boolean;
+  curve: ReturnType<typeof resolveProfitCurve> | null;
+  productOverrideMarkupBps: number;
+  finalInfrastructureMarginBps: number;
 } {
   const context = candidateContext(input);
   const provider = context.providerMarkupBps.get(request.provider);
   const product = context.productMarkupBps.get(
     `${request.provider}:${request.productKind}`,
   );
+  const markup = resolveProviderMarkupForPlan({
+    plan: {
+      offerSource: "API_CATALOG",
+      productKind: request.productKind,
+    },
+    providerMonthlyCostRial: request.providerMonthlyCostRial,
+    providerConfigMarkupBps: provider?.markupBps ?? 0,
+    profitCurve: context.profitCurve,
+  });
+  const productOverrideMarkupBps = product?.markupBps ?? 0;
   const breakdown = computeCommercialPriceBreakdown({
     providerMonthlyPriceIrr: request.providerMonthlyCostRial,
-    providerMarkupBps: provider?.markupBps ?? 0,
-    productMarkupBps: product?.markupBps ?? 0,
+    providerMarkupBps: markup.providerMarkupBps,
+    productMarkupBps: productOverrideMarkupBps,
     parchinLevel: request.parchinLevel,
     parchinPriceIrr:
       context.parchinPriceByLevel.get(request.parchinLevel) ?? 0n,
     taxBps: context.taxBps,
     termMonths: request.termMonths,
     couponDiscountBps: request.couponDiscountBps ?? null,
+    minimumPostDiscountGrossMarginBps:
+      context.minimumPostDiscountGrossMarginBps,
+    infrastructureSaleRialOverride: markup.infrastructureSaleRialOverride,
   });
   return {
     breakdown,
     providerEnabled: provider?.enabled ?? false,
     productEnabled: product?.enabled ?? false,
+    curve: markup.curve,
+    productOverrideMarkupBps,
+    finalInfrastructureMarginBps: breakdown.grossMarginBps,
   };
 }

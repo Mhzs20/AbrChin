@@ -234,3 +234,74 @@ Disk فقط مشخصه/فیلتر است. متن مشتری عبارت‌های 
 `excludedServices`، `serviceLimits`، `supportWindow`، `firstResponseTarget`.
 Snapshot روی Quote و ServiceOrder؛ Publish Admin نسخه را بالا می‌برد و سفارش
 قبلی را عوض نمی‌کند. Line Item عنوان + نسخه را ثبت می‌کند.
+
+## منحنی سود سرورها (Task 3)
+
+AbrChin روی سرورهای ارزان حاشیهٔ بالاتر و روی سرورهای گران حاشیهٔ پایین‌تر
+می‌گیرد. منحنی فقط **Markup منبع** را برای فروش‌های عادی
+`CLOUD_SERVER` / `READY_INSTANT_SERVER` / `API_CATALOG` Resolve می‌کند و به
+همان موتور واحد `computeCommercialPriceBreakdown` می‌دهد. Markup محصول/SKU
+جدا و صریح می‌ماند؛ جمع دوباره با Markup قدیمی منبع ممنوع است.
+
+### پنج بازهٔ هدف (برچسب کسب‌وکار — هزینه ماهانه Provider)
+
+| هزینه Provider (تومان) | حاشیه سود هدف |
+|---|---:|
+| تا ۵ میلیون | ۷۰٪ |
+| ۵ تا ۱۰ میلیون | ۶۰٪ |
+| ۱۰ تا ۱۵ میلیون | ۵۰٪ |
+| ۱۵ تا ۲۵ میلیون | ۴۰٪ |
+| ۲۵ میلیون به بالا | ۳۰٪ |
+
+DB داخلی ریال است (`×۱۰`).
+
+### Target در برابر Effective
+
+در مرزهای نزولی، انتقال **ریاضی** محاسبه می‌شود (عرض ثابت hardcode نیست):
+
+```text
+boundarySale = B / (1 − M1)
+transitionEnd = B × (1 − M2) / (1 − M1)
+```
+
+برای `B ≤ cost < transitionEnd` قیمت فروش زیرساخت روی `boundarySale` نگه
+داشته می‌شود تا هیچ سرور گران‌تری صرفاً به‌خاطر عبور از مرز ارزان‌تر نشود.
+حاشیهٔ مؤثر در این بازه از M1 به M2 به‌صورت خطی با هزینه کاهش می‌یابد.
+
+با پیش‌فرض‌ها تقریباً:
+
+```text
+5M–6.667M   : 70% → 60%
+10M–12.5M   : 60% → 50%
+15M–18M     : 50% → 40%
+25M–29.167M : 40% → 30%
+```
+
+Resolver خالص: `lib/pricing/profit-curve.ts` → `resolveProfitCurve`.
+در Transition، موتور با `infrastructureSaleRialOverride` فروش دقیق ثابت را
+حفظ می‌کند.
+
+### کف حاشیه پس از تخفیف
+
+`minimumPostDiscountGrossMarginBps` پیش‌فرض `2000` (۲۰٪). تخفیف درخواستی،
+حداکثر مجاز و تخفیف اعمال‌شده Snapshot می‌شوند. اگر Coupon کپ شود، Quote
+صریحاً «تخفیف حداکثر قابل اعمال» را نشان می‌دهد.
+
+### Revision / Rollback
+
+منحنی داخل همان `FinanceConfigurationRevision.snapshot.profitCurve` است.
+Publish/Rollback اتمیک با بقیهٔ مرکز مالی؛ جداگانه سیستم Finance دوم ساخته
+نشد. Migration:
+`prisma/migrations/20260807010000_profit_curve_operational_accounting`.
+
+### Order Snapshot
+
+`commercialEconomicsSnapshot` روی Quote/Order: revision، باند، target/effective
+margin، markup منبع/محصول، هزینه Provider، وضعیت Transition.
+
+### Dominance
+
+پس از انتشار منحنی، Dominance همچنان از `finalPriceRial` موتور تجاری
+(با Markup مشتق‌شده از منحنی) استفاده می‌کند — فرمول جدا ندارد.
+Preview مرکز مالی تعداد پلن‌های تازه‌مغلوب/تازه‌نمایان را نشان می‌دهد بدون
+Mutation روی Storefront.

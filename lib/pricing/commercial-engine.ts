@@ -152,6 +152,18 @@ export type CommercialPricingInput = {
    */
   couponDiscountBps?: number | null;
   couponCode?: string | null;
+  /**
+   * Minimum post-discount gross margin on infrastructure economics.
+   * When set, the requested discount is capped so the protected floor holds.
+   * Default null preserves historic engine behaviour (no floor).
+   */
+  minimumPostDiscountGrossMarginBps?: number | null;
+  /**
+   * When set (profit-curve transition floor), infrastructure sale is exactly
+   * this monthly Rial amount and markup BPS is used only for audit/split.
+   * Keeps sale continuous across tier boundaries without ceil jitter.
+   */
+  infrastructureSaleRialOverride?: bigint | null;
 };
 
 export type CommercialPriceBreakdown = {
@@ -178,6 +190,13 @@ export type CommercialPriceBreakdown = {
   termDiscountBps: number;
   discountSource: "none" | "term" | "coupon";
   monthlyPretaxRial: bigint;
+  /** Requested discount before the post-discount margin floor cap. */
+  requestedDiscountRial: bigint;
+  /** Maximum commercially allowed discount under the margin floor. */
+  maximumAllowedDiscountRial: bigint;
+  /** True when the floor reduced the applied discount below the request. */
+  discountCapped: boolean;
+  minimumPostDiscountGrossMarginBps: number | null;
 };
 
 export function resolveTermDiscountBps(input: {
@@ -219,17 +238,38 @@ export function computeCommercialPriceBreakdown(
 
   const markupBps = input.providerMarkupBps + input.productMarkupBps;
   assertIntegerBps(markupBps);
-  // Combined ceil first (legacy-stable totals); the provider/product split is
-  // derived from it so the two parts always sum exactly to the total.
-  const monthlyMarkupIrr = multiplyBpsRoundUp(
-    input.providerMonthlyPriceIrr,
-    markupBps,
-  );
-  const monthlyProviderMarkupIrr = multiplyBpsRoundUp(
-    input.providerMonthlyPriceIrr,
-    input.providerMarkupBps,
-  );
-  const monthlyProductMarkupIrr = monthlyMarkupIrr - monthlyProviderMarkupIrr;
+
+  let monthlyMarkupIrr: bigint;
+  let monthlyProviderMarkupIrr: bigint;
+  let monthlyProductMarkupIrr: bigint;
+
+  if (input.infrastructureSaleRialOverride != null) {
+    if (input.infrastructureSaleRialOverride <= input.providerMonthlyPriceIrr) {
+      throw new Error("invalid_infrastructure_sale_override");
+    }
+    monthlyMarkupIrr =
+      input.infrastructureSaleRialOverride - input.providerMonthlyPriceIrr;
+    // Prefer the configured provider markup share; remainder is product.
+    const providerShare = multiplyBpsRoundUp(
+      input.providerMonthlyPriceIrr,
+      input.providerMarkupBps,
+    );
+    monthlyProviderMarkupIrr =
+      providerShare <= monthlyMarkupIrr ? providerShare : monthlyMarkupIrr;
+    monthlyProductMarkupIrr = monthlyMarkupIrr - monthlyProviderMarkupIrr;
+  } else {
+    // Combined ceil first (legacy-stable totals); the provider/product split is
+    // derived from it so the two parts always sum exactly to the total.
+    monthlyMarkupIrr = multiplyBpsRoundUp(
+      input.providerMonthlyPriceIrr,
+      markupBps,
+    );
+    monthlyProviderMarkupIrr = multiplyBpsRoundUp(
+      input.providerMonthlyPriceIrr,
+      input.providerMarkupBps,
+    );
+    monthlyProductMarkupIrr = monthlyMarkupIrr - monthlyProviderMarkupIrr;
+  }
   const monthlyAddonIrr = (input.providerAddons ?? []).reduce((sum, addon) => {
     if (addon.amountIrr < 0n) throw new Error("invalid_provider_addon");
     return sum + addon.amountIrr;
@@ -257,7 +297,42 @@ export function computeCommercialPriceBreakdown(
     termMonths,
     couponDiscountBps: input.couponDiscountBps,
   });
-  const discountIrr = multiplyBpsRoundUp(termPretaxIrr, discountBps);
+  const requestedDiscountIrr = multiplyBpsRoundUp(termPretaxIrr, discountBps);
+
+  const minPostMargin = input.minimumPostDiscountGrossMarginBps ?? null;
+  if (
+    minPostMargin != null &&
+    (!Number.isInteger(minPostMargin) ||
+      minPostMargin < 0 ||
+      minPostMargin >= 10_000)
+  ) {
+    throw new Error("invalid_minimum_post_discount_margin");
+  }
+
+  /**
+   * Protected floor: providerCost / (1 − minMargin) for the term, plus
+   * Parchin and direct provider add-on costs (not discounted below recovery).
+   */
+  let maximumAllowedDiscountIrr = termPretaxIrr;
+  if (minPostMargin != null && minPostMargin > 0) {
+    const keep = BigInt(10_000 - minPostMargin);
+    const monthlyInfraFloor =
+      (input.providerMonthlyPriceIrr * BPS_DENOMINATOR + keep - 1n) / keep;
+    const protectedFloor =
+      monthlyInfraFloor * termMultiplier + parchinTermIrr + addonsTermIrr;
+    maximumAllowedDiscountIrr =
+      termPretaxIrr > protectedFloor ? termPretaxIrr - protectedFloor : 0n;
+  }
+
+  const discountIrr =
+    requestedDiscountIrr <= maximumAllowedDiscountIrr
+      ? requestedDiscountIrr
+      : maximumAllowedDiscountIrr;
+  const discountCapped = discountIrr < requestedDiscountIrr;
+  const appliedDiscountBps =
+    termPretaxIrr > 0n && discountIrr > 0n
+      ? Number((discountIrr * 10_000n) / termPretaxIrr)
+      : 0;
   const taxableIrr = termPretaxIrr - discountIrr;
   const taxAmountIrr = multiplyBpsRoundUp(taxableIrr, input.taxBps);
 
@@ -301,16 +376,25 @@ export function computeCommercialPriceBreakdown(
       type: (source === "coupon"
         ? "COUPON_DISCOUNT"
         : "TERM_DISCOUNT") as QuoteLineItemType,
-      label:
-        source === "coupon"
+      label: discountCapped
+        ? source === "coupon"
+          ? `تخفیف حداکثر قابل اعمال${input.couponCode ? ` (${input.couponCode})` : ""}`
+          : `تخفیف حداکثر قابل اعمال دوره ${termMonths} ماهه`
+        : source === "coupon"
           ? `تخفیف کد${input.couponCode ? ` ${input.couponCode}` : ""}`
           : `تخفیف دوره ${termMonths} ماهه`,
       amountIrr: -discountIrr,
       metadata: {
         basisPoints: discountBps,
+        appliedBasisPoints: appliedDiscountBps,
         termMonths,
         source,
         couponCode: input.couponCode ?? null,
+        requestedDiscountRial: requestedDiscountIrr.toString(),
+        maximumAllowedDiscountRial: maximumAllowedDiscountIrr.toString(),
+        appliedDiscountRial: discountIrr.toString(),
+        discountCapped,
+        minimumPostDiscountGrossMarginBps: minPostMargin,
       },
     });
   }
@@ -357,6 +441,10 @@ export function computeCommercialPriceBreakdown(
     termDiscountBps: discountBps,
     discountSource: source,
     monthlyPretaxRial: monthlyPretaxIrr,
+    requestedDiscountRial: requestedDiscountIrr,
+    maximumAllowedDiscountRial: maximumAllowedDiscountIrr,
+    discountCapped,
+    minimumPostDiscountGrossMarginBps: minPostMargin,
   };
 }
 

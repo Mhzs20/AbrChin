@@ -1055,6 +1055,10 @@ async function createCatalogServerQuote(params: {
         lineItemsSnapshot: serializeQuoteLineItems(
           plan.pricing.lineItems,
         ),
+        commercialEconomicsSnapshot:
+          (plan.pricing.commercialEconomicsSnapshot as
+            | Prisma.InputJsonValue
+            | undefined) ?? undefined,
         quotedAt: now,
         catalogVersion: plan.catalogItem.catalogVersion,
         providerPayloadHash: plan.catalogItem.payloadHash,
@@ -1522,6 +1526,10 @@ export async function createRecommendationQuotes(params: {
           lineItemsSnapshot: serializeQuoteLineItems(
             plan.pricing.lineItems,
           ),
+          commercialEconomicsSnapshot:
+            (plan.pricing.commercialEconomicsSnapshot as
+              | Prisma.InputJsonValue
+              | undefined) ?? undefined,
           quotedAt: now,
           catalogVersion: plan.catalogItem.catalogVersion,
           providerPayloadHash: plan.catalogItem.payloadHash,

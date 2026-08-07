@@ -6549,6 +6549,15 @@ try {
     update: { taxBps: 0 },
     create: { id: "default", taxBps: 0 },
   });
+  await db.profitCurveConfiguration.upsert({
+    where: { id: "default" },
+    update: { enabled: false },
+    create: {
+      id: "default",
+      enabled: false,
+      minimumPostDiscountGrossMarginBps: 2_000,
+    },
+  });
   await db.parchinPricingConfig.upsert({
     where: { level: ParchinLevel.PARCHIN_START },
     update: { active: true, priceRial: 100_000n },
@@ -7430,6 +7439,15 @@ try {
         productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
         enabled: true,
         markupBasisPoints: 0,
+      },
+    });
+    await db.profitCurveConfiguration.upsert({
+      where: { id: "default" },
+      update: { enabled: false },
+      create: {
+        id: "default",
+        enabled: false,
+        minimumPostDiscountGrossMarginBps: 2_000,
       },
     });
     const readyPlan =

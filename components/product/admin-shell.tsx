@@ -2,6 +2,7 @@
 
 import {
   Bell,
+  BookOpen,
   Building2,
   CreditCard,
   FileText,
@@ -68,6 +69,7 @@ const saleNav: NavItem[] = [
 
 const moneyNav: NavItem[] = [
   { href: "/admin/finance", label: "مرکز مالی", icon: Percent },
+  { href: "/admin/accounting", label: "حسابداری", icon: BookOpen },
   { href: "/admin/transactions", label: "تراکنش‌ها", icon: CreditCard },
   { href: "/admin/wallets", label: "کیف پول‌ها", icon: Wallet },
   { href: "/admin/wallet-topup-settings", label: "مبالغ شارژ Wallet", icon: Wallet },

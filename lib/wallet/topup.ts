@@ -769,6 +769,10 @@ async function settleVerifiedAttempt(
           attempt.status === PaymentAttemptStatus.SUCCEEDED &&
           existingLedger
         ) {
+          const { postWalletTopUpSucceeded } = await import(
+            "@/lib/accounting/posting"
+          );
+          await postWalletTopUpSucceeded(attempt.walletTopUp, tx);
           return {
             topUp: attempt.walletTopUp,
             attempt,
@@ -914,6 +918,10 @@ async function settleVerifiedAttempt(
             nextAttemptAt: null,
           },
         });
+        const { postWalletTopUpSucceeded } = await import(
+          "@/lib/accounting/posting"
+        );
+        await postWalletTopUpSucceeded(topUp, tx);
         return {
           topUp,
           attempt: updatedAttempt,

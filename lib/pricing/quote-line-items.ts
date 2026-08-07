@@ -33,5 +33,12 @@ export function calculateQuotePricing(input: QuotePricingInput) {
     finalPriceIrr: breakdown.finalPriceRial,
     renewalAmountIrr: breakdown.renewalPriceRial,
     lineItems: breakdown.lineItems,
+    requestedDiscountIrr: breakdown.requestedDiscountRial,
+    maximumAllowedDiscountIrr: breakdown.maximumAllowedDiscountRial,
+    discountCapped: breakdown.discountCapped,
+    minimumPostDiscountGrossMarginBps:
+      breakdown.minimumPostDiscountGrossMarginBps,
+    providerMarkupRial: breakdown.providerMarkupRial,
+    productMarkupRial: breakdown.productMarkupRial,
   };
 }

@@ -5,6 +5,21 @@ import {
 } from "@prisma/client";
 
 import type { FinanceConfigurationInput } from "@/lib/admin/finance-configuration";
+import {
+  parseProfitCurveConfig,
+  type ProfitCurveBandInput,
+} from "@/lib/pricing/profit-curve";
+
+function parseProfitCurveBody(raw: unknown) {
+  if (raw == null) return undefined;
+  const parsed = parseProfitCurveConfig(raw);
+  if (!parsed) throw new Error("invalid_configuration_body");
+  const bands: ProfitCurveBandInput[] = parsed.bands.map((band, index) => ({
+    ...band,
+    sortOrder: Number.isInteger(band.sortOrder) ? band.sortOrder : index,
+  }));
+  return { ...parsed, bands };
+}
 
 /** Strict body parser for PATCH /api/admin/finance/configuration. */
 export function parseFinanceConfigurationBody(
@@ -104,6 +119,7 @@ export function parseFinanceConfigurationBody(
       showDailyPrice: priceDisplay.showDailyPrice !== false,
       showMonthlyPrice: priceDisplay.showMonthlyPrice !== false,
     },
+    profitCurve: parseProfitCurveBody(body.profitCurve),
     reason: typeof body.reason === "string" ? body.reason : null,
     highMarginConfirmation:
       typeof body.highMarginConfirmation === "string"

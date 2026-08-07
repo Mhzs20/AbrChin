@@ -3,6 +3,7 @@
 import {
   Calculator,
   Compass,
+  LineChart,
   Percent,
   Shield,
   Ticket,
@@ -11,6 +12,13 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { CouponsPanel } from "@/components/admin/coupons-panel";
+import {
+  ProfitCurvePanelSection,
+  profitCurveDraftFromConfig,
+  serializeProfitCurveCandidate,
+  type ProfitCurveBandDraft,
+  type ProfitCurveImpactSummary,
+} from "@/components/admin/profit-curve-panel-section";
 import { SectionCard, StatusBadge } from "@/components/product";
 import {
   HIGH_MARGIN_CONFIRMATION_PHRASE,
@@ -68,6 +76,19 @@ type InitialConfiguration = {
     showDailyPrice: boolean;
     showMonthlyPrice: boolean;
   };
+  profitCurve?: {
+    enabled: boolean;
+    minimumPostDiscountGrossMarginBps: number;
+    bands: Array<{
+      id?: string;
+      sortOrder?: number;
+      minProviderCostRial: string;
+      maxProviderCostRial: string | null;
+      targetGrossMarginBps: number;
+    }>;
+    activeRevisionId?: string | null;
+    updatedAt?: string | null;
+  };
   revisions: Array<{
     id: string;
     createdAt: string;
@@ -124,8 +145,26 @@ type PreviewResponse = {
     decreasedPlans: number;
     unchangedPlans: number;
     notSellablePlans: number;
+    plansBecomingCheaper?: number;
+    plansBecomingMoreExpensive?: number;
+    largestIncrease?: ImpactRow | null;
+    largestDecrease?: ImpactRow | null;
+    averagePreviousEffectiveMarginBps?: number | null;
+    averageNewEffectiveMarginBps?: number | null;
+    minimumGrossProfitRial?: string | null;
+    maximumGrossProfitRial?: string | null;
+    dominatedPlanCountCurrent?: number;
+    dominatedPlanCountNew?: number;
+    newlyDominatedPlanCount?: number;
+    newlyVisiblePlanCount?: number;
+    monotonicity?: {
+      ok: boolean;
+      sampled: number;
+      failures: Array<{ code: string; message: string }>;
+    };
     topIncreases: ImpactRow[];
     topDecreases: ImpactRow[];
+    topAffected?: ImpactRow[];
     rows: ImpactRow[];
   } | null;
   parity: {
@@ -144,11 +183,13 @@ type ImpactRow = {
   deltaRial: string | null;
   deltaBps: number | null;
   sellable: boolean;
+  providerCostRial?: string | null;
 };
 
 const SECTIONS = [
   { id: "summary", label: "خلاصه", icon: Calculator },
   { id: "markup", label: "سود و قیمت‌گذاری", icon: TrendingUp },
+  { id: "profit-curve", label: "منحنی سود سرورها", icon: LineChart },
   { id: "parchin", label: "پرچین", icon: Shield },
   { id: "tax", label: "مالیات و چرخه", icon: Percent },
   { id: "compass", label: "قطب‌نما", icon: Compass },
@@ -284,6 +325,25 @@ export function FinanceCenterPanel({
   const [priceDisplay, setPriceDisplay] = useState(
     initialConfiguration.priceDisplay,
   );
+  const initialCurve = profitCurveDraftFromConfig(
+    initialConfiguration.profitCurve ?? {},
+  );
+  const [profitCurveEnabled, setProfitCurveEnabled] = useState(
+    initialCurve.enabled,
+  );
+  const [profitCurveBands, setProfitCurveBands] = useState<
+    ProfitCurveBandDraft[]
+  >(initialCurve.bands);
+  const [profitCurveFloorPercent, setProfitCurveFloorPercent] = useState(
+    initialCurve.floorPercent,
+  );
+  const [profitCurveMeta, setProfitCurveMeta] = useState({
+    activeRevisionId: initialCurve.activeRevisionId,
+    updatedAt: initialCurve.updatedAt,
+  });
+  const [curveImpact, setCurveImpact] =
+    useState<ProfitCurveImpactSummary | null>(null);
+  const [curveImpactLoading, setCurveImpactLoading] = useState(false);
   const [revisions, setRevisions] = useState(initialConfiguration.revisions);
 
   const [activeSection, setActiveSection] =
@@ -306,6 +366,9 @@ export function FinanceCenterPanel({
     compassPricesToman,
     parchin,
     priceDisplay,
+    profitCurveEnabled,
+    profitCurveBands,
+    profitCurveFloorPercent,
   });
   const [baselineSerialized, setBaselineSerialized] = useState(serialized);
   const dirty = serialized !== baselineSerialized;
@@ -344,6 +407,12 @@ export function FinanceCenterPanel({
     if (productRows.some((row) => row.markupBasisPoints == null)) return null;
     const taxBps = percentToBps(taxPercent);
     if (taxBps == null || taxBps > 10_000) return null;
+    const profitCurve = serializeProfitCurveCandidate(
+      profitCurveEnabled,
+      profitCurveFloorPercent,
+      profitCurveBands,
+    );
+    if (!profitCurve) return null;
     return {
       providers: providerRows,
       productMarkups: productRows,
@@ -365,6 +434,7 @@ export function FinanceCenterPanel({
         active: item.active,
       })),
       priceDisplay,
+      profitCurve,
     };
   }, [
     compassPricesToman,
@@ -372,6 +442,9 @@ export function FinanceCenterPanel({
     parchin,
     priceDisplay,
     productMarkups,
+    profitCurveBands,
+    profitCurveEnabled,
+    profitCurveFloorPercent,
     providers,
     taxPercent,
   ]);
@@ -478,12 +551,41 @@ export function FinanceCenterPanel({
       };
       if (!response.ok) throw new Error(body.error ?? "بررسی اثر ممکن نشد.");
       setPublishReview(body);
+      if (body.impact) setCurveImpact(body.impact);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "بررسی اثر ممکن نشد.",
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function previewProfitCurveImpact() {
+    const candidate = buildCandidate();
+    if (!candidate) {
+      setError("مقدارهای منحنی سود معتبر نیستند.");
+      return;
+    }
+    setCurveImpactLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/finance/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ candidate, includeImpact: true }),
+      });
+      const body = (await response.json()) as PreviewResponse & {
+        error?: string;
+      };
+      if (!response.ok) throw new Error(body.error ?? "پیش‌نمایش اثر ممکن نشد.");
+      setCurveImpact(body.impact);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "پیش‌نمایش اثر ممکن نشد.",
+      );
+    } finally {
+      setCurveImpactLoading(false);
     }
   }
 
@@ -516,7 +618,21 @@ export function FinanceCenterPanel({
       };
       if (!response.ok) throw new Error(body.error ?? "انتشار ممکن نشد.");
       setBaselineSerialized(serialized);
-      if (body.configuration) setRevisions(body.configuration.revisions);
+      if (body.configuration) {
+        setRevisions(body.configuration.revisions);
+        if (body.configuration.profitCurve) {
+          const nextCurve = profitCurveDraftFromConfig(
+            body.configuration.profitCurve,
+          );
+          setProfitCurveEnabled(nextCurve.enabled);
+          setProfitCurveBands(nextCurve.bands);
+          setProfitCurveFloorPercent(nextCurve.floorPercent);
+          setProfitCurveMeta({
+            activeRevisionId: nextCurve.activeRevisionId,
+            updatedAt: nextCurve.updatedAt,
+          });
+        }
+      }
       setPublishReview(null);
       setPublishReason("");
       setHighMarginText("");
@@ -600,6 +716,14 @@ export function FinanceCenterPanel({
       })),
     );
     setPriceDisplay(configuration.priceDisplay);
+    const nextCurve = profitCurveDraftFromConfig(configuration.profitCurve ?? {});
+    setProfitCurveEnabled(nextCurve.enabled);
+    setProfitCurveBands(nextCurve.bands);
+    setProfitCurveFloorPercent(nextCurve.floorPercent);
+    setProfitCurveMeta({
+      activeRevisionId: nextCurve.activeRevisionId,
+      updatedAt: nextCurve.updatedAt,
+    });
     // New values become the saved baseline.
     setBaselineSerialized(JSON.stringify({
       providers: configuration.providers.map((item) => ({
@@ -634,6 +758,9 @@ export function FinanceCenterPanel({
         priceToman: rialToTomanDigits(item.priceRial),
       })),
       priceDisplay: configuration.priceDisplay,
+      profitCurveEnabled: nextCurve.enabled,
+      profitCurveBands: nextCurve.bands,
+      profitCurveFloorPercent: nextCurve.floorPercent,
     }));
   }
 
@@ -970,6 +1097,13 @@ export function FinanceCenterPanel({
                   <button
                     type="button"
                     className="product-btn product-btn--quiet"
+                    onClick={() => setActiveSection("profit-curve")}
+                  >
+                    منحنی سود سرورها
+                  </button>
+                  <button
+                    type="button"
+                    className="product-btn product-btn--quiet"
                     onClick={() => setActiveSection("parchin")}
                   >
                     تنظیم پرچین
@@ -1229,6 +1363,22 @@ export function FinanceCenterPanel({
                 </div>
               </SectionCard>
             </section>
+          ) : null}
+
+          {activeSection === "profit-curve" ? (
+            <ProfitCurvePanelSection
+              enabled={profitCurveEnabled}
+              onEnabledChange={setProfitCurveEnabled}
+              bands={profitCurveBands}
+              onBandsChange={setProfitCurveBands}
+              floorPercent={profitCurveFloorPercent}
+              onFloorChange={setProfitCurveFloorPercent}
+              activeRevisionId={profitCurveMeta.activeRevisionId}
+              updatedAt={profitCurveMeta.updatedAt}
+              impact={curveImpact}
+              impactLoading={curveImpactLoading}
+              onPreviewImpact={() => void previewProfitCurveImpact()}
+            />
           ) : null}
 
           {activeSection === "parchin" ? (
@@ -1573,23 +1723,33 @@ export function FinanceCenterPanel({
               ) : null}
               {publishReview.impact &&
               (publishReview.impact.topIncreases.length > 0 ||
-                publishReview.impact.topDecreases.length > 0) ? (
+                publishReview.impact.topDecreases.length > 0 ||
+                (publishReview.impact.topAffected?.length ?? 0) > 0) ? (
                 <ul className="finance-impact-list">
-                  {publishReview.impact.topIncreases.map((row) => (
-                    <li key={`inc-${row.planId}`}>
-                      بیشترین افزایش: {row.title} —{" "}
-                      {formatTomanFromRialString(row.currentFinalRial ?? "0")} ←{" "}
-                      {formatTomanFromRialString(row.candidateFinalRial ?? "0")}
-                    </li>
-                  ))}
-                  {publishReview.impact.topDecreases.map((row) => (
-                    <li key={`dec-${row.planId}`}>
-                      بیشترین کاهش: {row.title} —{" "}
-                      {formatTomanFromRialString(row.currentFinalRial ?? "0")} ←{" "}
-                      {formatTomanFromRialString(row.candidateFinalRial ?? "0")}
-                    </li>
-                  ))}
+                  {(publishReview.impact.topAffected?.length
+                    ? publishReview.impact.topAffected
+                    : [
+                        ...publishReview.impact.topIncreases,
+                        ...publishReview.impact.topDecreases,
+                      ]
+                  )
+                    .slice(0, 10)
+                    .map((row) => (
+                      <li key={`aff-${row.planId}`}>
+                        {row.title} —{" "}
+                        {formatTomanFromRialString(row.currentFinalRial ?? "0")} ←{" "}
+                        {formatTomanFromRialString(
+                          row.candidateFinalRial ?? "0",
+                        )}
+                      </li>
+                    ))}
                 </ul>
+              ) : null}
+              {publishReview.impact?.monotonicity &&
+              !publishReview.impact.monotonicity.ok ? (
+                <p className="pricing-save-err">
+                  منحنی سود یکنواخت نیست؛ انتشار مسدود است.
+                </p>
               ) : null}
               {publishReview.parity ? (
                 publishReview.parity.ok ? (
@@ -1635,6 +1795,7 @@ export function FinanceCenterPanel({
                 disabled={
                   saving ||
                   publishReview.parity?.ok === false ||
+                  publishReview.impact?.monotonicity?.ok === false ||
                   (publishReview.guardrails.level === "confirm" &&
                     highMarginText.trim() !== HIGH_MARGIN_CONFIRMATION_PHRASE)
                 }

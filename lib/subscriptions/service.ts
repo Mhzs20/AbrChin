@@ -358,6 +358,10 @@ export async function payRenewalQuote(params: {
       where: { idempotencyKey },
     });
     if (existingLedger?.status === LedgerStatus.COMPLETED) {
+      const { postServiceRenewalCompleted } = await import(
+        "@/lib/accounting/posting"
+      );
+      await postServiceRenewalCompleted(quote, tx);
       return tx.serviceSubscription.findUniqueOrThrow({
         where: { id: subscription.id },
       });
@@ -414,13 +418,17 @@ export async function payRenewalQuote(params: {
         autoRenew: false,
       },
     });
-    await tx.serviceRenewalQuote.update({
+    const paidQuote = await tx.serviceRenewalQuote.update({
       where: { id: quote.id },
       data: {
         status: RenewalQuoteStatus.PAID,
         paidAt: new Date(),
       },
     });
+    const { postServiceRenewalCompleted } = await import(
+      "@/lib/accounting/posting"
+    );
+    await postServiceRenewalCompleted(paidQuote, tx);
     await tx.adminNotification.create({
       data: {
         type: AdminNotificationType.RENEWAL_PAID,

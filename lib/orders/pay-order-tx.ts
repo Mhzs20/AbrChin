@@ -402,7 +402,14 @@ export async function executePayOrderWithWalletTx(
         });
       }
     }
-    const paidOrder = await tx.serviceOrder.findUniqueOrThrow({ where: { id: order.id } });
+    const paidOrder = await tx.serviceOrder.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { recommendationQuote: true },
+    });
+    const { postServicePurchaseCompleted } = await import(
+      "@/lib/accounting/posting"
+    );
+    await postServicePurchaseCompleted(paidOrder, tx);
     const infra = await tx.infrastructureOrder.findUnique({ where: { serviceOrderId: order.id } });
     return { order: paidOrder, infrastructureOrder: infra };
   }
@@ -453,6 +460,17 @@ export async function executePayOrderWithWalletTx(
   });
   if (paid.count !== 1) {
     throw new WalletError("invalid_status", "این سفارش قابل پرداخت نیست.");
+  }
+
+  {
+    const paidForAccounting = await tx.serviceOrder.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { recommendationQuote: true },
+    });
+    const { postServicePurchaseCompleted } = await import(
+      "@/lib/accounting/posting"
+    );
+    await postServicePurchaseCompleted(paidForAccounting, tx);
   }
 
   if (order.couponCodeSnapshot) {

@@ -5139,3 +5139,239 @@ a:focus-visible {
 .ready-quote-parchin h3 {
   margin: 0;
 }
+
+/* Profit curve editor */
+.profit-curve-table th,
+.profit-curve-table td {
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.profit-curve-input {
+  width: 7.5rem;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid var(--product-border, #d7deea);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.profit-curve-chart {
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+  display: block;
+  margin-top: 8px;
+  background: linear-gradient(180deg, #f7faff 0%, #fff 100%);
+  border: 1px solid var(--product-border, #d7deea);
+  border-radius: 12px;
+}
+
+/* Accounting center */
+.accounting-center {
+  display: grid;
+  gap: 1rem;
+}
+
+.accounting-disclaimer {
+  padding: 10px 14px;
+  border: 1px solid #f0d9a8;
+  border-radius: 12px;
+  background: #fff8e8;
+  color: #6a4b12;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.accounting-toolbar {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--product-border, #d7deea);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.accounting-range,
+.accounting-view-toggle,
+.accounting-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.accounting-chip {
+  border: 1px solid var(--product-border, #d7deea);
+  background: #f7f9fc;
+  color: var(--product-navy, #123);
+  border-radius: 10px;
+  padding: 6px 11px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.accounting-chip--active {
+  background: #1565c0;
+  border-color: #1565c0;
+  color: #fff;
+}
+
+.accounting-custom-range,
+.accounting-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.accounting-custom-range label,
+.accounting-filters select,
+.accounting-filters input {
+  min-height: 36px;
+  border: 1px solid var(--product-border, #d7deea);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: #fff;
+  font-size: 0.84rem;
+}
+
+.accounting-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.accounting-kpi-card {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--product-border, #d7deea);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.accounting-kpi-card > span {
+  font-size: 0.74rem;
+  color: var(--product-muted, #5b6b82);
+  font-weight: 600;
+}
+
+.accounting-kpi-card > strong {
+  font-size: 1.02rem;
+}
+
+.accounting-kpi-card > small {
+  color: var(--product-muted, #5b6b82);
+  font-size: 0.72rem;
+}
+
+.accounting-mix-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #eef2f8;
+}
+
+.accounting-mix-bar .mix-net { background: #1565c0; }
+.accounting-mix-bar .mix-cogs { background: #2e7d32; }
+.accounting-mix-bar .mix-opex { background: #ef6c00; }
+.accounting-mix-bar .mix-profit { background: #6a1b9a; }
+
+.accounting-timeline {
+  width: 100%;
+  max-width: 480px;
+  margin-top: 12px;
+}
+
+.accounting-order-row {
+  cursor: pointer;
+}
+
+.accounting-order-row:hover {
+  background: #f4f8ff;
+}
+
+.accounting-simple-list,
+.accounting-journal-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.accounting-simple-list li,
+.accounting-journal-list li {
+  padding: 10px 12px;
+  border: 1px solid var(--product-border, #d7deea);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.accounting-journal-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.accounting-expenses {
+  display: grid;
+  gap: 1rem;
+}
+
+.accounting-drawer {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 28, 45, 0.28);
+  display: grid;
+  justify-content: end;
+  z-index: 40;
+}
+
+.accounting-drawer-panel {
+  width: min(420px, 100vw);
+  height: 100%;
+  overflow: auto;
+  background: #fff;
+  padding: 16px;
+  box-shadow: -8px 0 24px rgba(18, 28, 45, 0.12);
+}
+
+.accounting-drawer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.accounting-drawer-head h3 {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.accounting-drawer-dl {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.accounting-drawer-dl > div {
+  display: grid;
+  gap: 2px;
+}
+
+.accounting-drawer-dl dt {
+  font-size: 0.74rem;
+  color: var(--product-muted, #5b6b82);
+}
+
+.accounting-drawer-dl dd {
+  margin: 0;
+}

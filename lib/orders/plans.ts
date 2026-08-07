@@ -37,6 +37,12 @@ import {
   deriveUsageEquivalentPrices,
 } from "@/lib/pricing/commercial-engine";
 import {
+  buildCommercialEconomicsSnapshot,
+  coerceProfitCurveConfig,
+  minimumPostDiscountMarginFromConfigs,
+  resolveProviderMarkupForPlan,
+} from "@/lib/pricing/profit-curve-apply";
+import {
   calculateFinalPriceRial,
   decimalToScaledInteger,
 } from "@/lib/pricing/provider-pricing";
@@ -80,6 +86,7 @@ export type PlanSnapshot = {
   taxBasisPointsSnapshot: number;
   taxAmountRialSnapshot: string;
   lineItemsSnapshot: ReturnType<typeof serializeQuoteLineItems>;
+  commercialEconomicsSnapshot?: Record<string, unknown> | null;
   catalogVersion: string | null;
   providerPayloadHash: string | null;
   finalPriceRialSnapshot: string;
@@ -213,6 +220,8 @@ export function toPlanSnapshot(
     taxBasisPointsSnapshot: plan.pricing.taxBasisPoints ?? 0,
     taxAmountRialSnapshot: (plan.pricing.taxAmountRial ?? 0n).toString(),
     lineItemsSnapshot: serializeQuoteLineItems(plan.pricing.lineItems ?? []),
+    commercialEconomicsSnapshot:
+      plan.pricing.commercialEconomicsSnapshot ?? null,
     catalogVersion: plan.catalogItem?.catalogVersion ?? null,
     providerPayloadHash: plan.catalogItem?.payloadHash ?? null,
     finalPriceRialSnapshot: plan.pricing.finalPriceRial.toString(),
@@ -289,13 +298,32 @@ export function toPublicPlanOffer(
 }
 
 async function pricingConfigs() {
-  const [providers, products, commerce, parchin] = await Promise.all([
-    prisma.providerPricingConfig.findMany(),
-    prisma.productPricingConfig.findMany({ where: { enabled: true } }),
-    prisma.commercePricingConfig.findUnique({ where: { id: "default" } }),
-    prisma.parchinPricingConfig.findMany({ where: { active: true } }),
-  ]);
-  return { providers, products, commerce, parchin };
+  const [providers, products, commerce, parchin, profitCurveRow] =
+    await Promise.all([
+      prisma.providerPricingConfig.findMany(),
+      prisma.productPricingConfig.findMany({ where: { enabled: true } }),
+      prisma.commercePricingConfig.findUnique({ where: { id: "default" } }),
+      prisma.parchinPricingConfig.findMany({ where: { active: true } }),
+      prisma.profitCurveConfiguration.findUnique({
+        where: { id: "default" },
+        include: { bands: { orderBy: { sortOrder: "asc" } } },
+      }),
+    ]);
+  const profitCurve = profitCurveRow
+    ? {
+        enabled: profitCurveRow.enabled,
+        minimumPostDiscountGrossMarginBps:
+          profitCurveRow.minimumPostDiscountGrossMarginBps,
+        bands: profitCurveRow.bands.map((band) => ({
+          id: band.id,
+          sortOrder: band.sortOrder,
+          minProviderCostRial: band.minProviderCostRial,
+          maxProviderCostRial: band.maxProviderCostRial,
+          targetGrossMarginBps: band.targetGrossMarginBps,
+        })),
+      }
+    : { ...coerceProfitCurveConfig(null), enabled: false };
+  return { providers, products, commerce, parchin, profitCurve };
 }
 
 export type PricingConfigs = Awaited<ReturnType<typeof pricingConfigs>>;
@@ -338,14 +366,49 @@ export function resolveConfiguredPlanPricing(
     (!manualAdmin && (!provider || !product)) ||
     !minimumParchinLevel ||
     !parchin
-  ) return null;
-  return resolvePlanPricing(plan, manualAdmin ? null : provider!, {
-    // Provider markup is always configured at the provider level. A SKU can
-    // intentionally override only the product-level increment; it never
-    // replaces or bypasses the provider default.
-    productMarkupBasisPoints: manualAdmin
+  )
+    return null;
+
+  const providerCostRial = plan.catalogItem
+    ? catalogItemBasePriceRial(plan.catalogItem)
+    : null;
+  if (!manualAdmin && (providerCostRial == null || providerCostRial <= 0n)) {
+    return null;
+  }
+
+  const productMarkupBasisPoints = manualAdmin
+    ? 0
+    : plan.skuMarkupBasisPoints ?? product!.markupBasisPoints;
+
+  const markup = resolveProviderMarkupForPlan({
+    plan,
+    providerMonthlyCostRial: providerCostRial ?? 0n,
+    providerConfigMarkupBps: manualAdmin
       ? 0
-      : plan.skuMarkupBasisPoints ?? product!.markupBasisPoints,
+      : provider!.markupBasisPoints,
+    profitCurve: configs.profitCurve,
+    manualAdmin,
+  });
+
+  const minPostMargin = minimumPostDiscountMarginFromConfigs(
+    configs.commerce,
+    configs.profitCurve,
+  );
+
+  const economics = buildCommercialEconomicsSnapshot({
+    profitCurve: configs.profitCurve,
+    curveResolution: markup.curve,
+    providerCostRial: providerCostRial ?? 0n,
+    providerMarkupBps: markup.providerMarkupBps,
+    productMarkupBps: productMarkupBasisPoints,
+    source: markup.source,
+  });
+
+  return resolvePlanPricing(plan, manualAdmin ? null : {
+    ...provider!,
+    markupBasisPoints: markup.providerMarkupBps,
+  }, {
+    productMarkupBasisPoints,
     taxBasisPoints: configs.commerce?.taxBps ?? 1000,
     parchinLevel: selectedParchinLevel,
     parchinPriceRial: parchin.priceRial,
@@ -354,6 +417,9 @@ export function resolveConfiguredPlanPricing(
     termMonths: termOptions.termMonths ?? 1,
     couponDiscountBps: termOptions.couponDiscountBps,
     couponCode: termOptions.couponCode,
+    minimumPostDiscountGrossMarginBps: minPostMargin,
+    infrastructureSaleRialOverride: markup.infrastructureSaleRialOverride,
+    commercialEconomicsSnapshot: economics,
   });
 }
 

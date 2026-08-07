@@ -70,7 +70,6 @@ export function AdminWalletsPanel({
       void lookupMobile(initialMobile.trim());
     }, 0);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMobile]);
 
   async function lookup(event: FormEvent) {

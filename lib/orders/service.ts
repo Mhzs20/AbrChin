@@ -374,6 +374,11 @@ export async function createServiceOrderFromQuote(userId: string, quoteId: strin
           quote.parchinServiceSnapshot === undefined
             ? undefined
             : (quote.parchinServiceSnapshot as Prisma.InputJsonValue),
+        commercialEconomicsSnapshot:
+          quote.commercialEconomicsSnapshot === null ||
+          quote.commercialEconomicsSnapshot === undefined
+            ? undefined
+            : (quote.commercialEconomicsSnapshot as Prisma.InputJsonValue),
         productFlowState: "QUOTED",
         productFlowRevision: quote.session.productFlowRevision,
       },
@@ -586,6 +591,14 @@ export async function refundOrder(params: {
       };
     }
     if (order.status === ServiceOrderStatus.REFUNDED) {
+      const fullOrder = await tx.serviceOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        include: { recommendationQuote: true },
+      });
+      const { postServiceRefundCompleted } = await import(
+        "@/lib/accounting/posting"
+      );
+      await postServiceRefundCompleted(fullOrder, tx);
       await persistAdminCommandReceiptTx(tx, command, {
         serviceOrderId: order.id,
         infrastructureOrderId: infra?.id ?? null,
@@ -892,6 +905,15 @@ export async function refundOrder(params: {
       tx,
     );
 
+    const refundedOrder = await tx.serviceOrder.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { recommendationQuote: true },
+    });
+    const { postServiceRefundCompleted } = await import(
+      "@/lib/accounting/posting"
+    );
+    await postServiceRefundCompleted(refundedOrder, tx);
+
     await persistAdminCommandReceiptTx(tx, command, {
       serviceOrderId: order.id,
       infrastructureOrderId: infra?.id ?? null,
@@ -905,6 +927,6 @@ export async function refundOrder(params: {
       containsSecret: false,
     });
 
-    return tx.serviceOrder.findUniqueOrThrow({ where: { id: order.id } });
+    return refundedOrder;
   });
 }

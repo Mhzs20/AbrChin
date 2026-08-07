@@ -20,6 +20,7 @@ import {
   grossMarginBpsToMarkupBps,
   serializeQuoteLineItems,
 } from "@/lib/pricing/commercial-engine";
+import { parseProfitCurveConfig } from "@/lib/pricing/profit-curve";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,13 @@ function parseCandidate(raw: unknown): FinanceConfigurationInput {
     value.priceDisplay && typeof value.priceDisplay === "object"
       ? (value.priceDisplay as Record<string, unknown>)
       : {};
+  const profitCurve =
+    value.profitCurve == null
+      ? undefined
+      : parseProfitCurveConfig(value.profitCurve);
+  if (value.profitCurve != null && !profitCurve) {
+    throw new Error("invalid_candidate");
+  }
   return {
     providers: providers.map((row) => {
       const item = row as Record<string, unknown>;
@@ -101,6 +109,7 @@ function parseCandidate(raw: unknown): FinanceConfigurationInput {
       showDailyPrice: priceDisplay.showDailyPrice !== false,
       showMonthlyPrice: priceDisplay.showMonthlyPrice !== false,
     },
+    profitCurve: profitCurve ?? undefined,
   };
 }
 

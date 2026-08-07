@@ -40,6 +40,10 @@ export type EffectivePlanPricing = {
   ramGb: number | null;
   storageGb: number | null;
   available: boolean;
+  discountCapped?: boolean;
+  requestedDiscountRial?: bigint;
+  maximumAllowedDiscountRial?: bigint;
+  commercialEconomicsSnapshot?: Record<string, unknown> | null;
 };
 
 export type PlanPricingOptions = {
@@ -52,6 +56,9 @@ export type PlanPricingOptions = {
   termMonths?: 1 | 3 | 6 | 12;
   couponDiscountBps?: number | null;
   couponCode?: string | null;
+  minimumPostDiscountGrossMarginBps?: number | null;
+  infrastructureSaleRialOverride?: bigint | null;
+  commercialEconomicsSnapshot?: Record<string, unknown> | null;
 };
 
 export function compatibleImageCodes(item: {
@@ -97,6 +104,10 @@ export function resolveCatalogItemPricing(
     termMonths: options.termMonths ?? 1,
     couponDiscountBps: options.couponDiscountBps,
     couponCode: options.couponCode,
+    minimumPostDiscountGrossMarginBps:
+      options.minimumPostDiscountGrossMarginBps ?? null,
+    infrastructureSaleRialOverride:
+      options.infrastructureSaleRialOverride ?? null,
   });
   return {
     catalogItemId: item.id,
@@ -120,6 +131,10 @@ export function resolveCatalogItemPricing(
     ramGb: item.ramMb == null ? null : Math.ceil(item.ramMb / 1024),
     storageGb: item.diskGb,
     available: true,
+    discountCapped: quotePricing.discountCapped,
+    requestedDiscountRial: quotePricing.requestedDiscountIrr,
+    maximumAllowedDiscountRial: quotePricing.maximumAllowedDiscountIrr,
+    commercialEconomicsSnapshot: options.commercialEconomicsSnapshot ?? null,
   };
 }
 

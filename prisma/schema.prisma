@@ -618,6 +618,10 @@ model User {
   outstandingBalances         OutstandingBalance[]
   billingAdjustmentsCreated   BillingAdjustment[]                 @relation("BillingAdjustmentCreatedBy")
   billingAdjustments          BillingAdjustment[]
+  operatingExpensesCreated    OperatingExpense[]                  @relation("OperatingExpenseCreatedBy")
+  operatingExpensesPosted     OperatingExpense[]                  @relation("OperatingExpensePostedBy")
+  operatingExpensesReversed   OperatingExpense[]                  @relation("OperatingExpenseReversedBy")
+  profitCurveUpdated          ProfitCurveConfiguration[]          @relation("ProfitCurveUpdatedBy")
 }
 
 model OtpChallenge {
@@ -790,6 +794,8 @@ model ServiceOrder {
   parchinLevel           ParchinLevel?
   /// Immutable Parchin service-contract snapshot copied from the locked Quote.
   parchinServiceSnapshot Json?
+  /// Immutable commercial economics / profit-curve audit snapshot at purchase.
+  commercialEconomicsSnapshot Json?
   productFlowState       String?
   productFlowRevision    Int                           @default(0)
   paidAt                 DateTime?
@@ -1011,6 +1017,8 @@ model RecommendationQuote {
   parchinPriceIrr               BigInt?
   /// Immutable Parchin service-contract snapshot (version, includes, excludes).
   parchinServiceSnapshot        Json?
+  /// Immutable commercial economics / profit-curve audit snapshot at quote lock.
+  commercialEconomicsSnapshot   Json?
   providerAddonsSnapshot        Json?
   deliveryConfigurationSnapshot Json?
   taxBasisPointsSnapshot        Int?
@@ -2248,15 +2256,17 @@ model CouponRedemption {
 }
 
 model CommercePricingConfig {
-  id                         String   @id @default("default")
-  taxBps                     Int      @default(1000)
-  reminderDaysBeforeDue      Int      @default(7)
-  suspendGraceDaysAfterZero  Int      @default(7)
-  deleteDaysAfterSuspend     Int      @default(7)
+  id                                   String   @id @default("default")
+  taxBps                               Int      @default(1000)
+  reminderDaysBeforeDue                Int      @default(7)
+  suspendGraceDaysAfterZero            Int      @default(7)
+  deleteDaysAfterSuspend               Int      @default(7)
+  /// Floor gross margin (bps) after discount on infrastructure economics.
+  minimumPostDiscountGrossMarginBps    Int      @default(2000)
   /// Admin-priced Compass service packages (code -> rial string).
-  compassServicePrices       Json     @default("{}")
-  updatedById                String?
-  updatedAt                  DateTime @updatedAt
+  compassServicePrices                 Json     @default("{}")
+  updatedById                          String?
+  updatedAt                            DateTime @updatedAt
 }
 
 model ParchinPricingConfig {
@@ -2469,4 +2479,129 @@ model SecureDeliveryEvent {
 
   @@index([infrastructureOrderId, status, createdAt])
   @@index([cloudInstanceId, createdAt])
+}
+
+enum AccountingJournalStatus {
+  PENDING
+  POSTED
+  REVERSED
+}
+
+enum AccountingQuality {
+  FINAL
+  ESTIMATED
+  NEEDS_RECONCILIATION
+  REVERSED
+}
+
+enum OperatingExpenseStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+enum OperatingExpenseCategory {
+  GATEWAY_FEES
+  SMS_EXPENSE
+  SUPPORT_OPERATIONS
+  HOSTING_OPERATIONS
+  MARKETING_EXPENSE
+  PAYROLL_CONTRACTOR
+  OTHER_OPERATING_EXPENSE
+}
+
+/// Append-only operational accounting journal header.
+model AccountingJournalEntry {
+  id              String                  @id @default(cuid())
+  eventType       String
+  referenceType   String
+  referenceId     String
+  idempotencyKey  String                  @unique
+  occurredAt      DateTime
+  status          AccountingJournalStatus @default(POSTED)
+  quality         AccountingQuality       @default(FINAL)
+  metadata        Json?
+  postedAt        DateTime                @default(now())
+  /// When set, this entry reverses the referenced posted entry.
+  reversesEntryId String?                 @unique
+  actorUserId     String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  lines           AccountingJournalLine[]
+  reversesEntry   AccountingJournalEntry? @relation("JournalReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict)
+  reversedByEntry AccountingJournalEntry? @relation("JournalReversal")
+
+  @@index([referenceType, referenceId])
+  @@index([eventType, occurredAt])
+  @@index([status, occurredAt])
+  @@index([quality, occurredAt])
+}
+
+model AccountingJournalLine {
+  id             String                 @id @default(cuid())
+  journalEntryId String
+  accountCode    String
+  debitRial      BigInt                 @default(0)
+  creditRial     BigInt                 @default(0)
+  description    String?
+  metadata       Json?
+  sortOrder      Int                    @default(0)
+  createdAt      DateTime               @default(now())
+  journalEntry   AccountingJournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+
+  @@index([journalEntryId, sortOrder])
+  @@index([accountCode])
+}
+
+model OperatingExpense {
+  id              String                   @id @default(cuid())
+  date            DateTime
+  amountRial      BigInt
+  category        OperatingExpenseCategory
+  title           String
+  description     String?
+  vendor          String?
+  reference       String?
+  notes           String?
+  status          OperatingExpenseStatus   @default(DRAFT)
+  createdById     String
+  postedById      String?
+  reversedById    String?
+  postedAt        DateTime?
+  reversedAt      DateTime?
+  journalEntryId  String?                  @unique
+  reversalReason  String?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  createdBy       User                     @relation("OperatingExpenseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  postedBy        User?                    @relation("OperatingExpensePostedBy", fields: [postedById], references: [id], onDelete: SetNull)
+  reversedBy      User?                    @relation("OperatingExpenseReversedBy", fields: [reversedById], references: [id], onDelete: SetNull)
+
+  @@index([status, date])
+  @@index([category, date])
+  @@index([createdById, createdAt])
+}
+
+model ProfitCurveConfiguration {
+  id                                String            @id @default("default")
+  enabled                           Boolean           @default(true)
+  minimumPostDiscountGrossMarginBps Int               @default(2000)
+  activeRevisionId                  String?
+  updatedAt                         DateTime          @updatedAt
+  updatedById                       String?
+  updatedBy                         User?             @relation("ProfitCurveUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  bands                             ProfitCurveBand[]
+}
+
+model ProfitCurveBand {
+  id                   String                   @id @default(cuid())
+  configurationId      String                   @default("default")
+  sortOrder            Int
+  minProviderCostRial  BigInt
+  maxProviderCostRial  BigInt?
+  targetGrossMarginBps Int
+  configuration        ProfitCurveConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+
+  @@unique([configurationId, sortOrder])
+  @@index([configurationId, minProviderCostRial])
 }
