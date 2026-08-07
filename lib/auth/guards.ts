@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { isEligibleAdmin } from "@/lib/admin/eligibility";
 import {
   AuthRequiredError,
   getCurrentUser,
@@ -24,7 +25,8 @@ export class CustomerRequiredError extends Error {
 
 export async function requireAdmin(): Promise<PublicUser> {
   const user = await requireCurrentUser();
-  if (user.role !== "ADMIN") {
+  // toPublicUser already applies ADMIN_MOBILES; re-check for defense in depth.
+  if (!isEligibleAdmin(user)) {
     throw new AdminRequiredError();
   }
   return user;
@@ -47,7 +49,7 @@ export async function getAdminPageAccess(): Promise<{
 }> {
   const user = await getCurrentUser();
   if (!user) redirect("/login?next=/admin");
-  return { user, allowed: user.role === "ADMIN" };
+  return { user, allowed: isEligibleAdmin(user) };
 }
 
 export async function requireCustomerPage(): Promise<PublicUser> {

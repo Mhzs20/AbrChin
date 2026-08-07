@@ -1670,6 +1670,32 @@ export async function getActiveCloudServerQuote(
   return quote && isCloudServerProfile(quote.session.profile) ? quote : null;
 }
 
+/**
+ * Read-only ownership lookup for expired/invalid quotes.
+ * Used to render an explicit refresh CTA — never mutates.
+ */
+export async function getOwnedRecommendationQuote(
+  id: string,
+  userId?: string | null,
+  guestToken?: string | null,
+) {
+  const quote = await prisma.recommendationQuote.findUnique({
+    where: { id },
+    include: { plan: true, session: true, serviceOrder: true },
+  });
+  if (!quote) return null;
+  try {
+    await requireConversationAccess({
+      sessionId: quote.sessionId,
+      userId,
+      guestToken,
+    });
+    return quote;
+  } catch {
+    return null;
+  }
+}
+
 export async function refreshRecommendationQuote(params: {
   quoteId: string;
   userId: string;

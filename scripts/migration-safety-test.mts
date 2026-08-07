@@ -317,3 +317,19 @@ test("operating expense draft idempotency migration is additive", async () => {
   assert.doesNotMatch(migration, /UPDATE "OperatingExpense"/);
   assert.doesNotMatch(migration, /UPDATE "AccountingJournalEntry"/);
 });
+
+test("rate limit bucket migration is additive and PAYG repair is forward-only", async () => {
+  const migration = await readFile(
+    "prisma/migrations/20260807130000_rate_limit_bucket_and_payg_repair/migration.sql",
+    "utf8",
+  );
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "RateLimitBucket"/);
+  assert.match(migration, /UPDATE "InfrastructurePlan"/);
+  assert.match(migration, /PREPAID_TERM/);
+  assert.doesNotMatch(migration, /\bDROP TABLE\b/i);
+  assert.doesNotMatch(migration, /\bTRUNCATE\b/i);
+  assert.doesNotMatch(migration, /DELETE FROM/i);
+  assert.doesNotMatch(migration, /UPDATE "ServiceOrder"/);
+  assert.doesNotMatch(migration, /UPDATE "WalletLedgerEntry"/);
+  assert.doesNotMatch(migration, /UPDATE "RecommendationQuote"/);
+});

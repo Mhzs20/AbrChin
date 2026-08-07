@@ -5,21 +5,21 @@ import { redirect } from "next/navigation";
 
 import { OrderCheckoutPanel } from "@/components/account/order-checkout-panel";
 import { QuoteCountdown } from "@/components/quote-countdown";
+import { QuoteExpiredRefresh } from "@/components/quote/quote-expired-refresh";
 import {
   readyServerImageLabel,
   readyServerLocation,
 } from "@/lib/cloud-servers/catalog";
-import { prisma } from "@/lib/db";
 import { formatTomanFa } from "@/lib/money";
-import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 import { readParchinServiceSnapshot } from "@/lib/parchin/service-contract";
 import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
 import {
   getActiveCloudServerQuote,
-  refreshRecommendationQuote,
+  getOwnedRecommendationQuote,
   toPublicRecommendationQuote,
 } from "@/lib/recommendation/quote-service";
 import { getCurrentUser } from "@/lib/session";
+import { getWalletForUser } from "@/lib/wallet/ensure-wallet";
 
 export const metadata: Metadata = {
   title: "Quote سرور آماده | ابرچین",
@@ -37,38 +37,29 @@ export default async function ReadyServerQuotePage({
 }) {
   const [{ id }, { renewed }] = await Promise.all([params, searchParams]);
   const user = await getCurrentUser();
+  const guestToken = user ? null : await getRecommendationGuestToken();
   const quoteRecord = await getActiveCloudServerQuote(
     id,
     user?.id ?? null,
-    user ? null : await getRecommendationGuestToken(),
+    guestToken,
   );
   if (!quoteRecord) {
-    let replacementId: string | null = null;
-    if (user) {
-      try {
-        const replacement = await refreshRecommendationQuote({
-          quoteId: id,
-          userId: user.id,
-        });
-        replacementId = replacement?.id ?? null;
-      } catch {
-        replacementId = null;
-      }
-    }
-    if (replacementId) {
-      redirect(`/cloud-servers/quote/${replacementId}?renewed=1`);
+    const owned = await getOwnedRecommendationQuote(
+      id,
+      user?.id ?? null,
+      guestToken,
+    );
+    if (owned && user) {
+      return (
+        <QuoteExpiredRefresh
+          quoteId={id}
+          catalogHref="/cloud-servers"
+          quoteBasePath="/cloud-servers/quote"
+          refreshApiPath={`/api/cloud-servers/quotes/${id}/refresh`}
+        />
+      );
     }
     redirect("/cloud-servers?quote=expired");
-  }
-
-  if (quoteRecord.plan.billingModel === "PAYG_WALLET") {
-    await prisma.infrastructurePlan.update({
-      where: { id: quoteRecord.plan.id },
-      data: {
-        billingModel: "PREPAID_TERM",
-        billingPolicyVersionId: null,
-      },
-    });
   }
 
   const quote = toPublicRecommendationQuote(quoteRecord);
@@ -105,7 +96,7 @@ export default async function ReadyServerQuotePage({
     quoteRecord.parchinServiceSnapshot,
   );
   const next = `/cloud-servers/quote/${quote.id}`;
-  const wallet = user ? await ensureWalletForUser(user.id) : null;
+  const wallet = user ? await getWalletForUser(user.id) : null;
 
   return (
     <section className="ready-quote-page page-view" aria-labelledby="ready-quote-title">

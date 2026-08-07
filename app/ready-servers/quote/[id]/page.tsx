@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { OrderCheckoutPanel } from "@/components/account/order-checkout-panel";
 import { QuoteCountdown } from "@/components/quote-countdown";
+import { QuoteExpiredRefresh } from "@/components/quote/quote-expired-refresh";
 import {
   readyServerImageLabel,
   readyServerLocation,
@@ -13,11 +14,11 @@ import { formatTomanFa } from "@/lib/money";
 import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
 import {
   getActiveReadyServerQuote,
-  refreshRecommendationQuote,
+  getOwnedRecommendationQuote,
   toPublicRecommendationQuote,
 } from "@/lib/recommendation/quote-service";
 import { getCurrentUser } from "@/lib/session";
-import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
+import { getWalletForUser } from "@/lib/wallet/ensure-wallet";
 
 export const metadata: Metadata = {
   title: "Quote سرور آماده | ابرچین",
@@ -35,30 +36,31 @@ export default async function ReadyServerQuotePage({
 }) {
   const [{ id }, { renewed }] = await Promise.all([params, searchParams]);
   const user = await getCurrentUser();
+  const guestToken = user ? null : await getRecommendationGuestToken();
   const record = await getActiveReadyServerQuote(
     id,
     user?.id ?? null,
-    user ? null : await getRecommendationGuestToken(),
+    guestToken,
   );
   if (!record) {
-    let replacementId: string | null = null;
-    if (user) {
-      try {
-        const replacement = await refreshRecommendationQuote({
-          quoteId: id,
-          userId: user.id,
-        });
-        replacementId = replacement?.id ?? null;
-      } catch {
-        replacementId = null;
-      }
-    }
-    if (replacementId) {
-      redirect(`/ready-servers/quote/${replacementId}?renewed=1`);
+    const owned = await getOwnedRecommendationQuote(
+      id,
+      user?.id ?? null,
+      guestToken,
+    );
+    if (owned && user) {
+      return (
+        <QuoteExpiredRefresh
+          quoteId={id}
+          catalogHref="/ready-servers"
+          quoteBasePath="/ready-servers/quote"
+          refreshApiPath={`/api/ready-servers/quotes/${id}/refresh`}
+        />
+      );
     }
     redirect("/ready-servers?quote=expired");
   }
-  const wallet = user ? await ensureWalletForUser(user.id) : null;
+  const wallet = user ? await getWalletForUser(user.id) : null;
 
   const quote = toPublicRecommendationQuote(record);
   const snapshot = record.planSnapshot as Record<string, unknown>;

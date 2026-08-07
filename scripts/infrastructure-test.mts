@@ -31,6 +31,17 @@ process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
 process.env.PARSPACK_MUTATIONS_ENABLED = "true";
 process.env.MANUAL_READY_PUBLIC_SALE_ENABLED = "true";
 
+/** Keep ADMIN_MOBILES allowlist in sync with fixture admins (source of truth). */
+function allowTestAdmin(mobile: string) {
+  const current = (process.env.ADMIN_MOBILES ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!current.includes(mobile)) {
+    process.env.ADMIN_MOBILES = [...current, mobile].join(",");
+  }
+}
+
 function createParsPackPricingAdapter() {
   return new FakeCloudProviderAdapter({
     provider: InfrastructureProvider.PARSPACK,
@@ -551,6 +562,7 @@ test("two concurrent manual payments cannot oversell one unit", async (t) => {
   const firstMobile = "09128881012";
   const secondMobile = "09128881013";
   const adminMobile = "09128881016";
+  allowTestAdmin(adminMobile);
   await cleanupMobile(firstMobile);
   await cleanupMobile(secondMobile);
   await cleanupMobile(adminMobile);
@@ -615,6 +627,7 @@ test("manual ready delivery is idempotent and never creates a provider job", asy
   }
   const mobile = "09128881014";
   const adminMobile = "09128881015";
+  allowTestAdmin(adminMobile);
   await cleanupMobile(mobile);
   await cleanupMobile(adminMobile);
   const previousCredentialKey = process.env.CREDENTIAL_ENCRYPTION_KEY;
@@ -799,6 +812,7 @@ test("first Admin approval is idempotent and never provisions automatically", as
 
   const mobile = "09128881003";
   const adminMobile = "09128881004";
+  allowTestAdmin(adminMobile);
   await cleanupMobile(mobile);
   await cleanupMobile(adminMobile);
 
@@ -865,6 +879,7 @@ test("refund keeps original ledger immutable and creates reverse entry", async (
 
   const mobile = "09128881005";
   const adminMobile = "09128881006";
+  allowTestAdmin(adminMobile);
   await cleanupMobile(mobile);
   await cleanupMobile(adminMobile);
 
@@ -925,6 +940,7 @@ test("retry is blocked for NEEDS_RECONCILIATION until reconcile", async (t) => {
 
   const mobile = "09128881007";
   const adminMobile = "09128881008";
+  allowTestAdmin(adminMobile);
   await cleanupMobile(mobile);
   await cleanupMobile(adminMobile);
 

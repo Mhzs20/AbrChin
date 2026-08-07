@@ -57,7 +57,7 @@ export async function resolveProviderForTopUp(
 }
 
 export async function getPublicDefaultGatewaySummary() {
-  await ensureGatewayConfigsSeeded();
+  // Customer GET must not seed gateway rows; absent config → unavailable.
   const config = await getDefaultGatewayConfig();
   if (!config) {
     return { available: false as const, displayName: null, provider: null };

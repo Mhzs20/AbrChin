@@ -27,6 +27,16 @@ import { tomanToRial } from "../lib/money.ts";
 
 const prisma = process.env.DATABASE_URL ? new PrismaClient() : null;
 
+function allowTestAdmin(mobile: string) {
+  const current = (process.env.ADMIN_MOBILES ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!current.includes(mobile)) {
+    process.env.ADMIN_MOBILES = [...current, mobile].join(",");
+  }
+}
+
 after(async () => {
   if (prisma) await prisma.$disconnect();
 });
@@ -85,6 +95,7 @@ async function seedInfra(mobile: string, suffix: string) {
     },
   });
   const user = await db.user.create({ data: { mobile } });
+  allowTestAdmin("09128883999");
   const admin = await db.user.upsert({
     where: { mobile: "09128883999" },
     update: { role: "ADMIN" },
@@ -249,6 +260,8 @@ test("refund blocked for active cloud instance", async (t) => {
   if (!db) return;
   const mobile = "09128883004";
   const adminMobile = "09128883005";
+  allowTestAdmin(adminMobile);
+  await db.user.deleteMany({ where: { mobile: { in: [mobile, adminMobile] } } });
   const { user, serviceOrder, infra } = await seedInfra(mobile, "refund");
   const admin = await db.user.create({ data: { mobile: adminMobile, role: "ADMIN" } });
   await db.cloudInstance.create({
@@ -310,6 +323,7 @@ test("retired funding shortcut is fail-closed and creates no confirmation", asyn
   if (!db) return;
   const mobile = "09128883006";
   const adminMobile = "09128883007";
+  allowTestAdmin(adminMobile);
   const { infra } = await seedInfra(mobile, "fund");
   await db.user.deleteMany({ where: { mobile: adminMobile } });
   const admin = await db.user.create({ data: { mobile: adminMobile, role: "ADMIN" } });

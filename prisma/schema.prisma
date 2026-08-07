@@ -638,6 +638,17 @@ model OtpChallenge {
   @@index([expiresAt])
 }
 
+/// Atomic fixed-window rate-limit state shared across web replicas.
+model RateLimitBucket {
+  key           String   @id
+  count         Int      @default(0)
+  windowStartAt DateTime
+  expiresAt     DateTime
+  updatedAt     DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
 model Session {
   id        String    @id @default(cuid())
   userId    String

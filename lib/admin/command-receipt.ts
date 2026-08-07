@@ -1,5 +1,6 @@
-import { UserRole, type Prisma } from "@prisma/client";
+import { type Prisma } from "@prisma/client";
 
+import { isEligibleAdmin } from "@/lib/admin/eligibility";
 import {
   IdempotencyConflictError,
   idempotencyFingerprint,
@@ -52,9 +53,9 @@ export async function assertAdminActorTx(
 ) {
   const actor = await tx.user.findUnique({
     where: { id: actorUserId },
-    select: { role: true },
+    select: { role: true, mobile: true },
   });
-  if (actor?.role !== UserRole.ADMIN) {
+  if (!actor || !isEligibleAdmin(actor)) {
     throw new WalletError("forbidden", "دسترسی مجاز نیست.");
   }
 }

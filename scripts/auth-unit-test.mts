@@ -148,6 +148,8 @@ test("cross-origin mutating requests are rejected", () => {
   assert.equal(isSameOriginRequest(cross), false);
   assert.equal(isSameOriginRequest(crossSiteHint), false);
 
+  const previousHops = process.env.TRUSTED_PROXY_HOPS;
+  process.env.TRUSTED_PROXY_HOPS = "1";
   const behindProxy = new Request("http://127.0.0.1:3010/api/auth/logout", {
     method: "POST",
     headers: {
@@ -157,6 +159,11 @@ test("cross-origin mutating requests are rejected", () => {
     },
   });
   assert.equal(isSameOriginRequest(behindProxy), true);
+
+  process.env.TRUSTED_PROXY_HOPS = "0";
+  assert.equal(isSameOriginRequest(behindProxy), false);
+  if (previousHops === undefined) delete process.env.TRUSTED_PROXY_HOPS;
+  else process.env.TRUSTED_PROXY_HOPS = previousHops;
 });
 
 test("login OTP request serializes per mobile before SMS delivery", async () => {

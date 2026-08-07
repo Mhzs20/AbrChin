@@ -2,14 +2,27 @@ import { prisma } from "@/lib/db";
 import { jsonError, jsonOk } from "@/lib/http";
 import { bigintToString, formatTomanFa, rialToToman } from "@/lib/money";
 import { AuthRequiredError, requireCurrentUser } from "@/lib/session";
-import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
+import { getWalletForUser } from "@/lib/wallet/ensure-wallet";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
     const user = await requireCurrentUser();
-    const wallet = await ensureWalletForUser(user.id);
+    const wallet = await getWalletForUser(user.id);
+    if (!wallet) {
+      return jsonOk({
+        wallet: {
+          id: null,
+          currency: "IRR",
+          status: "ACTIVE",
+          balanceRial: "0",
+          balanceToman: "0",
+          balanceTomanFa: formatTomanFa(0n),
+        },
+        recentTransactions: [],
+      });
+    }
     const recent = await prisma.walletLedgerEntry.findMany({
       where: { walletId: wallet.id },
       orderBy: { createdAt: "desc" },

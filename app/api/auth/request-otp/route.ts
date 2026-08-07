@@ -22,14 +22,14 @@ export async function POST(request: Request) {
     }
 
     const ip = getClientIp(request);
-    const mobileLimit = otpMobileLimiter.check(`otp:mobile:${normalized.mobile}`);
+    const mobileLimit = await otpMobileLimiter.check(`otp:mobile:${normalized.mobile}`);
     if (!mobileLimit.allowed) {
       return jsonError("تعداد درخواست‌ها بیش از حد مجاز است. کمی بعد دوباره تلاش کنید.", 429, {
         retryAfterSeconds: mobileLimit.retryAfterSeconds,
       });
     }
 
-    const ipLimit = otpIpLimiter.check(`otp:ip:${ip}`);
+    const ipLimit = await otpIpLimiter.check(`otp:ip:${ip}`);
     if (!ipLimit.allowed) {
       return jsonError("تعداد درخواست‌ها از این آدرس بیش از حد مجاز است.", 429, {
         retryAfterSeconds: ipLimit.retryAfterSeconds,

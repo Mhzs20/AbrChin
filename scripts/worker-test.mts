@@ -23,6 +23,14 @@ after(async () => {
 
 async function seedQueuedJob() {
   if (!prisma) throw new Error("no prisma");
+  const adminMobile = "09128882999";
+  const current = (process.env.ADMIN_MOBILES ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!current.includes(adminMobile)) {
+    process.env.ADMIN_MOBILES = [...current, adminMobile].join(",");
+  }
   await prisma.provisioningJob.deleteMany({
     where: { status: { in: [ProvisioningJobStatus.QUEUED, ProvisioningJobStatus.RUNNING] } },
   });

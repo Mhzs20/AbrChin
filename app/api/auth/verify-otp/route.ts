@@ -26,14 +26,14 @@ export async function POST(request: Request) {
     const code = typeof payload.code === "string" ? payload.code.trim().replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))) : "";
 
     const ip = getClientIp(request);
-    const mobileLimit = verifyMobileLimiter.check(`verify:mobile:${normalized.mobile}`);
+    const mobileLimit = await verifyMobileLimiter.check(`verify:mobile:${normalized.mobile}`);
     if (!mobileLimit.allowed) {
       return jsonError("تعداد تلاش‌ها بیش از حد مجاز است. کمی بعد دوباره تلاش کنید.", 429, {
         retryAfterSeconds: mobileLimit.retryAfterSeconds,
       });
     }
 
-    const ipLimit = verifyIpLimiter.check(`verify:ip:${ip}`);
+    const ipLimit = await verifyIpLimiter.check(`verify:ip:${ip}`);
     if (!ipLimit.allowed) {
       return jsonError("تعداد تلاش‌ها از این آدرس بیش از حد مجاز است.", 429, {
         retryAfterSeconds: ipLimit.retryAfterSeconds,

@@ -175,18 +175,20 @@ export async function verifyLoginOtp(
   }
 
   const now = new Date();
-  const adminRole = isAdminMobile(mobile) ? UserRole.ADMIN : null;
+  // ADMIN_MOBILES is the allowlist source of truth: promote when present,
+  // demote on login when removed (stale ADMIN role must not persist forever).
+  const nextRole = isAdminMobile(mobile) ? UserRole.ADMIN : UserRole.CUSTOMER;
   const user = await prisma.user.upsert({
     where: { mobile },
     create: {
       mobile,
       mobileVerifiedAt: now,
-      role: adminRole ?? UserRole.CUSTOMER,
+      role: nextRole,
       accountStatus: "ACTIVE",
     },
     update: {
       mobileVerifiedAt: now,
-      ...(adminRole ? { role: adminRole } : {}),
+      role: nextRole,
     },
   });
 

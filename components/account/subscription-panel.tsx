@@ -41,7 +41,11 @@ export function SubscriptionPanel({
     setMessage("");
     setError("");
     try {
-      const response = await fetch(`/api/account/instances/${instanceId}/renew`);
+      const response = await fetch(`/api/account/instances/${instanceId}/renew`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "دریافت قیمت تمدید ممکن نیست.");
       setQuote(body.quote);

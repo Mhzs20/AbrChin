@@ -4,19 +4,23 @@ import { prisma } from "@/lib/db";
 import { jsonError, jsonOk } from "@/lib/http";
 import { bigintToString, formatTomanFa, rialToToman } from "@/lib/money";
 import { AuthRequiredError, requireCurrentUser } from "@/lib/session";
-import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
+import { getWalletForUser } from "@/lib/wallet/ensure-wallet";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
     const user = await requireCurrentUser();
-    const wallet = await ensureWalletForUser(user.id);
+    const wallet = await getWalletForUser(user.id);
     const url = new URL(request.url);
     const page = Math.max(1, Number.parseInt(url.searchParams.get("page") || "1", 10) || 1);
     const pageSize = Math.min(50, Math.max(1, Number.parseInt(url.searchParams.get("pageSize") || "20", 10) || 20));
     const type = url.searchParams.get("type") as LedgerType | null;
     const status = url.searchParams.get("status") as LedgerStatus | null;
+
+    if (!wallet) {
+      return jsonOk({ page, pageSize, total: 0, items: [] });
+    }
 
     const where = {
       walletId: wallet.id,

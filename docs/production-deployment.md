@@ -210,10 +210,24 @@ docker compose --env-file .env.production -f compose.production.yaml \
 - `KAVENEGAR_API_KEY` در صورت OTP واقعی
 - `ZIBAL_MERCHANT` یا `ZARINPAL_MERCHANT_ID`
 - `PAYMENT_CALLBACK_BASE_URL`
-- `ADMIN_MOBILES`
+- `ADMIN_MOBILES` — allowlist source of truth for admin access (see `docs/auth-and-sms.md`)
 - `ARVAN_API_KEY` و/یا `PARSPACK_API_TOKEN`
 - `PARSPACK_PRICE_CURRENCY`, `PARSPACK_PRICE_AMOUNT_UNIT`
 - `BILLING_WORKER_INTERVAL_MS`
 - `ABRCHIN_IMAGE`
+- `TRUSTED_PROXY_HOPS` — set to the known reverse-proxy hop count (typically `1`)
+
+## Security headers
+
+Nginx (`ops/nginx/abrchin.conf`) and Next (`next.config.ts`) emit a conservative baseline:
+
+- `Strict-Transport-Security` (nginx / HTTPS edge)
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy`
+- `Permissions-Policy`
+- `X-Frame-Options` / CSP `frame-ancestors 'none'`
+- CSP compatible with Next.js App Router (includes `'unsafe-inline'` for hydration)
+
+Forwarded Host/Proto/IP are overwritten at nginx and trusted by the app only when `TRUSTED_PROXY_HOPS > 0`.
 
 مقدار Secret در Shell output، Log، Screenshot یا Admin response چاپ نمی‌شود.

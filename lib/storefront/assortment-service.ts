@@ -34,7 +34,6 @@ import {
   type StorefrontCapacityRules,
 } from "@/lib/storefront/capacity-rules";
 import {
-  ensurePublishedPlanForCatalogItem,
   ensureStorefrontSaleReady,
 } from "@/lib/storefront/ensure-sale-plans";
 import {
@@ -509,15 +508,6 @@ function offerMatchesStorefrontTier(
   return offerMatchesTierPriceBand(monthly, priceBands[tier]);
 }
 
-async function publishCatalogItems(items: ProviderCatalogItem[]) {
-  const seen = new Set<string>();
-  for (const item of items) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    await ensurePublishedPlanForCatalogItem(item);
-  }
-}
-
 type OfferDominanceRow = DominanceCandidate & {
   offer: PublicPlanOffer;
   item: ProviderCatalogItem;
@@ -657,7 +647,8 @@ export async function resolveStorefrontTierOffers(
       classifyStorefrontCapacityTier({ vcpu, ramGb }, capacityRules) === tier
     );
   });
-  await publishCatalogItems(publishCandidates);
+  // Public resolve is read-only — do not publish/repair plans on GET.
+  // Admin slot replace / ensureStorefrontSaleReady handles publication.
 
   let context = await loadPricingContext();
   const rawRows: OfferDominanceRow[] = [];
@@ -727,22 +718,19 @@ export async function listPublicStorefrontTiers(): Promise<{
   priceDisplay: StorefrontPriceDisplay;
   tiers: StorefrontPublicTier[];
 }> {
-  // Founder Launch: anything shown in چینش must be purchasable (mutations still off).
-  await ensureStorefrontSaleReady().catch((error) => {
-    console.error(
-      "[storefront:ensure-sale]",
-      error instanceof Error ? error.message : "unknown",
-    );
-  });
-  const settings = await prisma.storefrontAssortmentSettings.upsert({
+  // Customer GET must be read-only. Sale readiness / PAYG repair / publish
+  // happens via admin ops or additive migrations — never page render.
+  const settingsRow = await prisma.storefrontAssortmentSettings.findUnique({
     where: { id: "default" },
-    create: {
-      id: "default",
-      autoSuggestEnabled: false,
-      ...DEFAULT_STOREFRONT_CAPACITY_RULES,
-    },
-    update: {},
   });
+  const settings = settingsRow ?? {
+    id: "default",
+    autoSuggestEnabled: false,
+    showHourlyPrice: true,
+    showDailyPrice: true,
+    showMonthlyPrice: true,
+    ...DEFAULT_STOREFRONT_CAPACITY_RULES,
+  };
   const [arvanFreshness, parsPackFreshness, resolved] = await Promise.all([
     getCatalogFreshness("ARVAN").catch(() => null),
     getCatalogFreshness("PARSPACK").catch(() => null),
@@ -852,6 +840,13 @@ export async function replaceStorefrontTierSlots(input: {
         updatedById: input.actorUserId,
       },
     });
+  });
+  // Admin write path may repair sale readiness; never from customer GET.
+  await ensureStorefrontSaleReady().catch((error) => {
+    console.error(
+      "[storefront:ensure-sale]",
+      error instanceof Error ? error.message : "unknown",
+    );
   });
 }
 

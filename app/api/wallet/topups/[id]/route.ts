@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { jsonError, jsonOk } from "@/lib/http";
 import { bigintToString, formatTomanFa, rialToToman } from "@/lib/money";
 import { AuthRequiredError, requireCurrentUser } from "@/lib/session";
-import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
+import { getWalletForUser } from "@/lib/wallet/ensure-wallet";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,8 @@ export async function GET(_request: Request, { params }: Params) {
   try {
     const user = await requireCurrentUser();
     const { id } = await params;
-    const wallet = await ensureWalletForUser(user.id);
+    const wallet = await getWalletForUser(user.id);
+    if (!wallet) return jsonError("درخواست شارژ پیدا نشد.", 404);
     const topUp = await prisma.walletTopUp.findFirst({
       where: { id, walletId: wallet.id },
       include: {

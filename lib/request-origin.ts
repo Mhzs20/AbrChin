@@ -1,11 +1,16 @@
 /**
  * Reject cross-origin state-changing requests by comparing Origin (or Referer) to Host.
  * Same-origin browser fetches send a matching Origin; cross-site requests are blocked.
+ *
+ * X-Forwarded-Host is trusted only when TRUSTED_PROXY_HOPS > 0 (known reverse proxy).
  */
 function getRequestHost(request: Request): string | null {
-  const forwarded = request.headers.get("x-forwarded-host");
-  if (forwarded) {
-    return forwarded.split(",")[0]?.trim().toLowerCase() || null;
+  const trustedHops = Number.parseInt(process.env.TRUSTED_PROXY_HOPS ?? "0", 10);
+  if (Number.isFinite(trustedHops) && trustedHops > 0) {
+    const forwarded = request.headers.get("x-forwarded-host");
+    if (forwarded) {
+      return forwarded.split(",")[0]?.trim().toLowerCase() || null;
+    }
   }
 
   const host = request.headers.get("host");

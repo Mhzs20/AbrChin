@@ -29,8 +29,10 @@ export async function ensureTopUpSettingsSeeded() {
 }
 
 export async function getTopUpSuggestedAmountsToman() {
-  await ensureTopUpSettingsSeeded();
-  const settings = await prisma.walletTopUpSettings.findUniqueOrThrow({ where: { id: SETTINGS_ID } });
+  const settings = await prisma.walletTopUpSettings.findUnique({
+    where: { id: SETTINGS_ID },
+  });
+  if (!settings) return [...DEFAULT_TOPUP_SUGGESTIONS_TOMAN];
   return parseStoredSuggestions(settings.suggestedAmountsToman);
 }
 
@@ -43,11 +45,19 @@ export type TopUpSettingsView = {
 };
 
 export async function getTopUpSettingsView(): Promise<TopUpSettingsView> {
-  await ensureTopUpSettingsSeeded();
-  const settings = await prisma.walletTopUpSettings.findUniqueOrThrow({
+  const settings = await prisma.walletTopUpSettings.findUnique({
     where: { id: SETTINGS_ID },
     include: { updatedBy: { select: { id: true, mobile: true, displayName: true } } },
   });
+  if (!settings) {
+    return {
+      suggestedAmountsToman: [...DEFAULT_TOPUP_SUGGESTIONS_TOMAN],
+      minTopUpToman: MIN_TOPUP_TOMAN,
+      maxTopUpToman: MAX_TOPUP_TOMAN,
+      updatedAt: new Date(0).toISOString(),
+      updatedBy: null,
+    };
+  }
 
   return {
     suggestedAmountsToman: parseStoredSuggestions(settings.suggestedAmountsToman),

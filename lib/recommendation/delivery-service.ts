@@ -106,14 +106,7 @@ export async function getConversationDeliveryOptions(input: {
   ) {
     throw new Error("conversation_requirements_not_confirmed");
   }
-  try {
-    await ensureStorefrontSaleReady();
-  } catch (error) {
-    console.error(
-      "[compass:ensure-sale]",
-      error instanceof Error ? error.message : "unknown",
-    );
-  }
+  // GET delivery options are read-only — do not repair/publish plans here.
   await requireFreshSaleCatalogs();
   const answers = asAnswers(session.answers);
   const sources = asSources(session.answerSources);

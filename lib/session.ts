@@ -2,6 +2,8 @@ import { cookies, headers } from "next/headers";
 import type { NextRequest } from "next/server";
 import type { User } from "@prisma/client";
 
+import { effectiveUserRole } from "@/lib/admin/eligibility";
+import { getClientIp } from "@/lib/client-ip";
 import { generateSessionToken, hashWithSecret } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { assertServerSecrets, getEnv } from "@/lib/env";
@@ -21,7 +23,8 @@ export function toPublicUser(user: User): PublicUser {
     id: user.id,
     mobile: user.mobile,
     displayName: user.displayName,
-    role: user.role,
+    // Live allowlist re-check: stale ADMIN DB role is not enough after revoke.
+    role: effectiveUserRole(user),
     mobileVerifiedAt: user.mobileVerifiedAt?.toISOString() ?? null,
   };
 }
@@ -105,15 +108,24 @@ export class AuthRequiredError extends Error {
 
 export async function readRequestMeta(request?: Request) {
   if (request) {
-    const forwarded = request.headers.get("x-forwarded-for");
-    const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || null;
+    const ip = getClientIp(request);
     const userAgent = request.headers.get("user-agent");
-    return { ip, userAgent };
+    return { ip: ip === "unknown" ? null : ip, userAgent };
   }
 
   const h = await headers();
+  // Mirror getClientIp hop trust when headers() is used outside a Request.
+  const trustedHops = Number.parseInt(process.env.TRUSTED_PROXY_HOPS ?? "0", 10);
   const forwarded = h.get("x-forwarded-for");
-  const ip = forwarded?.split(",")[0]?.trim() || h.get("x-real-ip") || null;
+  let ip: string | null = h.get("x-real-ip");
+  if (forwarded && Number.isFinite(trustedHops) && trustedHops > 0) {
+    const parts = forwarded.split(",").map((part) => part.trim()).filter(Boolean);
+    const index = Math.max(0, parts.length - trustedHops);
+    ip = parts[index] || ip;
+  } else if (!(Number.isFinite(trustedHops) && trustedHops > 0)) {
+    // Untrusted clients must not dictate audit IP via spoofable XFF.
+    ip = h.get("x-real-ip");
+  }
   const userAgent = h.get("user-agent");
   return { ip, userAgent };
 }
