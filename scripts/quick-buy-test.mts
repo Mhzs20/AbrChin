@@ -17,9 +17,11 @@ test("cloud and ready purchase routes stay provider-separated before login", asy
   assert.doesNotMatch(siteShell, /\/ready-servers/);
   assert.doesNotMatch(siteShell, /shortLabel: "فوری"/);
   assert.match(chinish, /چینش نو|چینش استوار|چینش کهکشان/);
-  // Hourly/daily lines are usage equivalents of the billed monthly amount.
-  assert.match(chinish, /معادل ساعتی/);
-  assert.match(chinish, /معادل روزانه/);
+  // Hourly/daily lines are reference equivalents of the billed monthly amount.
+  assert.match(chinish, /معادل تقریبی ساعتی \(مرجع\)/);
+  assert.match(chinish, /معادل تقریبی روزانه \(مرجع\)/);
+  assert.match(chinish, /صورتحساب دوره‌ای ماهانه/);
+  assert.doesNotMatch(chinish, /فقط به.?اندازه مصرف/);
   assert.match(chinish, /چینش فنی/);
   assert.match(chinish, /لوکیشن ایران/);
   assert.match(chinish, /لوکیشن خارج/);

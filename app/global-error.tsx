@@ -75,8 +75,12 @@ export default function GlobalError({
             >
               تلاش دوباره
             </button>
-            <a
-              href="/"
+            {/* global-error replaces the root layout; prefer hard navigation over next/link */}
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/";
+              }}
               style={{
                 display: "inline-flex",
                 minHeight: 46,
@@ -89,12 +93,12 @@ export default function GlobalError({
                 background: "#fff",
                 color: "#0b2a55",
                 fontWeight: 900,
-                textDecoration: "none",
+                cursor: "pointer",
               }}
             >
               برگشت به خانه
               <ArrowLeft size={18} aria-hidden="true" />
-            </a>
+            </button>
           </div>
         </section>
       </body>

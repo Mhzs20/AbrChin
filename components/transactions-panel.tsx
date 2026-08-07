@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   DataTable,
@@ -32,10 +32,41 @@ export function TransactionsPanel() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const loadPage = useCallback(async (nextPage: number, append: boolean) => {
-    if (append) setLoadingMore(true);
-    else setLoading(true);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadInitial() {
+      try {
+        const response = await fetch(
+          `/api/wallet/transactions?page=1&pageSize=${PAGE_SIZE}`,
+          { cache: "no-store" },
+        );
+        const data = await response.json();
+        if (!response.ok) {
+          if (!cancelled) setError(data.error || "خطا");
+          return;
+        }
+        if (!cancelled) {
+          setTotal(typeof data.total === "number" ? data.total : 0);
+          setPage(1);
+          setItems(data.items || []);
+          setError("");
+        }
+      } catch {
+        if (!cancelled) setError("ارتباط برقرار نشد.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void loadInitial();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function loadMore() {
+    setLoadingMore(true);
     try {
+      const nextPage = page + 1;
       const response = await fetch(
         `/api/wallet/transactions?page=${nextPage}&pageSize=${PAGE_SIZE}`,
         { cache: "no-store" },
@@ -47,21 +78,14 @@ export function TransactionsPanel() {
       }
       setTotal(typeof data.total === "number" ? data.total : 0);
       setPage(nextPage);
-      setItems((current) =>
-        append ? [...current, ...(data.items || [])] : data.items || [],
-      );
+      setItems((current) => [...current, ...(data.items || [])]);
       setError("");
     } catch {
       setError("ارتباط برقرار نشد.");
     } finally {
-      setLoading(false);
       setLoadingMore(false);
     }
-  }, []);
-
-  useEffect(() => {
-    void loadPage(1, false);
-  }, [loadPage]);
+  }
 
   if (loading) {
     return (
@@ -112,7 +136,7 @@ export function TransactionsPanel() {
           className="product-btn product-btn--quiet"
           style={{ minHeight: 44, marginTop: 12 }}
           disabled={loadingMore}
-          onClick={() => void loadPage(page + 1, true)}
+          onClick={() => void loadMore()}
         >
           {loadingMore ? "در حال بارگذاری…" : "نمایش بیشتر"}
         </button>

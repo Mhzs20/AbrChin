@@ -55,7 +55,10 @@ test("quote pages use Persian product language", async () => {
   const ready = await readFile("app/ready-servers/quote/[id]/page.tsx", "utf8");
   for (const source of [cloud, ready]) {
     assert.match(source, /پیش‌فاکتور|قیمت قفل‌شده/);
-    assert.doesNotMatch(source, /Snapshot/);
+    // Customer-visible copy must not say "Snapshot"; internal field names are OK.
+    assert.doesNotMatch(source, />\s*Snapshot\s*</);
+    assert.doesNotMatch(source, /["'`]Snapshot["'`]/);
+    assert.doesNotMatch(source, /Admin/);
     assert.doesNotMatch(source, /تغییر بعدی پرچین در Admin/);
     assert.match(source, /accessMethodLabel/);
     assert.match(source, /readParchinServiceSnapshot|parchin/);
