@@ -384,10 +384,33 @@ test("customer quote response excludes provider and base price", () => {
       storageGb: 50,
     },
     expiresAt: new Date("2026-07-29T12:10:00.000Z"),
+    lineItemsSnapshot: [
+      {
+        type: "PROVIDER_INFRASTRUCTURE",
+        label: "زیرساخت ابری",
+        amountIrr: "5000000",
+      },
+      {
+        type: "INFRASTRUCTURE_MARKUP",
+        label: "خدمات زیرساخت ابرچین",
+        amountIrr: "1250000",
+      },
+      { type: "TAX", label: "مالیات", amountIrr: "0" },
+    ],
   });
   const serialized = JSON.stringify(publicQuote);
   assert.doesNotMatch(serialized, /PARSPACK|providerBasePrice/i);
+  assert.doesNotMatch(serialized, /PROVIDER_INFRASTRUCTURE|INFRASTRUCTURE_MARKUP/);
   assert.equal(publicQuote.amountRial, "6250000");
+  assert.equal(
+    publicQuote.lineItems.find((item) => item.type === "INFRASTRUCTURE_SALE")
+      ?.amountRial,
+    "6250000",
+  );
+  assert.equal(
+    publicQuote.lineItems.some((item) => item.type === "PROVIDER_INFRASTRUCTURE"),
+    false,
+  );
 });
 
 test("quote snapshot is complete and expires exactly after ten minutes", () => {

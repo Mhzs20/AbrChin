@@ -43,6 +43,9 @@ test("worker entrypoint references compiled bundle", () => {
   assert.match(script, /dist\/worker\/provisioning-worker\.js/);
   assert.equal(script.includes("provisioning-worker.mts"), false);
   assert.equal(script.includes("experimental-strip-types"), false);
+  // Migrations are one-shot via ops/deploy.sh — worker must not migrate on start.
+  assert.doesNotMatch(script, /prisma migrate deploy/);
+  assert.doesNotMatch(script, /migrate deploy/);
 });
 
 test("production catalog sync commands use a compiled runtime bundle", () => {

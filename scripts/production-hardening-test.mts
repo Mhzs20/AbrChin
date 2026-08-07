@@ -407,3 +407,25 @@ test("ledger reverse is idempotent under duplicate requests", async (t) => {
   await db.wallet.delete({ where: { id: wallet.id } });
   await db.user.delete({ where: { id: user.id } });
 });
+
+test("production deploy gate keeps one-shot migrate and accepts degraded readiness", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const deploy = await readFile("ops/deploy.sh", "utf8");
+  const workerEntrypoint = await readFile("scripts/worker-entrypoint.sh", "utf8");
+  assert.match(deploy, /ABRCHIN_IMAGE/);
+  assert.match(deploy, /:latest/);
+  assert.match(deploy, /flock/);
+  assert.match(deploy, /--env-file/);
+  assert.match(deploy, /compose config --quiet/);
+  assert.match(deploy, /backup-postgres\.sh/);
+  assert.match(deploy, /prisma migrate deploy/);
+  assert.match(deploy, /local_readiness_acceptable/);
+  assert.match(deploy, /status" == "degraded"/);
+  assert.match(deploy, /MIGRATED=1/);
+  // Migration flag must be set before migrate runs (partial-apply safety).
+  const migratedIdx = deploy.indexOf("MIGRATED=1");
+  const migrateCmdIdx = deploy.indexOf("prisma migrate deploy");
+  assert.ok(migratedIdx > 0 && migrateCmdIdx > migratedIdx);
+  assert.doesNotMatch(deploy, /down -v|volume rm|migrate reset/);
+  assert.doesNotMatch(workerEntrypoint, /migrate deploy/);
+});

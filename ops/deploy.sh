@@ -213,13 +213,15 @@ fi
 # Dockerfile uses CMD (not ENTRYPOINT), so command override replaces the web
 # entrypoint entirely and will not start server.js.
 log "running prisma migrate deploy against candidate image"
+# Mark migrated BEFORE migrate runs: a partial apply must NEVER auto-restore
+# the previous image onto a DB that already received additive migrations.
+MIGRATED=1
 if ! compose run --rm --no-deps \
   -e ABRCHIN_RUN_MIGRATE_ON_START=false \
   web \
   node ./node_modules/prisma/build/index.js migrate deploy; then
   handle_failure "migration"
 fi
-MIGRATED=1
 log "migration gate passed"
 
 # --- 6. Start app services on the same immutable image ---
@@ -228,11 +230,30 @@ compose up -d --remove-orphans --wait --wait-timeout 180 \
   web worker catalog-sync || handle_failure "app_up"
 
 # --- 7. Local health/readiness ---
+# /api/readiness returns HTTP 503 for both degraded and outage. Launch may be
+# degraded when provider billing contracts are unverified; that must not block
+# deploy. Outage (DB/worker critical) must fail the gate.
+local_readiness_acceptable() {
+  local code status
+  curl -fsS --max-time 5 "http://127.0.0.1:3010/api/health" >/dev/null || return 1
+  code="$(curl -sS --max-time 5 -o /tmp/abrchin-deploy-readiness.json -w '%{http_code}' \
+    "http://127.0.0.1:3010/api/readiness" || echo 000)"
+  status="$(sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    /tmp/abrchin-deploy-readiness.json 2>/dev/null | head -n 1)"
+  if [[ "$code" == "200" && "$status" == "operational" ]]; then
+    return 0
+  fi
+  if [[ "$status" == "degraded" ]]; then
+    log "readiness is degraded (acceptable for launch when non-critical components are stale)"
+    return 0
+  fi
+  return 1
+}
+
 log "checking local health endpoints"
 local_ok=0
 for attempt in $(seq 1 40); do
-  if curl -fsS --max-time 5 "http://127.0.0.1:3010/api/health" >/dev/null \
-    && curl -fsS --max-time 5 "http://127.0.0.1:3010/api/readiness" >/dev/null; then
+  if local_readiness_acceptable; then
     local_ok=1
     break
   fi

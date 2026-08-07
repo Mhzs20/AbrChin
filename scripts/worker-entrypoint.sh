@@ -1,8 +1,7 @@
 #!/bin/sh
 set -eu
 
-echo "[abrchin-worker] running prisma migrate deploy"
-node ./node_modules/prisma/build/index.js migrate deploy
-
+# Migrations are an explicit one-shot gate in ops/deploy.sh.
+# Workers must never run prisma migrate on start/restart.
 echo "[abrchin-worker] starting provisioning worker"
 exec node dist/worker/provisioning-worker.js

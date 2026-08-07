@@ -638,7 +638,13 @@ export function toPublicRecommendationQuote(quote: {
     quote.termMonths === 12
       ? quote.termMonths
       : 1;
-  const lineItems = Array.isArray(quote.lineItemsSnapshot)
+  // Never expose provider cost vs AbrChin markup split to customers.
+  // Collapse those internal economics into one customer-safe sale line.
+  const INTERNAL_COST_LINE_TYPES = new Set([
+    "PROVIDER_INFRASTRUCTURE",
+    "INFRASTRUCTURE_MARKUP",
+  ]);
+  const rawLineItems = Array.isArray(quote.lineItemsSnapshot)
     ? quote.lineItemsSnapshot.flatMap((item) => {
         if (!item || typeof item !== "object" || Array.isArray(item)) return [];
         const row = item as Record<string, unknown>;
@@ -658,6 +664,29 @@ export function toPublicRecommendationQuote(quote: {
         ];
       })
     : [];
+  let infrastructureSaleRial = 0n;
+  let sawInternalCostSplit = false;
+  const lineItems: Array<{ type: string; label: string; amountRial: string }> =
+    [];
+  for (const item of rawLineItems) {
+    if (INTERNAL_COST_LINE_TYPES.has(item.type)) {
+      sawInternalCostSplit = true;
+      try {
+        infrastructureSaleRial += BigInt(item.amountRial);
+      } catch {
+        // Ignore malformed historical amounts; never leak the raw split.
+      }
+      continue;
+    }
+    lineItems.push(item);
+  }
+  if (sawInternalCostSplit) {
+    lineItems.unshift({
+      type: "INFRASTRUCTURE_SALE",
+      label: "زیرساخت و خدمات ابرچین",
+      amountRial: infrastructureSaleRial.toString(),
+    });
+  }
 
   return {
     id: quote.id,

@@ -804,10 +804,29 @@ test("customer quote serialization never exposes provider or base price", () => 
       parchinIncluded: true,
     },
     expiresAt: new Date("2026-07-30T11:00:00.000Z"),
+    lineItemsSnapshot: [
+      {
+        type: "PROVIDER_INFRASTRUCTURE",
+        label: "زیرساخت ابری",
+        amountIrr: "500",
+      },
+      {
+        type: "INFRASTRUCTURE_MARKUP",
+        label: "خدمات زیرساخت ابرچین",
+        amountIrr: "500",
+      },
+    ],
   });
   const serialized = JSON.stringify(publicQuote);
   assert.equal(serialized.includes("ARVAN"), false);
   assert.equal(serialized.includes("providerBasePrice"), false);
+  assert.equal(serialized.includes("PROVIDER_INFRASTRUCTURE"), false);
+  assert.equal(serialized.includes("INFRASTRUCTURE_MARKUP"), false);
+  assert.equal(
+    publicQuote.lineItems.find((item) => item.type === "INFRASTRUCTURE_SALE")
+      ?.amountRial,
+    "1000",
+  );
 });
 
 test("conversation discovery stays chat-core with optional follow-ups", () => {
