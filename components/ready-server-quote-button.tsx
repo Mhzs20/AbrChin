@@ -393,20 +393,22 @@ export function ReadyServerQuoteButton({
               ))}
             </select>
           </label>
-          <label>
-            کد تخفیف (اختیاری)
-            <input
-              maxLength={32}
-              placeholder="مثلاً ABRCHIN20"
-              value={couponCode}
-              onChange={(event) => setCouponCode(event.target.value)}
-            />
-          </label>
-          <small>
-            با کد تخفیف خرید سرور، تخفیف دوره‌ای حذف و درصد کد اعمال می‌شود. سقف
-            تخفیف دوره ممکن است به‌خاطر کف حاشیه سود کمتر از عدد اعلامی اعمال
-            شود. مبلغ نهایی، مالیات و تفکیک خطی روی پیش‌فاکتور قفل می‌شود.
-          </small>
+          <details className="ready-server-coupon">
+            <summary>کد تخفیف دارید؟</summary>
+            <label>
+              کد تخفیف
+              <input
+                maxLength={32}
+                placeholder="مثلاً ABRCHIN20"
+                value={couponCode}
+                onChange={(event) => setCouponCode(event.target.value)}
+              />
+            </label>
+            <small>
+              با کد تخفیف خرید سرور، تخفیف دوره‌ای حذف و درصد کد اعمال می‌شود.
+              نتیجه روی پیش‌فاکتور قفل‌شده دیده می‌شود.
+            </small>
+          </details>
 
           <details
             className="ready-server-advanced"

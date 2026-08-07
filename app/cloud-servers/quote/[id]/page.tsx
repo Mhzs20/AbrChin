@@ -4,7 +4,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { OrderCheckoutPanel } from "@/components/account/order-checkout-panel";
-import { QuoteCountdown } from "@/components/quote-countdown";
 import { QuoteExpiredRefresh } from "@/components/quote/quote-expired-refresh";
 import {
   readyServerImageLabel,
@@ -116,8 +115,8 @@ export default async function ReadyServerQuotePage({
           </span>
           <h1 id="ready-quote-title">{quote.title}</h1>
           <p>
-            قیمت، ظرفیت، موقعیت و سیستم‌عامل این انتخاب به‌مدت ۶۰ دقیقه برای شما
-            قفل شده‌اند. تغییر بعدی پرچین این تعهد را عوض نمی‌کند.
+            قیمت، ظرفیت، موقعیت و سیستم‌عامل این انتخاب تا پایان شمارش برای شما
+            قفل است. مبلغ سرور فقط از کیف پول پرداخت می‌شود.
           </p>
         </div>
         <Link className="button button-quiet" href="/cloud-servers">
@@ -225,7 +224,6 @@ export default async function ReadyServerQuotePage({
               قیمت این انتخاب به‌روز و دوباره قفل شد؛ مشخصات سرورت حفظ شده است.
             </p>
           ) : null}
-          <p><QuoteCountdown expiresAt={quote.expiresAt} /></p>
           {user ? (
             <OrderCheckoutPanel
               quoteId={quote.id}
@@ -239,6 +237,18 @@ export default async function ReadyServerQuotePage({
               walletBalanceRial={(wallet?.availableBalance ?? 0n).toString()}
               returnToPath={next}
               quoteBasePath="/cloud-servers/quote"
+              expiresAt={quote.expiresAt}
+              refreshApiPath={`/api/cloud-servers/quotes/${quote.id}/refresh`}
+              serverSummary={{
+                title: quote.title,
+                locationLabel: location,
+                vcpu: quote.vcpu,
+                ramGb: quote.ramGb,
+                storageGb: quote.storageGb,
+                operatingSystem: lockedOsLabel,
+                termMonths: quote.termMonths,
+                serverName,
+              }}
             />
           ) : (
             <div className="ready-quote-login">

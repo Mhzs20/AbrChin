@@ -7,6 +7,7 @@ import { useRef, useState, useTransition } from "react";
 /**
  * Explicit customer action to re-price an expired quote.
  * Must never run as a side effect of GET/page render.
+ * Wallet top-up credits are never reversed when a quote expires.
  */
 export function QuoteExpiredRefresh({
   quoteId,
@@ -62,10 +63,10 @@ export function QuoteExpiredRefresh({
       <header className="ready-quote-heading">
         <div>
           <span className="eyebrow">پیش‌فاکتور منقضی</span>
-          <h1 id="quote-expired-title">اعتبار این قیمت قفل‌شده تمام شده</h1>
+          <h1 id="quote-expired-title">اعتبار قیمت قبلی تمام شده است</h1>
           <p>
-            برای ادامه خرید باید قیمت را با نرخ فعلی دوباره قفل کنی. مشاهدهٔ صفحه
-            به‌تنهایی قیمت تازه نمی‌سازد.
+            مبلغ شارژشده در کیف پول شما محفوظ است. برای ادامه خرید باید قیمت را
+            دوباره دریافت کنی؛ مبلغ جدید به‌صورت خودکار از کیف پول کسر نمی‌شود.
           </p>
         </div>
         <Link className="button button-quiet" href={catalogHref}>
@@ -80,7 +81,7 @@ export function QuoteExpiredRefresh({
           disabled={pending}
           onClick={() => void refresh()}
         >
-          {pending ? "در حال به‌روزرسانی…" : "به‌روزرسانی قیمت"}
+          {pending ? "در حال دریافت…" : "دریافت قیمت جدید"}
         </button>
       </aside>
     </section>

@@ -28,7 +28,14 @@ function remainingLabel(expiresAt: string, now: number) {
   };
 }
 
-export function QuoteCountdown({ expiresAt }: { expiresAt: string }) {
+export function QuoteCountdown({
+  expiresAt,
+  prominent = false,
+}: {
+  expiresAt: string;
+  /** Emphasize the locked-until clock for checkout. */
+  prominent?: boolean;
+}) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -37,11 +44,27 @@ export function QuoteCountdown({ expiresAt }: { expiresAt: string }) {
   }, []);
 
   const remaining = remainingLabel(expiresAt, now);
+  if (remaining.expired) {
+    return (
+      <span aria-live="polite">
+        اعتبار قیمت قفل‌شده تمام شد؛ قیمت را تازه کن.
+      </span>
+    );
+  }
+
+  if (prominent) {
+    return (
+      <span className="quote-lock-banner" aria-live="polite">
+        این قیمت تا ساعت {remaining.lockedUntil} برای شما قفل است
+        <small>({remaining.label})</small>
+      </span>
+    );
+  }
+
   return (
     <span aria-live="polite">
-      {remaining.expired
-        ? "اعتبار قیمت قفل‌شده تمام شد؛ قیمت را تازه کن."
-        : `قیمت تا ${remaining.lockedUntil} برای شما قفل شده است (${remaining.label})`}
+      این قیمت تا ساعت {remaining.lockedUntil} برای شما قفل است (
+      {remaining.label})
     </span>
   );
 }

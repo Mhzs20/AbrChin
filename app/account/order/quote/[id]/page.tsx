@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { OrderCheckoutPanel } from "@/components/account/order-checkout-panel";
-import { QuoteCountdown } from "@/components/quote-countdown";
+import { QuoteExpiredRefresh } from "@/components/quote/quote-expired-refresh";
 import { PageHeader, SectionCard, StatusBadge } from "@/components/product";
 import { requireCustomerPage } from "@/lib/auth/guards";
 import { deliveryModeLabel } from "@/lib/labels/infrastructure";
@@ -11,8 +11,10 @@ import { formatTomanFa } from "@/lib/money";
 import { parchinPlanLabel, parchinPlanSummary } from "@/lib/parchin/catalog";
 import {
   getActiveRecommendationQuote,
+  getOwnedRecommendationQuote,
   toPublicRecommendationQuote,
 } from "@/lib/recommendation/quote-service";
+import { getWalletForUser } from "@/lib/wallet/ensure-wallet";
 
 export const metadata: Metadata = {
   title: "تکمیل پیشنهاد | حساب من | ابرچین",
@@ -30,14 +32,49 @@ export default async function RecommendationQuoteCheckoutPage({
   const { id } = await params;
 
   const quoteRecord = await getActiveRecommendationQuote(id, user.id);
-  if (!quoteRecord) redirect("/compass?resume=1");
+  if (!quoteRecord) {
+    const owned = await getOwnedRecommendationQuote(id, user.id, null);
+    if (owned) {
+      return (
+        <QuoteExpiredRefresh
+          quoteId={id}
+          catalogHref="/compass?resume=1"
+          quoteBasePath="/account/order/quote"
+          refreshApiPath={`/api/recommendations/quotes/${id}/refresh`}
+        />
+      );
+    }
+    redirect("/compass?resume=1");
+  }
   const quote = toPublicRecommendationQuote(quoteRecord);
+  const wallet = await getWalletForUser(user.id);
+  const deliveryConfiguration =
+    quoteRecord.deliveryConfigurationSnapshot &&
+    typeof quoteRecord.deliveryConfigurationSnapshot === "object" &&
+    !Array.isArray(quoteRecord.deliveryConfigurationSnapshot)
+      ? (quoteRecord.deliveryConfigurationSnapshot as Record<string, unknown>)
+      : null;
+  const operatingSystem =
+    typeof deliveryConfiguration?.operatingSystem === "string"
+      ? deliveryConfiguration.operatingSystem
+      : "—";
+  const serverName =
+    typeof deliveryConfiguration?.serverName === "string"
+      ? deliveryConfiguration.serverName
+      : null;
+  const locationLabel =
+    typeof deliveryConfiguration?.regionLabel === "string"
+      ? deliveryConfiguration.regionLabel
+      : typeof deliveryConfiguration?.region === "string"
+        ? deliveryConfiguration.region
+        : quoteRecord.providerRegion ?? "—";
+  const returnToPath = `/account/order/quote/${quote.id}`;
 
   return (
     <>
       <PageHeader
         title={quote.title}
-        description="این چینش از پاسخ‌های گفت‌وگوی تو ساخته شده و تا پایان شمارش قفل است."
+        description="این چینش از پاسخ‌های گفت‌وگوی تو ساخته شده و تا پایان شمارش برای تو قفل است. مبلغ فقط از کیف پول کسر می‌شود."
         actions={
           <Link href="/compass?resume=1" className="product-btn product-btn--quiet">
             اصلاح نیاز
@@ -72,9 +109,6 @@ export default async function RecommendationQuoteCheckoutPage({
         <ul>
           {quote.reasons.map((reason) => <li key={reason}>{reason}</li>)}
         </ul>
-        <p>
-          <strong><QuoteCountdown expiresAt={quote.expiresAt} /></strong>
-        </p>
       </SectionCard>
       <OrderCheckoutPanel
         quoteId={quote.id}
@@ -84,6 +118,22 @@ export default async function RecommendationQuoteCheckoutPage({
         termDiscountBps={quote.termDiscountBps}
         couponCode={quote.couponCode}
         lineItems={quote.lineItems}
+        amountRial={quoteRecord.amountRial.toString()}
+        walletBalanceRial={(wallet?.availableBalance ?? 0n).toString()}
+        returnToPath={returnToPath}
+        quoteBasePath="/account/order/quote"
+        expiresAt={quote.expiresAt}
+        refreshApiPath={`/api/recommendations/quotes/${quote.id}/refresh`}
+        serverSummary={{
+          title: quote.title,
+          locationLabel,
+          vcpu: quote.vcpu,
+          ramGb: quote.ramGb,
+          storageGb: quote.storageGb,
+          operatingSystem,
+          termMonths: quote.termMonths,
+          serverName,
+        }}
       />
     </>
   );
