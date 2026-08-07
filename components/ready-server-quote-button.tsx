@@ -4,6 +4,10 @@ import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  generateCustomerServerName,
+  isValidCustomerServerName,
+} from "@/lib/infrastructure/image-identity";
 import { formatStorefrontToman } from "@/lib/storefront/presentation";
 
 type AccessMethod =
@@ -11,14 +15,25 @@ type AccessMethod =
   | "ONE_TIME_PASSWORD"
   | "WINDOWS_PASSWORD";
 
+type DeliveryImage = {
+  id: string;
+  label: string;
+  displayName?: string;
+  distribution?: string;
+  version?: string | null;
+  architecture?: string | null;
+  windows?: boolean;
+  accessMethods: AccessMethod[];
+  defaultAccessMethod?: AccessMethod;
+  sshSelectable?: boolean;
+};
+
 type DeliveryOptions = {
   planId: string;
   region: string;
-  images: Array<{
-    id: string;
-    label: string;
-    accessMethods: AccessMethod[];
-  }>;
+  defaultServerName?: string;
+  sshSelfServeAvailable?: boolean;
+  images: DeliveryImage[];
 };
 
 export type ReadyServerOrderSummary = {
@@ -41,11 +56,21 @@ export type ReadyServerOrderSummary = {
   instantDelivery?: boolean;
 };
 
-const accessLabels: Record<AccessMethod, string> = {
-  SSH_KEY: "کلید SSH تأییدشده",
-  ONE_TIME_PASSWORD: "رمز یک‌بارمصرف لینوکس",
-  WINDOWS_PASSWORD: "رمز یک‌بارمصرف ویندوز",
-};
+function imageDisplayName(image: DeliveryImage) {
+  return image.displayName || image.label;
+}
+
+function defaultAccessForImage(image: DeliveryImage | null): AccessMethod | "" {
+  if (!image) return "";
+  if (image.defaultAccessMethod) return image.defaultAccessMethod;
+  if (image.windows || image.accessMethods.includes("WINDOWS_PASSWORD")) {
+    return "WINDOWS_PASSWORD";
+  }
+  if (image.accessMethods.includes("ONE_TIME_PASSWORD")) {
+    return "ONE_TIME_PASSWORD";
+  }
+  return image.accessMethods[0] ?? "";
+}
 
 export function ReadyServerQuoteButton({
   planId,
@@ -75,8 +100,9 @@ export function ReadyServerQuoteButton({
   const [imageAssetId, setImageAssetId] = useState("");
   const [accessMethod, setAccessMethod] =
     useState<AccessMethod | "">("");
-  const [sshKeyName, setSshKeyName] = useState("");
   const [serverName, setServerName] = useState("");
+  const [serverNameTouched, setServerNameTouched] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [termMonths, setTermMonths] = useState<1 | 3 | 6 | 12>(1);
   const [couponCode, setCouponCode] = useState("");
   const requestKeyRef = useRef<{
@@ -93,6 +119,18 @@ export function ReadyServerQuoteButton({
     () => options?.images.find((image) => image.id === imageAssetId) ?? null,
     [imageAssetId, options],
   );
+  const serverNameValid = isValidCustomerServerName(serverName);
+  const accessLabel =
+    accessMethod === "WINDOWS_PASSWORD"
+      ? "رمز عبور ویندوز"
+      : "رمز عبور امن";
+
+  function applyImageSelection(imageId: string, images: DeliveryImage[]) {
+    const image = images.find((item) => item.id === imageId) ?? null;
+    setImageAssetId(imageId);
+    setAccessMethod(defaultAccessForImage(image));
+    setShowAdvanced(false);
+  }
 
   function goToLogin() {
     const next = `/cloud-servers?plan=${encodeURIComponent(planId)}#plan-${planId}`;
@@ -117,6 +155,10 @@ export function ReadyServerQuoteButton({
         throw new Error(body.error ?? "تنظیمات تحویل معتبر پیدا نشد.");
       }
       setOptions(body);
+      const firstImage = body.images[0]!;
+      applyImageSelection(firstImage.id, body.images);
+      setServerName(body.defaultServerName || generateCustomerServerName());
+      setServerNameTouched(false);
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -130,15 +172,15 @@ export function ReadyServerQuoteButton({
 
   async function createQuote() {
     if (!imageAssetId || !accessMethod) {
-      setError("سیستم‌عامل و روش دسترسی را انتخاب کن.");
+      setError("سیستم‌عامل را انتخاب کن.");
       return;
     }
-    if (!serverName.trim()) {
-      setError("نام سرور را وارد کن.");
+    if (!serverNameValid) {
+      setError("نام سرور معتبر نیست.");
       return;
     }
-    if (accessMethod === "SSH_KEY" && !sshKeyName.trim()) {
-      setError("نام کلید SSH ثبت‌شده را وارد کن.");
+    if (accessMethod === "SSH_KEY") {
+      setError("انتخاب کلید SSH فعلاً برای خرید مستقیم در دسترس نیست.");
       return;
     }
     setLoading(true);
@@ -151,8 +193,6 @@ export function ReadyServerQuoteButton({
         serverName: serverName.trim(),
         termMonths,
         couponCode: couponCode.trim().toUpperCase() || null,
-        sshKeyName:
-          accessMethod === "SSH_KEY" ? sshKeyName.trim() : null,
       });
       if (requestKeyRef.current?.fingerprint !== fingerprint) {
         requestKeyRef.current = {
@@ -174,7 +214,7 @@ export function ReadyServerQuoteButton({
           serverName: serverName.trim(),
           termMonths,
           couponCode: couponCode.trim() || null,
-          sshKeyName: accessMethod === "SSH_KEY" ? sshKeyName.trim() : null,
+          sshKeyName: null,
         }),
       });
       const body = (await response.json()) as {
@@ -296,50 +336,48 @@ export function ReadyServerQuoteButton({
               ) : null}
             </div>
           ) : null}
+
           <label>
             سیستم‌عامل
             <select
               value={imageAssetId}
-              onChange={(event) => {
-                setImageAssetId(event.target.value);
-                setAccessMethod("");
-              }}
+              onChange={(event) =>
+                applyImageSelection(event.target.value, options.images)
+              }
             >
-              <option value="">انتخاب کن</option>
               {options.images.map((image) => (
                 <option key={image.id} value={image.id}>
-                  {image.label}
+                  {imageDisplayName(image)}
                 </option>
               ))}
             </select>
           </label>
-          {selectedImage ? (
-            <label>
-              روش دسترسی امن
-              <select
-                value={accessMethod}
-                onChange={(event) =>
-                  setAccessMethod(event.target.value as AccessMethod)
-                }
-              >
-                <option value="">انتخاب کن</option>
-                {selectedImage.accessMethods.map((method) => (
-                  <option key={method} value={method}>
-                    {accessLabels[method]}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
+
           <label>
             نام سرور
             <input
               maxLength={64}
-              placeholder="مثلاً shop-main"
+              dir="ltr"
+              placeholder="abrchin-x8k2"
               value={serverName}
-              onChange={(event) => setServerName(event.target.value)}
+              aria-invalid={serverNameTouched && !serverNameValid}
+              onChange={(event) => {
+                setServerNameTouched(true);
+                setServerName(event.target.value);
+              }}
             />
           </label>
+          {serverNameTouched && !serverNameValid ? (
+            <small role="alert">
+              نام سرور باید ۲ تا ۶۴ کاراکتر حرف یا عدد باشد.
+            </small>
+          ) : null}
+
+          <div className="ready-server-access-summary" aria-live="polite">
+            <span>دسترسی</span>
+            <strong>{accessLabel}</strong>
+          </div>
+
           <label>
             مدت شارژ
             <select
@@ -369,24 +407,34 @@ export function ReadyServerQuoteButton({
             تخفیف دوره ممکن است به‌خاطر کف حاشیه سود کمتر از عدد اعلامی اعمال
             شود. مبلغ نهایی، مالیات و تفکیک خطی روی پیش‌فاکتور قفل می‌شود.
           </small>
-          {accessMethod === "SSH_KEY" ? (
-            <label>
-              نام کلید SSH ثبت‌شده
-              <input
-                dir="ltr"
-                maxLength={128}
-                value={sshKeyName}
-                onChange={(event) => setSshKeyName(event.target.value)}
-              />
-            </label>
-          ) : null}
+
+          <details
+            className="ready-server-advanced"
+            open={showAdvanced}
+            onToggle={(event) =>
+              setShowAdvanced((event.target as HTMLDetailsElement).open)
+            }
+          >
+            <summary>تنظیمات پیشرفته</summary>
+            <p>
+              ورود با رمز عبور امن به‌صورت پیش‌فرض فعال است. انتخاب کلید SSH برای
+              خرید مستقیم فعلاً در دسترس نیست.
+            </p>
+          </details>
+
           <small>
             سیستم‌عامل و نام سرور قبل از پرداخت قفل می‌شوند و پس از ساخت همان
             مشخصات در پنل «ابرچین‌ها» دیده می‌شود.
           </small>
           <button
             className="button button-primary"
-            disabled={loading || !imageAssetId || !accessMethod || !serverName.trim()}
+            disabled={
+              loading ||
+              !imageAssetId ||
+              !accessMethod ||
+              !serverNameValid ||
+              accessMethod === "SSH_KEY"
+            }
             onClick={createQuote}
             type="button"
           >

@@ -74,13 +74,20 @@ import {
   assertParchinLevelAllowed,
   recommendedParchinLevel,
 } from "@/lib/parchin/recommendation";
+import {
+  generateCustomerServerName,
+  isCustomerSshSelfServeEnabled,
+  normalizeCustomerImageIdentity,
+  normalizeCustomerServerName,
+} from "@/lib/infrastructure/image-identity";
 
 /** Customer-purchasable infrastructure quotes lock the customer price for exactly 60 minutes. */
 export const RECOMMENDATION_QUOTE_VALIDITY_MS = 60 * 60 * 1000;
 const READY_SERVER_PROFILE_SOURCE = "READY_SERVER";
 const CLOUD_SERVER_PROFILE_SOURCE = "CLOUD_SERVER";
 
-export { recommendedParchinLevel } from "@/lib/parchin/recommendation";
+export { recommendedParchinLevel };
+export { normalizeCustomerServerName };
 
 export type SelectedQuote = {
   role: RecommendationOfferRole;
@@ -111,6 +118,7 @@ type LockedDeliveryConfiguration = {
   sshKeyName?: string | null;
   sshKeyId?: string | null;
   sshKeyFingerprint?: string | null;
+  serverName?: string;
   configuredAt: string;
 };
 
@@ -121,14 +129,6 @@ export type CatalogDeliverySelection = {
   /** Customer-chosen display/hostname for the AbrChin server. */
   serverName: string;
 };
-
-export function normalizeCustomerServerName(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim().replace(/\s+/g, "-");
-  if (trimmed.length < 2 || trimmed.length > 64) return null;
-  if (!/^[\p{L}\p{N}][\p{L}\p{N}-]*$/u.test(trimmed)) return null;
-  return trimmed;
-}
 
 function parseLockedDeliveryConfiguration(
   value: Prisma.JsonValue | null,
@@ -276,9 +276,12 @@ async function lockAndRevalidatePlan(
       "سیستم‌عامل انتخاب‌شده دیگر با این سرور سازگار نیست.",
     );
   }
-  const windows = /windows/i.test(
-    `${image.name} ${JSON.stringify(image.rawPayload)}`,
-  );
+  const imageIdentity = normalizeCustomerImageIdentity({
+    name: image.name,
+    externalId: image.externalId,
+    rawPayload: image.rawPayload,
+  });
+  const windows = imageIdentity.windows;
   const rawImage =
     image.rawPayload &&
     typeof image.rawPayload === "object" &&
@@ -322,6 +325,12 @@ async function lockAndRevalidatePlan(
     );
   }
   if (delivery.accessMethod === "SSH_KEY") {
+    if (!isCustomerSshSelfServeEnabled()) {
+      throw new WalletError(
+        "quote_unavailable",
+        "انتخاب کلید SSH فعلاً برای خرید مستقیم در دسترس نیست.",
+      );
+    }
     if (preprovisioned || manualAdmin) {
       throw new WalletError(
         "quote_unavailable",
@@ -452,12 +461,13 @@ async function lockAndRevalidatePlan(
       externalNetworkId: defaults.externalNetworkId,
       externalSecurityId: defaults.externalSecurityId,
       topologyVerificationMode: defaults.topologyVerificationMode,
-      operatingSystem: image.name,
+      operatingSystem: imageIdentity.displayName,
       accessMethod: delivery.accessMethod,
       imageAssetId: image.id,
       sshKeyName: lockedSshKey?.name ?? null,
       sshKeyId: lockedSshKey?.id ?? null,
       sshKeyFingerprint: lockedSshKey?.fingerprint ?? null,
+      serverName: delivery.serverName,
       configuredAt: current.checkedAt.toISOString(),
     },
     providerPriceCheckedAt: current.checkedAt,
@@ -1174,17 +1184,30 @@ export async function getCatalogServerDeliveryOptions(params: {
     await requireFreshCatalog(plan.provider);
   }
   if (plan.offerSource === "MANUAL_ADMIN") {
-    const windows = /windows/i.test(plan.imageCode);
+    const identity = normalizeCustomerImageIdentity({
+      name: plan.imageCode,
+      externalId: plan.imageCode,
+    });
+    const accessMethods = identity.windows
+      ? (["WINDOWS_PASSWORD"] as const)
+      : (["ONE_TIME_PASSWORD"] as const);
     return {
       planId: plan.id,
       region: plan.regionCode,
+      defaultServerName: generateCustomerServerName(),
+      sshSelfServeAvailable: false,
       images: [
         {
           id: `manual:${plan.id}`,
-          label: plan.imageCode,
-          accessMethods: windows
-            ? (["WINDOWS_PASSWORD"] as const)
-            : (["ONE_TIME_PASSWORD"] as const),
+          label: identity.displayName,
+          displayName: identity.displayName,
+          distribution: identity.distribution,
+          version: identity.version,
+          architecture: identity.architecture,
+          windows: identity.windows,
+          accessMethods,
+          defaultAccessMethod: accessMethods[0],
+          sshSelectable: false,
         },
       ],
     };
@@ -1206,38 +1229,56 @@ export async function getCatalogServerDeliveryOptions(params: {
     },
     orderBy: { name: "asc" },
   });
+  const sshSelfServeAvailable = isCustomerSshSelfServeEnabled();
   return {
     planId: plan.id,
     region: plan.regionCode,
-    images: images.map((image) => {
-      const windows = /windows/i.test(
-        `${image.name} ${JSON.stringify(image.rawPayload)}`,
-      );
-      const raw =
-        image.rawPayload &&
-        typeof image.rawPayload === "object" &&
-        !Array.isArray(image.rawPayload)
-          ? (image.rawPayload as Record<string, unknown>)
-          : {};
-      const linuxMethods = [
-        ...(plan.provider === InfrastructureProvider.ARVAN &&
-        plan.offerSource !== "PREPROVISIONED_INVENTORY" &&
-        plan.offerSource !== "MANUAL_ADMIN" &&
-        raw.ssh_key !== false
-          ? (["SSH_KEY"] as const)
-          : []),
-        ...(raw.ssh_password !== false
-          ? (["ONE_TIME_PASSWORD"] as const)
-          : []),
-      ];
-      return {
-        id: image.id,
-        label: image.name,
-        accessMethods: windows
+    defaultServerName: generateCustomerServerName(),
+    sshSelfServeAvailable,
+    images: images
+      .map((image) => {
+        const identity = normalizeCustomerImageIdentity({
+          name: image.name,
+          externalId: image.externalId,
+          rawPayload: image.rawPayload,
+        });
+        const raw =
+          image.rawPayload &&
+          typeof image.rawPayload === "object" &&
+          !Array.isArray(image.rawPayload)
+            ? (image.rawPayload as Record<string, unknown>)
+            : {};
+        const passwordSupported = identity.windows
+          ? true
+          : raw.ssh_password !== false;
+        const sshSupported =
+          sshSelfServeAvailable &&
+          plan.provider === InfrastructureProvider.ARVAN &&
+          plan.offerSource !== "PREPROVISIONED_INVENTORY" &&
+          plan.offerSource !== "MANUAL_ADMIN" &&
+          raw.ssh_key !== false &&
+          !identity.windows;
+        const accessMethods = identity.windows
           ? (["WINDOWS_PASSWORD"] as const)
-          : linuxMethods,
-      };
-    }).filter((image) => image.accessMethods.length > 0),
+          : ([
+              ...(passwordSupported ? (["ONE_TIME_PASSWORD"] as const) : []),
+              ...(sshSupported ? (["SSH_KEY"] as const) : []),
+            ] as const);
+        if (accessMethods.length === 0) return null;
+        return {
+          id: image.id,
+          label: identity.displayName,
+          displayName: identity.displayName,
+          distribution: identity.distribution,
+          version: identity.version,
+          architecture: identity.architecture,
+          windows: identity.windows,
+          accessMethods: [...accessMethods],
+          defaultAccessMethod: accessMethods[0]!,
+          sshSelectable: sshSupported,
+        };
+      })
+      .filter((image): image is NonNullable<typeof image> => image != null),
   };
 }
 
@@ -1374,11 +1415,13 @@ export async function createRecommendationQuotes(params: {
     );
   }
   const lockedServerName =
-    lockedConfiguration &&
-    typeof (lockedConfiguration as unknown as { serverName?: string })
-      .serverName === "string"
-      ? (lockedConfiguration as unknown as { serverName: string }).serverName
-      : configuredPlan.title.slice(0, 64);
+    normalizeCustomerServerName(
+      lockedConfiguration &&
+        typeof (lockedConfiguration as unknown as { serverName?: string })
+          .serverName === "string"
+        ? (lockedConfiguration as unknown as { serverName: string }).serverName
+        : null,
+    ) ?? generateCustomerServerName();
   const main = {
     ...configuredCandidate,
     plan: configuredPlan,
