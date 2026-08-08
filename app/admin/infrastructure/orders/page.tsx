@@ -6,22 +6,16 @@ import { DeliveryApprovalActions } from "@/components/admin/delivery-approval-ac
 import { ManualProvisionButton } from "@/components/admin/manual-ready-delivery-button";
 import { ProvisionApprovalActions } from "@/components/admin/provision-approval-actions";
 import {
-  DataTable,
   MoneyDisplay,
   PageHeader,
-  ResponsiveRowList,
   StatusBadge,
-  TechnicalValue,
 } from "@/components/product";
 import { listInfrastructureOrders } from "@/lib/admin/dashboard";
 import { getAdminPageAccess } from "@/lib/auth/guards";
 import { getProvisionApprovalReview } from "@/lib/infrastructure/provision-approval";
 import { getDeliveryApprovalReview } from "@/lib/infrastructure/delivery-approval";
 import { getInfrastructureAttention } from "@/lib/infrastructure/attention";
-import {
-  deliveryModeLabel,
-  infrastructureOrderStatusLabel,
-} from "@/lib/labels/infrastructure";
+import { infrastructureOrderStatusLabel } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
 
 export const metadata: Metadata = {
@@ -58,19 +52,6 @@ export default async function AdminInfrastructureOrdersPage() {
   const deliveryReviewByOrderId = new Map(
     deliveryReviews.map((review) => [review.infrastructureOrderId, review]),
   );
-
-  const columns = [
-    { key: "order", header: "سفارش" },
-    { key: "customer", header: "مشتری" },
-    { key: "plan", header: "پلن" },
-    { key: "sale", header: "قیمت فروش" },
-    { key: "providerCost", header: "قیمت خرید" },
-    { key: "payment", header: "پرداخت" },
-    { key: "review", header: "بازبینی ساخت / تحویل / توجه" },
-    { key: "region", header: "Region" },
-    { key: "status", header: "وضعیت" },
-    { key: "actions", header: "عملیات" },
-  ];
 
   const actionFor = (order: (typeof orders)[number]) => {
     const deliveryReview = deliveryReviewByOrderId.get(order.id);
@@ -198,83 +179,169 @@ export default async function AdminInfrastructureOrdersPage() {
     );
   };
 
-  const rows = orders.map((order) => {
-    const review = reviewByOrderId.get(order.id);
-    return {
-      id: order.id,
-      cells: {
-      order: <TechnicalValue>{order.serviceOrderId.slice(-8)}</TechnicalValue>,
-      customer: (
-        <div>
-          <div>{order.user.displayName || "—"}</div>
-          <div className="product-tech">{order.user.mobile}</div>
-        </div>
-      ),
-      plan: order.plan.title,
-      sale: (
-        <MoneyDisplay
-          amount={formatTomanFa(order.serviceOrder.amount)}
-          tone="sale"
-        />
-      ),
-      providerCost: (
-        <MoneyDisplay
-          amount={formatTomanFa(order.requiredFundingRial)}
-          tone="cost"
-        />
-      ),
-      payment: (
-        <div>
-          <div>{review?.payment.gateway ?? "ثبت مالی داخلی"}</div>
-          <div className="product-tech">{review?.payment.reference ?? "—"}</div>
-        </div>
-      ),
-      review: reviewSummary(order),
-      region: <TechnicalValue>{order.plan.regionCode}</TechnicalValue>,
-      status: <StatusBadge label={infrastructureOrderStatusLabel[order.status]} tone="info" />,
-      actions: actionFor(order),
-      },
-    };
-  });
-
-  const mobileRows = orders.map((order) => ({
-    id: order.id,
-    title: order.plan.title,
-    fields: [
-      { label: "مشتری", value: order.user.mobile },
-      { label: "وضعیت", value: infrastructureOrderStatusLabel[order.status] },
-      { label: "حالت تحویل", value: deliveryModeLabel[order.deliveryMode] },
-      {
-        label: "قیمت فروش",
-        value: (
-          <MoneyDisplay
-            amount={formatTomanFa(order.serviceOrder.amount)}
-            tone="sale"
-          />
-        ),
-      },
-      {
-        label: "قیمت خرید",
-        value: (
-          <MoneyDisplay
-            amount={formatTomanFa(order.requiredFundingRial)}
-            tone="cost"
-          />
-        ),
-      },
-      { label: "بازبینی", value: reviewSummary(order) },
-    ],
-    actions: actionFor(order),
+  type LaneKey =
+    | "APPROVAL"
+    | "BUILD"
+    | "DELIVERY"
+    | "ATTENTION"
+    | "DONE"
+    | "CLOSED";
+  const laneFor = (order: (typeof orders)[number]): LaneKey => {
+    if (deliveryReviewByOrderId.has(order.id)) return "DELIVERY";
+    if (reviewByOrderId.has(order.id)) return "APPROVAL";
+    if (
+      order.status === "QUEUED" ||
+      order.status === "PROVISIONING" ||
+      (order.status === "FUNDING_CONFIRMED" &&
+        order.productFlowState === "PROVISION_APPROVED")
+    ) {
+      return "BUILD";
+    }
+    if (order.status === "ACTIVE") return "DONE";
+    if (order.status === "CANCELED" || order.status === "REFUNDED") {
+      return "CLOSED";
+    }
+    return "ATTENTION";
+  };
+  const laneDefinitions: Array<{
+    key: LaneKey;
+    title: string;
+    description: string;
+    nextAction: string;
+  }> = [
+    {
+      key: "APPROVAL",
+      title: "۱. تأیید ساخت",
+      description: "پرداخت ثبت شده؛ قیمت خرید و امکان تأمین را بازبینی کن.",
+      nextAction: "بازبینی و ثبت تأیید اول",
+    },
+    {
+      key: "BUILD",
+      title: "۲. ساخت و ثبت مشخصات",
+      description: "تأیید اول انجام شده؛ سرور را بساز و IP و Credential را ثبت کن.",
+      nextAction: "ثبت نتیجه ساخت",
+    },
+    {
+      key: "DELIVERY",
+      title: "۳. تأیید تحویل",
+      description: "سرور آماده است؛ سلامت و Credential را بازبینی و تحویل را تأیید کن.",
+      nextAction: "ثبت تأیید دوم و تحویل",
+    },
+    {
+      key: "ATTENTION",
+      title: "نیازمند رسیدگی",
+      description: "سفارش‌هایی که مسیر عادی را کامل نکرده‌اند یا به بازیابی نیاز دارند.",
+      nextAction: "بررسی مانع و اقدام بازیابی",
+    },
+    {
+      key: "DONE",
+      title: "تحویل‌شده",
+      description: "سفارش‌های فعال برای مشاهده سابقه؛ اقدام روزمره ندارند.",
+      nextAction: "مشاهده سابقه",
+    },
+    {
+      key: "CLOSED",
+      title: "بسته‌شده",
+      description: "سفارش‌های لغوشده یا بازپرداخت‌شده برای نگهداری سابقه.",
+      nextAction: "مشاهده سابقه مالی",
+    },
+  ];
+  const lanes = laneDefinitions.map((lane) => ({
+    ...lane,
+    orders: orders.filter((order) => laneFor(order) === lane.key),
   }));
+  const actionableCount = lanes
+    .filter((lane) => lane.key !== "DONE" && lane.key !== "CLOSED")
+    .reduce((total, lane) => total + lane.orders.length, 0);
 
   return (
     <>
       <PageHeader
         title="سفارش‌ها و تحویل"
-        description="ترتیب الزامی: ۱) تأیید ساخت ۲) ثبت IP و مشخصات ۳) تأیید تحویل. تا گام ۳ مشتری Credential نمی‌بیند."
+        description={`${actionableCount.toLocaleString("fa-IR")} سفارش نیازمند اقدام. ترتیب قفل‌شده: تأیید ساخت ← ثبت مشخصات ← تأیید تحویل.`}
       />
-      <DataTable columns={columns} rows={rows} />
-      <ResponsiveRowList rows={mobileRows} />
+      {orders.length === 0 ? (
+        <section className="product-section product-empty">
+          هنوز سفارشی ثبت نشده است. سفارش پرداخت‌شده مشتری در صف تأیید ساخت ظاهر می‌شود.
+        </section>
+      ) : (
+        <div className="admin-order-board">
+          {lanes.map((lane) => (
+            <section className="admin-order-lane" key={lane.key}>
+              <header>
+                <div>
+                  <h2>{lane.title}</h2>
+                  <p>{lane.description}</p>
+                </div>
+                <StatusBadge
+                  label={`${lane.orders.length.toLocaleString("fa-IR")} سفارش`}
+                  tone={
+                    lane.orders.length > 0 &&
+                    lane.key !== "DONE" &&
+                    lane.key !== "CLOSED"
+                      ? "warning"
+                      : "neutral"
+                  }
+                />
+              </header>
+
+              {lane.orders.length === 0 ? (
+                <p className="admin-order-lane-empty">موردی در این مرحله نیست.</p>
+              ) : (
+                <div className="admin-order-card-grid">
+                  {lane.orders.map((order) => (
+                    <article className="admin-order-card" key={order.id}>
+                      <header>
+                        <div>
+                          <span className="admin-order-reference">
+                            سفارش {order.serviceOrderId.slice(-8)}
+                          </span>
+                          <h3>{order.plan.title}</h3>
+                        </div>
+                        <StatusBadge
+                          label={infrastructureOrderStatusLabel[order.status]}
+                          tone={lane.key === "DONE" ? "success" : "info"}
+                        />
+                      </header>
+
+                      <dl className="admin-order-facts">
+                        <div>
+                          <dt>مشتری</dt>
+                          <dd>{order.user.displayName || order.user.mobile}</dd>
+                        </div>
+                        <div>
+                          <dt>فروش</dt>
+                          <dd><MoneyDisplay amount={formatTomanFa(order.serviceOrder.amount)} tone="sale" /></dd>
+                        </div>
+                        <div>
+                          <dt>هزینه تأمین</dt>
+                          <dd><MoneyDisplay amount={formatTomanFa(order.requiredFundingRial)} tone="cost" /></dd>
+                        </div>
+                        <div>
+                          <dt>موقعیت</dt>
+                          <dd>{order.plan.regionCode}</dd>
+                        </div>
+                      </dl>
+
+                      <div className="admin-order-next">
+                        <small>اقدام بعدی</small>
+                        <strong>{lane.nextAction}</strong>
+                      </div>
+
+                      <div className="admin-order-actions">{actionFor(order)}</div>
+
+                      <details className="admin-order-technical">
+                        <summary>جزئیات بازبینی و اطلاعات فنی</summary>
+                        {reviewSummary(order)}
+                      </details>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+      )}
     </>
   );
 }

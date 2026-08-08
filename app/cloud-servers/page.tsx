@@ -1,10 +1,15 @@
-import { Cloud, Compass, RefreshCw, ShieldCheck, Wallet } from "lucide-react";
+import { Cloud, Compass, ShieldCheck, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ChinishCloudCatalog } from "@/components/chinish-cloud-catalog";
 import { getCurrentUser } from "@/lib/session";
 import { listPublicStorefrontTiers } from "@/lib/storefront/assortment-service";
+import {
+  STOREFRONT_TIERS,
+  storefrontTierDescription,
+  storefrontTierLabel,
+} from "@/lib/storefront/tiers";
 
 export const metadata: Metadata = {
   title: "سرور ابری ابرچین | چینش نو، استوار، کهکشان",
@@ -15,23 +20,38 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
+function unavailableCatalog() {
+  return {
+    live: false,
+    degraded: true,
+    checkedAt: null,
+    priceDisplay: {
+      showHourlyPrice: false,
+      showDailyPrice: false,
+      showMonthlyPrice: true,
+    },
+    tiers: STOREFRONT_TIERS.map((tier) => ({
+      tier,
+      label: storefrontTierLabel(tier),
+      description: storefrontTierDescription(tier),
+      availableCount: 0,
+      offers: [],
+    })),
+  };
+}
+
 export default async function CloudServersPage({
   searchParams,
 }: {
   searchParams: Promise<{ plan?: string }>;
 }) {
   const [catalog, user, { plan }] = await Promise.all([
-    listPublicStorefrontTiers(),
+    // Public discovery stays available during a database incident, while sale
+    // fails closed: no cached or invented SKU is ever rendered as purchasable.
+    listPublicStorefrontTiers().catch(unavailableCatalog),
     getCurrentUser(),
     searchParams,
   ]);
-  const checkedAt = catalog.checkedAt
-    ? new Intl.DateTimeFormat("fa-IR", {
-        dateStyle: "short",
-        timeStyle: "short",
-      }).format(new Date(catalog.checkedAt))
-    : "نامشخص";
-
   return (
     <section className="quick-buy-page page-view" aria-labelledby="quick-buy-title">
       <header className="quick-buy-heading">
@@ -40,37 +60,31 @@ export default async function CloudServersPage({
             <Cloud size={15} aria-hidden="true" /> سرور ابری ابرچین
           </span>
           <h1 id="quick-buy-title">
-            سرور ابری را انتخاب کنید و دوره را پیش‌پرداخت کنید.
+            سروری را انتخاب کن که همین حالا قابل خرید است.
           </h1>
           <p>
-            پلن‌ها در سه چینش نو، استوار و کهکشان چیده شده‌اند. مبلغ قابل‌پرداخت
-            ماهانه است؛ دوره‌های ۳ / ۶ / ۱۲ ماهه تا سقف تخفیف اعلامی دارند و تحویل
-            با پرچین انجام می‌شود.
+            سه چینش بر اساس توان سرور ساخته شده‌اند. قیمت نمایش‌داده‌شده مبلغ
+            یک ماه است؛ مدت، سیستم‌عامل، نام سرور و کد تخفیف را در مرحله بعد
+            انتخاب می‌کنی.
           </p>
         </div>
         <Link className="button button-quiet" href="/compass">
           <Compass size={16} aria-hidden="true" />
-          برای انتخاب مطمئن‌تر راهنمایی بگیر
+          قطب‌نما برای انتخاب مطمئن
         </Link>
       </header>
 
       <div className="quick-buy-strip">
         <span>
-          <RefreshCw size={15} aria-hidden="true" />
-          {catalog.degraded ? " نیازمند بررسی دوباره: " : " آخرین بررسی: "}
-          {checkedAt}
-        </span>
-        <span>
           <Wallet size={15} aria-hidden="true" /> خرید دوره‌ای ۱ / ۳ / ۶ / ۱۲ ماهه
         </span>
         <span>
-          <ShieldCheck size={15} aria-hidden="true" /> تحویل امن با پرچین
+          <ShieldCheck size={15} aria-hidden="true" /> فقط پلن قابل‌خرید و تحویل ادمین‌محور
         </span>
       </div>
 
       <ChinishCloudCatalog
         tiers={catalog.tiers}
-        priceDisplay={catalog.priceDisplay}
         isAuthenticated={Boolean(user)}
         autoExpandPlanId={typeof plan === "string" && plan ? plan : null}
       />

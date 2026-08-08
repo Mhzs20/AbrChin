@@ -23,24 +23,24 @@ export default function HomePage() {
         </h1>
 
         <p className="home-lead">
-          ابرچین ابرها رو طوری می‌چینه که بشه روشون محکم ساخت؛ ساده شروع کنی، با تحویل شفاف ادامه بدی و بدون بن‌بست رشد کنی.
+          سرور مناسب را شفاف انتخاب کن، مشخصات را قبل از پرداخت قفل کن و ساخت، تحویل و نگهداری را از یک پنل جلو ببر.
         </p>
 
         <div className="home-actions">
           <Link className="button button-primary button-large" href="/cloud-servers">
-            پیکربندی سرور ابری
+            دیدن سرورهای قابل خرید
             <ArrowLeft size={19} aria-hidden="true" />
           </Link>
           <Link className="button button-quiet button-large" href="/compass">
             <Layers3 size={18} aria-hidden="true" />
-            برای انتخاب کمک می‌خوام
+            مطمئن نیستم؛ راهنمایی می‌خواهم
           </Link>
         </div>
 
         <div className="trust-line" aria-label="ویژگی‌های سرویس ابرچین">
-          <span><Check size={15} aria-hidden="true" /> تأیید قبل از فعال‌سازی</span>
-          <span><Check size={15} aria-hidden="true" /> ارتقا بدون بن‌بست</span>
-          <span><ShieldCheck size={15} aria-hidden="true" /> دسترسی امن با پرچین پایه</span>
+          <span><Check size={15} aria-hidden="true" /> فقط پلن قابل خرید</span>
+          <span><Check size={15} aria-hidden="true" /> قیمت قفل‌شده ۶۰ دقیقه‌ای</span>
+          <span><ShieldCheck size={15} aria-hidden="true" /> تحویل امن و پرچین نسخه‌دار</span>
         </div>
       </div>
 

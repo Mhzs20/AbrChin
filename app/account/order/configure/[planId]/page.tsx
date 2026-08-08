@@ -1,3 +1,4 @@
+import { InfrastructureProductKind } from "@prisma/client";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -6,6 +7,7 @@ import { ReadyServerQuoteButton } from "@/components/ready-server-quote-button";
 import { PageHeader } from "@/components/product";
 import { requireCustomerPage } from "@/lib/auth/guards";
 import { resolveParchinLevelLabel } from "@/lib/parchin/labels";
+import { getCatalogServerDeliveryOptions } from "@/lib/recommendation/quote-service";
 import { listPublicStorefrontTiers } from "@/lib/storefront/assortment-service";
 
 export const metadata: Metadata = {
@@ -37,6 +39,21 @@ export default async function ConfigureServerOrderPage({
       : "cloud-servers";
   const parchinTitle =
     offer.parchinTitle ?? resolveParchinLevelLabel(offer.parchinLevel);
+  let deliveryOptions;
+  try {
+    deliveryOptions = await getCatalogServerDeliveryOptions({
+      planId: offer.id,
+      expectedProductKind:
+        offer.productKind === "READY_INSTANT_SERVER"
+          ? InfrastructureProductKind.READY_INSTANT_SERVER
+          : InfrastructureProductKind.CLOUD_SERVER,
+    });
+  } catch {
+    redirect("/cloud-servers?selection=unavailable");
+  }
+  if (deliveryOptions.images.length === 0) {
+    redirect("/cloud-servers?selection=unavailable");
+  }
 
   return (
     <>
@@ -53,6 +70,7 @@ export default async function ConfigureServerOrderPage({
         planId={offer.id}
         productPath={productPath}
         standalone
+        initialOptions={deliveryOptions}
         orderSummary={{
           title: offer.title,
           locationLabel: offer.locationLabel,

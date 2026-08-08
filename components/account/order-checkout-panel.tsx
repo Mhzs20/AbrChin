@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { QuoteCountdown } from "@/components/quote-countdown";
+import { MoneyDisplay } from "@/components/product";
 import { useToast } from "@/components/product/toast";
 
 function formatRialAsToman(value: string | bigint) {
@@ -49,6 +50,7 @@ export function OrderCheckoutPanel({
   quoteBasePath = "/account/order/quote",
   expiresAt = null,
   serverSummary = null,
+  showServerSummary = true,
   refreshApiPath = null,
 }: {
   planId?: string;
@@ -71,6 +73,8 @@ export function OrderCheckoutPanel({
   expiresAt?: string | null;
   /** Customer-facing locked server summary. */
   serverSummary?: CheckoutServerSummary | null;
+  /** Dedicated account checkout already shows the server in its left column. */
+  showServerSummary?: boolean;
   /** Explicit refresh endpoint for expired quotes. */
   refreshApiPath?: string | null;
 }) {
@@ -273,6 +277,7 @@ export function OrderCheckoutPanel({
         </p>
       ) : null}
 
+      {showServerSummary ? (
       <div className="order-checkout-summary" aria-label="خلاصه سرور">
         <div className="order-checkout-summary-row">
           <span>سرور</span>
@@ -314,6 +319,7 @@ export function OrderCheckoutPanel({
           </div>
         ) : null}
       </div>
+      ) : null}
 
       <div className="order-checkout-amounts" aria-label="مبالغ قفل‌شده">
         {baseItems.map((item) => (
@@ -322,7 +328,7 @@ export function OrderCheckoutPanel({
             key={`${item.type}:${item.label}`}
           >
             <span>{item.label}</span>
-            <strong>{formatRialAsToman(item.amountRial)} تومان</strong>
+            <strong><MoneyDisplay amount={formatRialAsToman(item.amountRial)} /></strong>
           </div>
         ))}
         {discountItems.map((item) => (
@@ -335,7 +341,7 @@ export function OrderCheckoutPanel({
                 ? `تخفیف کد ${couponCode}`
                 : item.label}
             </span>
-            <strong>{formatRialAsToman(item.amountRial)} تومان</strong>
+            <strong><MoneyDisplay amount={formatRialAsToman(item.amountRial)} /></strong>
           </div>
         ))}
         {taxItems.map((item) => (
@@ -344,18 +350,18 @@ export function OrderCheckoutPanel({
             key={`${item.type}:${item.label}`}
           >
             <span>{item.label}</span>
-            <strong>{formatRialAsToman(item.amountRial)} تومان</strong>
+            <strong><MoneyDisplay amount={formatRialAsToman(item.amountRial)} /></strong>
           </div>
         ))}
         {lineItems.length === 0 ? (
           <div className="order-checkout-summary-row">
             <span>مبلغ پایه</span>
-            <strong>{priceToman} تومان</strong>
+            <strong><MoneyDisplay amount={priceToman} /></strong>
           </div>
         ) : null}
         <div className="order-checkout-summary-row order-checkout-summary-row--total">
           <span>جمع قفل‌شده</span>
-          <strong>{priceToman} تومان</strong>
+          <strong><MoneyDisplay amount={priceToman} /></strong>
         </div>
       </div>
 
@@ -364,25 +370,25 @@ export function OrderCheckoutPanel({
           <div className="order-wallet-row">
             <span>موجودی فعلی کیف پول</span>
             <strong className="order-wallet-balance">
-              {formatRialAsToman(balance!.toString())} تومان
+              <MoneyDisplay amount={formatRialAsToman(balance!.toString())} />
             </strong>
           </div>
           <div className="order-wallet-row">
             <span>مبلغ مورد نیاز</span>
-            <strong>{formatRialAsToman(amount!.toString())} تومان</strong>
+            <strong><MoneyDisplay amount={formatRialAsToman(amount!.toString())} /></strong>
           </div>
           {shortfall > 0n ? (
             <div className="order-wallet-row order-wallet-row--shortfall">
               <span>کسری</span>
               <strong>
-                {shortfallToman.toLocaleString("fa-IR")} تومان
+                <MoneyDisplay amount={shortfallToman.toLocaleString("fa-IR")} />
               </strong>
             </div>
           ) : (
             <div className="order-wallet-row">
               <span>مانده پس از خرید</span>
               <strong>
-                {formatRialAsToman(balanceAfter!.toString())} تومان
+                <MoneyDisplay amount={formatRialAsToman(balanceAfter!.toString())} />
               </strong>
             </div>
           )}

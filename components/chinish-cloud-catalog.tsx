@@ -15,7 +15,6 @@ import { ReadyServerQuoteButton } from "@/components/ready-server-quote-button";
 import type { PublicPlanOffer } from "@/lib/orders/plans";
 import { resolveParchinLevelLabel } from "@/lib/parchin/labels";
 import type {
-  StorefrontPriceDisplay,
   StorefrontPublicTier,
 } from "@/lib/storefront/assortment-service";
 import {
@@ -42,16 +41,10 @@ type LocationFilter = "ALL" | "IRAN" | "ABROAD";
 
 export function ChinishCloudCatalog({
   tiers,
-  priceDisplay = {
-    showHourlyPrice: true,
-    showDailyPrice: true,
-    showMonthlyPrice: true,
-  },
   isAuthenticated = false,
   autoExpandPlanId = null,
 }: {
   tiers: StorefrontPublicTier[];
-  priceDisplay?: StorefrontPriceDisplay;
   isAuthenticated?: boolean;
   autoExpandPlanId?: string | null;
 }) {
@@ -168,7 +161,7 @@ export function ChinishCloudCatalog({
           onClick={() => setLocationFilter("ABROAD")}
           type="button"
         >
-          لوکیشن خارج
+          لوکیشن بین‌المللی
           <small>{locationCounts.abroad.toLocaleString("fa-IR")}</small>
         </button>
       </div>
@@ -208,10 +201,7 @@ export function ChinishCloudCatalog({
                 </div>
 
                 <div>
-                  <strong style={{ display: "block", marginBottom: 8 }}>
-                    چینش فنی
-                  </strong>
-                  <div className="quick-plan-resources" aria-label="چینش فنی">
+                  <div className="quick-plan-resources" aria-label="مشخصات سرور">
                     <span>
                       <small>
                         <Cpu size={12} aria-hidden="true" /> پردازنده
@@ -248,46 +238,23 @@ export function ChinishCloudCatalog({
                 </div>
 
                 <div className="quick-plan-price">
-                  {priceDisplay.showMonthlyPrice ? (
-                    offer.salePriceRial && offer.salePriceRial !== "0" ? (
-                      <span>
-                        <strong>
-                          {formatStorefrontToman(offer.salePriceRial)}
-                        </strong>{" "}
-                        تومان در ماه
-                      </span>
-                    ) : (
-                      <span>
-                        <strong>قیمت ماهانه در دسترس نیست</strong>
-                      </span>
-                    )
-                  ) : null}
-                  {priceDisplay.showDailyPrice && offer.dailyPriceRial ? (
-                    <small>
-                      معادل تقریبی روزانه (مرجع):{" "}
-                      {formatStorefrontToman(offer.dailyPriceRial)} تومان
-                    </small>
-                  ) : null}
-                  {priceDisplay.showHourlyPrice && offer.hourlyPriceRial ? (
-                    <small>
-                      معادل تقریبی ساعتی (مرجع):{" "}
-                      {formatStorefrontToman(offer.hourlyPriceRial)} تومان —
-                      صورتحساب دوره‌ای ماهانه است
-                    </small>
-                  ) : null}
-                  {!priceDisplay.showMonthlyPrice &&
-                  !priceDisplay.showDailyPrice &&
-                  !priceDisplay.showHourlyPrice ? (
+                  {offer.salePriceRial && offer.salePriceRial !== "0" ? (
                     <span>
-                      <strong>نمایش قیمت خاموش است</strong>
+                      <strong>{formatStorefrontToman(offer.salePriceRial)}</strong>{" "}
+                      تومان
                     </span>
-                  ) : null}
+                  ) : (
+                    <span>
+                      <strong>قیمت ماهانه در دسترس نیست</strong>
+                    </span>
+                  )}
+                  <small>مبلغ یک ماه سرور + {parchinTitle}</small>
                 </div>
 
                 <ul>
                   <li>
                     <Clock3 size={14} aria-hidden="true" />
-                    تحویل پس از تأیید سفارش
+                    ساخت و تحویل کنترل‌شده توسط تیم ابرچین
                   </li>
                 </ul>
 

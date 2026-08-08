@@ -44,10 +44,9 @@ test("prepaid public copy has no PAYG consumption promise", async () => {
     assert.doesNotMatch(source, /Cadence|Settlement|Runway/);
   }
   const termUi = await readFile("components/ready-server-quote-button.tsx", "utf8");
-  assert.match(termUi, /تا ۵٪ تخفیف/);
-  assert.match(termUi, /تا ۱۰٪ تخفیف/);
-  assert.match(termUi, /تا ۲۰٪ تخفیف/);
-  assert.doesNotMatch(termUi, /۳ ماه — ۵٪ تخفیف(?!.*تا)/);
+  assert.match(termUi, /۳ ماه — ۵٪ تخفیف/);
+  assert.match(termUi, /۶ ماه — ۱۰٪ تخفیف/);
+  assert.match(termUi, /۱۲ ماه — ۲۰٪ تخفیف/);
 });
 
 test("quote pages use Persian product language", async () => {
@@ -60,7 +59,8 @@ test("quote pages use Persian product language", async () => {
     assert.doesNotMatch(source, /["'`]Snapshot["'`]/);
     assert.doesNotMatch(source, /Admin/);
     assert.doesNotMatch(source, /تغییر بعدی پرچین در Admin/);
-    assert.match(source, /accessMethodLabel/);
+    assert.match(source, /operatingSystem|lockedOsLabel/);
+    assert.doesNotMatch(source, /تنظیمات پیشرفته/);
     assert.match(source, /readParchinServiceSnapshot|parchin/);
   }
 });
@@ -125,7 +125,7 @@ test("order detail keeps immutable Parchin snapshot fields", async () => {
   const page = await readFile("app/account/orders/[id]/page.tsx", "utf8");
   assert.match(page, /parchinServiceSnapshot/);
   assert.match(page, /readParchinServiceSnapshot/);
-  assert.match(page, /قفل شده/);
+  assert.match(page, /قفل‌شده/);
   assert.match(page, /درخواست پشتیبانی برای این سرویس/);
 });
 

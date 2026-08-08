@@ -29,16 +29,16 @@ import type { PublicUser } from "@/lib/session";
 
 const mainNav: NavItem[] = [
   { href: "/account", label: "نمای کلی", icon: Home, shortLabel: "خانه" },
-  { href: "/cloud-servers", label: "راهکار فوری", icon: ShoppingBag, shortLabel: "راهکار فوری" },
-  { href: "/account/services", label: "ابرچین‌های من", icon: Server, shortLabel: "ابرچین" },
+  { href: "/cloud-servers", label: "خرید سرور", icon: ShoppingBag, shortLabel: "خرید" },
+  { href: "/account/services", label: "سرورهای من", icon: Server, shortLabel: "سرورها" },
   { href: "/account/orders", label: "سفارش‌های من", icon: ShoppingBag, shortLabel: "سفارش" },
   { href: "/account/wallet", label: "کیف پول", icon: Wallet, shortLabel: "کیف" },
-  { href: "/account/transactions", label: "تراکنش‌ها", icon: Receipt, shortLabel: "تراکنش" },
 ];
 
 const secondaryNav: NavItem[] = [
-  { href: "/account/profile", label: "پروفایل", icon: User },
   { href: "/account/support", label: "درخواست پشتیبانی", icon: CircleHelp },
+  { href: "/account/transactions", label: "تراکنش‌ها", icon: Receipt },
+  { href: "/account/profile", label: "پروفایل", icon: User },
 ];
 
 const drawerGroups = [

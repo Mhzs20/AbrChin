@@ -316,21 +316,23 @@ test("three production-grade Parchin contracts exist and snapshot immutably", ()
   const stable = defaultParchinContractForLevel("PARCHIN_STABLE", {
     monthlyPriceRial: 50_000_000n,
   });
-  assert.equal(start.subtitle, "تحویل امن");
-  assert.equal(active.subtitle, "راه‌اندازی همراه");
-  assert.equal(stable.subtitle, "آماده‌سازی پایداری");
-  assert.ok(start.includedServices.includes("تحویل فوری در صورت موجودبودن ظرفیت"));
-  assert.ok(start.excludedServices.includes("مانیتورینگ مستمر"));
+  assert.equal(start.subtitle, "سلامت پایه هر ماه");
+  assert.equal(active.subtitle, "پایش، بکاپ و نگهداری");
+  assert.equal(stable.subtitle, "عملیات Production");
+  assert.ok(start.includedServices.includes("گزارش سلامت ماهانه با اقدام پیشنهادی"));
+  assert.ok(start.excludedServices.includes("بکاپ مدیریت‌شده و آزمون Restore"));
   assert.ok(
     active.includedServices.includes(
-      "نصب یک Stack استاندارد انتخابی مانند Docker یا Nginx",
+      "بکاپ روزانه مدیریت‌شده با نگهداری هفت نسخه",
     ),
   );
-  assert.match(active.serviceLimits.setupScope, /نه عملیات نامحدود/);
-  assert.ok(stable.includedServices.includes("هماهنگی مهاجرت با قطب‌نما"));
+  assert.equal(active.serviceLimits.continuousMonitoring, "included");
+  assert.equal(active.serviceLimits.scheduledBackup, "included");
+  assert.ok(stable.includedServices.includes("آزمون Restore ماهانه و ثبت نتیجه"));
   assert.ok(
-    stable.excludedServices.some((item) => item.includes("مهاجرت واقعی")),
+    stable.excludedServices.some((item) => item.includes("DBA اختصاصی")),
   );
+  assert.equal(stable.firstResponseTarget, "رخداد حیاتی حداکثر ۳۰ دقیقه");
 
   const snap = snapshotParchinServiceContract(start);
   const readBack = readParchinServiceSnapshot(snap);
@@ -355,12 +357,26 @@ test("three production-grade Parchin contracts exist and snapshot immutably", ()
   assert.equal(later.version, 2);
   assert.equal(readBack?.title, "پرچین شروع");
   assert.equal(readBack?.version, 1);
-  assert.equal(DEFAULT_PARCHIN_SERVICE_CONTRACTS.PARCHIN_START.version, 1);
+  assert.equal(DEFAULT_PARCHIN_SERVICE_CONTRACTS.PARCHIN_START.version, 2);
+});
+
+test("Parchin v2 migration upgrades only untouched configs and preserves snapshots", async () => {
+  const migration = await readFile(
+    "prisma/migrations/20260808230000_parchin_operational_contract_v2/migration.sql",
+    "utf8",
+  );
+  assert.match(migration, /WHERE "level" = 'PARCHIN_START' AND "version" = 1/);
+  assert.match(migration, /WHERE "level" = 'PARCHIN_ACTIVE' AND "version" = 1/);
+  assert.match(migration, /WHERE "level" = 'PARCHIN_STABLE' AND "version" = 1/);
+  assert.match(migration, /پایش Uptime پنج‌دقیقه‌ای/);
+  assert.match(migration, /آزمون Restore ماهانه/);
+  assert.doesNotMatch(migration, /ServiceOrder|RecommendationQuote/);
+  assert.doesNotMatch(migration, /\bDROP\b|\bTRUNCATE\b|\bDELETE\b/i);
 });
 
 test("storefront CTA opens the dedicated account configurator", async () => {
   const catalog = await readFile("components/chinish-cloud-catalog.tsx", "utf8");
-  assert.match(catalog, /تحویل پس از تأیید سفارش/);
+  assert.match(catalog, /ساخت و تحویل کنترل‌شده توسط تیم ابرچین/);
   assert.match(catalog, /جزئیات خدمات/);
   assert.match(catalog, /ParchinDetailsDialog/);
   assert.doesNotMatch(catalog, /providerName/);

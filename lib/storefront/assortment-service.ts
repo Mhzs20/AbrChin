@@ -236,7 +236,8 @@ function toPublicOffer(input: {
     available: input.catalogFresh && input.item.available,
     instantDelivery: true,
     // A card without engine pricing can never be sold: no valid quote exists.
-    purchasable: input.purchasable && input.priced != null,
+    purchasable:
+      input.purchasable && input.priced != null && imageCodes.length > 0,
   };
 }
 

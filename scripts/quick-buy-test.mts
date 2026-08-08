@@ -13,23 +13,22 @@ test("cloud and ready purchase routes stay provider-separated before login", asy
   assert.match(cloudPage, /listPublicStorefrontTiers/);
   assert.doesNotMatch(cloudPage, /listLiveReadyServerOffers/);
   assert.match(readyPage, /redirect\("\/cloud-servers"\)/);
-  assert.match(siteShell, /راهکار فوری/);
+  assert.match(siteShell, /سرورهای ابری/);
+  assert.match(siteShell, /انتخاب سرور/);
   assert.doesNotMatch(siteShell, /\/ready-servers/);
   assert.doesNotMatch(siteShell, /shortLabel: "فوری"/);
   assert.match(chinish, /چینش نو|چینش استوار|چینش کهکشان/);
-  // Hourly/daily lines are reference equivalents of the billed monthly amount.
-  assert.match(chinish, /معادل تقریبی ساعتی \(مرجع\)/);
-  assert.match(chinish, /معادل تقریبی روزانه \(مرجع\)/);
-  assert.match(chinish, /صورتحساب دوره‌ای ماهانه/);
+  assert.match(chinish, /مبلغ یک ماه سرور/);
+  assert.doesNotMatch(chinish, /معادل تقریبی ساعتی|معادل تقریبی روزانه/);
   assert.doesNotMatch(chinish, /فقط به.?اندازه مصرف/);
-  assert.match(chinish, /چینش فنی/);
+  assert.match(chinish, /چینش سرور/);
   assert.match(chinish, /لوکیشن ایران/);
-  assert.match(chinish, /لوکیشن خارج/);
+  assert.match(chinish, /لوکیشن بین‌المللی/);
   assert.doesNotMatch(chinish, /قیمت پایه تأمین‌کننده/);
   assert.doesNotMatch(chinish, /همگام‌شده/);
   assert.doesNotMatch(chinish, /سیستم‌عامل‌های مجاز/);
   assert.match(quoteButton, /انتخاب و خرید/);
-  assert.match(chinish, /تحویل پس از تأیید سفارش/);
+  assert.match(chinish, /ساخت و تحویل کنترل‌شده توسط تیم ابرچین/);
   assert.match(chinish, /جزئیات خدمات/);
   assert.match(chinish, /ParchinDetailsDialog/);
   assert.match(quoteButton, /configurationPath|login\?next=/);
@@ -113,6 +112,6 @@ test("solutions use quick purchase and keep guided selection optional", async ()
   const quickPage = await readFile("app/cloud-servers/page.tsx", "utf8");
 
   assert.match(solutions, /\/cloud-servers\?project=/);
-  assert.match(quickPage, /برای انتخاب مطمئن‌تر راهنمایی بگیر/);
+  assert.match(quickPage, /قطب‌نما برای انتخاب مطمئن/);
   assert.match(quickPage, /href="\/compass"/);
 });

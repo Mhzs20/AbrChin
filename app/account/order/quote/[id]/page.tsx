@@ -1,14 +1,14 @@
+import { LockKeyhole, MapPin, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { OrderCheckoutPanel } from "@/components/account/order-checkout-panel";
 import { QuoteExpiredRefresh } from "@/components/quote/quote-expired-refresh";
-import { PageHeader, SectionCard, StatusBadge } from "@/components/product";
+import { PageHeader, SectionCard } from "@/components/product";
 import { requireCustomerPage } from "@/lib/auth/guards";
-import { deliveryModeLabel } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
-import { parchinPlanLabel, parchinPlanSummary } from "@/lib/parchin/catalog";
+import { readParchinServiceSnapshot } from "@/lib/parchin/service-contract";
 import {
   getActiveRecommendationQuote,
   getOwnedRecommendationQuote,
@@ -17,133 +17,141 @@ import {
 import { getWalletForUser } from "@/lib/wallet/ensure-wallet";
 
 export const metadata: Metadata = {
-  title: "تکمیل پیشنهاد | حساب من | ابرچین",
+  title: "بررسی و پرداخت سفارش | حساب من | ابرچین",
   robots: { index: false, follow: false },
 };
 
 export const dynamic = "force-dynamic";
 
-export default async function RecommendationQuoteCheckoutPage({
+export default async function AccountQuoteCheckoutPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const user = await requireCustomerPage();
   const { id } = await params;
+  const quoteRecord = await getActiveRecommendationQuote(id, user.id, null);
 
-  const quoteRecord = await getActiveRecommendationQuote(id, user.id);
   if (!quoteRecord) {
     const owned = await getOwnedRecommendationQuote(id, user.id, null);
     if (owned) {
       return (
         <QuoteExpiredRefresh
           quoteId={id}
-          catalogHref="/compass?resume=1"
+          catalogHref="/cloud-servers"
           quoteBasePath="/account/order/quote"
           refreshApiPath={`/api/recommendations/quotes/${id}/refresh`}
         />
       );
     }
-    redirect("/compass?resume=1");
+    redirect("/cloud-servers?quote=unavailable");
   }
+
   const quote = toPublicRecommendationQuote(quoteRecord);
   const wallet = await getWalletForUser(user.id);
-  const deliveryConfiguration =
+  const delivery =
     quoteRecord.deliveryConfigurationSnapshot &&
     typeof quoteRecord.deliveryConfigurationSnapshot === "object" &&
     !Array.isArray(quoteRecord.deliveryConfigurationSnapshot)
       ? (quoteRecord.deliveryConfigurationSnapshot as Record<string, unknown>)
       : null;
   const operatingSystem =
-    typeof deliveryConfiguration?.operatingSystem === "string"
-      ? deliveryConfiguration.operatingSystem
-      : "—";
+    typeof delivery?.operatingSystem === "string"
+      ? delivery.operatingSystem
+      : quoteRecord.plan.imageCode;
   const serverName =
-    typeof deliveryConfiguration?.serverName === "string"
-      ? deliveryConfiguration.serverName
-      : null;
+    typeof delivery?.serverName === "string" ? delivery.serverName : null;
   const locationLabel =
-    typeof deliveryConfiguration?.regionLabel === "string"
-      ? deliveryConfiguration.regionLabel
-      : typeof deliveryConfiguration?.region === "string"
-        ? deliveryConfiguration.region
-        : quoteRecord.providerRegion ?? "—";
+    typeof delivery?.regionLabel === "string"
+      ? delivery.regionLabel
+      : typeof delivery?.region === "string"
+        ? delivery.region
+        : quoteRecord.providerRegion ?? quoteRecord.plan.regionCode;
+  const parchin = readParchinServiceSnapshot(quoteRecord.parchinServiceSnapshot);
   const returnToPath = `/account/order/quote/${quote.id}`;
 
   return (
     <>
       <PageHeader
-        title={quote.title}
-        description="این چینش از پاسخ‌های گفت‌وگوی تو ساخته شده و تا پایان شمارش برای تو قفل است. مبلغ فقط از کیف پول کسر می‌شود."
+        title="بررسی نهایی و پرداخت"
+        description="مشخصات، مدت و مبلغ این سفارش تا پایان شمارش تغییر نمی‌کند."
         actions={
-          <Link href="/compass?resume=1" className="product-btn product-btn--quiet">
-            اصلاح نیاز
+          <Link href="/cloud-servers" className="product-btn product-btn--quiet">
+            تغییر انتخاب
           </Link>
         }
       />
-      <SectionCard title="خلاصه پیشنهاد اختصاصی">
-        <p style={{ marginTop: 0 }}>{quote.description}</p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-          <StatusBadge label={deliveryModeLabel[quote.deliveryMode]} tone="info" />
-          {quote.vcpu ? <span className="product-tech">{quote.vcpu} vCPU</span> : null}
-          {quote.ramGb ? <span className="product-tech">{quote.ramGb} GB RAM</span> : null}
-          {quote.storageGb ? <span className="product-tech">{quote.storageGb} GB فضا</span> : null}
-          <span>
-            <span className="product-tech">
-              {quote.termMonths.toLocaleString("fa-IR")} ماهه
-            </span>{" "}
-            <span className="product-money">
-              {formatTomanFa(quoteRecord.amountRial)}
-            </span>{" "}
-            تومان
-          </span>
-          <span>
-            تمدید دستی{" "}
-            <span className="product-money">
-              {formatTomanFa(quoteRecord.renewalAmountRial)}
-            </span>{" "}
-            تومان
-          </span>
-          {quote.termDiscountBps > 0 ? (
-            <span className="product-tech">
-              تخفیف {Math.round(quote.termDiscountBps / 100).toLocaleString("fa-IR")}٪
-              {quote.couponCode ? ` (${quote.couponCode})` : ""}
+
+      <div className="account-quote-layout">
+        <SectionCard title={quote.title}>
+          <div className="account-quote-lock">
+            <LockKeyhole size={18} aria-hidden="true" />
+            <div>
+              <strong>قرارداد خرید قفل شد</strong>
+              <span>قیمت و مشخصات برای ۶۰ دقیقه ثابت است.</span>
+            </div>
+          </div>
+
+          <div className="account-quote-badges">
+            <span><MapPin size={14} aria-hidden="true" /> {locationLabel}</span>
+            <span>
+              <ShieldCheck size={14} aria-hidden="true" />
+              {parchin ? `${parchin.title} · نسخه ${parchin.version.toLocaleString("fa-IR")}` : "پرچین"}
             </span>
+          </div>
+
+          <dl className="account-quote-specs">
+            <div><dt>پردازنده</dt><dd dir="ltr">{quote.vcpu ?? "—"} vCPU</dd></div>
+            <div><dt>حافظه</dt><dd dir="ltr">{quote.ramGb ?? "—"} GB</dd></div>
+            <div><dt>دیسک</dt><dd dir="ltr">{quote.storageGb ?? "—"} GB</dd></div>
+            <div><dt>سیستم‌عامل</dt><dd dir="ltr">{operatingSystem}</dd></div>
+            <div><dt>نام سرور</dt><dd dir="ltr">{serverName ?? "—"}</dd></div>
+            <div><dt>مدت</dt><dd>{quote.termMonths.toLocaleString("fa-IR")} ماه</dd></div>
+          </dl>
+
+          {parchin ? (
+            <div className="account-quote-parchin">
+              <strong>{parchin.subtitle}</strong>
+              <p>{parchin.description}</p>
+              <small>زمان پاسخ: {parchin.firstResponseTarget}</small>
+            </div>
           ) : null}
-          <span className="product-tech">
-            {parchinPlanLabel(quote.parchinIncluded)}
-          </span>
-        </div>
-        <p>{parchinPlanSummary(quote.parchinIncluded)}</p>
-        <ul>
-          {quote.reasons.map((reason) => <li key={reason}>{reason}</li>)}
-        </ul>
-      </SectionCard>
-      <OrderCheckoutPanel
-        quoteId={quote.id}
-        planTitle={quote.title}
-        priceToman={formatTomanFa(quoteRecord.amountRial)}
-        termMonths={quote.termMonths}
-        termDiscountBps={quote.termDiscountBps}
-        couponCode={quote.couponCode}
-        lineItems={quote.lineItems}
-        amountRial={quoteRecord.amountRial.toString()}
-        walletBalanceRial={(wallet?.availableBalance ?? 0n).toString()}
-        returnToPath={returnToPath}
-        quoteBasePath="/account/order/quote"
-        expiresAt={quote.expiresAt}
-        refreshApiPath={`/api/recommendations/quotes/${quote.id}/refresh`}
-        serverSummary={{
-          title: quote.title,
-          locationLabel,
-          vcpu: quote.vcpu,
-          ramGb: quote.ramGb,
-          storageGb: quote.storageGb,
-          operatingSystem,
-          termMonths: quote.termMonths,
-          serverName,
-        }}
-      />
+
+          {quote.reasons.length > 0 ? (
+            <details className="account-quote-reasons">
+              <summary>چرا این انتخاب پیشنهاد شده؟</summary>
+              <ul>{quote.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+            </details>
+          ) : null}
+        </SectionCard>
+
+        <OrderCheckoutPanel
+          quoteId={quote.id}
+          planTitle={quote.title}
+          priceToman={formatTomanFa(quoteRecord.amountRial)}
+          termMonths={quote.termMonths}
+          termDiscountBps={quote.termDiscountBps}
+          couponCode={quote.couponCode}
+          lineItems={quote.lineItems}
+          amountRial={quoteRecord.amountRial.toString()}
+          walletBalanceRial={(wallet?.availableBalance ?? 0n).toString()}
+          returnToPath={returnToPath}
+          quoteBasePath="/account/order/quote"
+          expiresAt={quote.expiresAt}
+          refreshApiPath={`/api/recommendations/quotes/${quote.id}/refresh`}
+          serverSummary={{
+            title: quote.title,
+            locationLabel,
+            vcpu: quote.vcpu,
+            ramGb: quote.ramGb,
+            storageGb: quote.storageGb,
+            operatingSystem,
+            termMonths: quote.termMonths,
+            serverName,
+          }}
+          showServerSummary={false}
+        />
+      </div>
     </>
   );
 }

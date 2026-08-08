@@ -42,25 +42,25 @@ const primaryNav: NavItem[] = [
   },
   {
     href: "/admin/infrastructure/plans",
-    label: "SKUهای قابل‌فروش",
+    label: "پلن‌های قابل‌فروش",
     icon: Server,
-    shortLabel: "SKU",
+    shortLabel: "پلن‌ها",
   },
   {
-    href: "/admin/infrastructure/providers",
-    label: "منابع Arvan / ParsPack",
-    icon: Building2,
-    shortLabel: "منابع",
+    href: "/admin/infrastructure/storefront",
+    label: "چینش فروشگاه",
+    icon: LayoutDashboard,
+    shortLabel: "فروشگاه",
   },
 ];
 
 const saleNav: NavItem[] = [
-  { href: "/admin/connections", label: "اتصال سرویس‌ها", icon: Building2 },
   {
-    href: "/admin/infrastructure/storefront",
-    label: "چینش فروشگاهی",
-    icon: LayoutDashboard,
+    href: "/admin/infrastructure/providers",
+    label: "منابع آروان و پارس‌پک",
+    icon: Building2,
   },
+  { href: "/admin/connections", label: "اتصال سرویس‌ها", icon: Building2 },
   {
     href: "/admin/infrastructure/regions",
     label: "مناطق فروش",
@@ -71,9 +71,7 @@ const saleNav: NavItem[] = [
 const moneyNav: NavItem[] = [
   { href: "/admin/finance", label: "مرکز مالی", icon: Percent },
   { href: "/admin/accounting", label: "حسابداری", icon: BookOpen },
-  { href: "/admin/transactions", label: "تراکنش‌ها", icon: CreditCard },
   { href: "/admin/wallets", label: "کیف پول‌ها", icon: Wallet },
-  { href: "/admin/wallet-topup-settings", label: "مبالغ شارژ Wallet", icon: Wallet },
   { href: "/admin/payment-gateways", label: "درگاه‌های پرداخت", icon: CreditCard },
   { href: "/admin/payment-recovery", label: "بازیابی پرداخت", icon: CreditCard },
 ];
@@ -82,14 +80,12 @@ const advancedNav: NavItem[] = [
   { href: "/admin/support", label: "پشتیبانی", icon: CircleHelp },
   { href: "/admin/instances", label: "سرورهای تحویل‌شده", icon: Server },
   { href: "/admin/users", label: "کاربران", icon: Users },
-  { href: "/admin/notifications", label: "اعلان‌ها", icon: Bell },
-  { href: "/admin/audit", label: "گزارش عملیات", icon: FileText },
   { href: "/admin/settings", label: "وضعیت پیکربندی", icon: Settings },
 ];
 
 const drawerGroups: NavGroup[] = [
   { title: "مسیر فروش", items: primaryNav },
-  { title: "فروش و منابع", items: saleNav },
+  { title: "منابع", items: saleNav },
   { title: "مالی", items: moneyNav },
   { title: "پیشرفته", items: advancedNav },
 ];
@@ -127,7 +123,7 @@ export function AdminShell({
             ))}
           </SidebarGroup>
 
-          <SidebarGroup title="فروش و منابع">
+          <SidebarGroup title="منابع">
             {saleNav.map((item) => (
               <SidebarLink
                 key={item.href}

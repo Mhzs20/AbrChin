@@ -324,7 +324,7 @@ test("storefront card source uses engine final price and blocks unpriced sale", 
   assert.match(assortment, /input\.priced\?\.finalPriceRial/);
   assert.match(
     assortment,
-    /purchasable: input\.purchasable && input\.priced != null/,
+    /purchasable:\s*input\.purchasable && input\.priced != null && imageCodes\.length > 0/,
   );
   assert.match(assortment, /deriveUsageEquivalentPrices/);
   assert.match(assortment, /termMonths: 1/);

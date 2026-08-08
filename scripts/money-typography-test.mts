@@ -84,8 +84,13 @@ test("checkout quote page splits money out of product-tech badges", async () => 
     "app/account/order/quote/[id]/page.tsx",
     "utf8",
   );
-  assert.match(quotePage, /product-money/);
   assert.match(quotePage, /formatTomanFa\(quoteRecord\.amountRial\)/);
+  const checkoutPanel = await readFile(
+    "components/account/order-checkout-panel.tsx",
+    "utf8",
+  );
+  assert.match(checkoutPanel, /MoneyDisplay/);
+  assert.doesNotMatch(checkoutPanel, /className="product-tech"/);
   assert.ok(
     !/className="product-tech">\s*\{quote\.termMonths[\s\S]{0,80}formatTomanFa/.test(
       quotePage,

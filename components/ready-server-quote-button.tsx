@@ -2,7 +2,7 @@
 
 import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import {
   generateCustomerServerName,
@@ -23,11 +23,11 @@ type DeliveryImage = {
   version?: string | null;
   architecture?: string | null;
   windows?: boolean;
-  accessMethods: AccessMethod[];
+  accessMethods: readonly AccessMethod[];
   defaultAccessMethod?: AccessMethod;
 };
 
-type DeliveryOptions = {
+export type DeliveryOptions = {
   planId: string;
   region: string;
   defaultServerName?: string;
@@ -77,6 +77,7 @@ export function ReadyServerQuoteButton({
   disabledReason,
   requireLogin = false,
   standalone = false,
+  initialOptions = null,
   orderSummary,
 }: {
   planId: string;
@@ -86,20 +87,26 @@ export function ReadyServerQuoteButton({
   requireLogin?: boolean;
   /** Full configurator is rendered only on the dedicated account page. */
   standalone?: boolean;
+  /** Server-loaded options keep the dedicated checkout deterministic. */
+  initialOptions?: DeliveryOptions | null;
   orderSummary?: ReadyServerOrderSummary;
 }) {
   const router = useRouter();
-  const loadedRef = useRef(false);
   const requestKeyRef = useRef<{
     fingerprint: string;
     key: string;
   } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [options, setOptions] = useState<DeliveryOptions | null>(null);
-  const [imageAssetId, setImageAssetId] = useState("");
-  const [accessMethod, setAccessMethod] = useState<AccessMethod | "">("");
-  const [serverName, setServerName] = useState("");
+  const [options] = useState<DeliveryOptions | null>(initialOptions);
+  const firstImage = initialOptions?.images[0] ?? null;
+  const [imageAssetId, setImageAssetId] = useState(firstImage?.id ?? "");
+  const [accessMethod, setAccessMethod] = useState<AccessMethod | "">(
+    defaultAccessForImage(firstImage),
+  );
+  const [serverName, setServerName] = useState(
+    initialOptions?.defaultServerName || generateCustomerServerName(),
+  );
   const [serverNameTouched, setServerNameTouched] = useState(false);
   const [termMonths, setTermMonths] = useState<1 | 3 | 6 | 12>(1);
   const [couponCode, setCouponCode] = useState("");
@@ -129,40 +136,6 @@ export function ReadyServerQuoteButton({
     const image = images.find((item) => item.id === imageId) ?? null;
     setImageAssetId(imageId);
     setAccessMethod(defaultAccessForImage(image));
-  }
-
-  async function loadDeliveryOptions() {
-    if (!standalone || disabled || loadedRef.current) return;
-    loadedRef.current = true;
-    setLoading(true);
-    setError("");
-    try {
-      const response = await fetch(
-        `/api/${productPath}/quotes?planId=${encodeURIComponent(planId)}`,
-      );
-      const body = (await response.json()) as DeliveryOptions & {
-        error?: string;
-      };
-      if (!response.ok || !body.images?.length) {
-        throw new Error(
-          body.error ?? "برای این سرور سیستم‌عامل قابل انتخاب پیدا نشد.",
-        );
-      }
-      setOptions(body);
-      const firstImage = body.images[0]!;
-      applyImageSelection(firstImage.id, body.images);
-      setServerName(body.defaultServerName || generateCustomerServerName());
-      setServerNameTouched(false);
-    } catch (caught) {
-      loadedRef.current = false;
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "آماده‌سازی سفارش ممکن نشد.",
-      );
-    } finally {
-      setLoading(false);
-    }
   }
 
   async function createQuote() {
@@ -214,7 +187,7 @@ export function ReadyServerQuoteButton({
       if (!response.ok || !body.quote?.id) {
         throw new Error(body.error ?? "ساخت پیش‌فاکتور ممکن نشد.");
       }
-      router.push(`/${productPath}/quote/${body.quote.id}`);
+      router.push(`/account/order/quote/${body.quote.id}`);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "ساخت پیش‌فاکتور ممکن نشد.",
@@ -223,11 +196,6 @@ export function ReadyServerQuoteButton({
       setLoading(false);
     }
   }
-
-  useEffect(() => {
-    void loadDeliveryOptions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [standalone, planId, productPath]);
 
   if (!standalone) {
     return (
@@ -302,17 +270,6 @@ export function ReadyServerQuoteButton({
           <p>این چهار مورد قبل از پرداخت روی پیش‌فاکتور قفل می‌شوند.</p>
         </div>
 
-        {loading && !options ? (
-          <div className="server-order-loading" aria-live="polite">
-            <LoaderCircle
-              className="ready-server-spinner"
-              size={20}
-              aria-hidden="true"
-            />
-            در حال آماده‌سازی سیستم‌عامل‌ها
-          </div>
-        ) : null}
-
         {options ? (
           <div className="server-order-form">
             <label>
@@ -368,7 +325,7 @@ export function ReadyServerQuoteButton({
             </label>
 
             <label>
-              <span>کد تخفیف <small>(اختیاری)</small></span>
+              <span>کد تخفیف دارید؟ <small>(اختیاری)</small></span>
               <input
                 maxLength={32}
                 dir="ltr"
@@ -405,15 +362,26 @@ export function ReadyServerQuoteButton({
           </div>
         ) : null}
 
-        {error ? (
+        {!options ? (
+          <div className="server-order-error" role="alert">
+            <p>سیستم‌عامل‌های این سرور در دسترس نیستند؛ پلن دیگری را انتخاب کن.</p>
+            <button
+              className="product-btn product-btn--quiet"
+              onClick={() => router.push("/cloud-servers")}
+              type="button"
+            >
+              بازگشت به سرورها
+            </button>
+          </div>
+        ) : error ? (
           <div className="server-order-error" role="alert">
             <p>{error}</p>
             <button
               className="product-btn product-btn--quiet"
-              onClick={() => void loadDeliveryOptions()}
+              onClick={() => setError("")}
               type="button"
             >
-              تلاش دوباره
+              اصلاح اطلاعات
             </button>
           </div>
         ) : null}

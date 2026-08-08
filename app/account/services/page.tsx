@@ -3,12 +3,9 @@ import Link from "next/link";
 
 import { ServiceChangeRequestButtons } from "@/components/account/service-change-request-buttons";
 import {
-  DataTable,
   PageHeader,
-  ResponsiveRowList,
   StatusBadge,
   TechnicalValue,
-  Timeline,
 } from "@/components/product";
 import { getUserAbrchinServers } from "@/lib/account/queries";
 import { requireCustomerPage } from "@/lib/auth/guards";
@@ -24,6 +21,28 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
+
+function serviceNextAction(service: {
+  kind: "building" | "instance";
+  statusTone: "success" | "warning";
+}) {
+  if (service.kind === "building") {
+    return {
+      title: "ساخت و کنترل سلامت با ابرچین است",
+      description: "برای دیدن تغییر وضعیت نیازی به اقدام شما نیست؛ همین صفحه به‌روز می‌شود.",
+    };
+  }
+  if (service.statusTone === "success") {
+    return {
+      title: "سرور آماده استفاده است",
+      description: "اطلاعات دسترسی امن و تمدید را در جزئیات سفارش مدیریت کن.",
+    };
+  }
+  return {
+    title: "وضعیت سرویس در حال بررسی است",
+    description: "جزئیات سفارش آخرین رویداد و مسیر پیگیری را نشان می‌دهد.",
+  };
+}
 
 export default async function AccountServicesPage() {
   const user = await requireCustomerPage();
@@ -74,123 +93,95 @@ export default async function AccountServicesPage() {
     })),
   ];
 
-  const columns = [
-    { key: "name", header: "نام" },
-    { key: "ip", header: "IP" },
-    { key: "plan", header: "پلن" },
-    { key: "os", header: "سیستم‌عامل" },
-    { key: "mode", header: "نوع" },
-    { key: "status", header: "وضعیت" },
-    { key: "createdAt", header: "ایجاد" },
-    { key: "actions", header: "" },
-  ];
-
-  const rows = services.map((service) => ({
-    id: service.id,
-    cells: {
-      name: service.name,
-      ip: service.ipv4 ? <TechnicalValue>{service.ipv4}</TechnicalValue> : "—",
-      plan: service.planTitle,
-      os: <TechnicalValue>{service.image}</TechnicalValue>,
-      mode: deliveryModeLabel[service.deliveryMode],
-      status: <StatusBadge label={service.statusLabel} tone={service.statusTone} />,
-      createdAt: new Date(service.createdAt).toLocaleString("fa-IR"),
-      actions: (
-        <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link
-            className="product-btn product-btn--quiet"
-            href={`/account/orders/${service.orderId}`}
-          >
-            جزئیات
-          </Link>
-          {service.canRequestChange && service.instanceId ? (
-            <ServiceChangeRequestButtons
-              instanceId={service.instanceId}
-              orderId={service.orderId}
-              serverName={service.name}
-              currentResources={{
-                vcpu: service.vcpu,
-                ramGb: service.ramGb,
-                diskGb: service.diskGb,
-              }}
-            />
-          ) : null}
-        </span>
-      ),
-    },
-  }));
-
-  const mobileRows = services.map((service) => ({
-    id: service.id,
-    title: service.name,
-    fields: [
-      { label: "IP", value: service.ipv4 ? <TechnicalValue>{service.ipv4}</TechnicalValue> : "—" },
-      { label: "پلن", value: service.planTitle },
-      { label: "وضعیت", value: service.statusLabel },
-      { label: "مرحله", value: getInfrastructureStage(service.infraStatus) },
-    ],
-    actions: (
-      <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Link
-          className="product-btn product-btn--quiet"
-          href={`/account/orders/${service.orderId}`}
-        >
-          جزئیات
-        </Link>
-        {service.canRequestChange && service.instanceId ? (
-          <ServiceChangeRequestButtons
-            instanceId={service.instanceId}
-            orderId={service.orderId}
-            serverName={service.name}
-            currentResources={{
-              vcpu: service.vcpu,
-              ramGb: service.ramGb,
-              diskGb: service.diskGb,
-            }}
-          />
-        ) : null}
-      </span>
-    ),
-  }));
-
-  const first = services[0];
-
   return (
     <>
       <PageHeader
-        title="ابرچین‌های من"
-        description="سرورهای خریداری‌شده؛ پس از پرداخت تا تکمیل ساخت، وضعیت «در حال ساخت» است."
+        title="سرورهای من"
+        description="وضعیت واقعی هر سرور، اقدام بعدی و دسترسی امن را یک‌جا ببین."
+        actions={
+          <Link className="product-btn product-btn--primary" href="/cloud-servers">
+            خرید سرور جدید
+          </Link>
+        }
       />
-      <DataTable
-        columns={columns}
-        rows={rows}
-        emptyMessage="هنوز ابرچینی ندارید."
-      />
-      <ResponsiveRowList rows={mobileRows} />
-      {first ? (
-        <section className="product-section" style={{ marginTop: 24 }}>
-          <h2 className="product-section-title">نمونه زمان‌بندی ساخت</h2>
-          <Timeline
-            items={[
-              {
-                id: "paid",
-                title: "پرداخت و ثبت درخواست",
-                done: true,
-              },
-              {
-                id: "building",
-                title: "در حال ساخت سرور",
-                done: first.kind === "instance",
-              },
-              {
-                id: "active",
-                title: "فعال و قابل مشاهده",
-                done: first.statusTone === "success",
-              },
-            ]}
-          />
+      {services.length === 0 ? (
+        <section className="product-empty-state">
+          <div>
+            <h2>هنوز سروری نداری</h2>
+            <p>از فهرست قابل‌خرید انتخاب کن یا با قطب‌نما نیازت را به پیشنهاد تبدیل کن.</p>
+          </div>
+          <div className="product-empty-state__actions">
+            <Link className="product-btn product-btn--primary" href="/cloud-servers">
+              انتخاب سرور
+            </Link>
+            <Link className="product-btn product-btn--quiet" href="/compass">
+              گفت‌وگو با قطب‌نما
+            </Link>
+          </div>
         </section>
-      ) : null}
+      ) : (
+        <div className="account-service-grid">
+          {services.map((service) => {
+            const nextAction = serviceNextAction(service);
+            return (
+              <article className="account-service-card" key={`${service.kind}-${service.id}`}>
+                <header className="account-service-card__header">
+                  <div>
+                    <span>{service.planTitle}</span>
+                    <h2>{service.name}</h2>
+                  </div>
+                  <StatusBadge label={service.statusLabel} tone={service.statusTone} />
+                </header>
+
+                <div className="account-service-card__resources">
+                  <div>
+                    <small>نشانی سرور</small>
+                    <strong>
+                      {service.ipv4 ? <TechnicalValue>{service.ipv4}</TechnicalValue> : "پس از تحویل نمایش داده می‌شود"}
+                    </strong>
+                  </div>
+                  <div>
+                    <small>سیستم‌عامل</small>
+                    <strong dir="ltr">{service.image}</strong>
+                  </div>
+                  <div>
+                    <small>موقعیت و نوع تحویل</small>
+                    <strong>{service.region} · {deliveryModeLabel[service.deliveryMode]}</strong>
+                  </div>
+                </div>
+
+                <div className="account-service-card__next">
+                  <small>الان چه می‌شود؟</small>
+                  <strong>{nextAction.title}</strong>
+                  <p>{nextAction.description}</p>
+                  <span>{getInfrastructureStage(service.infraStatus)}</span>
+                </div>
+
+                <footer className="account-service-card__actions">
+                  <Link
+                    className="product-btn product-btn--primary"
+                    href={`/account/orders/${service.orderId}`}
+                  >
+                    مشاهده وضعیت و دسترسی
+                  </Link>
+                  {service.canRequestChange && service.instanceId ? (
+                    <ServiceChangeRequestButtons
+                      instanceId={service.instanceId}
+                      orderId={service.orderId}
+                      serverName={service.name}
+                      currentResources={{
+                        vcpu: service.vcpu,
+                        ramGb: service.ramGb,
+                        diskGb: service.diskGb,
+                      }}
+                    />
+                  ) : null}
+                </footer>
+              </article>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }

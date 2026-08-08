@@ -327,15 +327,15 @@ export default async function AccountOrderDetailPage({
                 <li key={`in-${item}`}>{item}</li>
               ))}
             </ul>
-            <h3>خارج از دامنه</h3>
+            <h3>مرز تعهد این سطح</h3>
             <ul>
               {parchin.excludedServices.map((item) => (
                 <li key={`ex-${item}`}>{item}</li>
               ))}
             </ul>
             <small>
-              این قرارداد در زمان خرید قفل شده و با تغییر بعدی تنظیمات پرچین عوض
-              نمی‌شود.
+              خدمات این بخش قابل سفارش جداگانه‌اند، اما جزو تعهد ماهانه این سطح
+              نیستند. قرارداد خرید با تغییر بعدی تنظیمات پرچین عوض نمی‌شود.
             </small>
           </>
         ) : (

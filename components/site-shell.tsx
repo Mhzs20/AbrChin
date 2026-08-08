@@ -4,11 +4,9 @@ import {
   CircleHelp,
   Cloud,
   Compass,
-  HeartHandshake,
   Home,
-  Layers3,
+  ShieldCheck,
   Sparkles,
-  Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Image from "next/image";
@@ -29,28 +27,25 @@ const navigation: NavigationItem[] = [
   { href: "/", label: "خانه", shortLabel: "خانه", icon: Home },
   {
     href: "/cloud-servers",
-    label: "راهکار فوری",
-    shortLabel: "راهکار فوری",
-    icon: Zap,
+    label: "سرورهای ابری",
+    shortLabel: "سرورها",
+    icon: Cloud,
   },
-  { href: "/compass", label: "راهنمای انتخاب", shortLabel: "راهنما", icon: Compass },
-  { href: "/solutions", label: "راهکارها", shortLabel: "راهکارها", icon: Layers3 },
-  { href: "/support", label: "سطح همراهی", shortLabel: "همراهی", icon: HeartHandshake },
-  { href: "/about", label: "درباره ابرچین", shortLabel: "درباره", icon: Cloud },
+  { href: "/compass", label: "قطب‌نمای انتخاب", shortLabel: "قطب‌نما", icon: Compass },
+  { href: "/support", label: "پرچین", shortLabel: "پرچین", icon: ShieldCheck },
   { href: "/help", label: "راهنما و ارتباط", shortLabel: "راهنما", icon: CircleHelp },
 ];
 
-/** Keep support on mobile; drop about + help to stay at 5 tabs. */
-const mobileNavigation = navigation.filter(
-  (item) => item.href !== "/about" && item.href !== "/help",
-);
+const mobileNavigation = navigation;
 
 const footerLinks = [
   { href: "/terms", label: "شرایط استفاده" },
   { href: "/privacy", label: "حریم خصوصی" },
   { href: "/refund-policy", label: "بازپرداخت" },
   { href: "/service-policy", label: "سیاست خدمات" },
-  { href: "/support", label: "پشتیبانی" },
+  { href: "/solutions", label: "راهکارها" },
+  { href: "/about", label: "درباره ابرچین" },
+  { href: "/status", label: "وضعیت سرویس" },
 ] as const;
 
 function isActive(pathname: string, href: string) {
@@ -96,7 +91,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
             <AuthNavLink />
             <Link className="button button-primary button-compact" href="/cloud-servers">
               <Sparkles size={17} aria-hidden="true" />
-              پیکربندی سرور
+              انتخاب سرور
             </Link>
           </div>
         </header>

@@ -6,16 +6,16 @@ import type { ParchinLevel, Prisma } from "@prisma/client";
  */
 
 export type ParchinServiceLimits = {
-  /** One standard initial setup — not unlimited ops. */
+  /** The operational promise shown to Customer and Admin. */
   setupScope: string;
   /** Customer software install is out of scope unless Compass add-on. */
   customSoftware: "excluded";
-  continuousMonitoring: "excluded" | "add_on";
-  scheduledBackup: "excluded" | "add_on";
+  continuousMonitoring: "excluded" | "add_on" | "included";
+  scheduledBackup: "excluded" | "add_on" | "included";
   migration: "excluded" | "compass_coordination" | "add_on";
-  osManagement: "excluded" | "initial_only";
-  patchManagement: "excluded" | "add_on";
-  applicationMaintenance: "excluded" | "add_on";
+  osManagement: "excluded" | "initial_only" | "included";
+  patchManagement: "excluded" | "add_on" | "included";
+  applicationMaintenance: "excluded" | "add_on" | "included";
 };
 
 export type ParchinServiceContract = {
@@ -35,103 +35,97 @@ export type ParchinServiceContract = {
 };
 
 export const PARCHIN_SHARED_SERVICES = [
-  "ساخت سرور پس از تأیید ظرفیت",
-  "نصب سیستم‌عامل انتخابی",
-  "فعال‌شدن IP و تست دسترسی اولیه",
+  "کنترل مشخصات سفارش پیش از ساخت",
+  "نصب سیستم‌عامل و فعال‌سازی IP",
   "تحویل امن و رمزنگاری‌شده اطلاعات ورود",
-  "نمایش یک‌بارمصرف رمز یا اتصال SSH Key",
-  "نمایش وضعیت سفارش، ساخت، تحویل و تمدید",
-  "ثبت رخدادهای حساس تحویل",
-  "تحویل فوری در صورت موجودبودن ظرفیت",
+  "پیگیری وضعیت ساخت، تحویل، تمدید و تغییرات در پنل",
+  "یادآوری سررسید و ثبت رخدادهای عملیاتی",
 ] as const;
 
 const START_INCLUDED = [
   ...PARCHIN_SHARED_SERVICES,
-  "بررسی اولیه SSH یا RDP",
-  "بررسی تطابق سیستم‌عامل و مشخصات سفارش",
-  "راهنمای ورود اولیه",
-  "یک درخواست پشتیبانی مرتبط با تحویل",
-  "پاسخ‌گویی در ساعات اداری",
+  "سخت‌سازی پایه دسترسی و Firewall در شروع",
+  "به‌روزرسانی امنیتی سیستم‌عامل هنگام تحویل",
+  "بازبینی ماهانه دسترسی و فشار CPU، RAM و Disk",
+  "گزارش سلامت ماهانه با اقدام پیشنهادی",
+  "یک درخواست عملیاتی روتین در هر ماه",
+  "پاسخ اولیه حداکثر تا پایان روز کاری",
 ] as const;
 
 const START_EXCLUDED = [
-  "نصب نرم‌افزار اختصاصی مشتری",
-  "مانیتورینگ مستمر",
-  "بکاپ زمان‌بندی‌شده",
-  "مهاجرت",
-  "مدیریت سیستم‌عامل",
+  "پایش خودکار شبانه‌روزی و مدیریت رخداد",
+  "بکاپ مدیریت‌شده و آزمون Restore",
+  "نگهداری کد و Application مشتری",
+  "مهاجرت سایت یا داده",
 ] as const;
 
 const ACTIVE_INCLUDED = [
   ...START_INCLUDED,
-  "به‌روزرسانی اولیه Packageهای سیستم‌عامل",
-  "تنظیم اولیه Firewall",
-  "تنظیم کاربر مدیریتی و دسترسی امن",
-  "تنظیم Timezone و NTP",
-  "نصب یک Stack استاندارد انتخابی مانند Docker یا Nginx",
-  "بررسی سلامت اولیه پس از راه‌اندازی",
-  "اولویت بالاتر در صف پشتیبانی",
+  "پایش Uptime پنج‌دقیقه‌ای با رسیدگی هشدار در ساعات کاری",
+  "بکاپ روزانه مدیریت‌شده با نگهداری هفت نسخه",
+  "بررسی ماهانه امکان بازیابی آخرین بکاپ",
+  "اعمال Patch امنیتی سیستم‌عامل در پنجره نگهداری ماهانه",
+  "دو درخواست عملیاتی روتین در هر ماه",
+  "گزارش ماهانه Uptime، بکاپ، منابع و Patch",
+  "پاسخ اولیه حداکثر چهار ساعت کاری",
 ] as const;
 
 const ACTIVE_EXCLUDED = [
-  "عملیات نامحدود پس از Setup اولیه",
-  "مانیتورینگ ۲۴/۷",
-  "بکاپ مدیریت‌شده",
-  "Patch Management مستمر",
-  "نگهداری Application",
-  "مهاجرت واقعی (Add-on / قطب‌نما)",
+  "رسیدگی انسانی شبانه‌روزی به رخداد",
+  "آزمون دوره‌ای Restore در محیط جدا",
+  "نگهداری کد و دیتابیس Application",
+  "مهاجرت کامل سایت یا سرویس",
 ] as const;
 
 const STABLE_INCLUDED = [
   ...ACTIVE_INCLUDED,
-  "چک‌لیست معماری پیش از راه‌اندازی",
-  "بررسی شبکه، Firewall و دسترسی‌ها",
-  "پیشنهاد Backup و Restore",
-  "هماهنگی مهاجرت با قطب‌نما",
-  "بررسی نهایی پس از تغییر یا مهاجرت",
-  "بالاترین اولویت پشتیبانی",
-  "مسیر مستقیم تمدید، ارتقا و تغییر منابع",
+  "پایش حیاتی شبانه‌روزی و شروع مدیریت رخدادهای P1",
+  "بکاپ روزانه با نگهداری چهارده نسخه",
+  "آزمون Restore ماهانه و ثبت نتیجه",
+  "بازبینی هفتگی Patch و وضعیت امنیتی سیستم‌عامل",
+  "مدیریت تغییرات زیرساخت با برنامه بازگشت",
+  "گزارش ظرفیت و پیشنهاد ارتقا پیش از گلوگاه",
+  "چهار درخواست عملیاتی روتین در هر ماه",
+  "پاسخ رخداد حیاتی حداکثر سی دقیقه",
 ] as const;
 
 const STABLE_EXCLUDED = [
-  "مهاجرت واقعی به‌عنوان خدمت مستقل (قطب‌نما / Add-on)",
-  "مانیتورینگ ۲۴/۷",
-  "بکاپ مدیریت‌شده زمان‌بندی‌شده",
-  "Patch Management مستمر",
-  "نگهداری Application",
+  "توسعه یا رفع باگ کد Application",
+  "DBA اختصاصی و بهینه‌سازی Query",
+  "مهاجرت کامل سایت یا سرویس بدون سفارش قطب‌نما",
 ] as const;
 
 const START_LIMITS: ParchinServiceLimits = {
-  setupScope: "تحویل امن و بررسی اولیه دسترسی",
+  setupScope: "راه‌اندازی امن + یک بازبینی و گزارش سلامت در هر ماه",
   customSoftware: "excluded",
   continuousMonitoring: "excluded",
   scheduledBackup: "excluded",
   migration: "excluded",
-  osManagement: "excluded",
+  osManagement: "initial_only",
   patchManagement: "excluded",
   applicationMaintenance: "excluded",
 };
 
 const ACTIVE_LIMITS: ParchinServiceLimits = {
-  setupScope: "یک Setup استاندارد اولیه، نه عملیات نامحدود",
+  setupScope: "پایش، بکاپ، Patch ماهانه و دو اقدام روتین در هر ماه",
   customSoftware: "excluded",
-  continuousMonitoring: "excluded",
-  scheduledBackup: "excluded",
+  continuousMonitoring: "included",
+  scheduledBackup: "included",
   migration: "excluded",
-  osManagement: "initial_only",
-  patchManagement: "excluded",
+  osManagement: "included",
+  patchManagement: "included",
   applicationMaintenance: "excluded",
 };
 
 const STABLE_LIMITS: ParchinServiceLimits = {
-  setupScope: "آماده‌سازی پایداری + هماهنگی قطب‌نما؛ مهاجرت واقعی Add-on است",
+  setupScope: "عملیات Production، مدیریت رخداد و چهار اقدام روتین در هر ماه",
   customSoftware: "excluded",
-  continuousMonitoring: "add_on",
-  scheduledBackup: "add_on",
+  continuousMonitoring: "included",
+  scheduledBackup: "included",
   migration: "compass_coordination",
-  osManagement: "initial_only",
-  patchManagement: "add_on",
-  applicationMaintenance: "add_on",
+  osManagement: "included",
+  patchManagement: "included",
+  applicationMaintenance: "excluded",
 };
 
 export const DEFAULT_PARCHIN_SERVICE_CONTRACTS: Record<
@@ -140,42 +134,42 @@ export const DEFAULT_PARCHIN_SERVICE_CONTRACTS: Record<
 > = {
   PARCHIN_START: {
     level: "PARCHIN_START",
-    version: 1,
+    version: 2,
     title: "پرچین شروع",
-    subtitle: "تحویل امن",
+    subtitle: "سلامت پایه هر ماه",
     description:
-      "تحویل کنترل‌شده سرور با بررسی دسترسی اولیه و پشتیبانی راه‌اندازی در ساعات اداری.",
+      "راه‌اندازی امن، بازبینی ماهانه منابع و یک گزارش روشن برای جلوگیری از غافلگیری.",
     includedServices: [...START_INCLUDED],
     excludedServices: [...START_EXCLUDED],
     serviceLimits: START_LIMITS,
     supportWindow: "ساعات اداری",
-    firstResponseTarget: "در ساعات اداری در همان روز کاری",
+    firstResponseTarget: "حداکثر تا پایان همان روز کاری",
   },
   PARCHIN_ACTIVE: {
     level: "PARCHIN_ACTIVE",
-    version: 1,
-    title: "پرچین فعال",
-    subtitle: "راه‌اندازی همراه",
+    version: 2,
+    title: "پرچین استوار",
+    subtitle: "پایش، بکاپ و نگهداری",
     description:
-      "خدمات پرچین شروع به‌همراه یک Setup استاندارد اولیه (Firewall، کاربر امن، Stack انتخابی) و اولویت بالاتر پشتیبانی.",
+      "پایش Uptime، بکاپ روزانه، Patch ماهانه و گزارش عملیاتی برای سرویس‌های در حال رشد.",
     includedServices: [...ACTIVE_INCLUDED],
     excludedServices: [...ACTIVE_EXCLUDED],
     serviceLimits: ACTIVE_LIMITS,
-    supportWindow: "ساعات اداری با اولویت بالاتر",
-    firstResponseTarget: "اولویت بالاتر در صف پشتیبانی همان روز کاری",
+    supportWindow: "رسیدگی هشدار در ساعات کاری",
+    firstResponseTarget: "حداکثر ۴ ساعت کاری",
   },
   PARCHIN_STABLE: {
     level: "PARCHIN_STABLE",
-    version: 1,
-    title: "پرچین پایدار",
-    subtitle: "آماده‌سازی پایداری",
+    version: 2,
+    title: "پرچین کهکشان",
+    subtitle: "عملیات Production",
     description:
-      "خدمات پرچین فعال به‌همراه چک‌لیست معماری، پیشنهاد Backup، هماهنگی مهاجرت با قطب‌نما و مسیر مستقیم تمدید و ارتقا.",
+      "پایش حیاتی ۲۴/۷، مدیریت رخداد، آزمون Restore و مدیریت تغییر برای سرویس‌های حساس.",
     includedServices: [...STABLE_INCLUDED],
     excludedServices: [...STABLE_EXCLUDED],
     serviceLimits: STABLE_LIMITS,
-    supportWindow: "ساعات اداری با بالاترین اولویت",
-    firstResponseTarget: "بالاترین اولویت در صف پشتیبانی",
+    supportWindow: "رخداد حیاتی ۲۴/۷؛ درخواست روتین در ساعات کاری",
+    firstResponseTarget: "رخداد حیاتی حداکثر ۳۰ دقیقه",
   },
 };
 
@@ -227,18 +221,41 @@ export function parseServiceLimits(value: unknown): ParchinServiceLimits {
         : START_LIMITS.setupScope,
     customSoftware: "excluded",
     continuousMonitoring:
-      raw.continuousMonitoring === "add_on" ? "add_on" : "excluded",
-    scheduledBackup: raw.scheduledBackup === "add_on" ? "add_on" : "excluded",
+      raw.continuousMonitoring === "included"
+        ? "included"
+        : raw.continuousMonitoring === "add_on"
+          ? "add_on"
+          : "excluded",
+    scheduledBackup:
+      raw.scheduledBackup === "included"
+        ? "included"
+        : raw.scheduledBackup === "add_on"
+          ? "add_on"
+          : "excluded",
     migration:
       raw.migration === "compass_coordination"
         ? "compass_coordination"
         : raw.migration === "add_on"
           ? "add_on"
           : "excluded",
-    osManagement: raw.osManagement === "initial_only" ? "initial_only" : "excluded",
-    patchManagement: raw.patchManagement === "add_on" ? "add_on" : "excluded",
+    osManagement:
+      raw.osManagement === "included"
+        ? "included"
+        : raw.osManagement === "initial_only"
+          ? "initial_only"
+          : "excluded",
+    patchManagement:
+      raw.patchManagement === "included"
+        ? "included"
+        : raw.patchManagement === "add_on"
+          ? "add_on"
+          : "excluded",
     applicationMaintenance:
-      raw.applicationMaintenance === "add_on" ? "add_on" : "excluded",
+      raw.applicationMaintenance === "included"
+        ? "included"
+        : raw.applicationMaintenance === "add_on"
+          ? "add_on"
+          : "excluded",
   };
 }
 

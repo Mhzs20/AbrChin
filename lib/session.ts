@@ -5,9 +5,7 @@ import { getClientIp } from "@/lib/client-ip";
 import { getEnv } from "@/lib/env";
 import { SESSION_COOKIE_NAME, sessionCookieOptions } from "@/lib/session-cookie";
 import {
-  createUserSession,
   findValidSession,
-  revokeSessionByToken,
   sessionMaxAgeSeconds,
 } from "@/lib/session-store";
 import { toPublicUser, type PublicUser } from "@/lib/session-user";

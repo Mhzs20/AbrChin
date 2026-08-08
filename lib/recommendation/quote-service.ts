@@ -411,10 +411,9 @@ async function lockAndRevalidatePlan(
     fingerprint: string | null;
   } | null = null;
   if (
-    offerSource !== "API_CATALOG" &&
-    (!plan.offerLastVerifiedAt ||
+    !plan.offerLastVerifiedAt ||
       !plan.offerPriceValidUntil ||
-      plan.offerPriceValidUntil.getTime() <= Date.now())
+      plan.offerPriceValidUntil.getTime() <= Date.now()
   ) {
     throw new WalletError(
       "quote_unavailable",
