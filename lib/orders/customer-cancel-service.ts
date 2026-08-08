@@ -239,7 +239,6 @@ export async function requestCustomerServiceCancellation(input: {
       requestId: existing.id,
       lifecycle: mapLifecycle({
         instanceStatus: instance.status,
-        subscriptionStatus: subscription.status,
         requestStatus: existing.status,
         refunded: false,
       }),
