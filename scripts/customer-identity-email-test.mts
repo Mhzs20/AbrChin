@@ -67,9 +67,47 @@ test("registration and email verification source contracts exist", async () => {
   assert.match(emailSvc, /createEmailProvider/);
   assert.match(emailSvc, /pg_advisory_xact_lock/);
   assert.match(emailSvc, /FOR UPDATE/);
+  // User row must be locked before reading current email / reserving challenge.
+  const requestFn = emailSvc.slice(
+    emailSvc.indexOf("export async function requestEmailVerification"),
+  );
+  const forUpdateIdx = requestFn.indexOf("FOR UPDATE");
+  const findUniqueIdx = requestFn.indexOf("findUnique");
+  assert.ok(forUpdateIdx >= 0, "request must FOR UPDATE the User row");
+  assert.ok(
+    findUniqueIdx > forUpdateIdx,
+    "current email must be read after User FOR UPDATE",
+  );
+  assert.match(emailSvc, /email-verify:\$\{userId\}/);
   assert.match(emailSvc, /email_changed/);
   assert.match(emailSvc, /alreadyVerified/);
   assert.doesNotMatch(emailSvc, /console\.log\([^\)]*code/);
+
+  const compose = await readFile("compose.production.yaml", "utf8");
+  const webBlock = compose.split(/\n {2}worker:/)[0] ?? "";
+  assert.match(
+    webBlock,
+    /EMAIL_PROVIDER: \$\{EMAIL_PROVIDER:\?EMAIL_PROVIDER must be set\}/,
+  );
+  for (const key of [
+    "EMAIL_FROM",
+    "SMTP_HOST",
+    "SMTP_PORT",
+    "SMTP_SECURE",
+    "SMTP_USER",
+    "SMTP_PASSWORD",
+    "SMTP_TIMEOUT_MS",
+    "EMAIL_VERIFICATION_TTL_SECONDS",
+  ]) {
+    assert.match(webBlock, new RegExp(`${key}:`));
+  }
+  // Worker must not unnecessarily receive SMTP secrets.
+  const workerBlock = compose.split(/\n {2}worker:/)[1] ?? "";
+  assert.doesNotMatch(workerBlock.split(/\n {2}catalog-sync:/)[0] ?? "", /SMTP_/);
+  assert.doesNotMatch(
+    workerBlock.split(/\n {2}catalog-sync:/)[0] ?? "",
+    /EMAIL_PROVIDER/,
+  );
 
   const guards = await readFile("lib/auth/guards.ts", "utf8");
   assert.match(guards, /RegistrationIncompleteError/);
@@ -582,6 +620,94 @@ test("concurrent email verification requests deliver exactly one code", async (t
     where: { userId: user.id, consumedAt: null },
   });
   assert.equal(open, 1);
+
+  await cleanupMobile(mobile);
+});
+
+test("request verification racing profile email change keeps one current-email challenge", async (t) => {
+  if (!prisma) {
+    t.skip("DATABASE_URL not set");
+    return;
+  }
+  const mobile = "09123330110";
+  await cleanupMobile(mobile);
+  const user = await prisma.user.create({
+    data: {
+      mobile,
+      role: "CUSTOMER",
+      accountStatus: "ACTIVE",
+      mobileVerifiedAt: new Date(),
+      registrationCompletedAt: new Date(),
+      firstName: "رقابت",
+      lastName: "ایمیل",
+      email: "race-old@example.com",
+      displayName: "رقابت ایمیل",
+    },
+  });
+
+  const delivered: string[] = [];
+  const provider = {
+    async send(input: { to: string }) {
+      delivered.push(input.to);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    },
+  };
+
+  const changeEmail = async (nextEmail: string) => {
+    await prisma!.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT id FROM "User" WHERE id = ${user.id} FOR UPDATE
+      `;
+      await tx.emailVerificationChallenge.deleteMany({
+        where: { userId: user.id, consumedAt: null },
+      });
+      await tx.user.update({
+        where: { id: user.id },
+        data: { email: nextEmail, emailVerifiedAt: null },
+      });
+    });
+  };
+
+  const [first, , second] = await Promise.all([
+    requestEmailVerification({ userId: user.id, emailProvider: provider }),
+    changeEmail("race-new@example.com"),
+    requestEmailVerification({ userId: user.id, emailProvider: provider }),
+  ]);
+
+  const latest = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+  assert.equal(latest.email, "race-new@example.com");
+
+  const openChallenges = await prisma.emailVerificationChallenge.findMany({
+    where: { userId: user.id, consumedAt: null },
+    orderBy: { createdAt: "desc" },
+  });
+  // At most one unconsumed challenge, and it must match CURRENT email only.
+  assert.ok(openChallenges.length <= 1);
+  if (openChallenges.length === 1) {
+    assert.equal(openChallenges[0]!.email, "race-new@example.com");
+  }
+
+  // Deliveries within the cooldown window must not leave a valid stale-email code.
+  for (const to of delivered) {
+    assert.ok(
+      to === "race-old@example.com" || to === "race-new@example.com",
+    );
+  }
+  const staleOpen = await prisma.emailVerificationChallenge.count({
+    where: {
+      userId: user.id,
+      email: "race-old@example.com",
+      consumedAt: null,
+    },
+  });
+  assert.equal(staleOpen, 0);
+
+  // At most one accepted request that still matches the current email.
+  const acceptedCurrent = [first, second].filter(
+    (r) => r.ok && r.email === latest.email,
+  );
+  assert.ok(acceptedCurrent.length <= 1);
+  assert.ok(delivered.filter((to) => to === latest.email).length <= 1);
 
   await cleanupMobile(mobile);
 });

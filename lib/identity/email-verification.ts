@@ -32,14 +32,18 @@ function verificationEmailCopy(code: string) {
   };
 }
 
-function advisoryLockKey(userId: string, email: string) {
-  return `email-verify:${userId}:${email}`;
+function advisoryLockKey(userId: string) {
+  // Stable per-user key. User row FOR UPDATE is taken first so a concurrent
+  // profile email change cannot split request serialization across old/new
+  // email-scoped lock keys.
+  return `email-verify:${userId}`;
 }
 
 /**
  * Request / resend email verification.
- * Serialized per (userId + current normalized email) via PostgreSQL advisory lock
- * so concurrent requests cannot both pass cooldown and deliver two codes.
+ * Serialized per user via User FOR UPDATE + advisory lock so concurrent
+ * requests (and concurrent profile email changes) cannot both pass cooldown
+ * and deliver two codes for independently keyed emails.
  */
 export async function requestEmailVerification(input: {
   userId: string;
@@ -53,28 +57,20 @@ export async function requestEmailVerification(input: {
   const expiresAt = new Date(Date.now() + ttl * 1000);
 
   const reserved = await prisma.$transaction(async (tx) => {
-    const user = await tx.user.findUnique({ where: { id: input.userId } });
-    if (!user) throw new WalletError("not_found", "کاربر پیدا نشد.");
-    if (!user.email) {
-      return {
-        ok: false as const,
-        error: "ابتدا ایمیل را در پروفایل ذخیره کن.",
-      };
-    }
-    if (user.emailVerifiedAt) {
-      return {
-        ok: false as const,
-        error: "ایمیل قبلاً تأیید شده است.",
-      };
+    // Lock the user row first, then read CURRENT email under that lock.
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "User" WHERE id = ${input.userId} FOR UPDATE
+    `;
+    if (locked.length === 0) {
+      throw new WalletError("not_found", "کاربر پیدا نشد.");
     }
 
     await tx.$queryRaw`
       SELECT pg_advisory_xact_lock(
-        hashtextextended(${advisoryLockKey(user.id, user.email)}, 0)
+        hashtextextended(${advisoryLockKey(input.userId)}, 0)
       )::text AS locked
     `;
 
-    // Re-read under lock — email / verified state may have changed.
     const lockedUser = await tx.user.findUnique({ where: { id: input.userId } });
     if (!lockedUser?.email) {
       return {
