@@ -36,6 +36,7 @@
     "test:accounting-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/accounting-postgres-test.mts",
     "test:accounting-isolated": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/accounting-isolated-test.mts",
     "test:fresh-migration": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/fresh-migration-postgres-test.mts",
+    "test:identity-migration": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/identity-migration-upgrade-test.mts",
     "test:migration-safety": "node --experimental-strip-types --test scripts/migration-safety-test.mts",
     "test:migration-upgrade": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/upgrade-migration-postgres-test.mts",
     "test:secret-scan": "node --experimental-strip-types scripts/secret-scan.mts",
