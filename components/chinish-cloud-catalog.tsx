@@ -287,7 +287,7 @@ export function ChinishCloudCatalog({
                 <ul>
                   <li>
                     <Clock3 size={14} aria-hidden="true" />
-                    زمان تحویل: فوری
+                    تحویل پس از تأیید سفارش
                   </li>
                 </ul>
 
@@ -299,7 +299,6 @@ export function ChinishCloudCatalog({
                       : "cloud-servers"
                   }
                   requireLogin={!isAuthenticated}
-                  autoExpand={autoExpandPlanId === offer.id}
                   disabled={!offer.purchasable}
                   disabledReason={purchaseDisabledReason(offer)}
                   orderSummary={{

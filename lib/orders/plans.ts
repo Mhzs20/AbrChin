@@ -47,6 +47,14 @@ import {
   decimalToScaledInteger,
 } from "@/lib/pricing/provider-pricing";
 import { serializeQuoteLineItems } from "@/lib/pricing/quote-line-items";
+import {
+  classifyStorefrontCapacityTier,
+  DEFAULT_STOREFRONT_CAPACITY_RULES,
+} from "@/lib/storefront/capacity-rules";
+import {
+  storefrontParchinLevel,
+  storefrontParchinTitle,
+} from "@/lib/storefront/tiers";
 
 export type PricedInfrastructurePlan = InfrastructurePlan & {
   catalogItem: ProviderCatalogItem;
@@ -332,6 +340,7 @@ type PlanTermPricingOptions = {
   termMonths?: 1 | 3 | 6 | 12;
   couponDiscountBps?: number | null;
   couponCode?: string | null;
+  parchinTitle?: string;
 };
 
 export function resolveConfiguredPlanPricing(
@@ -412,7 +421,7 @@ export function resolveConfiguredPlanPricing(
     taxBasisPoints: configs.commerce?.taxBps ?? 1000,
     parchinLevel: selectedParchinLevel,
     parchinPriceRial: parchin.priceRial,
-    parchinTitle: parchin.title,
+    parchinTitle: termOptions.parchinTitle ?? parchin.title,
     parchinVersion: "version" in parchin ? (parchin.version as number) : 1,
     termMonths: termOptions.termMonths ?? 1,
     couponDiscountBps: termOptions.couponDiscountBps,
@@ -446,7 +455,7 @@ export async function getActivePlanById(
   id: string,
   termOptions: PlanTermPricingOptions = {},
 ) {
-  const [plan, configs] = await Promise.all([
+  const [plan, configs, storefrontSettings] = await Promise.all([
     prisma.infrastructurePlan.findFirst({
       where: {
         id,
@@ -458,13 +467,35 @@ export async function getActivePlanById(
       include: { catalogItem: true },
     }),
     pricingConfigs(),
+    prisma.storefrontAssortmentSettings.findUnique({
+      where: { id: "default" },
+    }),
   ]);
   if (!plan) return null;
+  const storefrontTier =
+    plan.offerSource === "API_CATALOG" && plan.catalogItem
+      ? classifyStorefrontCapacityTier(
+          {
+            vcpu: plan.catalogItem.vcpu ?? 0,
+            ramGb:
+              plan.catalogItem.ramMb == null
+                ? 0
+                : Math.ceil(plan.catalogItem.ramMb / 1024),
+            diskGb: plan.catalogItem.diskGb ?? undefined,
+          },
+          storefrontSettings ?? DEFAULT_STOREFRONT_CAPACITY_RULES,
+        )
+      : null;
+  const requestedParchinLevel = storefrontTier
+    ? storefrontParchinLevel(storefrontTier)
+    : undefined;
   const pricing = resolveConfiguredPlanPricing(
     plan,
     configs,
-    undefined,
-    termOptions,
+    requestedParchinLevel,
+    storefrontTier
+      ? { ...termOptions, parchinTitle: storefrontParchinTitle(storefrontTier) }
+      : termOptions,
   );
   return pricing ? withEffectivePricing(plan, pricing) : null;
 }

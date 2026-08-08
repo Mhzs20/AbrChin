@@ -1,4 +1,4 @@
-import type { StorefrontChinishTier } from "@prisma/client";
+import type { ParchinLevel, StorefrontChinishTier } from "@prisma/client";
 
 export const STOREFRONT_PRIMARY_LIMIT = 24;
 export const STOREFRONT_RESERVE_LIMIT = 12;
@@ -20,6 +20,29 @@ export function storefrontTierLabel(tier: StorefrontChinishTier): string {
   if (tier === "NO") return "چینش نو";
   if (tier === "OSTOVAR") return "چینش استوار";
   return "چینش کهکشان";
+}
+
+/** Each storefront capacity tier carries its matching billed service tier. */
+export function storefrontParchinLevel(
+  tier: StorefrontChinishTier,
+): ParchinLevel {
+  if (tier === "NO") return "PARCHIN_START";
+  if (tier === "OSTOVAR") return "PARCHIN_ACTIVE";
+  return "PARCHIN_STABLE";
+}
+
+export function storefrontParchinTitle(
+  tier: StorefrontChinishTier,
+): string {
+  if (tier === "NO") return "پرچین شروع";
+  if (tier === "OSTOVAR") return "پرچین استوار";
+  return "پرچین کهکشان";
+}
+
+export function storefrontParchinTitleForLevel(level: ParchinLevel): string {
+  if (level === "PARCHIN_START") return "پرچین شروع";
+  if (level === "PARCHIN_ACTIVE") return "پرچین استوار";
+  return "پرچین کهکشان";
 }
 
 /** Customer-facing copy — never expose internal threshold phrasing. */

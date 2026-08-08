@@ -14,6 +14,8 @@ import {
   type DominanceCandidate,
 } from "../lib/storefront/dominance.ts";
 import {
+  storefrontParchinLevel,
+  storefrontParchinTitle,
   storefrontTierDescription,
   storefrontTierLabel,
 } from "../lib/storefront/tiers.ts";
@@ -356,9 +358,9 @@ test("three production-grade Parchin contracts exist and snapshot immutably", ()
   assert.equal(DEFAULT_PARCHIN_SERVICE_CONTRACTS.PARCHIN_START.version, 1);
 });
 
-test("storefront CTA and instant delivery remain customer-facing invariants", async () => {
+test("storefront CTA opens the dedicated account configurator", async () => {
   const catalog = await readFile("components/chinish-cloud-catalog.tsx", "utf8");
-  assert.match(catalog, /زمان تحویل: فوری/);
+  assert.match(catalog, /تحویل پس از تأیید سفارش/);
   assert.match(catalog, /جزئیات خدمات/);
   assert.match(catalog, /ParchinDetailsDialog/);
   assert.doesNotMatch(catalog, /providerName/);
@@ -368,11 +370,20 @@ test("storefront CTA and instant delivery remain customer-facing invariants", as
     "components/ready-server-quote-button.tsx",
     "utf8",
   );
-  assert.match(button, /ثبت سفارش/);
-  assert.match(button, /goToLogin/);
+  assert.match(button, /انتخاب و خرید/);
+  assert.match(button, /configurationPath/);
   assert.match(button, /orderSummary/);
-  assert.match(button, /تحویل فوری پس از تأیید ظرفیت/);
+  assert.match(button, /standalone/);
   assert.match(button, /login\?next=/);
+  assert.doesNotMatch(button, /خارج از پرچین/);
+
+  const page = await readFile(
+    "app/account/order/configure/[planId]/page.tsx",
+    "utf8",
+  );
+  assert.match(page, /requireCustomerPage/);
+  assert.match(page, /ReadyServerQuoteButton/);
+  assert.match(page, /standalone/);
 
   const dialog = await readFile(
     "components/parchin-details-dialog.tsx",
@@ -381,6 +392,7 @@ test("storefront CTA and instant delivery remain customer-facing invariants", as
   assert.match(dialog, /role="dialog"/);
   assert.match(dialog, /aria-modal/);
   assert.match(dialog, /Escape/);
+  assert.doesNotMatch(dialog, /شامل نمی‌شود|خدمات خارج از قرارداد/);
 });
 
 test("Task 2 migration is additive and backfills Parchin contracts", async () => {
@@ -433,13 +445,18 @@ test("Tehran cheaper equal-or-better plan hides dominated weaker plan", () => {
   );
 });
 
-test("assortment brands only the billed Parchin level", async () => {
+test("assortment bills the Parchin level matching each chinish", async () => {
+  assert.equal(storefrontParchinLevel("NO"), "PARCHIN_START");
+  assert.equal(storefrontParchinLevel("OSTOVAR"), "PARCHIN_ACTIVE");
+  assert.equal(storefrontParchinLevel("KAHKESHAN"), "PARCHIN_STABLE");
+  assert.equal(storefrontParchinTitle("KAHKESHAN"), "پرچین کهکشان");
   const source = await readFile(
     "lib/storefront/assortment-service.ts",
     "utf8",
   );
   assert.match(source, /billedContract/);
   assert.doesNotMatch(source, /brandingContract/);
-  assert.doesNotMatch(source, /storefrontParchinForTier\(tier\)/);
-  assert.match(source, /pricingParchinLevel = "PARCHIN_START"/);
+  assert.match(source, /pricingParchinLevel = storefrontParchinLevel\(tier\)/);
+  assert.match(source, /customerParchinTitle = storefrontParchinTitle\(tier\)/);
+  assert.match(source, /result\.offers\.filter\(\(offer\) => offer\.purchasable\)/);
 });

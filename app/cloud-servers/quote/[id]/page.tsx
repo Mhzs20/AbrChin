@@ -10,7 +10,6 @@ import {
   readyServerLocation,
 } from "@/lib/cloud-servers/catalog";
 import {
-  accessMethodLabel,
   effectiveTermDiscountLabel,
   termDiscountCeilingLabel,
 } from "@/lib/labels/customer";
@@ -92,10 +91,6 @@ export default async function ReadyServerQuotePage({
     typeof deliveryConfiguration?.operatingSystem === "string"
       ? deliveryConfiguration.operatingSystem
       : image;
-  const accessMethod =
-    typeof deliveryConfiguration?.accessMethod === "string"
-      ? deliveryConfiguration.accessMethod
-      : null;
   const parchinContract = readParchinServiceSnapshot(
     quoteRecord.parchinServiceSnapshot,
   );
@@ -142,12 +137,6 @@ export default async function ReadyServerQuotePage({
             <span><small>فضای دیسک</small><strong dir="ltr">{quote.storageGb ?? "—"} GB</strong></span>
             <span><small>موقعیت</small><strong>{location}</strong></span>
             <span><small>سیستم‌عامل</small><strong dir="ltr">{lockedOsLabel}</strong></span>
-            {accessMethod ? (
-              <span>
-                <small>روش دسترسی</small>
-                <strong>{accessMethodLabel(accessMethod)}</strong>
-              </span>
-            ) : null}
             {serverName ? (
               <span><small>نام سرور</small><strong dir="ltr">{serverName}</strong></span>
             ) : null}
@@ -184,10 +173,7 @@ export default async function ReadyServerQuotePage({
             </span>
             <span>
               <small>تحویل</small>
-              <strong>
-                تحویل پس از تأیید ظرفیت؛ در صورت موجود بودن ظرفیت معمولاً سریع
-                انجام می‌شود
-              </strong>
+              <strong>ساخت و تحویل پس از بررسی سفارش توسط تیم ابرچین</strong>
             </span>
           </div>
 
@@ -198,24 +184,8 @@ export default async function ReadyServerQuotePage({
                 نسخه {parchinContract.version.toLocaleString("fa-IR")} —{" "}
                 {parchinContract.description}
               </p>
-              <h3>شامل می‌شود</h3>
-              <ul>
-                {parchinContract.includedServices.map((item) => (
-                  <li key={`in-${item}`}>{item}</li>
-                ))}
-              </ul>
-              <h3>شامل نمی‌شود</h3>
-              <ul>
-                {parchinContract.excludedServices.map((item) => (
-                  <li key={`ex-${item}`}>{item}</li>
-                ))}
-              </ul>
             </div>
           ) : null}
-
-          <ul>
-            {quote.reasons.map((reason) => <li key={reason}>{reason}</li>)}
-          </ul>
         </article>
 
         <aside className="ready-quote-checkout">

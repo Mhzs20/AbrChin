@@ -28,11 +28,14 @@ test("cloud and ready purchase routes stay provider-separated before login", asy
   assert.doesNotMatch(chinish, /قیمت پایه تأمین‌کننده/);
   assert.doesNotMatch(chinish, /همگام‌شده/);
   assert.doesNotMatch(chinish, /سیستم‌عامل‌های مجاز/);
-  assert.match(quoteButton, /ثبت سفارش/);
-  assert.match(chinish, /زمان تحویل: فوری/);
+  assert.match(quoteButton, /انتخاب و خرید/);
+  assert.match(chinish, /تحویل پس از تأیید سفارش/);
   assert.match(chinish, /جزئیات خدمات/);
   assert.match(chinish, /ParchinDetailsDialog/);
-  assert.match(quoteButton, /goToLogin|login\?next=/);
+  assert.match(quoteButton, /configurationPath|login\?next=/);
+  assert.match(quoteButton, /\/account\/order\/configure\//);
+  assert.doesNotMatch(quoteButton, /تنظیمات پیشرفته/);
+  assert.doesNotMatch(quoteButton, /خارج از پرچین/);
   assert.doesNotMatch(chinish, /زمان تحویل تقریبی/);
 });
 

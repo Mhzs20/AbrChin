@@ -57,6 +57,8 @@ import {
   STOREFRONT_PRIMARY_LIMIT,
   STOREFRONT_RESERVE_LIMIT,
   STOREFRONT_TIERS,
+  storefrontParchinLevel,
+  storefrontParchinTitle,
   storefrontTierDescription,
   storefrontTierLabel,
 } from "@/lib/storefront/tiers";
@@ -371,10 +373,9 @@ function buildOfferForItem(
       config.apiVersion === item.apiVersion &&
       config.productKind === item.productKind,
   );
-  // Card, dialog, quote and checkout must advertise AND charge the same
-  // Parchin level. Storefront SKUs lock to the plan minimum (START); never
-  // brand a higher tier package while billing START.
-  const pricingParchinLevel = "PARCHIN_START" as const;
+  // Capacity tier and billed service tier are one storefront contract.
+  const pricingParchinLevel = storefrontParchinLevel(tier);
+  const customerParchinTitle = storefrontParchinTitle(tier);
   const priced =
     providerPricing && productPricing
       ? resolveCatalogItemPricing(item, providerPricing, {
@@ -383,8 +384,7 @@ function buildOfferForItem(
           parchinLevel: pricingParchinLevel,
           parchinPriceRial:
             context.parchinByLevel.get(pricingParchinLevel) ?? 0n,
-          parchinTitle:
-            context.parchinContractByLevel.get(pricingParchinLevel)?.title,
+          parchinTitle: customerParchinTitle,
           parchinVersion:
             context.parchinContractByLevel.get(pricingParchinLevel)?.version,
           termMonths: 1,
@@ -398,7 +398,7 @@ function buildOfferForItem(
     transfer: item.transfer,
     rawPayload: item.rawPayload,
   });
-  const parchinTitle = billedContract?.title || undefined;
+  const parchinTitle = billedContract ? customerParchinTitle : undefined;
   const parchinSubtitle = billedContract?.subtitle || undefined;
   const parchinSummary = billedContract
     ? oneLineParchinSummary(billedContract)
@@ -737,12 +737,15 @@ export async function listPublicStorefrontTiers(): Promise<{
     Promise.all(
       STOREFRONT_TIERS.map(async (tier) => {
         const result = await resolveStorefrontTierOffers(tier);
+        // Public catalog contract: every rendered card must enter checkout.
+        // Non-purchasable candidates remain visible only in Admin diagnostics.
+        const offers = result.offers.filter((offer) => offer.purchasable);
         return {
           tier,
           label: storefrontTierLabel(tier),
           description: storefrontTierDescription(tier),
-          availableCount: result.availableCount,
-          offers: result.offers,
+          availableCount: offers.length,
+          offers,
         };
       }),
     ),

@@ -5503,6 +5503,196 @@ a:focus-visible {
   margin: 0;
 }
 
+/* Dedicated customer-panel server configurator */
+.server-order-configurator {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.82fr) minmax(360px, 1.18fr);
+  grid-template-areas: "overview fields";
+  gap: 18px;
+  direction: ltr;
+}
+
+.server-order-overview,
+.server-order-fields {
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid var(--product-border, #d7deea);
+  border-radius: 18px;
+  background: #fff;
+  direction: rtl;
+}
+
+.server-order-overview {
+  grid-area: overview;
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  background: color-mix(in srgb, var(--blue-100, #e8f1ff) 45%, #fff);
+}
+
+.server-order-fields {
+  grid-area: fields;
+  display: grid;
+  align-content: start;
+  gap: 20px;
+}
+
+.server-order-overview h2,
+.server-order-fields h2 {
+  margin: 5px 0 6px;
+  color: var(--product-navy, #123);
+  font-size: 1.2rem;
+}
+
+.server-order-overview p,
+.server-order-fields p {
+  margin: 0;
+  color: var(--product-muted, #5b6b82);
+  line-height: 1.7;
+}
+
+.server-order-kicker {
+  color: var(--blue-700, #1559b7);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.server-order-specs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.server-order-specs > div {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--product-border, #d7deea);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.server-order-specs dt,
+.server-order-parchin > span,
+.server-order-base-price > span {
+  color: var(--product-muted, #5b6b82);
+  font-size: 0.74rem;
+}
+
+.server-order-specs dd {
+  margin: 0;
+  color: var(--product-navy, #123);
+  font-weight: 750;
+}
+
+.server-order-parchin,
+.server-order-base-price {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.server-order-parchin strong,
+.server-order-base-price strong {
+  color: var(--product-navy, #123);
+  font-size: 1rem;
+}
+
+.server-order-base-price small {
+  color: var(--product-muted, #5b6b82);
+  line-height: 1.55;
+}
+
+.server-order-form {
+  display: grid;
+  gap: 15px;
+}
+
+.server-order-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--product-navy, #123);
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+.server-order-form label > span small {
+  color: var(--product-muted, #5b6b82);
+  font-weight: 500;
+}
+
+.server-order-form select,
+.server-order-form input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--product-border, #d7deea);
+  border-radius: 11px;
+  background: #fff;
+  color: var(--product-navy, #123);
+  font: inherit;
+}
+
+.server-order-form select:focus,
+.server-order-form input:focus {
+  outline: 2px solid color-mix(in srgb, var(--blue-500) 28%, transparent);
+  border-color: var(--blue-500);
+}
+
+.server-order-form label > small {
+  color: #a64036;
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+
+.server-order-submit {
+  width: 100%;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.server-order-loading,
+.server-order-error {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 14px;
+  border-radius: 12px;
+  background: #f7f9fc;
+  color: var(--product-muted, #5b6b82);
+}
+
+.server-order-error {
+  align-items: flex-start;
+  justify-content: space-between;
+  border: 1px solid #f0d2a8;
+  background: #fff7ed;
+}
+
+@media (max-width: 900px) {
+  .server-order-configurator {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "fields"
+      "overview";
+  }
+}
+
+@media (max-width: 560px) {
+  .server-order-overview,
+  .server-order-fields {
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .server-order-specs {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Profit curve editor */
 .profit-curve-table th,
 .profit-curve-table td {

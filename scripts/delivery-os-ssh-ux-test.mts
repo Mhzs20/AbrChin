@@ -45,6 +45,18 @@ test("normalizes full OS display names and never returns naked versions", () => 
   });
   assert.equal(rocky.displayName, "Rocky Linux 9");
 
+  const nestedMetadata = normalizeCustomerImageIdentity({
+    name: "Ubuntu",
+    externalId: "provider-image-uuid",
+    rawPayload: {
+      metadata: {
+        operating_system: "Ubuntu",
+        operating_system_version: "24.04",
+      },
+    },
+  });
+  assert.equal(nestedMetadata.displayName, "Ubuntu 24.04 LTS");
+
   assert.equal(
     customerImageLabelFromCode("ubuntu22-cloudinit-qcow2"),
     "Ubuntu 22.04 LTS",
@@ -55,7 +67,7 @@ test("normalizes full OS display names and never returns naked versions", () => 
   );
 });
 
-test("default access is secure password and SSH self-serve is disabled", async () => {
+test("access method stays internal and SSH self-serve is disabled", async () => {
   assert.equal(isCustomerSshSelfServeEnabled(), false);
 
   const quoteService = await readFile(
@@ -85,15 +97,16 @@ test("default access is secure password and SSH self-serve is disabled", async (
   );
   assert.match(delivery, /sshSelectable: false/);
   assert.match(delivery, /isCustomerSshSelfServeEnabled/);
-  assert.match(button, /رمز عبور امن/);
-  assert.match(button, /تنظیمات پیشرفته/);
+  assert.doesNotMatch(button, /رمز عبور امن/);
+  assert.doesNotMatch(button, /تنظیمات پیشرفته/);
+  assert.doesNotMatch(button, /دسترسی/);
   assert.doesNotMatch(button, /نام کلید SSH ثبت‌شده/);
   assert.match(conversation, /رمز عبور امن/);
   assert.doesNotMatch(conversation, /نام کلید SSH ثبت‌شده/);
   assert.match(labels, /رمز عبور امن/);
 });
 
-test("changing OS or plan resets to password access and clears SSH UI state", async () => {
+test("changing OS resets the hidden delivery method without an advanced UI", async () => {
   const button = await readFile(
     "components/ready-server-quote-button.tsx",
     "utf8",
@@ -105,7 +118,7 @@ test("changing OS or plan resets to password access and clears SSH UI state", as
 
   assert.match(button, /function applyImageSelection/);
   assert.match(button, /setAccessMethod\(defaultAccessForImage\(image\)\)/);
-  assert.match(button, /setShowAdvanced\(false\)/);
+  assert.doesNotMatch(button, /setShowAdvanced/);
   assert.match(conversation, /setAccessMethod\([\s\S]*ONE_TIME_PASSWORD/);
   assert.match(conversation, /setSelectedDeliveryPlanId\(planId\)/);
   assert.match(conversation, /نام سرور/);
@@ -132,6 +145,8 @@ test("delivery options API only exposes compatible images with customer labels",
   );
 
   assert.match(quoteService, /externalId: \{ in: compatible \}/);
+  assert.match(quoteService, /catalog-code:/);
+  assert.match(quoteService, /lockAdminFulfilledCatalogPlan/);
   assert.match(quoteService, /normalizeCustomerImageIdentity/);
   assert.match(quoteService, /displayName: identity\.displayName/);
   assert.match(delivery, /allowedCodes\.includes\(image\.externalId\)/);
@@ -157,6 +172,7 @@ test("backend still rejects forged SSH and invalid delivery combinations", async
 
   assert.match(quoteService, /accessMethod === "SSH_KEY"/);
   assert.match(quoteService, /!isCustomerSshSelfServeEnabled\(\)/);
+  assert.match(quoteService, /delivery\.accessMethod !== expectedAccessMethod/);
   assert.match(delivery, /input\.accessMethod === "SSH_KEY"/);
   assert.match(delivery, /WINDOWS_PASSWORD/);
   assert.match(route, /ONE_TIME_PASSWORD", "SSH_KEY", "WINDOWS_PASSWORD"/);

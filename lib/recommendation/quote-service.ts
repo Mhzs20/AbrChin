@@ -80,6 +80,7 @@ import {
   normalizeCustomerImageIdentity,
   normalizeCustomerServerName,
 } from "@/lib/infrastructure/image-identity";
+import { storefrontParchinTitleForLevel } from "@/lib/storefront/tiers";
 
 /** Customer-purchasable infrastructure quotes lock the customer price for exactly 60 minutes. */
 export const RECOMMENDATION_QUOTE_VALIDITY_MS = 60 * 60 * 1000;
@@ -226,6 +227,99 @@ async function requireRegionSaleEnabled(input: {
   }
 }
 
+/**
+ * Launch catalog purchases are fulfilled manually by Admin after payment.
+ * Customer checkout therefore locks the published SKU + chosen OS from the
+ * stored Arvan/ParsPack catalog and must not depend on live provider topology,
+ * mutation access, or a second availability probe.
+ */
+async function lockAdminFulfilledCatalogPlan(
+  plan: PricedInfrastructurePlan,
+  delivery: CatalogDeliverySelection,
+): Promise<{
+  configuration: LockedDeliveryConfiguration;
+  providerPriceCheckedAt: Date;
+  providerHourlyPriceIrr: bigint | null;
+}> {
+  const compatible = Array.isArray(plan.catalogItem.compatibleImageCodes)
+    ? plan.catalogItem.compatibleImageCodes.filter(
+        (code): code is string => typeof code === "string" && code.length > 0,
+      )
+    : [];
+  const syntheticPrefix = "catalog-code:";
+  const syntheticCode = delivery.imageAssetId.startsWith(syntheticPrefix)
+    ? delivery.imageAssetId.slice(syntheticPrefix.length)
+    : null;
+  const storedImage = syntheticCode
+    ? null
+    : await prisma.providerCatalogAsset.findFirst({
+        where: {
+          id: delivery.imageAssetId,
+          provider: plan.provider,
+          apiVersion: plan.providerApiVersion,
+          regionCode: plan.regionCode,
+          kind: "IMAGE",
+        },
+      });
+  const externalImageId = storedImage?.externalId ?? syntheticCode;
+  if (!externalImageId || !compatible.includes(externalImageId)) {
+    throw new WalletError(
+      "quote_unavailable",
+      "سیستم‌عامل انتخاب‌شده برای این سرور معتبر نیست.",
+    );
+  }
+  const imageIdentity = normalizeCustomerImageIdentity({
+    name: storedImage?.name ?? externalImageId,
+    externalId: externalImageId,
+    rawPayload: storedImage?.rawPayload,
+  });
+  const expectedAccessMethod = imageIdentity.windows
+    ? "WINDOWS_PASSWORD"
+    : "ONE_TIME_PASSWORD";
+  if (delivery.accessMethod !== expectedAccessMethod) {
+    throw new WalletError(
+      "quote_unavailable",
+      "روش تحویل با سیستم‌عامل انتخاب‌شده سازگار نیست.",
+    );
+  }
+  const regionConfig = await prisma.providerRegionConfig.findUnique({
+    where: {
+      provider_apiVersion_regionCode: {
+        provider: plan.provider,
+        apiVersion: plan.providerApiVersion,
+        regionCode: plan.regionCode,
+      },
+    },
+    select: { displayName: true },
+  });
+  const checkedAt =
+    plan.catalogItem.lastSyncedAt ?? plan.pricing.providerPriceCheckedAt;
+  return {
+    configuration: {
+      provider: plan.provider,
+      providerApiVersion: plan.providerApiVersion,
+      productKind: plan.productKind,
+      region: plan.regionCode,
+      regionLabel: regionConfig?.displayName ?? plan.regionCode,
+      externalPlanId: plan.catalogItem.externalPlanId ?? plan.sizeCode,
+      externalImageId,
+      externalNetworkId: null,
+      externalSecurityId: null,
+      topologyVerificationMode: "PROVIDER_MANAGED",
+      operatingSystem: imageIdentity.displayName,
+      accessMethod: expectedAccessMethod,
+      imageAssetId: storedImage?.id ?? `${syntheticPrefix}${externalImageId}`,
+      sshKeyName: null,
+      sshKeyId: null,
+      sshKeyFingerprint: null,
+      serverName: delivery.serverName,
+      configuredAt: checkedAt.toISOString(),
+    },
+    providerPriceCheckedAt: checkedAt,
+    providerHourlyPriceIrr: plan.catalogItem.providerHourlyPriceIrr,
+  };
+}
+
 async function lockAndRevalidatePlan(
   plan: PricedInfrastructurePlan,
   delivery: CatalogDeliverySelection,
@@ -234,6 +328,9 @@ async function lockAndRevalidatePlan(
   providerPriceCheckedAt: Date;
   providerHourlyPriceIrr: bigint | null;
 }> {
+  if (plan.offerSource === "API_CATALOG") {
+    return lockAdminFulfilledCatalogPlan(plan, delivery);
+  }
   await requireRegionSaleEnabled(plan);
   assertProviderRoute({
     productKind: plan.productKind,
@@ -874,9 +971,6 @@ async function createCatalogServerQuote(params: {
       expiresAt: quote.expiresAt,
     };
   }
-  if (route.offerSource === "API_CATALOG") {
-    await requireFreshCatalog(route.provider);
-  }
   const termPricing = {
     termMonths,
     couponDiscountBps,
@@ -1083,9 +1177,12 @@ async function createCatalogServerQuote(params: {
           const row = await tx.parchinPricingConfig.findUnique({
             where: { level: plan.pricing.parchinLevel },
           });
-          return row
-            ? snapshotParchinServiceContract(toParchinServiceContract(row))
-            : undefined;
+          if (!row) return undefined;
+          const contract = toParchinServiceContract(row);
+          return snapshotParchinServiceContract({
+            ...contract,
+            title: storefrontParchinTitleForLevel(plan.pricing.parchinLevel),
+          });
         })(),
         providerAddonsSnapshot: [],
         deliveryConfigurationSnapshot:
@@ -1179,10 +1276,6 @@ export async function getCatalogServerDeliveryOptions(params: {
     productKind: plan.productKind,
     offerSource: plan.offerSource,
   });
-  await requireRegionSaleEnabled(plan);
-  if (plan.offerSource === "API_CATALOG") {
-    await requireFreshCatalog(plan.provider);
-  }
   if (plan.offerSource === "MANUAL_ADMIN") {
     const identity = normalizeCustomerImageIdentity({
       name: plan.imageCode,
@@ -1214,71 +1307,54 @@ export async function getCatalogServerDeliveryOptions(params: {
   }
   const compatible = Array.isArray(plan.catalogItem.compatibleImageCodes)
     ? plan.catalogItem.compatibleImageCodes.filter(
-        (code): code is string => typeof code === "string",
+        (code): code is string => typeof code === "string" && code.length > 0,
       )
     : [];
-  const images = await prisma.providerCatalogAsset.findMany({
+  const storedImages = await prisma.providerCatalogAsset.findMany({
     where: {
       provider: plan.provider,
       apiVersion: plan.providerApiVersion,
       regionCode: plan.regionCode,
       kind: "IMAGE",
       externalId: { in: compatible },
-      status: "ACTIVE",
-      available: true,
     },
     orderBy: { name: "asc" },
   });
-  const sshSelfServeAvailable = isCustomerSshSelfServeEnabled();
+  const storedByCode = new Map(
+    storedImages.map((image) => [image.externalId, image]),
+  );
+  const seenLabels = new Set<string>();
+  const images = compatible.flatMap((code) => {
+    const stored = storedByCode.get(code) ?? null;
+    const identity = normalizeCustomerImageIdentity({
+      name: stored?.name ?? code,
+      externalId: code,
+      rawPayload: stored?.rawPayload,
+    });
+    if (seenLabels.has(identity.displayName)) return [];
+    seenLabels.add(identity.displayName);
+    const accessMethods = identity.windows
+      ? (["WINDOWS_PASSWORD"] as const)
+      : (["ONE_TIME_PASSWORD"] as const);
+    return [{
+      id: stored?.id ?? `catalog-code:${code}`,
+      label: identity.displayName,
+      displayName: identity.displayName,
+      distribution: identity.distribution,
+      version: identity.version,
+      architecture: identity.architecture,
+      windows: identity.windows,
+      accessMethods: [...accessMethods],
+      defaultAccessMethod: accessMethods[0],
+      sshSelectable: false,
+    }];
+  });
   return {
     planId: plan.id,
     region: plan.regionCode,
     defaultServerName: generateCustomerServerName(),
-    sshSelfServeAvailable,
-    images: images
-      .map((image) => {
-        const identity = normalizeCustomerImageIdentity({
-          name: image.name,
-          externalId: image.externalId,
-          rawPayload: image.rawPayload,
-        });
-        const raw =
-          image.rawPayload &&
-          typeof image.rawPayload === "object" &&
-          !Array.isArray(image.rawPayload)
-            ? (image.rawPayload as Record<string, unknown>)
-            : {};
-        const passwordSupported = identity.windows
-          ? true
-          : raw.ssh_password !== false;
-        const sshSupported =
-          sshSelfServeAvailable &&
-          plan.provider === InfrastructureProvider.ARVAN &&
-          plan.offerSource !== "PREPROVISIONED_INVENTORY" &&
-          plan.offerSource !== "MANUAL_ADMIN" &&
-          raw.ssh_key !== false &&
-          !identity.windows;
-        const accessMethods = identity.windows
-          ? (["WINDOWS_PASSWORD"] as const)
-          : ([
-              ...(passwordSupported ? (["ONE_TIME_PASSWORD"] as const) : []),
-              ...(sshSupported ? (["SSH_KEY"] as const) : []),
-            ] as const);
-        if (accessMethods.length === 0) return null;
-        return {
-          id: image.id,
-          label: identity.displayName,
-          displayName: identity.displayName,
-          distribution: identity.distribution,
-          version: identity.version,
-          architecture: identity.architecture,
-          windows: identity.windows,
-          accessMethods: [...accessMethods],
-          defaultAccessMethod: accessMethods[0]!,
-          sshSelectable: sshSupported,
-        };
-      })
-      .filter((image): image is NonNullable<typeof image> => image != null),
+    sshSelfServeAvailable: false,
+    images,
   };
 }
 

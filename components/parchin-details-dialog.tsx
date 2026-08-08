@@ -102,17 +102,6 @@ export function ParchinDetailsDialog({
           </section>
         ) : null}
 
-        {content.excludedServices && content.excludedServices.length > 0 ? (
-          <section aria-label="خدمات خارج از قرارداد">
-            <h3>شامل نمی‌شود</h3>
-            <ul>
-              {content.excludedServices.map((item) => (
-                <li key={`ex-${item}`}>{item}</li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-
         {(content.supportWindow || content.firstResponseTarget) && (
           <footer className="parchin-dialog-support">
             {content.supportWindow ? (

@@ -97,3 +97,27 @@ test("configuration and upgrade presentation use design-system shells", async ()
   assert.match(upgrade, /order-wallet-summary/);
   assert.match(checkout, /product-section order-checkout/);
 });
+
+test("storefront cards route to a minimal account configurator", async () => {
+  const button = await readFile(
+    "components/ready-server-quote-button.tsx",
+    "utf8",
+  );
+  const page = await readFile(
+    "app/account/order/configure/[planId]/page.tsx",
+    "utf8",
+  );
+  const quoteService = await readFile(
+    "lib/recommendation/quote-service.ts",
+    "utf8",
+  );
+  assert.match(button, /\/account\/order\/configure\//);
+  assert.match(page, /requireCustomerPage/);
+  assert.match(button, /سیستم‌عامل و نسخه/);
+  assert.match(button, /نام سرور/);
+  assert.match(button, /مدت خرید/);
+  assert.match(button, /کد تخفیف/);
+  assert.doesNotMatch(button, /تنظیمات پیشرفته|خارج از پرچین/);
+  assert.match(quoteService, /lockAdminFulfilledCatalogPlan/);
+  assert.match(quoteService, /topologyVerificationMode: "PROVIDER_MANAGED"/);
+});

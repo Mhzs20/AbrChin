@@ -2,7 +2,6 @@ import {
   DeliveryMode,
   InfrastructurePlanPublicationStatus,
   InfrastructureProvider,
-  ParchinLevel,
   ProviderRegionConfigSource,
   type ProviderCatalogItem,
 } from "@prisma/client";
@@ -14,8 +13,13 @@ import {
   compatibleImageCodes,
   resolveCatalogItemPricing,
 } from "@/lib/pricing/plan-pricing";
+import {
+  classifyStorefrontCapacityTier,
+  DEFAULT_STOREFRONT_CAPACITY_RULES,
+} from "@/lib/storefront/capacity-rules";
 import { storefrontProviderCode } from "@/lib/storefront/provider-codes";
 import { storefrontServerTitle } from "@/lib/storefront/presentation";
+import { storefrontParchinLevel } from "@/lib/storefront/tiers";
 
 function safePlanCode(item: ProviderCatalogItem) {
   const code = storefrontProviderCode(item.provider);
@@ -40,7 +44,7 @@ export async function ensurePublishedPlanForCatalogItem(
   const imageCodes = compatibleImageCodes(item);
   const imageCode =
     selectReadyServerImage(imageCodes) ?? imageCodes[0] ?? "linux";
-  const [providerPricing, productPricing, commerce, startParchin] =
+  const [providerPricing, productPricing, commerce, storefrontSettings] =
     await Promise.all([
       prisma.providerPricingConfig.findFirst({
         where: {
@@ -58,10 +62,23 @@ export async function ensurePublishedPlanForCatalogItem(
         },
       }),
       prisma.commercePricingConfig.findUnique({ where: { id: "default" } }),
-      prisma.parchinPricingConfig.findFirst({
-        where: { level: ParchinLevel.PARCHIN_START, active: true },
+      prisma.storefrontAssortmentSettings.findUnique({
+        where: { id: "default" },
       }),
     ]);
+  const capacityRules = storefrontSettings ?? DEFAULT_STOREFRONT_CAPACITY_RULES;
+  const tier = classifyStorefrontCapacityTier(
+    {
+      vcpu: item.vcpu ?? 0,
+      ramGb: item.ramMb == null ? 0 : Math.ceil(item.ramMb / 1024),
+      diskGb: item.diskGb ?? undefined,
+    },
+    capacityRules,
+  );
+  const parchinLevel = storefrontParchinLevel(tier);
+  const parchin = await prisma.parchinPricingConfig.findFirst({
+    where: { level: parchinLevel, active: true },
+  });
   // Stored SKU sale price = full 1-month engine amount (markup + Parchin +
   // tax) so every surface reading the column matches card and quote.
   const priced =
@@ -69,8 +86,10 @@ export async function ensurePublishedPlanForCatalogItem(
       ? resolveCatalogItemPricing(item, providerPricing, {
           productMarkupBasisPoints: productPricing.markupBasisPoints,
           taxBasisPoints: commerce?.taxBps ?? 1000,
-          parchinLevel: ParchinLevel.PARCHIN_START,
-          parchinPriceRial: startParchin?.priceRial ?? 0n,
+          parchinLevel,
+          parchinPriceRial: parchin?.priceRial ?? 0n,
+          parchinTitle: parchin?.title,
+          parchinVersion: parchin?.version,
           termMonths: 1,
         })
       : null;
@@ -89,13 +108,21 @@ export async function ensurePublishedPlanForCatalogItem(
     // customer still sees CloudActivationPanel instead of wallet purchase.
     if (
       existing.billingModel !== "PREPAID_TERM" ||
-      existing.billingPolicyVersionId != null
+      existing.billingPolicyVersionId != null ||
+      existing.minimumParchinLevel !== parchinLevel ||
+      (priced != null && existing.salePriceRial !== priced.finalPriceRial)
     ) {
       return prisma.infrastructurePlan.update({
         where: { id: existing.id },
         data: {
           billingModel: "PREPAID_TERM",
           billingPolicyVersionId: null,
+          minimumParchinLevel: parchinLevel,
+          salePriceRial: priced?.finalPriceRial ?? existing.salePriceRial,
+          renewalPriceRial:
+            priced?.finalPriceRial ?? existing.renewalPriceRial,
+          estimatedProviderCostRial:
+            priced?.providerBasePriceRial ?? existing.estimatedProviderCostRial,
         },
       });
     }
@@ -123,7 +150,7 @@ export async function ensurePublishedPlanForCatalogItem(
         billingModel: "PREPAID_TERM",
         billingPolicyVersionId: null,
         parchinIncluded: true,
-        minimumParchinLevel: ParchinLevel.PARCHIN_START,
+        minimumParchinLevel: parchinLevel,
         displayDuringProviderOutage: true,
       },
     });
@@ -156,6 +183,7 @@ export async function ensurePublishedPlanForCatalogItem(
         billingModel: "PREPAID_TERM",
         billingPolicyVersionId: null,
         parchinIncluded: true,
+        minimumParchinLevel: parchinLevel,
         offerSource: "API_CATALOG",
       },
     });
@@ -181,7 +209,7 @@ export async function ensurePublishedPlanForCatalogItem(
       estimatedProviderCostRial: priced?.providerBasePriceRial ?? 1n,
       deliveryEstimateMinutes: 0,
       parchinIncluded: true,
-      minimumParchinLevel: ParchinLevel.PARCHIN_START,
+      minimumParchinLevel: parchinLevel,
       active: true,
       publicationStatus: InfrastructurePlanPublicationStatus.PUBLISHED,
       instantDelivery: true,
@@ -264,7 +292,7 @@ export async function ensureStorefrontSaleReady() {
           ],
         },
         orderBy: [{ provider: "asc" }, { vcpu: "asc" }, { ramMb: "asc" }],
-        take: 48,
+        take: 5000,
       }),
     ]);
 

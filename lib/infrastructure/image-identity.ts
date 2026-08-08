@@ -169,7 +169,11 @@ export function normalizeCustomerImageIdentity(
     raw.rawPayload && typeof raw.rawPayload === "object"
       ? asRecord(raw.rawPayload)
       : {};
-  const sources = [raw, nested];
+  const metadata = asRecord(raw.metadata ?? nested.metadata);
+  const properties = asRecord(raw.properties ?? nested.properties);
+  const image = asRecord(raw.image ?? nested.image);
+  const os = asRecord(raw.os ?? nested.os);
+  const sources = [raw, nested, metadata, properties, image, os];
 
   const stringFields = (keys: string[]) =>
     sources.flatMap((source) =>
@@ -180,10 +184,21 @@ export function normalizeCustomerImageIdentity(
     input.operatingSystem ?? null,
     ...stringFields([
       "distribution_name",
+      "distributionName",
       "distribution",
+      "operating_system",
+      "operatingSystem",
       "os_description",
+      "osDescription",
       "osFamily",
       "os_family",
+      "display_name",
+      "displayName",
+      "image_name",
+      "imageName",
+      "title",
+      "label",
+      "slug",
       "group",
       "name",
     ]),
@@ -217,7 +232,19 @@ export function normalizeCustomerImageIdentity(
         : titleCaseWords(input.name.split(/[\d._-]/)[0] || "Linux"));
 
   const version = extractVersion([
-    ...stringFields(["version", "os_version", "release"]),
+    ...stringFields([
+      "version",
+      "os_version",
+      "osVersion",
+      "distribution_version",
+      "distributionVersion",
+      "operating_system_version",
+      "operatingSystemVersion",
+      "release",
+      "release_name",
+      "releaseName",
+    ]),
+    ...distributionHints,
     input.name,
     input.externalId.replace(/cloudinit|qcow2/gi, " "),
   ]);
