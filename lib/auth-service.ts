@@ -14,7 +14,6 @@ import type { SmsProvider } from "@/lib/sms";
 import type { PublicUser } from "@/lib/session";
 import { toPublicUser } from "@/lib/session-user";
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
-import { WalletError } from "@/lib/wallet/errors";
 
 export type RequestOtpResult =
   | { ok: true; resendAvailableIn: number }

@@ -65,6 +65,10 @@ test("registration and email verification source contracts exist", async () => {
   assert.match(emailSvc, /emailVerificationChallenge/);
   assert.match(emailSvc, /hashWithSecret/);
   assert.match(emailSvc, /createEmailProvider/);
+  assert.match(emailSvc, /pg_advisory_xact_lock/);
+  assert.match(emailSvc, /FOR UPDATE/);
+  assert.match(emailSvc, /email_changed/);
+  assert.match(emailSvc, /alreadyVerified/);
   assert.doesNotMatch(emailSvc, /console\.log\([^\)]*code/);
 
   const guards = await readFile("lib/auth/guards.ts", "utf8");
@@ -279,10 +283,39 @@ test("email verification request/verify lifecycle with fake provider", async (t)
   assert.equal(ok.ok, true);
   const updated = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
   assert.ok(updated.emailVerifiedAt);
+  const verifiedAt = updated.emailVerifiedAt;
 
-  const replay = await verifyEmailVerificationCode({ userId: user.id, code });
-  // Already verified → ok true without inconsistent state
-  assert.equal(replay.ok, true);
+  const replayWhileVerified = await verifyEmailVerificationCode({
+    userId: user.id,
+    code,
+  });
+  // Already verified → idempotent success; must not re-validate consumed code
+  // as a fresh verification.
+  assert.equal(replayWhileVerified.ok, true);
+  if (replayWhileVerified.ok) {
+    assert.equal(replayWhileVerified.alreadyVerified, true);
+  }
+  const still = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+  assert.equal(still.emailVerifiedAt?.toISOString(), verifiedAt!.toISOString());
+
+  // Replay of a consumed code must not succeed when verification was cleared
+  // (simulates: code is not reusable even if state were inconsistent).
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { emailVerifiedAt: null },
+  });
+  const replayConsumed = await verifyEmailVerificationCode({
+    userId: user.id,
+    code,
+  });
+  assert.equal(replayConsumed.ok, false);
+  if (!replayConsumed.ok) {
+    assert.equal(replayConsumed.code, "consumed");
+  }
+  const uncleared = await prisma.user.findUniqueOrThrow({
+    where: { id: user.id },
+  });
+  assert.equal(uncleared.emailVerifiedAt, null);
 
   // Changing email resets verification
   await prisma.user.update({
@@ -329,6 +362,226 @@ test("email verification request/verify lifecycle with fake provider", async (t)
     where: { userId: user.id, consumedAt: null },
   });
   assert.equal(leftover, 0);
+
+  await cleanupMobile(mobile);
+});
+
+test("email verify TOCTOU: old code cannot verify a concurrently changed email", async (t) => {
+  if (!prisma) {
+    t.skip("DATABASE_URL not set");
+    return;
+  }
+  const env = assertServerSecrets();
+  const mobileA = "09123330107";
+  const mobileB = "09123330108";
+  await cleanupMobile(mobileA);
+  await cleanupMobile(mobileB);
+
+  // --- Ordering A: verify begins conceptually, then email changes, then verify ---
+  // Simulate the dangerous window: challenge consumed for old@, then email
+  // flipped to new@, then conditional commit (must not verify new@).
+  const userA = await prisma.user.create({
+    data: {
+      mobile: mobileA,
+      role: "CUSTOMER",
+      accountStatus: "ACTIVE",
+      mobileVerifiedAt: new Date(),
+      registrationCompletedAt: new Date(),
+      firstName: "الف",
+      lastName: "توکتو",
+      email: "old@example.com",
+      displayName: "الف توکتو",
+    },
+  });
+  const codeA = "111222";
+  const challengeA = await prisma.emailVerificationChallenge.create({
+    data: {
+      userId: userA.id,
+      email: "old@example.com",
+      codeHash: hashWithSecret(codeA, env.sessionSecret),
+      expiresAt: new Date(Date.now() + 120_000),
+    },
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`
+      SELECT id FROM "User" WHERE id = ${userA.id} FOR UPDATE
+    `;
+    const consumed = await tx.emailVerificationChallenge.updateMany({
+      where: { id: challengeA.id, consumedAt: null },
+      data: { consumedAt: new Date() },
+    });
+    assert.equal(consumed.count, 1);
+  });
+
+  // Concurrent profile change wins before final verifiedAt write.
+  await prisma.user.update({
+    where: { id: userA.id },
+    data: { email: "new@example.com", emailVerifiedAt: null },
+  });
+
+  const afterChangeA = await verifyEmailVerificationCode({
+    userId: userA.id,
+    code: codeA,
+  });
+  assert.equal(afterChangeA.ok, false);
+  const rowA = await prisma.user.findUniqueOrThrow({ where: { id: userA.id } });
+  assert.equal(rowA.email, "new@example.com");
+  assert.equal(rowA.emailVerifiedAt, null);
+
+  // Full concurrent race: verify(old) || profile→new — new must remain unverified.
+  await prisma.user.update({
+    where: { id: userA.id },
+    data: { email: "old2@example.com", emailVerifiedAt: null },
+  });
+  const codeRace = "333444";
+  await prisma.emailVerificationChallenge.deleteMany({
+    where: { userId: userA.id },
+  });
+  await prisma.emailVerificationChallenge.create({
+    data: {
+      userId: userA.id,
+      email: "old2@example.com",
+      codeHash: hashWithSecret(codeRace, env.sessionSecret),
+      expiresAt: new Date(Date.now() + 120_000),
+    },
+  });
+
+  const [verifyRace, profileRace] = await Promise.all([
+    verifyEmailVerificationCode({ userId: userA.id, code: codeRace }),
+    prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT id FROM "User" WHERE id = ${userA.id} FOR UPDATE
+      `;
+      return tx.user.update({
+        where: { id: userA.id },
+        data: { email: "new2@example.com", emailVerifiedAt: null },
+      });
+    }),
+  ]);
+  void verifyRace;
+  void profileRace;
+  const raced = await prisma.user.findUniqueOrThrow({ where: { id: userA.id } });
+  if (raced.email === "new2@example.com") {
+    assert.equal(raced.emailVerifiedAt, null);
+  } else {
+    // Verify won first and verified old2; profile then changed to new2 with null.
+    // Re-read after profile path — ensure final current email is not wrongly verified
+    // if profile applied emailVerifiedAt: null on change.
+    assert.ok(
+      raced.email === "old2@example.com" || raced.email === "new2@example.com",
+    );
+    if (raced.email === "new2@example.com") {
+      assert.equal(raced.emailVerifiedAt, null);
+    }
+  }
+
+  // --- Ordering B (reverse): profile changes first, then old verify resumes ---
+  const userB = await prisma.user.create({
+    data: {
+      mobile: mobileB,
+      role: "CUSTOMER",
+      accountStatus: "ACTIVE",
+      mobileVerifiedAt: new Date(),
+      registrationCompletedAt: new Date(),
+      firstName: "ب",
+      lastName: "توکتو",
+      email: "before@example.com",
+      displayName: "ب توکتو",
+    },
+  });
+  const codeB = "555666";
+  await prisma.emailVerificationChallenge.create({
+    data: {
+      userId: userB.id,
+      email: "before@example.com",
+      codeHash: hashWithSecret(codeB, env.sessionSecret),
+      expiresAt: new Date(Date.now() + 120_000),
+    },
+  });
+  await prisma.user.update({
+    where: { id: userB.id },
+    data: { email: "after@example.com", emailVerifiedAt: null },
+  });
+  await prisma.emailVerificationChallenge.deleteMany({
+    where: { userId: userB.id, consumedAt: null },
+  });
+  // Stale challenge for the old address remains (consumedAt null was deleted;
+  // re-create stale row as if delete raced incompletely).
+  await prisma.emailVerificationChallenge.create({
+    data: {
+      userId: userB.id,
+      email: "before@example.com",
+      codeHash: hashWithSecret(codeB, env.sessionSecret),
+      expiresAt: new Date(Date.now() + 120_000),
+      consumedAt: null,
+    },
+  });
+
+  const verifyAfterChange = await verifyEmailVerificationCode({
+    userId: userB.id,
+    code: codeB,
+  });
+  assert.equal(verifyAfterChange.ok, false);
+  const rowB = await prisma.user.findUniqueOrThrow({ where: { id: userB.id } });
+  assert.equal(rowB.email, "after@example.com");
+  assert.equal(rowB.emailVerifiedAt, null);
+
+  await cleanupMobile(mobileA);
+  await cleanupMobile(mobileB);
+});
+
+test("concurrent email verification requests deliver exactly one code", async (t) => {
+  if (!prisma) {
+    t.skip("DATABASE_URL not set");
+    return;
+  }
+  const mobile = "09123330109";
+  await cleanupMobile(mobile);
+  const user = await prisma.user.create({
+    data: {
+      mobile,
+      role: "CUSTOMER",
+      accountStatus: "ACTIVE",
+      mobileVerifiedAt: new Date(),
+      registrationCompletedAt: new Date(),
+      firstName: "همزمان",
+      lastName: "ارسال",
+      email: "parallel@example.com",
+      displayName: "همزمان ارسال",
+    },
+  });
+
+  let sendCount = 0;
+  const provider = {
+    async send() {
+      sendCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    },
+  };
+
+  const results = await Promise.all(
+    Array.from({ length: 20 }, () =>
+      requestEmailVerification({
+        userId: user.id,
+        emailProvider: provider,
+      }),
+    ),
+  );
+
+  const accepted = results.filter((r) => r.ok);
+  const rejected = results.filter((r) => !r.ok);
+  assert.equal(accepted.length, 1);
+  assert.equal(rejected.length, 19);
+  assert.equal(sendCount, 1);
+  for (const r of rejected) {
+    assert.ok(!r.ok);
+    assert.ok((r.retryAfterSeconds ?? 0) > 0);
+  }
+  const open = await prisma.emailVerificationChallenge.count({
+    where: { userId: user.id, consumedAt: null },
+  });
+  assert.equal(open, 1);
 
   await cleanupMobile(mobile);
 });

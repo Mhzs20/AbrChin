@@ -180,7 +180,6 @@ export async function previewCustomerServiceCancellation(input: {
 
 function mapLifecycle(input: {
   instanceStatus: CloudInstanceStatus;
-  subscriptionStatus: SubscriptionStatus;
   requestStatus: ResourceChangeStatus | null;
   refunded: boolean;
 }): CustomerCancelLifecycle {
@@ -196,11 +195,13 @@ function mapLifecycle(input: {
   }
   if (
     input.requestStatus === ResourceChangeStatus.WAITING_ADMIN_APPROVAL ||
-    input.requestStatus === ResourceChangeStatus.REQUESTED ||
-    input.subscriptionStatus === SubscriptionStatus.CANCELED
+    input.requestStatus === ResourceChangeStatus.REQUESTED
   ) {
     return "CANCEL_REQUESTED";
   }
+  // Open cancel without a known request status still means cancel requested;
+  // subscription.CANCELED is not used at request time — that status would
+  // falsely imply termination already completed before provider confirmation.
   return "CANCEL_REQUESTED";
 }
 
@@ -252,10 +253,14 @@ export async function requestCustomerServiceCancellation(input: {
     "لغو سرویس توسط مشتری و بازگشت اعتبار استفاده‌نشده به کیف پول";
 
   const created = await prisma.$transaction(async (tx) => {
+    // Cancel REQUEST must not mark the subscription CANCELED/TERMINATED.
+    // CANCELED would stop renewals AND present the service as already canceled
+    // before provider termination is confirmed. Disable autoRenew + stamp
+    // canceledAt as intent; terminal status is set only after confirmed
+    // termination (see completeCancellationAfterTermination → TERMINATED).
     await tx.serviceSubscription.update({
       where: { id: subscription.id },
       data: {
-        status: SubscriptionStatus.CANCELED,
         canceledAt: subscription.canceledAt ?? new Date(),
         autoRenew: false,
       },

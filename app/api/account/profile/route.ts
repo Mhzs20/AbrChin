@@ -56,6 +56,10 @@ export async function PATCH(request: Request) {
 
     try {
       const user = await prisma.$transaction(async (tx) => {
+        // Serialize with email verification (which locks User FOR UPDATE).
+        await tx.$queryRaw`
+          SELECT id FROM "User" WHERE id = ${current.id} FOR UPDATE
+        `;
         if (emailChanged) {
           await tx.emailVerificationChallenge.deleteMany({
             where: { userId: current.id, consumedAt: null },
