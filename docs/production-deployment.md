@@ -38,6 +38,24 @@ BACKUP_BEFORE_DEPLOY=1|0             # default: 1
 `ABRCHIN_IMAGE`, `DEPLOY_IMAGE_SOURCE`, `BACKUP_BEFORE_DEPLOY`).
 Secretها را در Shell، Log یا Screenshot چاپ نکنید.
 
+## Email verification (SMTP)
+
+Production must send verification codes over SMTP (placeholders only in
+`.env.production.example` — never commit real credentials). Runtime source of
+truth remains the host env file (`.env.production` / `.env`):
+
+```text
+EMAIL_PROVIDER=smtp
+EMAIL_FROM=
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_TIMEOUT_MS=10000
+EMAIL_VERIFICATION_TTL_SECONDS=600
+```
+
 ## Migration contract
 
 - Production فقط `prisma migrate deploy` را اجرا می‌کند.

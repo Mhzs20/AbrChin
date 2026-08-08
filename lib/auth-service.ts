@@ -12,6 +12,7 @@ import {
 import { createSmsProvider } from "@/lib/sms";
 import type { SmsProvider } from "@/lib/sms";
 import type { PublicUser } from "@/lib/session";
+import { toPublicUser } from "@/lib/session-user";
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
 
 export type RequestOtpResult =
@@ -200,9 +201,7 @@ export async function verifyLoginOtp(
   }
 
   await ensureWalletForUser(user.id);
-  // Lazy-load Next session helpers so OTP *request* paths (and their tests)
-  // do not require `next/headers` at module evaluation time.
-  const { createUserSession, toPublicUser } = await import("@/lib/session");
+  const { createUserSession } = await import("@/lib/session-store");
   const session = await createUserSession(user.id, meta);
 
   return {

@@ -141,6 +141,28 @@ test("panel role E2E: OTP, pages, APIs, and live session roles stay separated", 
   assert.equal(secondAdmin.user.role, "ADMIN");
   assert.equal(customer.user.role, "CUSTOMER");
 
+  // Incomplete registration must be gated away from /account.
+  const incompleteAccount = await fetch(`${baseUrl}/account`, {
+    headers: { cookie: customer.cookie },
+    redirect: "manual",
+  });
+  assert.ok([303, 307, 308].includes(incompleteAccount.status));
+  assert.equal(
+    new URL(incompleteAccount.headers.get("location")!, baseUrl).pathname,
+    "/register/complete",
+  );
+
+  await prisma.user.update({
+    where: { mobile: customerMobile },
+    data: {
+      firstName: "مشتری",
+      lastName: "آزمایشی",
+      email: "panel-e2e-customer@example.com",
+      displayName: "مشتری آزمایشی",
+      registrationCompletedAt: new Date(),
+    },
+  });
+
   for (const admin of [firstAdmin, secondAdmin]) {
     const me = await fetch(`${baseUrl}/api/auth/me`, {
       headers: { cookie: admin.cookie },
@@ -192,7 +214,11 @@ test("panel role E2E: OTP, pages, APIs, and live session roles stay separated", 
       "content-type": "application/json",
       origin: baseUrl,
     },
-    body: JSON.stringify({ displayName: "مدیر آزمایشی" }),
+    body: JSON.stringify({
+      firstName: "مدیر",
+      lastName: "آزمایشی",
+      email: "panel-e2e-admin@example.com",
+    }),
   });
   assert.equal(deniedCustomerApi.status, 403);
 
@@ -203,7 +229,11 @@ test("panel role E2E: OTP, pages, APIs, and live session roles stay separated", 
       "content-type": "application/json",
       origin: baseUrl,
     },
-    body: JSON.stringify({ displayName: "مشتری آزمایشی" }),
+    body: JSON.stringify({
+      firstName: "مشتری",
+      lastName: "آزمایشی",
+      email: "panel-e2e-customer@example.com",
+    }),
   });
   assert.equal(allowedCustomerApi.status, 200, await allowedCustomerApi.text());
 

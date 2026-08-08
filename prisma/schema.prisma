@@ -567,7 +567,15 @@ enum PaymentGatewayEnvironment {
 model User {
   id                          String                              @id @default(cuid())
   mobile                      String                              @unique
+  /// Compatibility display field; derived from firstName + lastName for new registrations.
   displayName                 String?
+  firstName                   String?
+  lastName                    String?
+  /// Normalized (trim + lowercase). Unique when set.
+  email                       String?                             @unique
+  emailVerifiedAt             DateTime?
+  /// Null = new customer must complete registration. Existing users backfilled on migrate.
+  registrationCompletedAt     DateTime?
   role                        UserRole                            @default(CUSTOMER)
   accountStatus               UserAccountStatus                   @default(ACTIVE)
   blockedAt                   DateTime?
@@ -576,6 +584,7 @@ model User {
   createdAt                   DateTime                            @default(now())
   updatedAt                   DateTime                            @updatedAt
   sessions                    Session[]
+  emailVerificationChallenges EmailVerificationChallenge[]
   wallet                      Wallet?
   orders                      ServiceOrder[]
   gatewayAudits               PaymentGatewayAuditLog[]            @relation("GatewayAuditActor")
@@ -636,6 +645,23 @@ model OtpChallenge {
   createdAt  DateTime   @default(now())
 
   @@index([mobile, purpose, createdAt])
+  @@index([expiresAt])
+}
+
+/// Email verification codes — separate from mobile LOGIN OTP challenges.
+model EmailVerificationChallenge {
+  id         String    @id @default(cuid())
+  userId     String
+  /// Normalized email the code was issued for (must match User.email on verify).
+  email      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, email, createdAt])
   @@index([expiresAt])
 }
 

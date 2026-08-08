@@ -57,7 +57,12 @@ export function CustomerShell({
   walletBalanceRial?: string;
   children: ReactNode;
 }) {
-  const displayName = user.displayName || "مشتری ابرچین";
+  const displayName =
+    user.displayName ||
+    (user.firstName && user.lastName
+      ? `${user.firstName} ${user.lastName}`
+      : null) ||
+    "مشتری ابرچین";
 
   return (
     <ProductShell
@@ -100,7 +105,11 @@ export function CustomerShell({
           </div>
           {walletBalanceRial != null ? (
             <div className="product-header-wallet">
-              موجودی: <span className="product-tech">{formatTomanFa(BigInt(walletBalanceRial))}</span> تومان
+              موجودی:{" "}
+              <span className="product-money">
+                {formatTomanFa(BigInt(walletBalanceRial))}
+              </span>{" "}
+              تومان
             </div>
           ) : null}
           <Link href="/account/wallet/topup" className="product-btn product-btn--primary">

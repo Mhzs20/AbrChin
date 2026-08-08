@@ -19,6 +19,14 @@ export default async function LoginPage({
   const [user, { next }] = await Promise.all([getCurrentUser(), searchParams]);
   if (user) {
     if (user.role === "ADMIN") redirect("/admin");
+    if (!user.registrationComplete) {
+      const safe = safeCustomerReturnPath(next);
+      redirect(
+        safe
+          ? `/register/complete?next=${encodeURIComponent(safe)}`
+          : "/register/complete",
+      );
+    }
     redirect(safeCustomerReturnPath(next) ?? "/account");
   }
 

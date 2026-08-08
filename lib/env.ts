@@ -111,6 +111,15 @@ export function getEnv() {
     // exercise. Merely configuring an API key must never enable mutations.
     arvanMutationsEnabled: readBool("ARVAN_MUTATIONS_ENABLED", false),
     infrastructureProviderMode: (process.env.INFRASTRUCTURE_PROVIDER_MODE ?? "mock").toLowerCase(),
+    emailProvider: (process.env.EMAIL_PROVIDER ?? "console").toLowerCase(),
+    emailFrom: (process.env.EMAIL_FROM ?? "").trim(),
+    smtpHost: (process.env.SMTP_HOST ?? "").trim(),
+    smtpPort: readInt("SMTP_PORT", 587),
+    smtpSecure: readBool("SMTP_SECURE", false),
+    smtpUser: (process.env.SMTP_USER ?? "").trim(),
+    smtpPassword: process.env.SMTP_PASSWORD ?? "",
+    smtpTimeoutMs: readInt("SMTP_TIMEOUT_MS", 10_000),
+    emailVerificationTtlSeconds: readInt("EMAIL_VERIFICATION_TTL_SECONDS", 600),
     nodeEnv: process.env.NODE_ENV ?? "development",
     isProduction,
   };

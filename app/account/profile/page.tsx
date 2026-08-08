@@ -14,13 +14,18 @@ export const dynamic = "force-dynamic";
 export default async function AccountProfilePage() {
   const user = await requireCustomerPage();
 
-  const dbUser = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+  const dbUser = await prisma.user.findUniqueOrThrow({
+    where: { id: user.id },
+  });
 
   return (
     <ProfilePanel
       user={{
         mobile: dbUser.mobile,
-        displayName: dbUser.displayName,
+        firstName: dbUser.firstName,
+        lastName: dbUser.lastName,
+        email: dbUser.email,
+        emailVerifiedAt: dbUser.emailVerifiedAt?.toISOString() ?? null,
         mobileVerifiedAt: dbUser.mobileVerifiedAt?.toISOString() ?? null,
         createdAt: dbUser.createdAt.toISOString(),
       }}

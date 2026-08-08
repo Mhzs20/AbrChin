@@ -166,9 +166,14 @@ function mutationsEnabledFor(provider: "ARVAN" | "PARSPACK") {
 }
 
 /**
- * Provider API resize may be unavailable (ParsPack), but Launch still fulfills
- * manually after the same admin gates. "Resize possible" here means a mapped
- * upgrade target exists; live API resize is optional.
+ * Provider API resize capability for Launch upgrades.
+ *
+ * "Valid upgrade target" means a published, strictly-larger AbrChin plan in the
+ * same provider/region that Admin can fulfill — not a live provider catalog
+ * probe. Arvan exposes a real resize API (`flavor_id` server action) when
+ * ARVAN_MUTATIONS_ENABLED; otherwise Admin fulfills manually after the same
+ * two gates. ParsPack has no resize API (adapter returns unsupported) and is
+ * always manual-fulfillment. Do not fabricate provider capability beyond this.
  */
 export function providerResizeCapability(provider: "ARVAN" | "PARSPACK") {
   if (provider === "PARSPACK") {

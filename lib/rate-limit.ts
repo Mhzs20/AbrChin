@@ -182,6 +182,7 @@ export const otpMobileLimiter = new PostgresRateLimiter(5, OTP_WINDOW_MS);
 export const otpIpLimiter = new PostgresRateLimiter(20, OTP_WINDOW_MS);
 export const verifyMobileLimiter = new PostgresRateLimiter(15, OTP_WINDOW_MS);
 export const verifyIpLimiter = new PostgresRateLimiter(40, OTP_WINDOW_MS);
+export const emailVerificationIpLimiter = new PostgresRateLimiter(20, OTP_WINDOW_MS);
 
 export const recommendationQuoteIpLimiter = new MemoryRateLimiter(30, OTP_WINDOW_MS);
 export const readyServerQuoteIpLimiter = new MemoryRateLimiter(30, OTP_WINDOW_MS);
