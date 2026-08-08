@@ -169,7 +169,6 @@ export async function previewCustomerServiceCancellation(input: {
     serverName: instance.name,
     lifecycle: mapLifecycle({
       instanceStatus: instance.status,
-      subscriptionStatus: subscription.status,
       requestStatus: openIsTerminate?.status ?? null,
       refunded: false,
     }),
