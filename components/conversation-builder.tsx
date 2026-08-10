@@ -167,6 +167,7 @@ export function ConversationBuilder({
   const [deliveryOptions, setDeliveryOptions] = useState<DeliveryOption[]>([]);
   const [deliveryOptionsResolved, setDeliveryOptionsResolved] =
     useState(false);
+  const sessionCreationStarted = useRef(false);
   const [selectedDeliveryPlanId, setSelectedDeliveryPlanId] =
     useState("");
   const [selectedImageAssetId, setSelectedImageAssetId] = useState("");
@@ -344,11 +345,18 @@ export function ConversationBuilder({
   }, [resume, signedIn]);
 
   useEffect(() => {
-    if (!hydrated || sessionId) return;
-    const controller = new AbortController();
+    if (!hydrated || sessionId || sessionCreationStarted.current) return;
+    // Keep one POST across React Strict Mode's effect replay. Aborting the
+    // first request in cleanup can create a server row while discarding its
+    // response, then issue a duplicate session on the replay.
+    sessionCreationStarted.current = true;
     void fetch("/api/recommendations/sessions", {
       method: "POST",
-      signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project: initialProject,
+        management: initialManagement,
+      }),
     })
       .then(async (response) => {
         if (!response.ok) return;
@@ -359,11 +367,13 @@ export function ConversationBuilder({
         if (body.sessionId) {
           setSessionId(body.sessionId);
           setRevision(body.revision ?? 0);
+          setShowUnderstanding(Boolean(initialProject));
         }
       })
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [hydrated, sessionId]);
+      .catch(() => {
+        sessionCreationStarted.current = false;
+      });
+  }, [hydrated, initialManagement, initialProject, sessionId]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -571,6 +581,11 @@ export function ConversationBuilder({
     if (sessionId) return { id: sessionId, nextRevision: revision };
     const response = await fetch("/api/recommendations/sessions", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project: initialProject,
+        management: initialManagement,
+      }),
     });
     if (!response.ok) throw new Error("conversation_session_not_ready");
     const body = (await response.json()) as {

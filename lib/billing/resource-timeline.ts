@@ -1,5 +1,6 @@
 import {
   Prisma,
+  ProductBillingModel,
   ResourceChangeStatus,
   ResourceVersionState,
 } from "@prisma/client";
@@ -108,7 +109,7 @@ export async function recordProviderConfirmedResourceVersion(input: {
         },
         orderBy: { effectiveFrom: "desc" },
       });
-      if (!snapshot) {
+      if (!snapshot && plan.billingModel === ProductBillingModel.PAYG_WALLET) {
         throw new WalletError(
           "billing_policy_snapshot_missing",
           "Policy Snapshot فعال برای Resource پیدا نشد.",
@@ -184,19 +185,21 @@ export async function recordProviderConfirmedResourceVersion(input: {
           data: { resourceVersionId: resourceVersion.id },
         });
       }
-      const existingScheduledInterval = await tx.usageInterval.findFirst({
-        where: {
-          cloudInstanceId: instance.id,
-          resourceVersionId: resourceVersion.id,
-          billingPolicySnapshotId: snapshot.id,
-          startedAt: { lte: input.providerConfirmedAt },
-          OR: [
-            { endedAt: null },
-            { endedAt: { gt: input.providerConfirmedAt } },
-          ],
-        },
-      });
-      if (!existingScheduledInterval) {
+      const existingScheduledInterval = snapshot
+        ? await tx.usageInterval.findFirst({
+            where: {
+              cloudInstanceId: instance.id,
+              resourceVersionId: resourceVersion.id,
+              billingPolicySnapshotId: snapshot.id,
+              startedAt: { lte: input.providerConfirmedAt },
+              OR: [
+                { endedAt: null },
+                { endedAt: { gt: input.providerConfirmedAt } },
+              ],
+            },
+          })
+        : null;
+      if (snapshot && !existingScheduledInterval) {
         await tx.usageInterval.create({
           data: {
             cloudInstanceId: instance.id,

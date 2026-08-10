@@ -154,6 +154,7 @@ Second real run must create zero duplicates (`entriesToCreate=0`).
 Launch: Sale باز، Mutation خاموش (Fulfillment دستی Admin):
 
 ```text
+PUBLIC_SALE_ENABLED=true
 PARSPACK_PUBLIC_SALE_ENABLED=true
 PARSPACK_MUTATIONS_ENABLED=false
 ARVAN_PUBLIC_SALE_ENABLED=true

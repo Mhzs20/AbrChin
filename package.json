@@ -40,6 +40,25 @@
     "test:migration-safety": "node --experimental-strip-types --test scripts/migration-safety-test.mts",
     "test:migration-upgrade": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/upgrade-migration-postgres-test.mts",
     "test:secret-scan": "node --experimental-strip-types scripts/secret-scan.mts",
+    "test:launch-gates": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/launch-gates-test.mts",
+    "test:phase0-browser": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/phase-0-browser-smoke.mts",
+    "test:phase1-discovery": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/phase-1-discovery-test.mts",
+    "test:phase1-browser": "PHASE1_ONLY=true INCLUDE_PHASE1_DISCOVERY=true node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/phase-0-browser-smoke.mts",
+    "test:phase2-guest-auth": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/phase-2-guest-auth-test.mts",
+    "test:phase2-browser": "PHASE2_ONLY=true node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/phase-0-browser-smoke.mts",
+    "test:phase3-contract": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/order-payment-policy-test.mts scripts/wallet-first-checkout-test.mts scripts/failure-recovery-policy-test.mts",
+    "test:phase3-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/run-isolated-postgres-tests.mts scripts/wallet-payment-recovery-postgres-test.mts scripts/phase-3-order-wallet-postgres-test.mts",
+    "test:phase4-tracking": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/phase-4-order-tracking-test.mts",
+    "test:phase4-browser": "PHASE4_ONLY=true node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/phase-0-browser-smoke.mts",
+    "test:phase5-contract": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/provision-approval-policy-test.mts scripts/controlled-provisioning-policy-test.mts scripts/delivery-approval-policy-test.mts",
+    "test:phase5-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/run-isolated-postgres-tests.mts scripts/order-payment-postgres-test.mts scripts/delivery-credential-postgres-test.mts",
+    "test:phase6-contract": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/subscription-test.mts scripts/upgrade-quote-wallet-test.mts scripts/credential-vault-test.mts",
+    "test:phase6-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/run-isolated-postgres-tests.mts scripts/phase-6-cancel-postgres-test.mts",
+    "test:phase7-parchin": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/phase-7-parchin-evidence-test.mts scripts/storefront-dominance-parchin-test.mts",
+    "test:phase7-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/run-isolated-postgres-tests.mts scripts/parchin-operations-postgres-test.mts",
+    "test:phase8-contract": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/phase-8-accessibility-contract-test.mts scripts/money-typography-test.mts scripts/purchase-experience-hardening-test.mts",
+    "test:phase8-browser": "PHASE8_ONLY=true node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/phase-0-browser-smoke.mts",
+    "test:phase9-readiness": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/phase-9-release-readiness-test.mts scripts/phase-1-launch-preflight-test.mts",
     "test:payments": "node --experimental-strip-types --test scripts/payments-test.mts",
     "test:infrastructure": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/infrastructure-test.mts scripts/locked-quote-contract-test.mts scripts/worker-test.mts scripts/production-hardening-test.mts scripts/parspack-contract-test.mts scripts/provider-pricing-test.mts scripts/commercial-pricing-test.mts scripts/migration-safety-test.mts",
     "test:worker-runtime": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/worker-runtime-test.mts",
@@ -64,11 +83,14 @@
     "lucide-react": "1.25.0",
     "motion": "^12.42.2",
     "next": "16.2.11",
-    "nodemailer": "^6.9.16",
+    "nodemailer": "^9.0.5",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite-socket": "^0.2.7",
+    "@playwright/test": "^1.62.1",
+    "@sparticuz/chromium": "^149.0.0",
     "@types/node": "^24.0.0",
     "@types/nodemailer": "^6.4.17",
     "@types/react": "^19.0.0",
@@ -80,7 +102,8 @@
     "typescript": "^5.9.0"
   },
   "overrides": {
-    "postcss": "8.5.10",
+    "nanoid": "3.3.17",
+    "postcss": "8.5.26",
     "sharp": "0.35.0"
   }
 }

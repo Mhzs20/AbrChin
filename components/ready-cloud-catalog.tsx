@@ -155,20 +155,6 @@ export function ReadyCloudCatalog({
                   {formatRialAsToman(offer.hourlyPriceRial)} تومان در ساعت
                 </small>
               ) : null}
-              <small>
-                واحد مبدأ:{" "}
-                <span dir="ltr">
-                  {offer.sourceCurrencyCode ?? "نامشخص"} /{" "}
-                  {offer.sourceAmountUnit ?? "نامشخص"}
-                </span>
-                {" · "}
-                واحد نمایش:{" "}
-                <span dir="ltr">
-                  {offer.normalizedCurrencyCode === "IRR"
-                    ? "ریال"
-                    : offer.normalizedCurrencyCode}
-                </span>
-              </small>
             </div>
 
             <ul>

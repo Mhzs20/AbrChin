@@ -11,6 +11,7 @@ import {
 import { getAdminPageAccess } from "@/lib/auth/guards";
 import {
   SUPPORT_CATEGORY_LABELS,
+  SUPPORT_KIND_LABELS,
   SUPPORT_PRIORITY_LABELS,
   SUPPORT_STATUS_LABELS,
 } from "@/lib/labels/customer";
@@ -69,14 +70,17 @@ export default async function AdminSupportListPage({
       : null;
 
   const requests = await listAdminSupportRequests({ status, priority });
+  const renderedAtMs = new Date().getTime();
 
   const columns = [
     { key: "subject", header: "موضوع" },
     { key: "user", header: "مشتری" },
     { key: "category", header: "دسته" },
+    { key: "kind", header: "نوع" },
     { key: "status", header: "وضعیت" },
     { key: "priority", header: "اولویت" },
     { key: "createdAt", header: "زمان" },
+    { key: "sla", header: "پاسخ اولیه" },
     { key: "actions", header: "" },
   ];
 
@@ -92,6 +96,7 @@ export default async function AdminSupportListPage({
         </span>
       ),
       category: SUPPORT_CATEGORY_LABELS[item.category] ?? item.category,
+      kind: SUPPORT_KIND_LABELS[item.kind] ?? item.kind,
       status: (
         <StatusBadge
           label={SUPPORT_STATUS_LABELS[item.status] ?? item.status}
@@ -105,6 +110,15 @@ export default async function AdminSupportListPage({
         />
       ),
       createdAt: new Date(item.createdAt).toLocaleString("fa-IR"),
+      sla: item.firstRespondedAt ? (
+        <StatusBadge label="پاسخ داده شد" tone="success" />
+      ) : item.firstResponseDueAt && item.firstResponseDueAt.getTime() < renderedAtMs ? (
+        <StatusBadge label="عبور از SLA" tone="danger" />
+      ) : item.firstResponseDueAt ? (
+        <span>{item.firstResponseDueAt.toLocaleString("fa-IR")}</span>
+      ) : (
+        "—"
+      ),
       actions: (
         <Link
           href={`/admin/support/${item.id}`}

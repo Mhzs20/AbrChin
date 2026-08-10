@@ -1,6 +1,6 @@
 # قرارداد محصول فاز ۱ ابرچین
 
-> وضعیت: **LOCKED — Launch Amendment 1.M (Founder 2026-08-08)**
+> وضعیت: **LOCKED — Launch Amendment 1.N (Founder 2026-08-10)**
 >
 > در تعارض با اسناد قدیمی، این سند و دستور صریح Founder مرجع محصول هستند.
 > مسیر Launch: نمایش + خرید دوره‌ای ماهانه + Fulfillment دستی Admin.
@@ -135,6 +135,11 @@ Compute intervals
 ResourceVersion و RateCardVersion مؤثر همان زمان محاسبه می‌شود.
 
 ## ۴. جریان Canonical سرور ابری
+
+> **Amendment 1.M:** این جریان برای Domain داخلی/Legacy PAYG حفظ شده است و
+> مسیر فروش عمومی Launch نیست. Golden Path عمومی از Quote دوره‌ای
+> `PREPAID_TERM`، Debit کیف پول، Fulfillment دستی و دو Approval استفاده می‌کند؛
+> مرجع جزئیات `docs/launch/launch-contract-v2.md` است.
 
 ```text
 Wallet Top-up
@@ -309,7 +314,8 @@ VPS یا Plan دوره‌ثابت می‌تواند Checkout و Renewal دستی
 - Sale و Mutation مستقل باشند.
 - آروان و پارس‌پک بدون Credential واقعی Fail-closed بمانند.
 - دو Approval و Reveal یک‌بارمصرف با تست PostgreSQL پاس شوند.
-- اسناد و UI، Cloud Server را Wallet-first PAYG نشان دهند.
+- Backend و اسناد فنی Domain داخلی PAYG را حفظ کنند، اما UI عمومی Launch فقط
+  خرید دوره‌ای `PREPAID_TERM` با دوره‌های ۱/۳/۶/۱۲ ماهه را نشان دهد.
 
 Deploy، Payment واقعی، Provider Mutation واقعی، Refund بانکی و Founder Smoke
 مجوز جداگانه می‌خواهند و با سبزبودن Local Gateها مجاز نمی‌شوند.
@@ -349,11 +355,13 @@ Deploy، Payment واقعی، Provider Mutation واقعی، Refund بانکی �
   - شروع: ۵۰۰٬۰۰۰ تومان
   - استوار: ۱٬۵۰۰٬۰۰۰ تومان
   - کهکشان: ۵٬۰۰۰٬۰۰۰ تومان
-- تعهد نسخه ۲ پرچین برای فروش‌های آینده:
+- تعهد نسخه ۳ پرچین برای فروش‌های آینده:
   - شروع: راه‌اندازی امن، بازبینی و گزارش سلامت ماهانه، یک اقدام روتین ماهانه.
   - استوار: پایش Uptime پنج‌دقیقه‌ای، بکاپ روزانه، Patch ماهانه، گزارش عملیات و پاسخ حداکثر چهار ساعت کاری.
   - کهکشان: پایش رخداد حیاتی، مدیریت رخداد P1، آزمون Restore، مدیریت تغییر، گزارش ظرفیت و پاسخ رخداد حیاتی حداکثر سی دقیقه.
 - این تعهدها عملیات مدیریت‌شده‌اند و می‌توانند با Fulfillment انسانی Admin اجرا شوند؛ فروش آن‌ها به Provider Mutation خودکار وابسته نیست.
+- تأیید نهایی تحویل یک قرارداد فعال و صف کار دوره‌ای برای همان سرور می‌سازد؛ Owner، Due، Evidence، SLA و گزارش مشتری داخل محصول ثبت می‌شوند.
+- سهمیه درخواست روتین شروع/استوار/کهکشان به‌ترتیب ۱/۲/۴ در هر دوره است. رخداد P1 فقط برای کهکشان و مستقل از ساعت کاری، با پاسخ اولیه حداکثر ۳۰ دقیقه تعریف می‌شود.
 - چینش فروشگاهی همه پلن‌های Non-dominated را نشان می‌دهد؛ Tier فقط با vCPU+RAM تعیین می‌شود و Disk شرط Tier نیست. نام Provider به مشتری نمایش داده نمی‌شود.
 - از ۷ روز قبل سررسید SMS یادآوری ارسال می‌شود (عدد Admin-configurable).
 - با صفر شدن کیف پول سرور معلق می‌شود؛ ۷ روز فرصت تمدید؛ سپس حذف
@@ -405,3 +413,36 @@ Deploy، Payment واقعی، Provider Mutation واقعی، Refund بانکی �
   - اتصال دامنه و SSL
   - بکاپ اولیه و آزمون بازگردانی
   - همراهی معماری سبک قبل از خرید سرور بزرگ
+
+## ۱۴. Launch Amendment 1.M — Launch V2
+
+- Golden Path عمومی قطعی:
+  `Discovery → Guest Quote → Login/Claim → Wallet/Payment → Admin Review → Manual Fulfillment → Delivery → Renewal/Upgrade/Cancel/Refund`.
+- Quote عمومی فقط `PREPAID_TERM` با دوره‌های ۱، ۳، ۶ و ۱۲ ماه است و دقیقاً
+  ۶۰ دقیقه اعتبار دارد.
+- Public PAYG hourly/daily UX از Launch خارج است؛ کد و تاریخچه PAYG حذف یا
+  بازنویسی نمی‌شود.
+- Gateway در مسیر Top-up فقط Wallet را Credit می‌کند و خرید فقط از Ledger
+  Wallet را Debit می‌کند.
+- `PUBLIC_SALE_ENABLED` master gate فروش است و مطابق تصمیم Founder همیشه
+  `true` نگه داشته می‌شود. Gateهای Provider/source نیز برای Offerهای
+  منتشرشده پیش‌فرض `true` دارند؛ موجودی، Region و تازگی قیمت همچنان مستقل
+  بررسی می‌شوند.
+- تمام Provider Mutationها مستقل و پیش‌فرض خاموش می‌مانند. Launch با
+  Fulfillment دستی و دو Approval Admin انجام می‌شود.
+- مسیر Canonical، State/CTA matrix و برنامه Deprecation در
+  `docs/launch/launch-contract-v2.md` قفل شده‌اند.
+
+## ۱۵. Launch Amendment 1.N — فروش عمومی دائماً باز
+
+- تصمیم صریح Founder در ۲۰۲۶-۰۸-۱۰، پیش‌فرض قبلی Sale خاموش را جایگزین کرد.
+- `PUBLIC_SALE_ENABLED` و Gateهای فروش Provider/source در Development،
+  Production، Deploy و Rollback باز می‌مانند.
+- بازبودن Sale به معنی Oversell نیست: فقط Offer منتشرشده با Region مجاز،
+  موجودی معتبر و قیمت تازه قابل Quote و خرید است. Catalog خام Provider همچنان
+  Auto-publish نمی‌شود.
+- Catalog/price/availability sync فقط Read-only است و Provider mutation اجرا
+  نمی‌کند.
+- `ARVAN_MUTATIONS_ENABLED=false` و `PARSPACK_MUTATIONS_ENABLED=false` برای
+  Launch حفظ می‌شوند؛ ساخت، تغییر و تحویل سرور با Fulfillment دستی و دو
+  Approval ادمین انجام می‌شود.

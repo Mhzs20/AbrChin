@@ -24,6 +24,11 @@ import {
   revalidateLockedSelection,
 } from "@/lib/infrastructure/selection-revalidation";
 import { serializeQuoteLineItems } from "@/lib/pricing/quote-line-items";
+import { activateParchinEnrollmentTx } from "@/lib/parchin/operations";
+import {
+  snapshotParchinServiceContract,
+  toParchinServiceContract,
+} from "@/lib/parchin/service-contract";
 
 export const RENEWAL_QUOTE_VALIDITY_MS = 10 * 60 * 1000;
 
@@ -410,6 +415,7 @@ export async function payRenewalQuote(params: {
       where: { id: subscription.id },
       data: {
         status: SubscriptionStatus.ACTIVE,
+        parchinLevel,
         renewalPriceRial: quote.finalPriceRialSnapshot,
         currentPeriodStart: quote.periodStartSnapshot,
         currentPeriodEnd: quote.periodEndSnapshot,
@@ -418,6 +424,21 @@ export async function payRenewalQuote(params: {
         autoRenew: false,
       },
     });
+    if (parchin?.active) {
+      await activateParchinEnrollmentTx(tx, {
+        userId: subscription.userId,
+        cloudInstanceId: subscription.cloudInstanceId,
+        serviceOrderId: subscription.sourceOrderId,
+        subscriptionId: subscription.id,
+        level: parchinLevel,
+        contractSnapshot: snapshotParchinServiceContract(
+          toParchinServiceContract(parchin),
+        ),
+        activatedAt: quote.periodStartSnapshot,
+        quotaPeriodStart: quote.periodStartSnapshot,
+        quotaPeriodEnd: quote.periodEndSnapshot,
+      });
+    }
     const paidQuote = await tx.serviceRenewalQuote.update({
       where: { id: quote.id },
       data: {
@@ -465,6 +486,11 @@ async function markSubscriptionPastDue(
       },
     });
     if (changed.count !== 1) return false;
+
+    await tx.parchinEnrollment.updateMany({
+      where: { subscriptionId: subscription.id, status: "ACTIVE" },
+      data: { status: "PAST_DUE" },
+    });
 
     await tx.adminNotification.create({
       data: {
@@ -519,6 +545,11 @@ async function markSubscriptionSuspended(
       },
     });
     if (changed.count !== 1) return false;
+
+    await tx.parchinEnrollment.updateMany({
+      where: { subscriptionId: subscription.id, status: "PAST_DUE" },
+      data: { status: "SUSPENDED" },
+    });
 
     await tx.adminNotification.create({
       data: {

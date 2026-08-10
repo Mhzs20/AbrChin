@@ -98,21 +98,22 @@ test("configuration and upgrade presentation use design-system shells", async ()
   assert.match(checkout, /product-section order-checkout/);
 });
 
-test("storefront cards route to a minimal account configurator", async () => {
+test("storefront cards route to a minimal public pre-Login configurator", async () => {
   const button = await readFile(
     "components/ready-server-quote-button.tsx",
     "utf8",
   );
   const page = await readFile(
-    "app/account/order/configure/[planId]/page.tsx",
+    "app/cloud-servers/configure/[planId]/page.tsx",
     "utf8",
   );
   const quoteService = await readFile(
     "lib/recommendation/quote-service.ts",
     "utf8",
   );
-  assert.match(button, /\/account\/order\/configure\//);
-  assert.match(page, /requireCustomerPage/);
+  assert.match(button, /\/cloud-servers\/configure\//);
+  assert.doesNotMatch(page, /requireCustomerPage/);
+  assert.match(page, /پیش‌فاکتور نهایی پیش از ورود/);
   assert.match(button, /سیستم‌عامل و نسخه/);
   assert.match(button, /نام سرور/);
   assert.match(button, /مدت خرید/);

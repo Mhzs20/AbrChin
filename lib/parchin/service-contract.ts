@@ -18,6 +18,46 @@ export type ParchinServiceLimits = {
   applicationMaintenance: "excluded" | "add_on" | "included";
 };
 
+export type ParchinOperationalPolicy = {
+  routineRequestLimit: number;
+  routineRequestMaxMinutes: number;
+  monitoringIntervalMinutes: number | null;
+  consecutiveFailuresBeforeAlert: number | null;
+  backupIntervalHours: number | null;
+  backupRetentionCopies: number | null;
+  restoreCadence: "excluded" | "monthly_check" | "monthly_test";
+  patchCadence: "initial_only" | "monthly" | "weekly_review";
+  p1ResponseMinutes: number | null;
+  capacityThresholds: {
+    cpuPercent: number;
+    ramPercent: number;
+    diskPercent: number;
+  } | null;
+};
+
+export const PARCHIN_CONTRACT_DEFINITIONS = {
+  businessHours:
+    "شنبه تا چهارشنبه ۹ تا ۱۸ و پنج‌شنبه ۹ تا ۱۴ به وقت تهران؛ جمعه خارج از ساعت کاری است.",
+  firstResponse:
+    "تأیید دریافت، تعیین مسئول و اعلام اقدام بعدی است و به معنی حل کامل نیست.",
+  p1Incident:
+    "قطعی کامل Production، خطر از‌دست‌رفتن داده، نفوذ امنیتی فعال یا اختلال بحرانی گسترده است.",
+  routineRequest:
+    "یک اقدام زیرساختی حداکثر ۳۰ دقیقه مانند تنظیم Firewall، Restart کنترل‌شده، تغییر DNS یا نصب Package استاندارد است.",
+  routineExclusions:
+    "توسعه کد، رفع باگ Application، DBA تخصصی، مهاجرت کامل، تغییر معماری و عملیات پرریسک درخواست روتین نیستند.",
+  backup:
+    "حداقل یک نسخه در هر ۲۴ ساعت از منابعی که هنگام فعال‌سازی قرارداد مشخص شده‌اند؛ RPO هدف حداکثر ۲۴ ساعت است.",
+  restoreCheck:
+    "بررسی خوانایی و قابلیت استفاده آخرین نسخه بدون بازگردانی کامل سرویس است.",
+  restoreTest:
+    "بازگردانی واقعی در محیط ایزوله همراه نتیجه، مدت اجرا و Checksum است.",
+  changeManagement:
+    "ثبت درخواست، ارزیابی ریسک، تأیید، برنامه بازگشت، اجرا و گزارش نتیجه است.",
+  applicationBoundary:
+    "نگهداری کد، Query و منطق Application جزو پرچین نیست؛ مهاجرت کامل نیز خدمت مستقل قطب‌نماست.",
+} as const;
+
 export type ParchinServiceContract = {
   level: ParchinLevel;
   version: number;
@@ -30,6 +70,8 @@ export type ParchinServiceContract = {
   serviceLimits: ParchinServiceLimits;
   supportWindow: string;
   firstResponseTarget: string;
+  operationalPolicy: ParchinOperationalPolicy;
+  definitions: typeof PARCHIN_CONTRACT_DEFINITIONS;
   active: boolean;
   effectiveFrom: string;
 };
@@ -128,13 +170,52 @@ const STABLE_LIMITS: ParchinServiceLimits = {
   applicationMaintenance: "excluded",
 };
 
+const OPERATIONAL_POLICIES: Record<ParchinLevel, ParchinOperationalPolicy> = {
+  PARCHIN_START: {
+    routineRequestLimit: 1,
+    routineRequestMaxMinutes: 30,
+    monitoringIntervalMinutes: null,
+    consecutiveFailuresBeforeAlert: null,
+    backupIntervalHours: null,
+    backupRetentionCopies: null,
+    restoreCadence: "excluded",
+    patchCadence: "initial_only",
+    p1ResponseMinutes: null,
+    capacityThresholds: null,
+  },
+  PARCHIN_ACTIVE: {
+    routineRequestLimit: 2,
+    routineRequestMaxMinutes: 30,
+    monitoringIntervalMinutes: 5,
+    consecutiveFailuresBeforeAlert: 2,
+    backupIntervalHours: 24,
+    backupRetentionCopies: 7,
+    restoreCadence: "monthly_check",
+    patchCadence: "monthly",
+    p1ResponseMinutes: null,
+    capacityThresholds: null,
+  },
+  PARCHIN_STABLE: {
+    routineRequestLimit: 4,
+    routineRequestMaxMinutes: 30,
+    monitoringIntervalMinutes: 5,
+    consecutiveFailuresBeforeAlert: 2,
+    backupIntervalHours: 24,
+    backupRetentionCopies: 14,
+    restoreCadence: "monthly_test",
+    patchCadence: "weekly_review",
+    p1ResponseMinutes: 30,
+    capacityThresholds: { cpuPercent: 80, ramPercent: 85, diskPercent: 80 },
+  },
+};
+
 export const DEFAULT_PARCHIN_SERVICE_CONTRACTS: Record<
   ParchinLevel,
   Omit<ParchinServiceContract, "monthlyPriceRial" | "active" | "effectiveFrom">
 > = {
   PARCHIN_START: {
     level: "PARCHIN_START",
-    version: 2,
+    version: 3,
     title: "پرچین شروع",
     subtitle: "سلامت پایه هر ماه",
     description:
@@ -142,12 +223,15 @@ export const DEFAULT_PARCHIN_SERVICE_CONTRACTS: Record<
     includedServices: [...START_INCLUDED],
     excludedServices: [...START_EXCLUDED],
     serviceLimits: START_LIMITS,
-    supportWindow: "ساعات اداری",
+    supportWindow:
+      "شنبه تا چهارشنبه ۹ تا ۱۸ و پنج‌شنبه ۹ تا ۱۴ به وقت تهران",
     firstResponseTarget: "حداکثر تا پایان همان روز کاری",
+    operationalPolicy: OPERATIONAL_POLICIES.PARCHIN_START,
+    definitions: PARCHIN_CONTRACT_DEFINITIONS,
   },
   PARCHIN_ACTIVE: {
     level: "PARCHIN_ACTIVE",
-    version: 2,
+    version: 3,
     title: "پرچین استوار",
     subtitle: "پایش، بکاپ و نگهداری",
     description:
@@ -155,12 +239,14 @@ export const DEFAULT_PARCHIN_SERVICE_CONTRACTS: Record<
     includedServices: [...ACTIVE_INCLUDED],
     excludedServices: [...ACTIVE_EXCLUDED],
     serviceLimits: ACTIVE_LIMITS,
-    supportWindow: "رسیدگی هشدار در ساعات کاری",
+    supportWindow: "رسیدگی در ساعات کاری؛ پایش خودکار پیوسته",
     firstResponseTarget: "حداکثر ۴ ساعت کاری",
+    operationalPolicy: OPERATIONAL_POLICIES.PARCHIN_ACTIVE,
+    definitions: PARCHIN_CONTRACT_DEFINITIONS,
   },
   PARCHIN_STABLE: {
     level: "PARCHIN_STABLE",
-    version: 2,
+    version: 3,
     title: "پرچین کهکشان",
     subtitle: "عملیات Production",
     description:
@@ -169,7 +255,10 @@ export const DEFAULT_PARCHIN_SERVICE_CONTRACTS: Record<
     excludedServices: [...STABLE_EXCLUDED],
     serviceLimits: STABLE_LIMITS,
     supportWindow: "رخداد حیاتی ۲۴/۷؛ درخواست روتین در ساعات کاری",
-    firstResponseTarget: "رخداد حیاتی حداکثر ۳۰ دقیقه",
+    firstResponseTarget:
+      "رخداد P1 حداکثر ۳۰ دقیقه؛ سایر درخواست‌ها حداکثر ۴ ساعت کاری",
+    operationalPolicy: OPERATIONAL_POLICIES.PARCHIN_STABLE,
+    definitions: PARCHIN_CONTRACT_DEFINITIONS,
   },
 };
 
@@ -293,6 +382,8 @@ export function toParchinServiceContract(row: {
       (row.supportWindow ?? "").trim() || defaults.supportWindow,
     firstResponseTarget:
       (row.firstResponseTarget ?? "").trim() || defaults.firstResponseTarget,
+    operationalPolicy: defaults.operationalPolicy,
+    definitions: PARCHIN_CONTRACT_DEFINITIONS,
     active: row.active,
     effectiveFrom: (row.effectiveFrom ?? new Date(0)).toISOString(),
   };
@@ -314,6 +405,8 @@ export function snapshotParchinServiceContract(
     serviceLimits: contract.serviceLimits,
     supportWindow: contract.supportWindow,
     firstResponseTarget: contract.firstResponseTarget,
+    operationalPolicy: contract.operationalPolicy,
+    definitions: contract.definitions,
     active: contract.active,
     effectiveFrom: contract.effectiveFrom,
     snapshottedAt: new Date().toISOString(),
@@ -334,6 +427,8 @@ export function readParchinServiceSnapshot(
   }
   const level = raw.level as ParchinLevel;
   const defaults = DEFAULT_PARCHIN_SERVICE_CONTRACTS[level];
+  const includedServices = parseStringList(raw.includedServices);
+  const excludedServices = parseStringList(raw.excludedServices);
   return {
     level,
     version:
@@ -358,9 +453,13 @@ export function readParchinServiceSnapshot(
         : typeof raw.monthlyPriceRial === "number"
           ? String(raw.monthlyPriceRial)
           : "0",
-    includedServices: parseStringList(raw.includedServices),
-    excludedServices: parseStringList(raw.excludedServices),
-    serviceLimits: parseServiceLimits(raw.serviceLimits),
+    includedServices:
+      includedServices.length > 0 ? includedServices : defaults.includedServices,
+    excludedServices:
+      excludedServices.length > 0 ? excludedServices : defaults.excludedServices,
+    serviceLimits: raw.serviceLimits
+      ? parseServiceLimits(raw.serviceLimits)
+      : defaults.serviceLimits,
     supportWindow:
       typeof raw.supportWindow === "string" && raw.supportWindow.trim()
         ? raw.supportWindow.trim()
@@ -370,6 +469,8 @@ export function readParchinServiceSnapshot(
       raw.firstResponseTarget.trim()
         ? raw.firstResponseTarget.trim()
         : defaults.firstResponseTarget,
+    operationalPolicy: defaults.operationalPolicy,
+    definitions: PARCHIN_CONTRACT_DEFINITIONS,
     active: raw.active !== false,
     effectiveFrom:
       typeof raw.effectiveFrom === "string"

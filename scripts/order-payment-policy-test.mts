@@ -38,7 +38,7 @@ test("callback settles the server-locked amount once and moves ambiguity to revi
   assert.doesNotMatch(payment, /createInstance/);
 });
 
-test("checkout offers wallet-first submit plus one gateway action; callback reaches the order result", async () => {
+test("public checkout is wallet-only; legacy callback still reaches the order result", async () => {
   const [checkout, callback, route, walletRoute] = await Promise.all([
     readFile("components/account/order-checkout-panel.tsx", "utf8"),
     readFile("lib/payments/callback-handler.ts", "utf8"),
@@ -46,14 +46,14 @@ test("checkout offers wallet-first submit plus one gateway action; callback reac
     readFile("app/api/orders/[id]/pay-with-wallet/route.ts", "utf8"),
   ]);
 
-  assert.match(checkout, /\/api\/orders\/\$\{order\.id\}\/payment/);
   assert.match(checkout, /Idempotency-Key/);
-  assert.match(checkout, /window\.location\.assign\(payBody\.redirectUrl\)/);
   // Founder wallet-first flow: top-up shortfall, return to the locked quote,
   // review, then explicit wallet submit — never a silent debit.
   assert.match(checkout, /\/api\/orders\/\$\{order\.id\}\/pay-with-wallet/);
   assert.match(checkout, /\/account\/wallet\/topup\?returnTo=/);
   assert.doesNotMatch(checkout, /wallet\/topups/);
+  assert.doesNotMatch(checkout, /\/api\/orders\/\$\{order\.id\}\/payment/);
+  assert.doesNotMatch(checkout, /window\.location\.assign\(/);
   assert.match(callback, /finalizeOrderPaymentFromCallback/);
   assert.match(callback, /\/account\/orders\/\$\{result\.order\.id\}/);
   assert.match(route, /createOrderPaymentIntent/);

@@ -594,7 +594,7 @@ test("shared persistence upserts idempotently and never creates a storefront SKU
   assert.equal("infrastructurePlan" in fake.tx, false);
 });
 
-test("catalog remains visible while every commercial gate stays fail-closed", async () => {
+test("catalog stays visible during an explicit sale closure and mutations stay closed", async () => {
   const names = [
     "PARSPACK_PUBLIC_SALE_ENABLED",
     "PARSPACK_MUTATIONS_ENABLED",
@@ -657,7 +657,14 @@ test("catalog remains visible while every commercial gate stays fail-closed", as
       readFile(".env.production.example", "utf8"),
       ]);
     assert.match(quoteService, /assertPublicSaleEnabled\(route\)/);
-    assert.match(quoteService, /await requireFreshCatalog\(route\.provider\)/);
+    assert.match(
+      quoteService,
+      /requireFreshCatalog\(InfrastructureProvider\.ARVAN\)/,
+    );
+    assert.match(
+      quoteService,
+      /requireFreshCatalog\(InfrastructureProvider\.PARSPACK\)/,
+    );
     assert.match(quoteService, /isRegionEnabledForSale/);
     assert.match(
       quoteService,
@@ -765,14 +772,14 @@ test("cloud-servers uses curated چینش assortment and publishes sale for show
   assert.match(cloudPage, /چینش نو/);
   assert.match(cloudPage, /کیف پول/);
   assert.match(catalogUi, /فروش این پلن‌ها به‌زودی فعال می‌شود/);
-  assert.match(catalogUi, /تومان در ماه/);
-  assert.match(catalogUi, /تومان در ساعت/);
+  assert.match(catalogUi, /مبلغ یک ماه سرور \+ \{parchinTitle\}/);
+  assert.doesNotMatch(catalogUi, /تومان در ساعت/);
   assert.doesNotMatch(catalogUi, /providerCode/);
   assert.doesNotMatch(catalogUi, /provider-code-badge/);
   assert.match(catalogUi, /READY_INSTANT_SERVER/);
   assert.match(catalogUi, /ready-servers/);
   assert.match(catalogUi, /لوکیشن ایران/);
-  assert.match(catalogUi, /چینش فنی/);
+  assert.match(catalogUi, /ساخت و تحویل کنترل‌شده توسط تیم ابرچین/);
   assert.doesNotMatch(catalogUi, /قیمت پایه تأمین‌کننده/);
   assert.doesNotMatch(catalogUi, /آروان|پارس[\u200c ]?پک/);
   assert.doesNotMatch(catalogUi, /\bAV\b|\bPP\b/);

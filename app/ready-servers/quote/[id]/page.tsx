@@ -4,6 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { OrderCheckoutPanel } from "@/components/account/order-checkout-panel";
+import { ToastProvider } from "@/components/product/toast";
 import { QuoteExpiredRefresh } from "@/components/quote/quote-expired-refresh";
 import {
   readyServerImageLabel,
@@ -106,7 +107,8 @@ export default async function ReadyServerQuotePage({
   const next = `/ready-servers/quote/${quote.id}`;
 
   return (
-    <section className="ready-quote-page page-view" aria-labelledby="quote-title">
+    <ToastProvider>
+      <section className="ready-quote-page page-view" aria-labelledby="quote-title">
       <header className="ready-quote-heading">
         <div>
           <span className="eyebrow">
@@ -271,6 +273,7 @@ export default async function ReadyServerQuotePage({
           )}
         </aside>
       </div>
-    </section>
+      </section>
+    </ToastProvider>
   );
 }

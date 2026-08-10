@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/db";
 
 // Canonical home of the term-discount table is the pure commercial engine so
@@ -19,8 +21,10 @@ export const DEFAULT_LIFECYCLE_POLICY: LifecyclePolicy = {
   deleteDaysAfterSuspend: 7,
 };
 
-export async function getLifecyclePolicy(): Promise<LifecyclePolicy> {
-  const row = await prisma.commercePricingConfig.findUnique({
+export async function getLifecyclePolicy(
+  db: Pick<Prisma.TransactionClient, "commercePricingConfig"> = prisma,
+): Promise<LifecyclePolicy> {
+  const row = await db.commercePricingConfig.findUnique({
     where: { id: "default" },
   });
   return {
@@ -33,4 +37,3 @@ export async function getLifecyclePolicy(): Promise<LifecyclePolicy> {
       row?.deleteDaysAfterSuspend ?? DEFAULT_LIFECYCLE_POLICY.deleteDaysAfterSuspend,
   };
 }
-

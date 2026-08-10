@@ -12,6 +12,7 @@ import {
 import { requireCustomerPage } from "@/lib/auth/guards";
 import {
   SUPPORT_CATEGORY_LABELS,
+  SUPPORT_KIND_LABELS,
   SUPPORT_PRIORITY_LABELS,
   SUPPORT_STATUS_LABELS,
 } from "@/lib/labels/customer";
@@ -48,6 +49,7 @@ export default async function AccountSupportPage() {
   const columns = [
     { key: "subject", header: "موضوع" },
     { key: "category", header: "دسته" },
+    { key: "kind", header: "نوع" },
     { key: "status", header: "وضعیت" },
     { key: "priority", header: "اولویت" },
     { key: "createdAt", header: "زمان" },
@@ -59,6 +61,7 @@ export default async function AccountSupportPage() {
     cells: {
       subject: item.subject,
       category: SUPPORT_CATEGORY_LABELS[item.category] ?? item.category,
+      kind: SUPPORT_KIND_LABELS[item.kind] ?? item.kind,
       status: (
         <StatusBadge
           label={SUPPORT_STATUS_LABELS[item.status] ?? item.status}
@@ -90,6 +93,10 @@ export default async function AccountSupportPage() {
       {
         label: "دسته",
         value: SUPPORT_CATEGORY_LABELS[item.category] ?? item.category,
+      },
+      {
+        label: "نوع",
+        value: SUPPORT_KIND_LABELS[item.kind] ?? item.kind,
       },
       {
         label: "وضعیت",

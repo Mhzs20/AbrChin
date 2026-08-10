@@ -13,10 +13,12 @@ import {
 import { getAdminPageAccess } from "@/lib/auth/guards";
 import {
   SUPPORT_CATEGORY_LABELS,
+  SUPPORT_KIND_LABELS,
   SUPPORT_PRIORITY_LABELS,
   SUPPORT_STATUS_LABELS,
 } from "@/lib/labels/customer";
 import { getAdminSupportRequest } from "@/lib/support/service";
+import { prisma } from "@/lib/db";
 import { WalletError } from "@/lib/wallet/errors";
 
 export const metadata: Metadata = {
@@ -53,6 +55,11 @@ export default async function AdminSupportDetailPage({
     }
     throw error;
   }
+  const assignees = await prisma.user.findMany({
+    where: { role: "ADMIN", accountStatus: "ACTIVE" },
+    orderBy: [{ displayName: "asc" }, { mobile: "asc" }],
+    select: { id: true, displayName: true, mobile: true },
+  });
 
   return (
     <>
@@ -112,6 +119,28 @@ export default async function AdminSupportDetailPage({
               {SUPPORT_CATEGORY_LABELS[request.category] ?? request.category}
             </dd>
           </div>
+          <div>
+            <dt style={{ color: "var(--product-muted)", fontSize: 13 }}>نوع درخواست</dt>
+            <dd style={{ margin: "4px 0 0" }}>
+              {SUPPORT_KIND_LABELS[request.kind] ?? request.kind}
+            </dd>
+          </div>
+          <div>
+            <dt style={{ color: "var(--product-muted)", fontSize: 13 }}>SLA پاسخ اولیه</dt>
+            <dd style={{ margin: "4px 0 0" }}>
+              {request.firstRespondedAt
+                ? `پاسخ در ${request.firstRespondedAt.toLocaleString("fa-IR")}`
+                : request.firstResponseDueAt
+                  ? request.firstResponseDueAt.toLocaleString("fa-IR")
+                  : "بدون SLA پرچین"}
+            </dd>
+          </div>
+          <div>
+            <dt style={{ color: "var(--product-muted)", fontSize: 13 }}>مسئول</dt>
+            <dd style={{ margin: "4px 0 0" }}>
+              {request.assignedTo?.displayName || request.assignedTo?.mobile || "تخصیص‌داده‌نشده"}
+            </dd>
+          </div>
           {request.cloudInstance ? (
             <div>
               <dt style={{ color: "var(--product-muted)", fontSize: 13 }}>سرویس</dt>
@@ -168,6 +197,11 @@ export default async function AdminSupportDetailPage({
       <AdminSupportRequestPanel
         requestId={request.id}
         currentStatus={request.status}
+        currentAssigneeId={request.assignedToId ?? ""}
+        assignees={assignees.map((item) => ({
+          id: item.id,
+          label: item.displayName || item.mobile,
+        }))}
       />
     </>
   );

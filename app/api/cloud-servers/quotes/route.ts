@@ -1,4 +1,4 @@
-import { InfrastructureProductKind } from "@prisma/client";
+import { InfrastructureProductKind, ParchinLevel } from "@prisma/client";
 
 import {
   getClientIp,
@@ -79,6 +79,13 @@ export async function POST(request: Request) {
     const termMonthsRaw = Number(record.termMonths ?? 1);
     const termMonths = isBillingTermMonths(termMonthsRaw) ? termMonthsRaw : null;
     const couponCode = normalizeCouponCode(record.couponCode);
+    const requestedParchinLevel =
+      typeof record.requestedParchinLevel === "string" &&
+      Object.values(ParchinLevel).includes(
+        record.requestedParchinLevel as ParchinLevel,
+      )
+        ? (record.requestedParchinLevel as ParchinLevel)
+        : null;
     if (
       !planId ||
       !imageAssetId ||
@@ -98,6 +105,7 @@ export async function POST(request: Request) {
       userId: user?.id ?? null,
       termMonths,
       couponCode,
+      requestedParchinLevel: requestedParchinLevel ?? undefined,
       delivery: {
         imageAssetId,
         accessMethod: accessMethod as

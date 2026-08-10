@@ -29,7 +29,6 @@ import { isRegionEnabledForSale } from "@/lib/infrastructure/provider-region-con
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import {
   assertPublicSaleEnabled,
-  isPublicSaleEnabled,
 } from "@/lib/infrastructure/public-sale-policy";
 import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
 import {
@@ -851,6 +850,7 @@ function catalogCheckoutRequestHash(input: {
   delivery: CatalogDeliverySelection;
   termMonths: 1 | 3 | 6 | 12;
   couponCode: string | null;
+  requestedParchinLevel?: ParchinLevel;
 }) {
   return createHash("sha256")
     .update(
@@ -863,6 +863,7 @@ function catalogCheckoutRequestHash(input: {
         serverName: input.delivery.serverName,
         termMonths: input.termMonths,
         couponCode: input.couponCode,
+        requestedParchinLevel: input.requestedParchinLevel ?? null,
       }),
     )
     .digest("hex");
@@ -877,6 +878,7 @@ async function createCatalogServerQuote(params: {
   idempotencyKey: string;
   termMonths?: 1 | 3 | 6 | 12;
   couponCode?: string | null;
+  requestedParchinLevel?: ParchinLevel;
 }) {
   if (!/^[A-Za-z0-9._:-]{16,128}$/.test(params.idempotencyKey)) {
     throw new WalletError(
@@ -974,6 +976,7 @@ async function createCatalogServerQuote(params: {
     termMonths,
     couponDiscountBps,
     couponCode,
+    parchinLevel: params.requestedParchinLevel,
   };
   const plan =
     params.expectedProductKind ===
@@ -1230,6 +1233,7 @@ export async function createReadyServerQuote(params: {
   now?: Date;
   termMonths?: 1 | 3 | 6 | 12;
   couponCode?: string | null;
+  requestedParchinLevel?: ParchinLevel;
 }) {
   return createCatalogServerQuote({
     ...params,
@@ -1246,6 +1250,7 @@ export async function createCloudServerQuote(params: {
   now?: Date;
   termMonths?: 1 | 3 | 6 | 12;
   couponCode?: string | null;
+  requestedParchinLevel?: ParchinLevel;
 }) {
   return createCatalogServerQuote({
     ...params,
@@ -1762,15 +1767,10 @@ export async function getActiveRecommendationQuote(
     include: { plan: true, session: true, serviceOrder: true },
   });
   if (!quote) return null;
-  if (
-    !isPublicSaleEnabled({
-      provider: quote.plan.provider,
-      productKind: quote.plan.productKind,
-      offerSource: quote.plan.offerSource,
-    })
-  ) {
-    return null;
-  }
+  // An already-created quote remains readable while public checkout is
+  // paused. The page renders the fail-closed sale decision; only mutation
+  // boundaries may reject the purchase. Hiding it here falsely reports a
+  // still-valid immutable quote as expired.
   try {
     await requireRegionSaleEnabled(quote.plan);
   } catch {

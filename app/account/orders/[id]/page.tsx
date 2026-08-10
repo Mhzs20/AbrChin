@@ -10,6 +10,7 @@ import {
   Timeline,
 } from "@/components/product";
 import { CredentialRevealPanel } from "@/components/account/credential-reveal-panel";
+import { OrderStatusRefresh } from "@/components/account/order-status-refresh";
 import { ServiceCancelPanel } from "@/components/account/service-cancel-panel";
 import { SubscriptionPanel } from "@/components/account/subscription-panel";
 import { requireCustomerPage } from "@/lib/auth/guards";
@@ -150,6 +151,80 @@ export default async function AccountOrderDetailPage({
     typeof delivery?.serverName === "string"
       ? delivery.serverName
       : order.infrastructureOrder?.cloudInstance?.name ?? null;
+  const instanceActive =
+    order.infrastructureOrder?.cloudInstance?.status === "ACTIVE";
+  const quotePath = order.recommendationQuote
+    ? order.productKind === "READY_INSTANT_SERVER"
+      ? `/ready-servers/quote/${order.recommendationQuote.id}`
+      : `/cloud-servers/quote/${order.recommendationQuote.id}`
+    : null;
+  const supportPath = `/account/support/requests/new?orderId=${order.id}${
+    order.infrastructureOrder?.cloudInstance?.id
+      ? `&instanceId=${order.infrastructureOrder.cloudInstance.id}`
+      : ""
+  }`;
+  const nextAction =
+    order.status === "PENDING_PAYMENT"
+      ? {
+          title: "پرداخت را تکمیل کنید",
+          description:
+            "سفارش هنوز پرداخت نشده است؛ پیش از هر برداشت، مبلغ و موجودی کیف پول را دوباره بررسی کنید.",
+          href: quotePath,
+          label: "بازگشت به پیش‌فاکتور",
+        }
+      : payment === "review"
+        ? {
+            title: "منتظر بررسی پرداخت بمانید",
+            description:
+              "پرداخت ثبت شده و تیم ابرچین نتیجه را بررسی می‌کند؛ پرداخت دیگری انجام ندهید.",
+            href: supportPath,
+            label: "پیگیری با پشتیبانی",
+          }
+        : waitingForAdminProvision
+          ? {
+              title: "تأیید ساخت توسط ابرچین",
+              description:
+                "پرداخت قطعی است؛ اقدام بعدی با تیم ابرچین است و هنوز منبعی در Provider ساخته نشده است.",
+              href: null,
+              label: null,
+            }
+          : waitingForAdminDelivery
+            ? {
+                title: "تأیید نهایی تحویل",
+                description:
+                  "آماده‌سازی تمام شده است؛ پس از تأیید دوم، اطلاعات دسترسی امن در همین صفحه ظاهر می‌شود.",
+                href: null,
+                label: null,
+              }
+            : instanceActive
+              ? {
+                  title: "دریافت اطلاعات دسترسی و مدیریت سرویس",
+                  description:
+                    "سرویس فعال است؛ اطلاعات تحویل، تمدید و تغییرات بعدی در همین صفحه در دسترس‌اند.",
+                  href: "#delivery",
+                  label: "رفتن به تحویل امن",
+                }
+              : order.status === "REFUNDED" || order.status === "CANCELED"
+                ? {
+                    title: "این سفارش بسته شده است",
+                    description:
+                      "برداشت یا عملیات دیگری برای این سفارش انجام نمی‌شود؛ سوابق مالی در کیف پول باقی می‌ماند.",
+                    href: "/account/wallet",
+                    label: "دیدن گردش کیف پول",
+                  }
+                : {
+                    title: "وضعیت را به‌روزرسانی کنید",
+                    description:
+                      "اگر مرحله برای مدتی تغییر نکرده است، وضعیت را تازه کنید یا درخواست پشتیبانی بسازید.",
+                    href: supportPath,
+                    label: "درخواست پشتیبانی",
+                  };
+  const canRequestPreDeliveryCancel =
+    !isPayg &&
+    order.status === "PAID" &&
+    !instanceActive &&
+    order.infrastructureOrder?.status !== "REFUNDED" &&
+    order.infrastructureOrder?.status !== "CANCELED";
 
   const timeline = [
     {
@@ -238,7 +313,11 @@ export default async function AccountOrderDetailPage({
 
   return (
     <>
-      <PageHeader title={order.title} description={`سفارش ${order.id.slice(-8)}`} />
+      <PageHeader
+        title={order.title}
+        description={`سفارش ${order.id.slice(-8)}`}
+        actions={<OrderStatusRefresh />}
+      />
       <SectionCard title="خلاصه">
         <p>
           وضعیت:{" "}
@@ -277,6 +356,16 @@ export default async function AccountOrderDetailPage({
           <p role="status">پرداخت دریافت شده و در انتظار بررسی پشتیبانی است.</p>
         ) : payment === "canceled" || payment === "failed" ? (
           <p role="status">پرداخت نهایی نشد؛ می‌توانید دوباره اقدام کنید.</p>
+        ) : null}
+      </SectionCard>
+
+      <SectionCard title="اقدام بعدی">
+        <h3 style={{ marginTop: 0 }}>{nextAction.title}</h3>
+        <p>{nextAction.description}</p>
+        {nextAction.href && nextAction.label ? (
+          <Link className="product-btn product-btn--primary" href={nextAction.href}>
+            {nextAction.label}
+          </Link>
         ) : null}
       </SectionCard>
 
@@ -344,11 +433,7 @@ export default async function AccountOrderDetailPage({
         <p style={{ marginTop: 12 }}>
           <Link
             className="product-btn product-btn--quiet"
-            href={`/account/support/requests/new?orderId=${order.id}${
-              order.infrastructureOrder?.cloudInstance?.id
-                ? `&instanceId=${order.infrastructureOrder.cloudInstance.id}`
-                : ""
-            }`}
+            href={supportPath}
           >
             درخواست پشتیبانی برای این سرویس
           </Link>
@@ -383,6 +468,7 @@ export default async function AccountOrderDetailPage({
             </p>
           </SectionCard>
           <SectionCard title="تحویل امن سرور">
+            <div id="delivery">
             <CredentialRevealPanel
               instanceId={order.infrastructureOrder.cloudInstance.id}
               ipv4={order.infrastructureOrder.cloudInstance.ipv4}
@@ -394,8 +480,24 @@ export default async function AccountOrderDetailPage({
                 null
               }
             />
+            </div>
           </SectionCard>
         </>
+      ) : null}
+      {canRequestPreDeliveryCancel ? (
+        <SectionCard title="لغو پیش از تحویل">
+          <p>
+            تا پیش از تحویل می‌توانید درخواست لغو ثبت کنید. تیم ابرچین ابتدا
+            وضعیت واقعی منبع را بررسی می‌کند؛ بازگشت اعتبار فقط پس از تأیید امن
+            نبودن عملیات فعال و از مسیر Ledger انجام می‌شود.
+          </p>
+          <Link
+            className="product-btn product-btn--quiet"
+            href={`/account/support/requests/new?orderId=${order.id}&intent=cancel-before-delivery`}
+          >
+            ثبت درخواست لغو پیش از تحویل
+          </Link>
+        </SectionCard>
       ) : null}
       {!isPayg && order.infrastructureOrder?.cloudInstance?.subscription ? (
         <SectionCard title="تمدید">

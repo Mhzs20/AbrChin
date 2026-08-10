@@ -20,12 +20,14 @@
 
 ## Execution Model
 
-- فقط روی **main** کار کن.
-- Branch، Worktree و Pull Request نساز.
-- تغییر مرتبط را مستقیم روی main Commit و Push کن.
+- برنامه Launch V2 فقط روی **`codex/abrchin-ux-flow-v2`** اجرا می‌شود.
+- Push مستقیم، Commit مستقیم یا Merge روی **`main`** ممنوع است.
+- یک Draft PR از Branch برنامه به `main` نگهداری کن و PR تکراری نساز.
+- Phaseها به‌ترتیب ۰ تا ۹ اجرا می‌شوند. Phase بعدی فقط پس از رفع P0/P1 و
+  ثبت شواهد Phase جاری آغاز می‌شود.
 - GitHub Actions، CI/CD workflow یا Deploy خودکار ایجاد یا اجرا نکن.
 - Refactor نامرتبط، معماری نمایشی و فرایند مدیریتی اضافه نکن.
-- هر بار نزدیک‌ترین بخش ناقص از مسیر اولین فروش واقعی را کامل کن.
+- فایل‌های `docs/launch/` حافظه پایدار برنامه و مرجع وضعیت اجرای Phaseها هستند.
 - Deploy Production فقط وقتی انجام می‌شود که Founder صریحاً Deploy را بخواهد.
 
 ## Speed and Scope
@@ -40,7 +42,8 @@
 
 ## Testing
 
-تست نهایی محصول با Founder است. Agent فقط تست‌های حیاتی و مرتبط با تغییر جاری را اجرا می‌کند.
+پذیرش نهایی محصول با Founder است. Agent تمام تست‌های حیاتی و Gateهای تعریف‌شده
+برای Phase جاری را اجرا و شواهد دقیق ثبت می‌کند.
 
 تست حیاتی یعنی بررسی مستقیم یکی از این ریسک‌ها:
 
@@ -53,7 +56,10 @@
 
 قواعد:
 
-- Full test suite، Snapshot test، Visual test و تست‌های نمایشی را اجرا یا اضافه نکن مگر Founder صریحاً بخواهد.
+- Browser smoke/E2E و Visual evidence در Phaseهایی که plan الزام کرده است اجرا
+  می‌شوند؛ Screenshot جای Assertion رفتاری یا دیتابیسی را نمی‌گیرد.
+- Full suite فقط در Phase 9 یا وقتی تغییر جاری چند Domain قفل‌شده را هم‌زمان
+  درگیر کرده است اجرا می‌شود.
 - تست‌های موجود نامرتبط را برای اطمینان عمومی اجرا نکن.
 - اگر تغییر فقط Documentation است، تست اجرا نکن.
 - پیاده‌سازی باید درست باشد؛ حداقل تست به معنی حداقل کیفیت نیست.
@@ -92,16 +98,15 @@
 
 ## Completion Report
 
-پس از هر تسک فقط این موارد را گزارش کن:
+پس از هر Phase این موارد را در اسناد Launch و گزارش ثبت کن:
 
 - چه چیزی پیاده‌سازی شد
-- Commit SHA روی main
-- کدام تست حیاتی اجرا شد یا چرا تست لازم نبود
+- Starting/Ending Commit و Commit SHA روی Branch برنامه
+- فرمان و نتیجه دقیق تست‌های حیاتی، تعداد Skip و Browser evidence
 - Risk واقعی باقی‌مانده
 - Founder دقیقاً چگونه همان Feature را تست کند
 - Deploy انجام شده یا نشده
-
-Branch، PR، Worktree، Reviewer state و گزارش تست‌های نامرتبط را وارد خروجی نکن.
+- لینک Draft PR و اقدام دقیق Phase بعدی
 
 ## Cursor Cloud specific instructions
 

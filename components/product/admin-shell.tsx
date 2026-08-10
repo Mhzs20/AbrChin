@@ -7,6 +7,7 @@ import {
   CircleHelp,
   CreditCard,
   FileText,
+  HeartHandshake,
   LayoutDashboard,
   Percent,
   Server,
@@ -51,6 +52,12 @@ const primaryNav: NavItem[] = [
     label: "چینش فروشگاه",
     icon: LayoutDashboard,
     shortLabel: "فروشگاه",
+  },
+  {
+    href: "/admin/parchin",
+    label: "عملیات پرچین",
+    icon: HeartHandshake,
+    shortLabel: "پرچین",
   },
 ];
 

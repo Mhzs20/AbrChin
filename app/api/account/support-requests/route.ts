@@ -4,6 +4,7 @@ import {
   createSupportRequest,
   listCustomerSupportRequests,
   parseSupportCategory,
+  parseSupportKind,
   toPublicSupportRequest,
 } from "@/lib/support/service";
 import { WalletError } from "@/lib/wallet/errors";
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as Record<string, unknown>;
     const category = parseSupportCategory(body.category);
     if (!category) return jsonError("دسته‌بندی معتبر نیست.", 400);
+    const kind = parseSupportKind(body.kind) ?? undefined;
     const created = await createSupportRequest({
       userId: user.id,
       category,
@@ -39,6 +41,7 @@ export async function POST(request: Request) {
         typeof body.cloudInstanceId === "string" ? body.cloudInstanceId : null,
       serviceOrderId:
         typeof body.serviceOrderId === "string" ? body.serviceOrderId : null,
+      kind,
     });
     return jsonOk({ request: toPublicSupportRequest(created) });
   } catch (error) {

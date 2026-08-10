@@ -40,6 +40,9 @@ export function ProductShell({
 }) {
   return (
     <div className={`product-root product-shell product-shell--${variant}`}>
+      <a className="product-skip-link" href="#main-content">
+        رفتن به محتوای اصلی
+      </a>
       {mobileHeader}
       <aside className="product-sidebar" aria-label="منوی کناری">
         {sidebar}

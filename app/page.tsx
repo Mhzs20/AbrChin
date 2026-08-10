@@ -28,7 +28,7 @@ export default function HomePage() {
 
         <div className="home-actions">
           <Link className="button button-primary button-large" href="/cloud-servers">
-            دیدن سرورهای قابل خرید
+            دیدن چینش‌های سرور
             <ArrowLeft size={19} aria-hidden="true" />
           </Link>
           <Link className="button button-quiet button-large" href="/compass">

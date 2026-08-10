@@ -97,6 +97,7 @@ export async function POST(request: Request) {
         error.code === "quote_expired" ||
         error.code === "quote_unavailable" ||
         error.code === "quote_revalidation_failed" ||
+        error.code === "public_sale_disabled" ||
         error.code === "provider_sale_disabled"
           ? 409
           : 400;

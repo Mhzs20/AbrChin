@@ -31,6 +31,8 @@ export class SmtpEmailProvider implements EmailProvider {
       connectionTimeout: this.config.timeoutMs,
       greetingTimeout: this.config.timeoutMs,
       socketTimeout: this.config.timeoutMs,
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
 
     try {
@@ -40,6 +42,8 @@ export class SmtpEmailProvider implements EmailProvider {
         subject: input.subject,
         text: input.text,
         html: input.html,
+        disableFileAccess: true,
+        disableUrlAccess: true,
       });
     } catch (error) {
       throw new EmailDeliveryError(

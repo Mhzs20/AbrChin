@@ -55,6 +55,12 @@ export const SUPPORT_CATEGORY_LABELS: Record<string, string> = {
   OTHER: "سایر",
 };
 
+export const SUPPORT_KIND_LABELS: Record<string, string> = {
+  GENERAL: "پشتیبانی عمومی",
+  ROUTINE: "درخواست عملیاتی روتین",
+  P1_INCIDENT: "رخداد بحرانی P1",
+};
+
 export const SUPPORT_STATUS_LABELS: Record<string, string> = {
   OPEN: "باز",
   IN_PROGRESS: "در حال رسیدگی",

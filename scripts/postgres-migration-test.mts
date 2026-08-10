@@ -6901,8 +6901,10 @@ try {
   assert.equal(apiOffer.purchaseState, "SALE_DISABLED");
   assert.equal(apiOffer.available, false);
   assert.equal(apiOffer.catalogStatus, "STALE");
-  assert.equal(apiOffer.providerBaseHourlyPriceRial, null);
-  assert.equal(apiOffer.providerBaseMonthlyPriceRial, "0");
+  assert.equal(Object.hasOwn(apiOffer, "providerBaseHourlyPriceRial"), false);
+  assert.equal(Object.hasOwn(apiOffer, "providerBaseMonthlyPriceRial"), false);
+  assert.equal(Object.hasOwn(apiOffer, "sourceCurrencyCode"), false);
+  assert.equal(Object.hasOwn(apiOffer, "markupBasisPoints"), false);
   const {
     createCloudServerQuote,
   } = await import("../lib/recommendation/quote-service.ts");

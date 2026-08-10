@@ -26,8 +26,9 @@ test("stale catalogs fail closed and customer requests never trigger a full sync
 
   assert.doesNotMatch(plans, /requestCatalogSync/);
   assert.doesNotMatch(quotes, /requestCatalogSync/);
-  assert.match(plans, /if \(!purchasable\) return \[\]/);
-  assert.match(plans, /\.filter\(\(\) => freshness\.fresh\)/);
+  assert.match(plans, /if \(!access\.visible\) return \[\]/);
+  assert.match(plans, /const purchasable = access\.purchasable && capacityAvailable/);
+  assert.match(plans, /freshness\?\.fresh === true/);
   assert.match(quotes, /quote_revalidation_failed/);
 });
 
@@ -48,8 +49,7 @@ test("quote checkout locks the customer amount and does not reprice on payment",
   assert.doesNotMatch(payment, /samePriceSnapshot/);
   assert.doesNotMatch(payment, /quote_price_changed/);
   assert.match(login, /sessions\/claim/);
-  assert.match(login, /requestedNext\?\.startsWith\("\/"\)/);
-  assert.match(login, /!requestedNext\.startsWith\("\/\/"\)/);
+  assert.match(login, /safeCustomerReturnPath/);
 });
 
 test("active quote reads require a mapped, published SKU", async () => {

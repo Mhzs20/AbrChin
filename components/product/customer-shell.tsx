@@ -4,6 +4,7 @@ import {
   CircleHelp,
   CreditCard,
   Home,
+  HeartHandshake,
   LayoutGrid,
   Receipt,
   Server,
@@ -36,6 +37,7 @@ const mainNav: NavItem[] = [
 ];
 
 const secondaryNav: NavItem[] = [
+  { href: "/account/parchin", label: "پرچین‌های من", icon: HeartHandshake },
   { href: "/account/support", label: "درخواست پشتیبانی", icon: CircleHelp },
   { href: "/account/transactions", label: "تراکنش‌ها", icon: Receipt },
   { href: "/account/profile", label: "پروفایل", icon: User },

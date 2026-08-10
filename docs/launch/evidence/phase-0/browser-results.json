@@ -1,0 +1,135 @@
+{
+  "fixture": {
+    "source": "scripts/seed-phase0-browser-fixture.mts",
+    "quoteId": "cmsngzv15000dpg2k0llwzpwy",
+    "userId": "cmsngzuxm0000pg2kgwydmmfj"
+  },
+  "publicSaleEnabled": false,
+  "providerMutationEnabled": false,
+  "countsBefore": {
+    "recommendationSessions": 1,
+    "recommendationQuotes": 1,
+    "serviceOrders": 0,
+    "orderPayments": 0,
+    "paymentAttempts": 0,
+    "walletTopUps": 0,
+    "ledgerEntries": 0,
+    "infrastructureOrders": 0,
+    "cloudInstances": 0
+  },
+  "countsAfter": {
+    "recommendationSessions": 1,
+    "recommendationQuotes": 1,
+    "serviceOrders": 0,
+    "orderPayments": 0,
+    "paymentAttempts": 0,
+    "walletTopUps": 0,
+    "ledgerEntries": 0,
+    "infrastructureOrders": 0,
+    "cloudInstances": 0
+  },
+  "results": [
+    {
+      "route": "/",
+      "viewport": "1440x900",
+      "status": 200,
+      "title": "ابرچین | زیرساختت رو سوار بر ابرها بساز",
+      "heading": "زیرساختت رو\nسوار بر ابرها بساز.",
+      "overflow": {
+        "viewport": 1440,
+        "content": 1440
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-0/home-desktop-1440x900.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/cloud-servers",
+      "viewport": "1440x900",
+      "status": 200,
+      "title": "سرور ابری ابرچین | چینش نو، استوار، کهکشان",
+      "heading": "چینش‌های سرور را بررسی کن؛ فروش عمومی هنوز فعال نیست.",
+      "overflow": {
+        "viewport": 1440,
+        "content": 1440
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-0/catalog-desktop-1440x900.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/cloud-servers/quote/cmsngzv15000dpg2k0llwzpwy",
+      "viewport": "1440x900",
+      "status": 200,
+      "title": "پیش‌فاکتور سرور ابری | ابرچین",
+      "heading": "چینش نو",
+      "overflow": {
+        "viewport": 1440,
+        "content": 1440
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-0/quote-desktop-1440x900.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/",
+      "viewport": "390x844",
+      "status": 200,
+      "title": "ابرچین | زیرساختت رو سوار بر ابرها بساز",
+      "heading": "زیرساختت رو\nسوار بر ابرها بساز.",
+      "overflow": {
+        "viewport": 390,
+        "content": 390
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-0/home-mobile-390x844.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/cloud-servers",
+      "viewport": "390x844",
+      "status": 200,
+      "title": "سرور ابری ابرچین | چینش نو، استوار، کهکشان",
+      "heading": "چینش‌های سرور را بررسی کن؛ فروش عمومی هنوز فعال نیست.",
+      "overflow": {
+        "viewport": 390,
+        "content": 390
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-0/catalog-mobile-390x844.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/cloud-servers/quote/cmsngzv15000dpg2k0llwzpwy",
+      "viewport": "390x844",
+      "status": 200,
+      "title": "پیش‌فاکتور سرور ابری | ابرچین",
+      "heading": "چینش نو",
+      "overflow": {
+        "viewport": 390,
+        "content": 390
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-0/quote-mobile-390x844.png",
+      "result": "PASS"
+    }
+  ]
+}

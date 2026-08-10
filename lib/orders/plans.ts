@@ -53,7 +53,7 @@ import {
 } from "@/lib/storefront/capacity-rules";
 import {
   storefrontParchinLevel,
-  storefrontParchinTitle,
+  storefrontParchinTitleForLevel,
 } from "@/lib/storefront/tiers";
 
 export type PricedInfrastructurePlan = InfrastructurePlan & {
@@ -137,20 +137,12 @@ export type PublicPlanOffer = {
   diskTypeLabel?: string | null;
   ipv4Available?: boolean | null;
   ipv6Available?: boolean | null;
-  providerBaseHourlyPriceRial: string | null;
-  providerBaseMonthlyPriceRial: string;
   hourlyPriceRial: string | null;
   /** Display-only: hourly × 24. Not a billing interval. */
   dailyPriceRial?: string | null;
   salePriceRial: string;
   renewalPriceRial: string;
-  sourceCurrencyCode: string | null;
-  sourceAmountUnit: string | null;
-  normalizedCurrencyCode: "IRR";
-  normalizedAmountUnit: "RIAL";
   billingIntervals: Array<"HOURLY" | "MONTHLY">;
-  markupBasisPoints: number;
-  taxBasisPoints: number;
   catalogStatus:
     | "ACTIVE"
     | "STALE"
@@ -278,22 +270,12 @@ export function toPublicPlanOffer(
     ramGb: plan.pricing.ramGb,
     storageGb: plan.pricing.storageGb,
     transferTb: plan.catalogItem.transfer,
-    // Never expose supplier economics on customer payloads.
-    providerBaseHourlyPriceRial: null,
-    providerBaseMonthlyPriceRial: "0",
     hourlyPriceRial: usage.hourlyRial > 0n ? usage.hourlyRial.toString() : null,
     dailyPriceRial: usage.dailyRial > 0n ? usage.dailyRial.toString() : null,
     salePriceRial: plan.pricing.finalPriceRial.toString(),
     renewalPriceRial: plan.pricing.renewalPriceRial.toString(),
-    sourceCurrencyCode: plan.catalogItem.currencyCode,
-    sourceAmountUnit: plan.catalogItem.amountUnit,
-    normalizedCurrencyCode: "IRR",
-    normalizedAmountUnit: "RIAL",
     billingIntervals:
       plan.pricing.finalPriceRial > 0n ? (["MONTHLY"] as const) : [],
-    // Public customers must not see markup/tax basis points.
-    markupBasisPoints: 0,
-    taxBasisPoints: 0,
     catalogStatus: plan.catalogItem.status,
     purchaseState: "PURCHASABLE",
     deliveryEstimateMinutes: plan.deliveryEstimateMinutes,
@@ -341,7 +323,14 @@ type PlanTermPricingOptions = {
   couponDiscountBps?: number | null;
   couponCode?: string | null;
   parchinTitle?: string;
+  parchinLevel?: ParchinLevel;
 };
+
+function parchinLevelRank(level: ParchinLevel): number {
+  if (level === "PARCHIN_STABLE") return 3;
+  if (level === "PARCHIN_ACTIVE") return 2;
+  return 1;
+}
 
 export function resolveConfiguredPlanPricing(
   plan: InfrastructurePlan & { catalogItem: ProviderCatalogItem | null },
@@ -486,16 +475,27 @@ export async function getActivePlanById(
           storefrontSettings ?? DEFAULT_STOREFRONT_CAPACITY_RULES,
         )
       : null;
-  const requestedParchinLevel = storefrontTier
+  const minimumStorefrontParchinLevel = storefrontTier
     ? storefrontParchinLevel(storefrontTier)
-    : undefined;
+    : plan.minimumParchinLevel ?? "PARCHIN_START";
+  const requestedParchinLevel =
+    termOptions.parchinLevel ?? minimumStorefrontParchinLevel;
+  if (
+    parchinLevelRank(requestedParchinLevel) <
+    parchinLevelRank(minimumStorefrontParchinLevel)
+  ) {
+    return null;
+  }
   const pricing = resolveConfiguredPlanPricing(
     plan,
     configs,
     requestedParchinLevel,
-    storefrontTier
-      ? { ...termOptions, parchinTitle: storefrontParchinTitle(storefrontTier) }
-      : termOptions,
+    {
+      ...termOptions,
+      parchinTitle:
+        termOptions.parchinTitle ??
+        storefrontParchinTitleForLevel(requestedParchinLevel),
+    },
   );
   return pricing ? withEffectivePricing(plan, pricing) : null;
 }
@@ -787,23 +787,13 @@ function catalogItemPublicOffer(input: {
       input.item.ramMb == null ? null : Math.ceil(input.item.ramMb / 1024),
     storageGb: input.item.diskGb,
     transferTb: input.item.transfer,
-    // Never expose supplier economics on public payloads.
-    providerBaseHourlyPriceRial: null,
-    providerBaseMonthlyPriceRial: "0",
     hourlyPriceRial: usage?.hourlyRial.toString() ?? null,
     dailyPriceRial: usage?.dailyRial.toString() ?? null,
     salePriceRial: monthlyPriceRial.toString(),
     renewalPriceRial: (
       input.priced?.renewalPriceRial ?? monthlyPriceRial
     ).toString(),
-    sourceCurrencyCode: input.item.currencyCode,
-    sourceAmountUnit: input.item.amountUnit,
-    normalizedCurrencyCode: "IRR",
-    normalizedAmountUnit: "RIAL",
     billingIntervals: monthlyPriceRial > 0n ? (["MONTHLY"] as const) : [],
-    // Public customers must not see markup/tax basis points.
-    markupBasisPoints: 0,
-    taxBasisPoints: 0,
     catalogStatus,
     purchaseState: input.purchaseState,
     deliveryEstimateMinutes: 15,

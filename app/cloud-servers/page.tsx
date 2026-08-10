@@ -3,13 +3,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ChinishCloudCatalog } from "@/components/chinish-cloud-catalog";
-import { getCurrentUser } from "@/lib/session";
 import { listPublicStorefrontTiers } from "@/lib/storefront/assortment-service";
 import {
   STOREFRONT_TIERS,
   storefrontTierDescription,
   storefrontTierLabel,
 } from "@/lib/storefront/tiers";
+import { getEnv } from "@/lib/env";
 
 export const metadata: Metadata = {
   title: "سرور ابری ابرچین | چینش نو، استوار، کهکشان",
@@ -45,11 +45,11 @@ export default async function CloudServersPage({
 }: {
   searchParams: Promise<{ plan?: string }>;
 }) {
-  const [catalog, user, { plan }] = await Promise.all([
+  const publicSaleEnabled = getEnv().publicSaleEnabled;
+  const [catalog, { plan }] = await Promise.all([
     // Public discovery stays available during a database incident, while sale
     // fails closed: no cached or invented SKU is ever rendered as purchasable.
     listPublicStorefrontTiers().catch(unavailableCatalog),
-    getCurrentUser(),
     searchParams,
   ]);
   return (
@@ -60,7 +60,9 @@ export default async function CloudServersPage({
             <Cloud size={15} aria-hidden="true" /> سرور ابری ابرچین
           </span>
           <h1 id="quick-buy-title">
-            سروری را انتخاب کن که همین حالا قابل خرید است.
+            {publicSaleEnabled
+              ? "سروری را انتخاب کن که همین حالا قابل خرید است."
+              : "چینش‌های سرور را بررسی کن؛ فروش عمومی هنوز فعال نیست."}
           </h1>
           <p>
             سه چینش بر اساس توان سرور ساخته شده‌اند. قیمت نمایش‌داده‌شده مبلغ
@@ -76,7 +78,10 @@ export default async function CloudServersPage({
 
       <div className="quick-buy-strip">
         <span>
-          <Wallet size={15} aria-hidden="true" /> خرید دوره‌ای ۱ / ۳ / ۶ / ۱۲ ماهه
+          <Wallet size={15} aria-hidden="true" />{" "}
+          {publicSaleEnabled
+            ? "خرید دوره‌ای ۱ / ۳ / ۶ / ۱۲ ماهه"
+            : "نمایش اطلاعات بدون امکان ثبت سفارش یا برداشت از کیف پول"}
         </span>
         <span>
           <ShieldCheck size={15} aria-hidden="true" /> فقط پلن قابل‌خرید و تحویل ادمین‌محور
@@ -85,7 +90,6 @@ export default async function CloudServersPage({
 
       <ChinishCloudCatalog
         tiers={catalog.tiers}
-        isAuthenticated={Boolean(user)}
         autoExpandPlanId={typeof plan === "string" && plan ? plan : null}
       />
     </section>

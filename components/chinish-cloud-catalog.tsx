@@ -41,11 +41,9 @@ type LocationFilter = "ALL" | "IRAN" | "ABROAD";
 
 export function ChinishCloudCatalog({
   tiers,
-  isAuthenticated = false,
   autoExpandPlanId = null,
 }: {
   tiers: StorefrontPublicTier[];
-  isAuthenticated?: boolean;
   autoExpandPlanId?: string | null;
 }) {
   const initialTier = useMemo(() => {
@@ -265,7 +263,6 @@ export function ChinishCloudCatalog({
                       ? "ready-servers"
                       : "cloud-servers"
                   }
-                  requireLogin={!isAuthenticated}
                   disabled={!offer.purchasable}
                   disabledReason={purchaseDisabledReason(offer)}
                   orderSummary={{
@@ -280,6 +277,7 @@ export function ChinishCloudCatalog({
                     ipv6Available: offer.ipv6Available ?? null,
                     operatingSystemLabels: offer.operatingSystemLabels,
                     parchinTitle,
+                    parchinLevel: offer.parchinLevel,
                     parchinSummary: offer.parchinSummary ?? null,
                     parchinIncludedServices: offer.parchinIncludedServices,
                     parchinExcludedServices: offer.parchinExcludedServices,
