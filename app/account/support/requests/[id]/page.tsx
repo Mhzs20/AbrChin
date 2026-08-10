@@ -13,6 +13,7 @@ import {
 import { requireCustomerPage } from "@/lib/auth/guards";
 import {
   SUPPORT_CATEGORY_LABELS,
+  SUPPORT_KIND_LABELS,
   SUPPORT_PRIORITY_LABELS,
   SUPPORT_STATUS_LABELS,
 } from "@/lib/labels/customer";
@@ -104,6 +105,22 @@ export default async function SupportRequestDetailPage({
             <dt style={{ color: "var(--product-muted)", fontSize: 13 }}>دسته</dt>
             <dd style={{ margin: "4px 0 0" }}>
               {SUPPORT_CATEGORY_LABELS[request.category] ?? request.category}
+            </dd>
+          </div>
+          <div>
+            <dt style={{ color: "var(--product-muted)", fontSize: 13 }}>نوع درخواست</dt>
+            <dd style={{ margin: "4px 0 0" }}>
+              {SUPPORT_KIND_LABELS[request.kind] ?? request.kind}
+            </dd>
+          </div>
+          <div>
+            <dt style={{ color: "var(--product-muted)", fontSize: 13 }}>زمان پاسخ پرچین</dt>
+            <dd style={{ margin: "4px 0 0" }}>
+              {request.firstRespondedAt
+                ? `پاسخ در ${request.firstRespondedAt.toLocaleString("fa-IR")}`
+                : request.firstResponseDueAt
+                  ? `حداکثر تا ${request.firstResponseDueAt.toLocaleString("fa-IR")}`
+                  : "بدون SLA قراردادی"}
             </dd>
           </div>
           <div>

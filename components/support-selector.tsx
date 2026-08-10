@@ -146,6 +146,26 @@ export function SupportSelector({
           <ArrowLeft size={18} aria-hidden="true" />
         </Link>
       </div>
+
+      <section className="support-contract-definitions" aria-labelledby="parchin-definitions-title">
+        <h2 id="parchin-definitions-title">تعریف دقیق خدمات</h2>
+        <p>
+          این تعریف‌ها روی نسخه قرارداد سفارش قفل می‌شوند تا مشتری و تیم عملیات
+          دقیقاً یک برداشت داشته باشند.
+        </p>
+        <dl>
+          <div><dt>ساعات کاری</dt><dd>{cards[0].definitions.businessHours}</dd></div>
+          <div><dt>پاسخ اولیه</dt><dd>{cards[0].definitions.firstResponse}</dd></div>
+          <div><dt>رخداد P1</dt><dd>{cards[0].definitions.p1Incident}</dd></div>
+          <div><dt>درخواست روتین</dt><dd>{cards[0].definitions.routineRequest}</dd></div>
+          <div><dt>خارج از سهمیه روتین</dt><dd>{cards[0].definitions.routineExclusions}</dd></div>
+          <div><dt>بکاپ روزانه</dt><dd>{cards[0].definitions.backup}</dd></div>
+          <div><dt>بررسی Restore</dt><dd>{cards[0].definitions.restoreCheck}</dd></div>
+          <div><dt>آزمون Restore</dt><dd>{cards[0].definitions.restoreTest}</dd></div>
+          <div><dt>مدیریت تغییر</dt><dd>{cards[0].definitions.changeManagement}</dd></div>
+          <div><dt>مرز Application</dt><dd>{cards[0].definitions.applicationBoundary}</dd></div>
+        </dl>
+      </section>
     </div>
   );
 }

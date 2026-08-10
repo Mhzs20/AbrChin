@@ -91,8 +91,8 @@ export function SolutionsExplorer() {
               <span><ShieldCheck size={15} aria-hidden="true" />پرچین: {solution.parchin}</span>
             </div>
 
-            <Link className="solution-link" href={`/cloud-servers?project=${solution.id}`}>
-              پیکربندی سرور ابری
+            <Link className="solution-link" href={`/compass?project=${solution.id}`}>
+              پیشنهاد متناسب با این نیاز
               <ArrowLeft size={18} aria-hidden="true" />
             </Link>
           </article>

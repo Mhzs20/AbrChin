@@ -12,14 +12,19 @@ const STATUSES = Object.keys(SUPPORT_STATUS_LABELS);
 export function AdminSupportRequestPanel({
   requestId,
   currentStatus,
+  currentAssigneeId = "",
+  assignees,
 }: {
   requestId: string;
   currentStatus: string;
+  currentAssigneeId?: string;
+  assignees: Array<{ id: string; label: string }>;
 }) {
   const router = useRouter();
   const { showToast } = useToast();
   const [status, setStatus] = useState(currentStatus);
   const [reply, setReply] = useState("");
+  const [assignedToId, setAssignedToId] = useState(currentAssigneeId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -34,6 +39,7 @@ export function AdminSupportRequestPanel({
         body: JSON.stringify({
           status,
           reply: reply.trim() ? reply : undefined,
+          assignedToId: assignedToId || null,
         }),
       });
       const data = (await response.json()) as { error?: string };
@@ -78,6 +84,20 @@ export function AdminSupportRequestPanel({
             rows={5}
             maxLength={4000}
           />
+        </FormField>
+        <FormField id="admin-support-assignee" label="مسئول رسیدگی">
+          <select
+            id="admin-support-assignee"
+            value={assignedToId}
+            onChange={(event) => setAssignedToId(event.target.value)}
+          >
+            <option value="">تخصیص‌داده‌نشده</option>
+            {assignees.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
         </FormField>
         {error ? (
           <p style={{ margin: 0, color: "crimson", fontSize: 13 }}>{error}</p>

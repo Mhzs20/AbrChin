@@ -332,7 +332,10 @@ test("three production-grade Parchin contracts exist and snapshot immutably", ()
   assert.ok(
     stable.excludedServices.some((item) => item.includes("DBA اختصاصی")),
   );
-  assert.equal(stable.firstResponseTarget, "رخداد حیاتی حداکثر ۳۰ دقیقه");
+  assert.equal(
+    stable.firstResponseTarget,
+    "رخداد P1 حداکثر ۳۰ دقیقه؛ سایر درخواست‌ها حداکثر ۴ ساعت کاری",
+  );
 
   const snap = snapshotParchinServiceContract(start);
   const readBack = readParchinServiceSnapshot(snap);
@@ -357,7 +360,7 @@ test("three production-grade Parchin contracts exist and snapshot immutably", ()
   assert.equal(later.version, 2);
   assert.equal(readBack?.title, "پرچین شروع");
   assert.equal(readBack?.version, 1);
-  assert.equal(DEFAULT_PARCHIN_SERVICE_CONTRACTS.PARCHIN_START.version, 2);
+  assert.equal(DEFAULT_PARCHIN_SERVICE_CONTRACTS.PARCHIN_START.version, 3);
 });
 
 test("Parchin v2 migration upgrades only untouched configs and preserves snapshots", async () => {
@@ -374,7 +377,7 @@ test("Parchin v2 migration upgrades only untouched configs and preserves snapsho
   assert.doesNotMatch(migration, /\bDROP\b|\bTRUNCATE\b|\bDELETE\b/i);
 });
 
-test("storefront CTA opens the dedicated account configurator", async () => {
+test("storefront CTA opens the dedicated public configurator before login", async () => {
   const catalog = await readFile("components/chinish-cloud-catalog.tsx", "utf8");
   assert.match(catalog, /ساخت و تحویل کنترل‌شده توسط تیم ابرچین/);
   assert.match(catalog, /جزئیات خدمات/);
@@ -390,16 +393,17 @@ test("storefront CTA opens the dedicated account configurator", async () => {
   assert.match(button, /configurationPath/);
   assert.match(button, /orderSummary/);
   assert.match(button, /standalone/);
-  assert.match(button, /login\?next=/);
+  assert.match(button, /\/cloud-servers\/configure\//);
+  assert.doesNotMatch(button, /login\?next=/);
   assert.doesNotMatch(button, /خارج از پرچین/);
 
   const page = await readFile(
-    "app/account/order/configure/[planId]/page.tsx",
+    "app/cloud-servers/configure/[planId]/page.tsx",
     "utf8",
   );
-  assert.match(page, /requireCustomerPage/);
   assert.match(page, /ReadyServerQuoteButton/);
   assert.match(page, /standalone/);
+  assert.doesNotMatch(page, /requireCustomerPage/);
 
   const dialog = await readFile(
     "components/parchin-details-dialog.tsx",

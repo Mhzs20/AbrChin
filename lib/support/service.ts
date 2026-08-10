@@ -1,22 +1,37 @@
 import {
   ParchinLevel,
   SupportRequestCategory,
+  SupportRequestKind,
   SupportRequestPriority,
   SupportRequestStatus,
   type Prisma,
+  type PrismaClient,
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { supportPriorityFromParchin } from "@/lib/labels/customer";
+import {
+  createP1IncidentTaskTx,
+  parchinFirstResponseDueAt,
+} from "@/lib/parchin/operations";
+import { addBillingMonths } from "@/lib/subscriptions/period";
 import { WalletError } from "@/lib/wallet/errors";
 
 const CATEGORIES = new Set<string>(Object.values(SupportRequestCategory));
+const KINDS = new Set<string>(Object.values(SupportRequestKind));
+type Db = PrismaClient | Prisma.TransactionClient;
 
 export function parseSupportCategory(
   value: unknown,
 ): SupportRequestCategory | null {
   return typeof value === "string" && CATEGORIES.has(value)
     ? (value as SupportRequestCategory)
+    : null;
+}
+
+export function parseSupportKind(value: unknown): SupportRequestKind | null {
+  return typeof value === "string" && KINDS.has(value)
+    ? (value as SupportRequestKind)
     : null;
 }
 
@@ -27,7 +42,7 @@ function priorityForLevel(
   return SupportRequestPriority[mapped];
 }
 
-async function resolveLinkedParchin(input: {
+async function resolveLinkedParchin(db: Db, input: {
   userId: string;
   cloudInstanceId?: string | null;
   serviceOrderId?: string | null;
@@ -35,40 +50,60 @@ async function resolveLinkedParchin(input: {
   cloudInstanceId: string | null;
   serviceOrderId: string | null;
   parchinLevel: ParchinLevel | null;
+  parchinEnrollmentId: string | null;
 }> {
   if (input.cloudInstanceId) {
-    const instance = await prisma.cloudInstance.findFirst({
+    const instance = await db.cloudInstance.findFirst({
       where: { id: input.cloudInstanceId, userId: input.userId },
       include: {
+        parchinEnrollment: true,
         infrastructureOrder: {
-          include: { serviceOrder: { select: { id: true, parchinLevel: true } } },
+          include: { serviceOrder: { select: { id: true } } },
         },
       },
     });
     if (!instance) {
       throw new WalletError("not_found", "سرویس انتخاب‌شده پیدا نشد.");
     }
+    const activeEnrollment =
+      instance.parchinEnrollment?.status === "ACTIVE"
+        ? instance.parchinEnrollment
+        : null;
     return {
       cloudInstanceId: instance.id,
       serviceOrderId: instance.infrastructureOrder.serviceOrder.id,
-      parchinLevel: instance.infrastructureOrder.serviceOrder.parchinLevel,
+      parchinLevel: activeEnrollment?.level ?? null,
+      parchinEnrollmentId: activeEnrollment?.id ?? null,
     };
   }
   if (input.serviceOrderId) {
-    const order = await prisma.serviceOrder.findFirst({
+    const order = await db.serviceOrder.findFirst({
       where: { id: input.serviceOrderId, userId: input.userId },
-      select: { id: true, parchinLevel: true },
+      select: {
+        id: true,
+        parchinEnrollment: { select: { id: true, level: true, status: true } },
+      },
     });
     if (!order) {
       throw new WalletError("not_found", "سفارش انتخاب‌شده پیدا نشد.");
     }
+    const activeEnrollment =
+      order.parchinEnrollment?.status === "ACTIVE"
+        ? order.parchinEnrollment
+        : null;
     return {
       cloudInstanceId: null,
       serviceOrderId: order.id,
-      parchinLevel: order.parchinLevel,
+      parchinLevel: activeEnrollment?.level ?? null,
+      parchinEnrollmentId: activeEnrollment?.id ?? null,
     };
   }
-  return { cloudInstanceId: null, serviceOrderId: null, parchinLevel: null };
+  return {
+    cloudInstanceId: null,
+    serviceOrderId: null,
+    parchinLevel: null,
+    parchinEnrollmentId: null,
+  };
 }
 
 export async function createSupportRequest(input: {
@@ -78,6 +113,7 @@ export async function createSupportRequest(input: {
   description: string;
   cloudInstanceId?: string | null;
   serviceOrderId?: string | null;
+  kind?: SupportRequestKind;
 }) {
   const subject = input.subject.trim();
   const description = input.description.trim();
@@ -90,31 +126,119 @@ export async function createSupportRequest(input: {
       "توضیحات باید بین ۱۰ تا ۴۰۰۰ کاراکتر باشد.",
     );
   }
-  const linked = await resolveLinkedParchin({
-    userId: input.userId,
-    cloudInstanceId: input.cloudInstanceId,
-    serviceOrderId: input.serviceOrderId,
-  });
-  return prisma.supportRequest.create({
-    data: {
+  const kind = input.kind ?? SupportRequestKind.GENERAL;
+  return prisma.$transaction(async (tx) => {
+    const linked = await resolveLinkedParchin(tx, {
       userId: input.userId,
-      category: input.category,
-      subject,
-      description,
-      cloudInstanceId: linked.cloudInstanceId,
-      serviceOrderId: linked.serviceOrderId,
-      parchinLevel: linked.parchinLevel,
-      priority: priorityForLevel(linked.parchinLevel),
-      status: SupportRequestStatus.OPEN,
-      messages: {
-        create: {
-          authorUserId: input.userId,
-          body: description,
-          isStaff: false,
+      cloudInstanceId: input.cloudInstanceId,
+      serviceOrderId: input.serviceOrderId,
+    });
+    if (
+      (kind === SupportRequestKind.ROUTINE ||
+        kind === SupportRequestKind.P1_INCIDENT) &&
+      (!linked.parchinEnrollmentId || !linked.parchinLevel)
+    ) {
+      throw new WalletError(
+        "parchin_required",
+        "برای این نوع درخواست باید یک سرویس فعال پرچین انتخاب شود.",
+      );
+    }
+    if (
+      kind === SupportRequestKind.P1_INCIDENT &&
+      linked.parchinLevel !== ParchinLevel.PARCHIN_STABLE
+    ) {
+      throw new WalletError(
+        "p1_not_included",
+        "ثبت رخداد P1 فقط برای پرچین کهکشان فعال است.",
+      );
+    }
+
+    let quotaConsumed = false;
+    if (kind === SupportRequestKind.ROUTINE && linked.parchinEnrollmentId) {
+      await tx.$queryRaw`
+        SELECT id FROM "ParchinEnrollment"
+        WHERE id = ${linked.parchinEnrollmentId}
+        FOR UPDATE
+      `;
+      let enrollment = await tx.parchinEnrollment.findUniqueOrThrow({
+        where: { id: linked.parchinEnrollmentId },
+      });
+      const now = new Date();
+      if (enrollment.quotaPeriodEnd.getTime() <= now.getTime()) {
+        enrollment = await tx.parchinEnrollment.update({
+          where: { id: enrollment.id },
+          data: {
+            quotaPeriodStart: now,
+            quotaPeriodEnd: addBillingMonths(now, 1),
+            routineRequestsUsed: 0,
+          },
+        });
+      }
+      if (enrollment.routineRequestsUsed >= enrollment.routineRequestLimit) {
+        throw new WalletError(
+          "routine_quota_exhausted",
+          "سهمیه درخواست روتین این دوره مصرف شده است.",
+        );
+      }
+      await tx.parchinEnrollment.update({
+        where: { id: enrollment.id },
+        data: { routineRequestsUsed: { increment: 1 } },
+      });
+      quotaConsumed = true;
+    }
+
+    const createdAt = new Date();
+    const firstResponseDueAt = linked.parchinLevel
+      ? parchinFirstResponseDueAt({
+          level: linked.parchinLevel,
+          kind,
+          createdAt,
+        })
+      : null;
+    const created = await tx.supportRequest.create({
+      data: {
+        userId: input.userId,
+        category: input.category,
+        kind,
+        subject,
+        description,
+        cloudInstanceId: linked.cloudInstanceId,
+        serviceOrderId: linked.serviceOrderId,
+        parchinEnrollmentId: linked.parchinEnrollmentId,
+        parchinLevel: linked.parchinLevel,
+        priority:
+          kind === SupportRequestKind.P1_INCIDENT
+            ? SupportRequestPriority.URGENT
+            : priorityForLevel(linked.parchinLevel),
+        status: SupportRequestStatus.OPEN,
+        firstResponseDueAt,
+        routineQuotaConsumed: quotaConsumed,
+        p1DeclaredAt:
+          kind === SupportRequestKind.P1_INCIDENT ? createdAt : null,
+        createdAt,
+        messages: {
+          create: {
+            authorUserId: input.userId,
+            body: description,
+            isStaff: false,
+          },
         },
       },
-    },
-    include: { messages: { orderBy: { createdAt: "asc" } } },
+      include: { messages: { orderBy: { createdAt: "asc" } } },
+    });
+    if (
+      kind === SupportRequestKind.P1_INCIDENT &&
+      linked.parchinEnrollmentId &&
+      firstResponseDueAt
+    ) {
+      await createP1IncidentTaskTx(tx, {
+        enrollmentId: linked.parchinEnrollmentId,
+        supportRequestId: created.id,
+        dueAt: firstResponseDueAt,
+        subject,
+      });
+    }
+    return created;
   });
 }
 
@@ -208,6 +332,7 @@ export async function listAdminSupportRequests(filters?: {
     include: {
       user: { select: { id: true, mobile: true, displayName: true } },
       cloudInstance: { select: { id: true, name: true } },
+      assignedTo: { select: { id: true, displayName: true, mobile: true } },
     },
   });
 }
@@ -225,6 +350,14 @@ export async function getAdminSupportRequest(id: string) {
       },
       cloudInstance: { select: { id: true, name: true, ipv4: true } },
       serviceOrder: { select: { id: true, title: true, parchinLevel: true } },
+      parchinEnrollment: {
+        select: {
+          id: true,
+          routineRequestLimit: true,
+          routineRequestsUsed: true,
+        },
+      },
+      assignedTo: { select: { id: true, displayName: true, mobile: true } },
     },
   });
   if (!request) {
@@ -238,6 +371,7 @@ export async function adminUpdateSupportRequest(input: {
   requestId: string;
   status?: SupportRequestStatus;
   reply?: string;
+  assignedToId?: string | null;
 }) {
   const request = await prisma.supportRequest.findUnique({
     where: { id: input.requestId },
@@ -250,6 +384,19 @@ export async function adminUpdateSupportRequest(input: {
     throw new WalletError("invalid_input", "پاسخ معتبر نیست.");
   }
   return prisma.$transaction(async (tx) => {
+    if (input.assignedToId) {
+      const assignee = await tx.user.findFirst({
+        where: {
+          id: input.assignedToId,
+          role: "ADMIN",
+          accountStatus: "ACTIVE",
+        },
+        select: { id: true },
+      });
+      if (!assignee) {
+        throw new WalletError("invalid_input", "مسئول انتخاب‌شده ادمین فعال نیست.");
+      }
+    }
     if (reply) {
       await tx.supportRequestMessage.create({
         data: {
@@ -264,11 +411,18 @@ export async function adminUpdateSupportRequest(input: {
       where: { id: request.id },
       data: {
         status: input.status ?? undefined,
-        ...(input.status === SupportRequestStatus.OPEN ||
-        input.status === SupportRequestStatus.IN_PROGRESS ||
-        !input.status
-          ? {}
-          : {}),
+        assignedToId:
+          input.assignedToId === undefined ? undefined : input.assignedToId,
+        firstRespondedAt:
+          reply && !request.firstRespondedAt ? new Date() : undefined,
+        resolvedAt:
+          input.status === SupportRequestStatus.RESOLVED ||
+          input.status === SupportRequestStatus.CLOSED
+            ? request.resolvedAt ?? new Date()
+            : input.status === SupportRequestStatus.OPEN ||
+                input.status === SupportRequestStatus.IN_PROGRESS
+              ? null
+              : undefined,
       },
       include: {
         messages: { orderBy: { createdAt: "asc" } },
@@ -286,6 +440,12 @@ export function toPublicSupportRequest(
     status: SupportRequestStatus;
     priority: SupportRequestPriority;
     parchinLevel: ParchinLevel | null;
+    kind: SupportRequestKind;
+    firstResponseDueAt: Date | null;
+    firstRespondedAt: Date | null;
+    resolvedAt: Date | null;
+    assignedToId: string | null;
+    routineQuotaConsumed: boolean;
     createdAt: Date;
     updatedAt: Date;
     cloudInstanceId: string | null;
@@ -300,6 +460,12 @@ export function toPublicSupportRequest(
     status: request.status,
     priority: request.priority,
     parchinLevel: request.parchinLevel,
+    kind: request.kind,
+    firstResponseDueAt: request.firstResponseDueAt?.toISOString() ?? null,
+    firstRespondedAt: request.firstRespondedAt?.toISOString() ?? null,
+    resolvedAt: request.resolvedAt?.toISOString() ?? null,
+    assignedToId: request.assignedToId,
+    routineQuotaConsumed: request.routineQuotaConsumed,
     createdAt: request.createdAt.toISOString(),
     updatedAt: request.updatedAt.toISOString(),
     cloudInstanceId: request.cloudInstanceId,

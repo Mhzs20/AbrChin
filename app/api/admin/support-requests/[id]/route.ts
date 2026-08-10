@@ -58,6 +58,7 @@ export async function PATCH(
     const body = (await request.json()) as {
       status?: unknown;
       reply?: unknown;
+      assignedToId?: unknown;
     };
     const status =
       typeof body.status === "string" &&
@@ -71,6 +72,12 @@ export async function PATCH(
       requestId: id,
       status,
       reply: typeof body.reply === "string" ? body.reply : undefined,
+      assignedToId:
+        body.assignedToId === null
+          ? null
+          : typeof body.assignedToId === "string"
+            ? body.assignedToId
+            : undefined,
     });
     return jsonOk({ request: toPublicSupportRequest(updated) });
   } catch (error) {

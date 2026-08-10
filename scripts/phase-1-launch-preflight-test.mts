@@ -8,9 +8,10 @@ async function source(path: string) {
   return readFile(new URL(path, root), "utf8");
 }
 
-test("production placeholders open public sale and keep mutations fail-closed", async () => {
+test("production placeholders keep public sale open and provider mutations closed", async () => {
   const productionEnv = await source(".env.production.example");
   for (const key of [
+    "PUBLIC_SALE_ENABLED=true",
     "PARSPACK_PUBLIC_SALE_ENABLED=true",
     "PARSPACK_MUTATIONS_ENABLED=false",
     "ARVAN_PUBLIC_SALE_ENABLED=true",

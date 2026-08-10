@@ -1,0 +1,69 @@
+{
+  "mutation": "none — refresh and prefilled form GET only",
+  "countsBefore": {
+    "recommendationSessions": 3,
+    "recommendationQuotes": 3,
+    "serviceOrders": 1,
+    "orderPayments": 0,
+    "paymentAttempts": 0,
+    "walletTopUps": 0,
+    "ledgerEntries": 0,
+    "infrastructureOrders": 1,
+    "cloudInstances": 0
+  },
+  "countsAfter": {
+    "recommendationSessions": 3,
+    "recommendationQuotes": 3,
+    "serviceOrders": 1,
+    "orderPayments": 0,
+    "paymentAttempts": 0,
+    "walletTopUps": 0,
+    "ledgerEntries": 0,
+    "infrastructureOrders": 1,
+    "cloudInstances": 0
+  },
+  "results": [
+    {
+      "viewport": "1440x900",
+      "orderPath": "/account/orders/cmsni8f6h000lpg2knwst9n1m",
+      "refreshObserved": true,
+      "nextAction": "تأیید ساخت توسط ابرچین",
+      "cancelPath": "/account/support/requests/new?orderId=cmsni8f6h000lpg2knwst9n1m&intent=cancel-before-delivery",
+      "cancelFormPrefilled": true,
+      "overflow": {
+        "viewport": 1440,
+        "content": 1440
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshots": [
+        "docs/launch/evidence/phase-4/order-tracking-desktop-1440x900.png",
+        "docs/launch/evidence/phase-4/cancel-request-desktop-1440x900.png"
+      ],
+      "result": "PASS"
+    },
+    {
+      "viewport": "390x844",
+      "orderPath": "/account/orders/cmsni8f6h000lpg2knwst9n1m",
+      "refreshObserved": true,
+      "nextAction": "تأیید ساخت توسط ابرچین",
+      "cancelPath": "/account/support/requests/new?orderId=cmsni8f6h000lpg2knwst9n1m&intent=cancel-before-delivery",
+      "cancelFormPrefilled": true,
+      "overflow": {
+        "viewport": 390,
+        "content": 390
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshots": [
+        "docs/launch/evidence/phase-4/order-tracking-mobile-390x844.png",
+        "docs/launch/evidence/phase-4/cancel-request-mobile-390x844.png"
+      ],
+      "result": "PASS"
+    }
+  ]
+}

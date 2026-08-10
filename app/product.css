@@ -1073,3 +1073,399 @@
     display: none;
   }
 }
+.product-skip-link {
+  position: fixed;
+  inset-block-start: 10px;
+  inset-inline-start: 50%;
+  z-index: 300;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--product-navy);
+  color: #fff;
+  font-weight: 800;
+  transform: translate(50%, -160%);
+  transition: transform 160ms ease;
+}
+
+.product-skip-link:focus-visible {
+  outline: 3px solid var(--product-blue);
+  outline-offset: 3px;
+  transform: translate(50%, 0);
+}
+
+.server-order-parchin-options {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.server-order-parchin-options > legend {
+  font-weight: 900;
+  font-size: 1rem;
+}
+
+.server-order-parchin-options > p {
+  margin: 6px 0 12px;
+  color: var(--product-muted);
+  font-size: 0.86rem;
+}
+
+.server-order-parchin-options > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.server-order-parchin-options label {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  min-height: 170px;
+  padding: 14px;
+  border: 1px solid var(--product-line);
+  border-radius: 16px;
+  background: var(--product-surface);
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.server-order-parchin-options label:hover,
+.server-order-parchin-options label.is-selected {
+  border-color: var(--product-blue);
+  box-shadow: 0 12px 30px rgba(20, 82, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.server-order-parchin-options label > input {
+  position: absolute;
+  inset-block-start: 14px;
+  inset-inline-end: 14px;
+  width: 18px;
+  height: 18px;
+}
+
+.server-order-parchin-options label > span {
+  display: grid;
+  gap: 3px;
+  padding-inline-end: 26px;
+}
+
+.server-order-parchin-options label p,
+.server-order-parchin-options label small,
+.server-order-parchin-options label b {
+  margin: 0;
+}
+
+.server-order-parchin-options label p,
+.server-order-parchin-options label small {
+  color: var(--product-muted);
+  font-size: 0.8rem;
+}
+
+.server-order-parchin-options label b {
+  margin-top: auto;
+  color: var(--product-ink);
+}
+
+.support-contract-definitions {
+  margin-top: 24px;
+  padding: clamp(18px, 3vw, 30px);
+  border: 1px solid var(--product-line);
+  border-radius: 22px;
+  background: var(--product-surface);
+}
+
+.support-contract-definitions > h2,
+.support-contract-definitions > p {
+  margin-top: 0;
+}
+
+.support-contract-definitions > p {
+  color: var(--product-muted);
+}
+
+.support-contract-definitions dl,
+.parchin-definition-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.support-contract-definitions dl > div,
+.parchin-definition-list > div {
+  padding: 14px;
+  border: 1px solid var(--product-line);
+  border-radius: 14px;
+  background: var(--product-surface-subtle);
+}
+
+.support-contract-definitions dt,
+.parchin-definition-list dt {
+  margin-bottom: 6px;
+  font-weight: 900;
+}
+
+.support-contract-definitions dd,
+.parchin-definition-list dd {
+  margin: 0;
+  color: var(--product-muted);
+  line-height: 1.8;
+}
+
+.parchin-account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+.parchin-account-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--product-line);
+  border-radius: 18px;
+  background: var(--product-surface);
+}
+
+.parchin-account-card header,
+.parchin-account-card footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.parchin-account-card header span,
+.parchin-account-card > p,
+.parchin-account-card dt {
+  color: var(--product-muted);
+  font-size: 0.82rem;
+}
+
+.parchin-account-card h2,
+.parchin-account-card p,
+.parchin-account-card dl,
+.parchin-account-card dd {
+  margin: 0;
+}
+
+.parchin-account-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.parchin-account-card dl > div {
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--product-surface-subtle);
+}
+
+.parchin-account-card dd {
+  margin-top: 4px;
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+.parchin-contract-list,
+.parchin-report-list ul {
+  display: grid;
+  gap: 8px;
+  padding-inline-start: 22px;
+}
+
+.parchin-customer-timeline,
+.parchin-report-list,
+.parchin-request-list {
+  display: grid;
+  gap: 10px;
+}
+
+.parchin-customer-timeline article,
+.parchin-report-list article,
+.parchin-request-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--product-line);
+  border-radius: 14px;
+  background: var(--product-surface-subtle);
+}
+
+.parchin-customer-timeline article > div,
+.parchin-request-list li > div {
+  display: grid;
+  gap: 6px;
+}
+
+.parchin-customer-timeline p,
+.parchin-report-list p,
+.parchin-request-list span {
+  margin: 0;
+  color: var(--product-muted);
+  font-size: 0.84rem;
+}
+
+.parchin-report-list article {
+  display: grid;
+}
+
+.parchin-report-list header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.parchin-report-list h3 {
+  margin: 0;
+}
+
+.parchin-upgrade-request,
+.parchin-admin-filters {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.parchin-upgrade-request select,
+.parchin-admin-filters input,
+.parchin-admin-filters select {
+  min-height: 44px;
+}
+
+.parchin-admin-filters label {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.parchin-admin-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.parchin-admin-summary > div {
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--product-surface-subtle);
+}
+
+.parchin-admin-summary dt {
+  color: var(--product-muted);
+  font-size: 0.8rem;
+}
+
+.parchin-admin-summary dd {
+  margin: 5px 0 0;
+  font-weight: 800;
+}
+
+.parchin-inline-action,
+.parchin-report-form {
+  display: grid;
+  gap: 10px;
+}
+
+.parchin-inline-action {
+  min-width: min(420px, 78vw);
+  padding: 12px;
+  border: 1px solid var(--product-line);
+  border-radius: 12px;
+  background: var(--product-surface);
+}
+
+.parchin-report-form {
+  max-width: 760px;
+}
+
+.parchin-report-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--product-space-2);
+  margin: 0;
+  padding: var(--product-space-2);
+  border: 1px solid var(--product-line);
+  border-radius: var(--product-radius-md);
+}
+
+.parchin-report-metrics legend {
+  padding: 0 8px;
+  color: var(--product-navy);
+  font-weight: 700;
+}
+
+.parchin-report-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: var(--product-space-2) 0;
+}
+
+.parchin-report-metric-grid > div {
+  padding: 10px;
+  border-radius: var(--product-radius-sm);
+  background: var(--product-surface-soft);
+}
+
+.parchin-report-metric-grid dt {
+  color: var(--product-muted);
+  font-size: 12px;
+}
+
+.parchin-report-metric-grid dd {
+  margin: 4px 0 0;
+  color: var(--product-navy);
+  font-weight: 700;
+}
+
+.parchin-report-period {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.parchin-report-publish {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.parchin-overdue {
+  color: var(--product-danger, #b42318);
+  font-weight: 900;
+}
+
+.parchin-notice {
+  margin: 14px 0 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(20, 82, 255, 0.08);
+}
+
+@media (max-width: 680px) {
+  .parchin-customer-timeline article,
+  .parchin-request-list li {
+    flex-direction: column;
+  }
+
+  .parchin-report-period,
+  .parchin-report-metrics,
+  .parchin-report-metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1023px) {
+  .parchin-task-table .product-table-wrap {
+    display: block;
+  }
+}

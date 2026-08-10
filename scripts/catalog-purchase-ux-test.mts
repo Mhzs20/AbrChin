@@ -7,7 +7,7 @@ import {
   storefrontParchinTitle,
 } from "../lib/storefront/tiers.ts";
 
-test("public cards are purchasable-only and Parchin follows chinish", async () => {
+test("public cards set a chinish minimum and allow a higher Parchin level", async () => {
   assert.equal(storefrontParchinLevel("NO"), "PARCHIN_START");
   assert.equal(storefrontParchinLevel("OSTOVAR"), "PARCHIN_ACTIVE");
   assert.equal(storefrontParchinLevel("KAHKESHAN"), "PARCHIN_STABLE");
@@ -26,29 +26,34 @@ test("public cards are purchasable-only and Parchin follows chinish", async () =
     assortment,
     /pricingParchinLevel = storefrontParchinLevel\(tier\)/,
   );
-  assert.match(plans, /requestedParchinLevel = storefrontTier/);
-  assert.match(plans, /parchinTitle: storefrontParchinTitle\(storefrontTier\)/);
+  assert.match(plans, /minimumStorefrontParchinLevel/);
+  assert.match(plans, /termOptions\.parchinLevel \?\? minimumStorefrontParchinLevel/);
+  assert.match(plans, /parchinLevelRank\(requestedParchinLevel\)/);
+  assert.match(plans, /storefrontParchinTitleForLevel\(requestedParchinLevel\)/);
 });
 
-test("configuration lives in the customer panel and keeps only four fields", async () => {
+test("configuration is public before Login and keeps the Parchin choice explicit", async () => {
   const button = await readFile(
     "components/ready-server-quote-button.tsx",
     "utf8",
   );
   const page = await readFile(
-    "app/account/order/configure/[planId]/page.tsx",
+    "app/cloud-servers/configure/[planId]/page.tsx",
     "utf8",
   );
   const dialog = await readFile(
     "components/parchin-details-dialog.tsx",
     "utf8",
   );
-  assert.match(button, /\/account\/order\/configure\//);
-  assert.match(page, /requireCustomerPage/);
+  assert.match(button, /\/cloud-servers\/configure\//);
+  assert.doesNotMatch(page, /requireCustomerPage/);
+  assert.match(page, /پیش‌فاکتور نهایی پیش از ورود/);
   assert.match(button, /سیستم‌عامل و نسخه/);
   assert.match(button, /نام سرور/);
   assert.match(button, /مدت خرید/);
   assert.match(button, /کد تخفیف/);
+  assert.match(button, /سطح پرچین/);
+  assert.match(button, /requestedParchinLevel/);
   assert.doesNotMatch(button, /تنظیمات پیشرفته|خارج از پرچین/);
   assert.doesNotMatch(dialog, /شامل نمی‌شود|خدمات خارج از قرارداد/);
 });

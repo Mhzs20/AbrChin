@@ -77,22 +77,26 @@ test("audit: monotonicity over >=10000 synthetic costs + contiguous edges", () =
   assert.equal(mono.ok, true, JSON.stringify(mono.issues.slice(0, 3)));
   assert.ok(mono.sampled >= 10_000);
 
-  // Contiguous one-Rial scan around each transition (narrow window).
+  // Contiguous one-Rial scans around both edges of each transition. Scanning
+  // the entire multi-million-Rial transition would add no edge coverage and
+  // makes the release suite needlessly slow.
   for (const t of transitions) {
-    let previous: bigint | null = null;
-    const start = t.boundaryRial > 250n ? t.boundaryRial - 250n : 1n;
-    for (let cost = start; cost <= t.transitionEndRial + 250n; cost += 1n) {
-      const sale = resolveProfitCurve({
-        providerMonthlyCostRial: cost,
-        bands,
-      }).infrastructureSaleRial;
-      if (previous != null) {
-        assert.ok(
-          sale >= previous,
-          `reversal at ${cost}: ${sale} < ${previous}`,
-        );
+    for (const edge of [t.boundaryRial, t.transitionEndRial]) {
+      let previous: bigint | null = null;
+      const start = edge > 250n ? edge - 250n : 1n;
+      for (let cost = start; cost <= edge + 250n; cost += 1n) {
+        const sale = resolveProfitCurve({
+          providerMonthlyCostRial: cost,
+          bands,
+        }).infrastructureSaleRial;
+        if (previous != null) {
+          assert.ok(
+            sale >= previous,
+            `reversal at ${cost}: ${sale} < ${previous}`,
+          );
+        }
+        previous = sale;
       }
-      previous = sale;
     }
   }
 });

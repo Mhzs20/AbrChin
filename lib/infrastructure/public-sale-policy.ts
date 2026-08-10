@@ -19,11 +19,17 @@ type SaleRoute = {
 
 export type PublicSaleDecision = {
   allowed: boolean;
-  code: "sale_enabled" | "provider_sale_disabled";
+  code:
+    | "sale_enabled"
+    | "public_sale_disabled"
+    | "provider_sale_disabled";
 };
 
 export function getPublicSaleDecision(route: SaleRoute): PublicSaleDecision {
   const env = getEnv();
+  if (!env.publicSaleEnabled) {
+    return { allowed: false, code: "public_sale_disabled" };
+  }
   if (route.offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY) {
     // A verified AbrChin-owned resource does not require a provider mutation.
     // It may be sold for either catalog product kind, but remains separately
@@ -68,7 +74,9 @@ export function assertPublicSaleEnabled(route: SaleRoute) {
   if (decision.allowed) return;
   throw new WalletError(
     decision.code,
-    route.offerSource === InfrastructureOfferSource.MANUAL_ADMIN ||
+    decision.code === "public_sale_disabled"
+      ? "فروش عمومی ابرچین هنوز فعال نشده است؛ مبلغی برداشت نشد."
+      : route.offerSource === InfrastructureOfferSource.MANUAL_ADMIN ||
       route.offerSource === InfrastructureOfferSource.PREPROVISIONED_INVENTORY
       ? "فروش عمومی موجودی آمادهٔ ابرچین موقتاً غیرفعال است؛ مبلغی برداشت نشد."
       : "فروش عمومی این راهکار موقتاً غیرفعال است؛ مبلغی برداشت نشد.",

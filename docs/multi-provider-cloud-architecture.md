@@ -105,22 +105,22 @@ Create payload شامل `name`، `network_ids`، `flavor_id`، `image_id`،
 نمی‌کند؛ Create، Resource ID را برمی‌گرداند و Inquiry با GET همان Server انجام
 می‌شود. Request ID هدر در Log عملیاتی ذخیره می‌شود.
 
-Gateهای اتصال، فروش محصول و Mutation مستقل و Fail-closed هستند:
+Gateهای اتصال، فروش محصول و Mutation مستقل هستند. فروش طبق تصمیم Founder باز
+و Mutation برای Launch دستی Fail-closed است:
 
 ```text
 ARVAN_ENABLED=false
-ARVAN_PUBLIC_SALE_ENABLED=false
-ARVAN_READY_PUBLIC_SALE_ENABLED=false
-ARVAN_CLOUD_PUBLIC_SALE_ENABLED=false
+ARVAN_PUBLIC_SALE_ENABLED=true
+ARVAN_READY_PUBLIC_SALE_ENABLED=true
+ARVAN_CLOUD_PUBLIC_SALE_ENABLED=true
 ARVAN_MUTATIONS_ENABLED=false
-MANUAL_READY_PUBLIC_SALE_ENABLED=false
+MANUAL_READY_PUBLIC_SALE_ENABLED=true
 ```
 
 Gate عمومی آروان همراه Gate نوع محصول، Delivery Options، Estimate و Activation
-Request را کنترل می‌کند و پیش‌فرض `false` است. SKU منتشرشده می‌تواند برای
-مشاهدهٔ قیمت Sync‌شده در Listing باقی بماند، اما CTA با متن «فروش هنوز فعال
-نیست» غیرفعال است. Admin، Catalog Sync، Region Validation و Observation موجودی
-با خاموش‌بودن Gate فعال می‌مانند.
+Request را کنترل می‌کند و پیش‌فرض `true` است. تنها SKU منتشرشده با قیمت تازه،
+Region مجاز و موجودی معتبر قابل خرید است. Admin، Catalog Sync، Region
+Validation و Observation موجودی مستقل از Provider mutation فعال می‌مانند.
 `API_CATALOG` و `MANUAL_API_BACKED` به Sale Gate، Rate/Availability freshness و
 Revalidation موفق نیاز دارند؛ Mutation Gate فقط هنگام Dispatch واقعی و پس از
 Admin Approval بررسی می‌شود. Sale روشن با Mutation خاموش Estimate، Wallet
@@ -129,8 +129,8 @@ Top-up و Activation را مجاز و Fulfillment را دستی/کنترل‌ش�
 و هرگز `createServer` اجرا نمی‌کنند.
 
 صرف تنظیم API Key هیچ POST/DELETEای را فعال نمی‌کند. فعال‌سازی Lifecycle فقط
-پس از تأیید عملیاتی Founder مجاز است؛ در کد و نمونه Environment تمام Gateهای
-فروش و Mutation بالا `false` باقی می‌مانند.
+پس از تأیید عملیاتی Founder مجاز است؛ در کد و نمونه Environment Gateهای فروش
+`true` و Gateهای Mutation `false` باقی می‌مانند.
 
 ## ParsPack v1
 
@@ -284,8 +284,9 @@ Incident، Outbox یا متن پیام ذخیره نمی‌شود.
 اگر Provider پیامک Kavenegar، Template هشدار یا شمارهٔ Admin تنظیم نشده باشد،
 Web و Worker Crash نمی‌کنند. وضعیت عملیاتی `CONFIG_REQUIRED` در Admin نمایش
 داده می‌شود و Alertهای Pending تا تکمیل تنظیمات بدون Claim اشتباه حفظ می‌شوند.
-فروش عمومی ParsPack نیز با `PARSPACK_PUBLIC_SALE_ENABLED=false` مستقل از Sync
-غیرفعال می‌ماند؛ Catalog و Route قطعی ParsPack حذف یا به آروان منتقل نمی‌شوند.
+فروش عمومی ParsPack با `PARSPACK_PUBLIC_SALE_ENABLED=true` باز می‌ماند؛ در
+اختلال Sync، کنترل‌های freshness/availability خرید Offer نامعتبر را متوقف
+می‌کنند و Catalog یا Route پارس‌پک حذف یا به آروان منتقل نمی‌شود.
 
 ## پول، Markup، پرچین و هزینه‌های صریح
 

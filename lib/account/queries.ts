@@ -235,6 +235,7 @@ export async function getUserServices(userId: string) {
     where: { userId },
     orderBy: { createdAt: "desc" },
     include: {
+      parchinEnrollment: true,
       infrastructureOrder: {
         include: {
           plan: true,

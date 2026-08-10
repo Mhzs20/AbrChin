@@ -1,0 +1,70 @@
+{
+  "project": "commerce",
+  "mutation": "explicit POST /api/recommendations/sessions",
+  "countsBefore": {
+    "recommendationSessions": 1,
+    "recommendationQuotes": 1,
+    "serviceOrders": 0,
+    "orderPayments": 0,
+    "paymentAttempts": 0,
+    "walletTopUps": 0,
+    "ledgerEntries": 0,
+    "infrastructureOrders": 0,
+    "cloudInstances": 0
+  },
+  "countsAfter": {
+    "recommendationSessions": 3,
+    "recommendationQuotes": 1,
+    "serviceOrders": 0,
+    "orderPayments": 0,
+    "paymentAttempts": 0,
+    "walletTopUps": 0,
+    "ledgerEntries": 0,
+    "infrastructureOrders": 0,
+    "cloudInstances": 0
+  },
+  "results": [
+    {
+      "viewport": "1440x900",
+      "href": "/compass?project=commerce",
+      "sessionPosts": 1,
+      "recommendationSessionId": "cmsnh20ar0001pg3imax2pkp7",
+      "storedProject": "commerce",
+      "storedSource": "user",
+      "overflow": {
+        "viewport": 1440,
+        "content": 1440
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshots": [
+        "docs/launch/evidence/phase-1/project-choice-desktop-1440x900.png",
+        "docs/launch/evidence/phase-1/compass-prefill-desktop-1440x900.png"
+      ],
+      "result": "PASS"
+    },
+    {
+      "viewport": "390x844",
+      "href": "/compass?project=commerce",
+      "sessionPosts": 1,
+      "recommendationSessionId": "cmsnh22nk0003pg3ihm0o6fcx",
+      "storedProject": "commerce",
+      "storedSource": "user",
+      "overflow": {
+        "viewport": 390,
+        "content": 390
+      },
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshots": [
+        "docs/launch/evidence/phase-1/project-choice-mobile-390x844.png",
+        "docs/launch/evidence/phase-1/compass-prefill-mobile-390x844.png"
+      ],
+      "result": "PASS"
+    }
+  ]
+}

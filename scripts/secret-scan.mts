@@ -1,7 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-const files = execFileSync("git", ["ls-files", "-z"])
+// Scan both tracked files and untracked release-candidate files. A dirty
+// worktree must not create a blind spot before its first commit.
+const files = execFileSync("git", [
+  "ls-files",
+  "--cached",
+  "--others",
+  "--exclude-standard",
+  "-z",
+])
   .toString("utf8")
   .split("\0")
   .filter(Boolean);
@@ -30,7 +38,14 @@ if (findings.length > 0) {
   throw new Error(`possible secret material in tracked files: ${findings.join(", ")}`);
 }
 try {
-  const workflows = execFileSync("git", ["ls-files", ".github/workflows"])
+  const workflows = execFileSync("git", [
+    "ls-files",
+    "--cached",
+    "--others",
+    "--exclude-standard",
+    "--",
+    ".github/workflows",
+  ])
     .toString("utf8")
     .trim();
   if (workflows) throw new Error(".github/workflows must remain absent");

@@ -199,17 +199,34 @@ export async function serializeConversationSession(
   };
 }
 
-export async function createConversationSession(userId?: string | null) {
+export async function createConversationSession(
+  userId?: string | null,
+  initialAnswers: Partial<
+    Pick<RecommendationAnswers, "project" | "management">
+  > = {},
+) {
   const guestToken = userId ? null : randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  const answers: RecommendationAnswers = {
+    ...(initialAnswers.project ? { project: initialAnswers.project } : {}),
+    ...(initialAnswers.management
+      ? { management: initialAnswers.management }
+      : {}),
+  };
+  const answerSources: AnswerSources = {
+    ...(answers.project ? { project: "user" as const } : {}),
+    ...(answers.management ? { management: "user" as const } : {}),
+  };
+  const questionOrder = getRecommendationQuestionOrder(answers);
+  const nextQuestionId = questionOrder.find((questionId) => !answers[questionId]);
   const session = await prisma.recommendationSession.create({
     data: {
       userId: userId ?? null,
       guestAccessTokenHash: guestToken ? tokenHash(guestToken) : null,
       status: RecommendationFlowStatus.DISCOVERY,
       productFlowState: "DRAFT",
-      answers: {},
-      answerSources: {},
+      answers,
+      answerSources,
       expiresAt,
     },
   });
@@ -219,7 +236,9 @@ export async function createConversationSession(userId?: string | null) {
     expiresAt,
     revision: session.revision,
     state: "DRAFT" as const,
-    nextQuestion: getRecommendationQuestion("project", {}),
+    nextQuestion: nextQuestionId
+      ? getRecommendationQuestion(nextQuestionId, answers)
+      : null,
   };
 }
 

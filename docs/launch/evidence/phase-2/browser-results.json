@@ -1,0 +1,80 @@
+{
+  "publicSaleEnabled": true,
+  "providerMutationEnabled": false,
+  "countsBefore": {
+    "recommendationSessions": 3,
+    "recommendationQuotes": 3,
+    "serviceOrders": 0,
+    "orderPayments": 0,
+    "paymentAttempts": 0,
+    "walletTopUps": 0,
+    "ledgerEntries": 0,
+    "infrastructureOrders": 0,
+    "cloudInstances": 0
+  },
+  "countsAfter": {
+    "recommendationSessions": 3,
+    "recommendationQuotes": 3,
+    "serviceOrders": 0,
+    "orderPayments": 0,
+    "paymentAttempts": 0,
+    "walletTopUps": 0,
+    "ledgerEntries": 0,
+    "infrastructureOrders": 0,
+    "cloudInstances": 0
+  },
+  "results": [
+    {
+      "viewport": "1440x900",
+      "quotePath": "/cloud-servers/quote/cmsnhnk8f000gpg2kh1m6ea8l",
+      "loginHref": "/login?next=%2Fcloud-servers%2Fquote%2Fcmsnhnk8f000gpg2kh1m6ea8l",
+      "claimStatus": 200,
+      "claimedSessionId": "cmsnhnk8a000epg2kxopwpuua",
+      "claimedUserId": "cmsnhnk4o0000pg2k7affnj0y",
+      "guestCookieCleared": true,
+      "immutableQuotePreserved": true,
+      "overflow": {
+        "viewport": 1440,
+        "content": 1440
+      },
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+      ],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "expectedGuestAuthProbe401": 1,
+      "screenshots": [
+        "docs/launch/evidence/phase-2/guest-quote-desktop-1440x900.png",
+        "docs/launch/evidence/phase-2/claimed-quote-desktop-1440x900.png"
+      ],
+      "result": "PASS"
+    },
+    {
+      "viewport": "390x844",
+      "quotePath": "/cloud-servers/quote/cmsnhnk8n000jpg2kylj9crdc",
+      "loginHref": "/login?next=%2Fcloud-servers%2Fquote%2Fcmsnhnk8n000jpg2kylj9crdc",
+      "claimStatus": 200,
+      "claimedSessionId": "cmsnhnk8j000hpg2kv49lkxfg",
+      "claimedUserId": "cmsnhnk4o0000pg2k7affnj0y",
+      "guestCookieCleared": true,
+      "immutableQuotePreserved": true,
+      "overflow": {
+        "viewport": 390,
+        "content": 390
+      },
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+      ],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "expectedGuestAuthProbe401": 1,
+      "screenshots": [
+        "docs/launch/evidence/phase-2/guest-quote-mobile-390x844.png",
+        "docs/launch/evidence/phase-2/claimed-quote-mobile-390x844.png"
+      ],
+      "result": "PASS"
+    }
+  ]
+}

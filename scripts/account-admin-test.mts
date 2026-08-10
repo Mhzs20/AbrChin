@@ -44,10 +44,7 @@ test("admin and customer panels use central role guards", async () => {
   assert.match(guards, /export async function requireCustomer\(/);
   assert.match(adminLayout, /getAdminPageAccess/);
   assert.match(customerLayout, /requireCustomerPage/);
-  assert.match(
-    loginForm,
-    /requestedNext\?\.startsWith\("\/"\) && !requestedNext\.startsWith\("\/\/"\)/,
-  );
+  assert.match(loginForm, /safeCustomerReturnPath/);
   assert.match(loginForm, /router\.replace\("\/admin"\)/);
   assert.match(loginForm, /registrationComplete === false/);
   assert.match(loginForm, /\/register\/complete/);

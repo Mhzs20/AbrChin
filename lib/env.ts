@@ -57,6 +57,10 @@ export function getEnv() {
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean),
+    // Founder policy (2026-08-10): public sale stays open by default. The
+    // provider/source gates and freshness/availability checks still prevent an
+    // invalid offer from being sold, without coupling checkout to mutations.
+    publicSaleEnabled: readBool("PUBLIC_SALE_ENABLED", true),
     parspackEnabled: readBool("PARSPACK_ENABLED", false),
     parspackPublicSaleEnabled: readBool(
       "PARSPACK_PUBLIC_SALE_ENABLED",
@@ -88,9 +92,8 @@ export function getEnv() {
     arvanRegionCodesCsv: process.env.ARVAN_REGION_CODES ?? "",
     arvanTimeoutMs: readInt("ARVAN_TIMEOUT_MS", 15_000),
     arvanGetAttempts: readInt("ARVAN_GET_ATTEMPTS", 3),
-    // Public checkout is a separate operational decision from provider
-    // connectivity and lifecycle mutation capability. It is fail-closed.
-    // Launch: public sale open by default; Mutation stays fail-closed.
+    // Published provider/source offers are sale-enabled by default. Runtime
+    // eligibility still depends on product, region, stock and fresh pricing.
     arvanPublicSaleEnabled: readBool(
       "ARVAN_PUBLIC_SALE_ENABLED",
       true,

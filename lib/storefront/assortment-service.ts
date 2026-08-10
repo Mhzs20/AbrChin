@@ -209,9 +209,6 @@ function toPublicOffer(input: {
     parchinIncludedServices: input.parchinIncludedServices,
     parchinExcludedServices: input.parchinExcludedServices,
     parchinMonthlyPriceRial: input.parchinMonthlyPriceRial,
-    // Never expose supplier economics on the customer storefront payload.
-    providerBaseHourlyPriceRial: null,
-    providerBaseMonthlyPriceRial: "0",
     // Usage equivalents are display-only derivations of the billed monthly
     // amount ("معادل مصرف"), never a separate payment model.
     hourlyPriceRial: usage?.hourlyRial.toString() ?? null,
@@ -220,14 +217,7 @@ function toPublicOffer(input: {
     renewalPriceRial: (
       input.priced?.renewalPriceRial ?? monthlyPriceRial
     ).toString(),
-    sourceCurrencyCode: input.item.currencyCode,
-    sourceAmountUnit: input.item.amountUnit,
-    normalizedCurrencyCode: "IRR",
-    normalizedAmountUnit: "RIAL",
     billingIntervals: monthlyPriceRial > 0n ? (["MONTHLY"] as const) : [],
-    // Supplier economics stay server-side; public payloads must not leak bps.
-    markupBasisPoints: 0,
-    taxBasisPoints: 0,
     catalogStatus: !input.catalogFresh ? "STALE" : input.item.status,
     purchaseState: input.purchaseState,
     deliveryEstimateMinutes: 0,
@@ -567,22 +557,25 @@ export async function resolveStorefrontTierOffers(
   offers: PublicPlanOffer[];
   diagnostics: StorefrontDominanceDiagnostics;
 }> {
-  const [slots, settings] = await Promise.all([
+  const [slots, settingsRow] = await Promise.all([
     prisma.storefrontAssortmentSlot.findMany({
       where: { tier, enabled: true },
       include: { catalogItem: true },
       orderBy: [{ role: "asc" }, { sortOrder: "asc" }],
     }),
-    prisma.storefrontAssortmentSettings.upsert({
+    prisma.storefrontAssortmentSettings.findUnique({
       where: { id: "default" },
-      create: {
-        id: "default",
-        autoSuggestEnabled: false,
-        ...DEFAULT_STOREFRONT_CAPACITY_RULES,
-      },
-      update: {},
     }),
   ]);
+  const settings = settingsRow ?? {
+    ...DEFAULT_STOREFRONT_CAPACITY_RULES,
+    noMinMonthlyPriceRial: 0n,
+    noMaxMonthlyPriceRial: null,
+    ostovarMinMonthlyPriceRial: 0n,
+    ostovarMaxMonthlyPriceRial: null,
+    kahkeshanMinMonthlyPriceRial: 0n,
+    kahkeshanMaxMonthlyPriceRial: null,
+  };
   const capacityRules: StorefrontCapacityRules = {
     ostovarMinVcpu: settings.ostovarMinVcpu,
     ostovarMinRamGb: settings.ostovarMinRamGb,

@@ -36,12 +36,31 @@ export function QuoteCountdown({
   /** Emphasize the locked-until clock for checkout. */
   prominent?: boolean;
 }) {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    const update = () => setNow(Date.now());
+    update();
+    const timer = window.setInterval(update, 1_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const lockedUntil = formatLockedUntilFa(expiresAt);
+  if (now === null) {
+    if (prominent) {
+      return (
+        <span className="quote-lock-banner" aria-live="polite">
+          این قیمت برای ۶۰ دقیقه قفل است — تا ساعت {lockedUntil}
+          <small>مانده: در حال محاسبه…</small>
+        </span>
+      );
+    }
+    return (
+      <span aria-live="polite">
+        قیمت ۶۰ دقیقه‌ای قفل‌شده تا ساعت {lockedUntil}
+      </span>
+    );
+  }
 
   const remaining = remainingLabel(expiresAt, now);
   if (remaining.expired) {

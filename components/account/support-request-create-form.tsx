@@ -5,28 +5,59 @@ import { useState, type FormEvent } from "react";
 
 import { FormField, SectionCard } from "@/components/product";
 import { useToast } from "@/components/product/toast";
-import { SUPPORT_CATEGORY_LABELS } from "@/lib/labels/customer";
+import {
+  SUPPORT_CATEGORY_LABELS,
+  SUPPORT_KIND_LABELS,
+} from "@/lib/labels/customer";
 
 const CATEGORIES = Object.keys(SUPPORT_CATEGORY_LABELS);
+const KINDS = ["GENERAL", "ROUTINE", "P1_INCIDENT"] as const;
 
 export function SupportRequestCreateForm({
   instances,
   initialInstanceId = "",
   initialOrderId = "",
+  initialCategory,
+  initialKind,
+  initialSubject = "",
+  initialDescription = "",
 }: {
-  instances: Array<{ id: string; name: string; ipv4: string | null }>;
+  instances: Array<{
+    id: string;
+    name: string;
+    ipv4: string | null;
+    parchinLevel: string | null;
+    parchinTitle: string | null;
+    routineRemaining: number | null;
+  }>;
   initialInstanceId?: string;
   initialOrderId?: string;
+  initialCategory?: string;
+  initialKind?: string;
+  initialSubject?: string;
+  initialDescription?: string;
 }) {
   const router = useRouter();
   const { showToast } = useToast();
-  const [category, setCategory] = useState(CATEGORIES[0] ?? "OTHER");
-  const [subject, setSubject] = useState("");
-  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState(
+    initialCategory && CATEGORIES.includes(initialCategory)
+      ? initialCategory
+      : CATEGORIES[0] ?? "OTHER",
+  );
+  const [kind, setKind] = useState<(typeof KINDS)[number]>(
+    initialKind && KINDS.includes(initialKind as (typeof KINDS)[number])
+      ? (initialKind as (typeof KINDS)[number])
+      : "GENERAL",
+  );
+  const [subject, setSubject] = useState(initialSubject);
+  const [description, setDescription] = useState(initialDescription);
   const [cloudInstanceId, setCloudInstanceId] = useState(initialInstanceId);
   const [serviceOrderId] = useState(initialOrderId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const selectedInstance = instances.find(
+    (item) => item.id === cloudInstanceId,
+  );
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -38,6 +69,7 @@ export function SupportRequestCreateForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           category,
+          kind,
           subject,
           description,
           cloudInstanceId: cloudInstanceId || null,
@@ -82,6 +114,40 @@ export function SupportRequestCreateForm({
             ))}
           </select>
         </FormField>
+        <FormField
+          id="support-kind"
+          label="نوع درخواست"
+          hint={
+            selectedInstance?.routineRemaining != null
+              ? `سهمیه روتین باقی‌مانده: ${selectedInstance.routineRemaining.toLocaleString("fa-IR")}`
+              : "برای درخواست روتین یا P1 ابتدا سرویس فعال را انتخاب کن."
+          }
+        >
+          <select
+            id="support-kind"
+            value={kind}
+            onChange={(event) =>
+              setKind(event.target.value as (typeof KINDS)[number])
+            }
+          >
+            {KINDS.map((value) => (
+              <option
+                key={value}
+                value={value}
+                disabled={
+                  value === "ROUTINE"
+                    ? !selectedInstance ||
+                      (selectedInstance.routineRemaining ?? 0) <= 0
+                    : value === "P1_INCIDENT"
+                      ? selectedInstance?.parchinLevel !== "PARCHIN_STABLE"
+                      : false
+                }
+              >
+                {SUPPORT_KIND_LABELS[value]}
+              </option>
+            ))}
+          </select>
+        </FormField>
         <FormField id="support-subject" label="موضوع">
           <input
             id="support-subject"
@@ -110,19 +176,33 @@ export function SupportRequestCreateForm({
           <select
             id="support-instance"
             value={cloudInstanceId}
-            onChange={(e) => setCloudInstanceId(e.target.value)}
+            onChange={(event) => {
+              const nextId = event.target.value;
+              const next = instances.find((item) => item.id === nextId);
+              setCloudInstanceId(nextId);
+              if (
+                (kind === "ROUTINE" && (next?.routineRemaining ?? 0) <= 0) ||
+                (kind === "P1_INCIDENT" &&
+                  next?.parchinLevel !== "PARCHIN_STABLE")
+              ) {
+                setKind("GENERAL");
+              }
+            }}
           >
             <option value="">بدون اتصال به سرویس</option>
             {instances.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name}
                 {item.ipv4 ? ` · ${item.ipv4}` : ""}
+                {item.parchinTitle ? ` · ${item.parchinTitle}` : ""}
               </option>
             ))}
           </select>
         </FormField>
         {error ? (
-          <p style={{ margin: 0, color: "crimson", fontSize: 13 }}>{error}</p>
+          <p role="alert" style={{ margin: 0, color: "crimson", fontSize: 13 }}>
+            {error}
+          </p>
         ) : null}
         <button
           type="submit"

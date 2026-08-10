@@ -31,8 +31,10 @@ test("cloud and ready purchase routes stay provider-separated before login", asy
   assert.match(chinish, /ساخت و تحویل کنترل‌شده توسط تیم ابرچین/);
   assert.match(chinish, /جزئیات خدمات/);
   assert.match(chinish, /ParchinDetailsDialog/);
-  assert.match(quoteButton, /configurationPath|login\?next=/);
-  assert.match(quoteButton, /\/account\/order\/configure\//);
+  assert.match(quoteButton, /configurationPath/);
+  assert.match(quoteButton, /\/cloud-servers\/configure\//);
+  assert.match(quoteButton, /`\/\$\{productPath\}\/quote\/\$\{body\.quote\.id\}`/);
+  assert.doesNotMatch(quoteButton, /requireLogin|\/login\?next=/);
   assert.doesNotMatch(quoteButton, /تنظیمات پیشرفته/);
   assert.doesNotMatch(quoteButton, /خارج از پرچین/);
   assert.doesNotMatch(chinish, /زمان تحویل تقریبی/);
@@ -107,11 +109,15 @@ test("guided recommendation requests server-generated quotes instead of static c
   assert.match(quoteService, /خرید خودکار متوقف شد/);
 });
 
-test("solutions use quick purchase and keep guided selection optional", async () => {
+test("discovery project choices enter Compass ranking while direct catalog stays available", async () => {
   const solutions = await readFile("components/solutions-explorer.tsx", "utf8");
+  const starter = await readFile("components/home-starter.tsx", "utf8");
   const quickPage = await readFile("app/cloud-servers/page.tsx", "utf8");
 
-  assert.match(solutions, /\/cloud-servers\?project=/);
+  assert.match(solutions, /\/compass\?project=/);
+  assert.match(starter, /\/compass\?project=/);
+  assert.doesNotMatch(solutions, /\/cloud-servers\?project=/);
+  assert.doesNotMatch(starter, /\/cloud-servers\?project=/);
   assert.match(quickPage, /قطب‌نما برای انتخاب مطمئن/);
   assert.match(quickPage, /href="\/compass"/);
 });

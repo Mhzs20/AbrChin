@@ -43,7 +43,14 @@ import { getActivePlanByCode, toPlanSnapshot } from "../lib/orders/plans.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const runIsolated = process.env.ABRCHIN_ISOLATED_TEST === "1";
-const prisma = databaseUrl && runIsolated ? new PrismaClient() : null;
+const prisma =
+  databaseUrl && runIsolated
+    ? new PrismaClient({
+        // PGlite's socket adapter is intentionally slower than production
+        // PostgreSQL. Keep this relaxation isolated to the end-to-end test.
+        transactionOptions: { maxWait: 10_000, timeout: 30_000 },
+      })
+    : null;
 
 test("one verified gateway callback records one payment, ledger, and waiting order", async (t) => {
   if (!prisma) {
@@ -59,6 +66,7 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
   const validUntil = new Date(now.getTime() + 10 * 60 * 1_000);
   const previous = {
     nodeEnv: process.env.NODE_ENV,
+    publicSaleEnabled: process.env.PUBLIC_SALE_ENABLED,
     defaultGateway: process.env.PAYMENT_BOOTSTRAP_DEFAULT_PROVIDER,
     callbackBase: process.env.PAYMENT_CALLBACK_BASE_URL,
     publicSale: process.env.PARSPACK_PUBLIC_SALE_ENABLED,
@@ -67,6 +75,7 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
   };
 
   process.env.NODE_ENV = "development";
+  process.env.PUBLIC_SALE_ENABLED = "true";
   process.env.PAYMENT_BOOTSTRAP_DEFAULT_PROVIDER = "mock";
   process.env.PAYMENT_CALLBACK_BASE_URL = "http://localhost:3010";
   process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
@@ -860,6 +869,11 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
     if (catalogItemId) await prisma.providerCatalogItem.deleteMany({ where: { id: catalogItemId } });
     if (inventoryCatalogItemId) await prisma.providerCatalogItem.deleteMany({ where: { id: inventoryCatalogItemId } });
     process.env.NODE_ENV = previous.nodeEnv;
+    if (previous.publicSaleEnabled === undefined) {
+      delete process.env.PUBLIC_SALE_ENABLED;
+    } else {
+      process.env.PUBLIC_SALE_ENABLED = previous.publicSaleEnabled;
+    }
     process.env.PAYMENT_BOOTSTRAP_DEFAULT_PROVIDER = previous.defaultGateway;
     process.env.PAYMENT_CALLBACK_BASE_URL = previous.callbackBase;
     process.env.PARSPACK_PUBLIC_SALE_ENABLED = previous.publicSale;

@@ -1,0 +1,689 @@
+{
+  "mutation": "none — GET and keyboard focus audit only",
+  "countsBefore": {
+    "recommendationSessions": 3,
+    "recommendationQuotes": 3,
+    "serviceOrders": 1,
+    "orderPayments": 0,
+    "paymentAttempts": 0,
+    "walletTopUps": 0,
+    "ledgerEntries": 0,
+    "infrastructureOrders": 1,
+    "cloudInstances": 0
+  },
+  "countsAfter": {
+    "recommendationSessions": 3,
+    "recommendationQuotes": 3,
+    "serviceOrders": 1,
+    "orderPayments": 0,
+    "paymentAttempts": 0,
+    "walletTopUps": 0,
+    "ledgerEntries": 0,
+    "infrastructureOrders": 1,
+    "cloudInstances": 0
+  },
+  "results": [
+    {
+      "route": "/",
+      "viewport": "1440x900",
+      "heading": "زیرساختت رو\nسوار بر ابرها بساز.",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "زیرساختت رو سوار بر ابرها بساز."
+          },
+          {
+            "level": 2,
+            "text": "از نیازت شروع کنیم."
+          }
+        ],
+        "overflow": {
+          "viewport": 1440,
+          "content": 1440
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/home-desktop-1440x900.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/cloud-servers",
+      "viewport": "1440x900",
+      "heading": "چینش‌های سرور را بررسی کن؛ فروش عمومی هنوز فعال نیست.",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "چینش‌های سرور را بررسی کن؛ فروش عمومی هنوز فعال نیست."
+          }
+        ],
+        "overflow": {
+          "viewport": 1440,
+          "content": 1440
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/catalog-desktop-1440x900.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/support",
+      "viewport": "1440x900",
+      "heading": "پرچین یعنی سرورت بعد از تحویل تنها نمی‌ماند.",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "پرچین یعنی سرورت بعد از تحویل تنها نمی‌ماند."
+          },
+          {
+            "level": 2,
+            "text": "پرچین شروع"
+          },
+          {
+            "level": 3,
+            "text": "نتیجه‌ای که تحویل می‌گیری"
+          },
+          {
+            "level": 2,
+            "text": "پرچین استوار"
+          },
+          {
+            "level": 3,
+            "text": "نتیجه‌ای که تحویل می‌گیری"
+          },
+          {
+            "level": 2,
+            "text": "پرچین کهکشان"
+          },
+          {
+            "level": 3,
+            "text": "نتیجه‌ای که تحویل می‌گیری"
+          },
+          {
+            "level": 2,
+            "text": "تعریف دقیق خدمات"
+          }
+        ],
+        "overflow": {
+          "viewport": 1440,
+          "content": 1440
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/support-desktop-1440x900.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/cloud-servers/quote/cmsnmi6xh000dpg2k4an2zclw",
+      "viewport": "1440x900",
+      "heading": "چینش نو",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "چینش نو"
+          },
+          {
+            "level": 2,
+            "text": "فروش عمومی هنوز فعال نشده است"
+          }
+        ],
+        "overflow": {
+          "viewport": 1440,
+          "content": 1440
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/quote-desktop-1440x900.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/account/orders/cmsnmi6ye000lpg2kwgj9ukfd",
+      "viewport": "1440x900",
+      "heading": "سفارش در انتظار تأیید ساخت",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "سفارش در انتظار تأیید ساخت"
+          },
+          {
+            "level": 2,
+            "text": "خلاصه"
+          },
+          {
+            "level": 2,
+            "text": "اقدام بعدی"
+          },
+          {
+            "level": 3,
+            "text": "تأیید ساخت توسط ابرچین"
+          },
+          {
+            "level": 2,
+            "text": "قرارداد خرید (قفل‌شده در زمان سفارش)"
+          },
+          {
+            "level": 2,
+            "text": "زمان‌بندی"
+          },
+          {
+            "level": 2,
+            "text": "لغو پیش از تحویل"
+          }
+        ],
+        "overflow": {
+          "viewport": 1440,
+          "content": 1440
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/order-desktop-1440x900.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/account/parchin",
+      "viewport": "1440x900",
+      "heading": "پرچین‌های من",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "پرچین‌های من"
+          },
+          {
+            "level": 2,
+            "text": "قراردادهای فعال و قبلی"
+          },
+          {
+            "level": 3,
+            "text": "هنوز قرارداد پرچینی فعال نشده"
+          }
+        ],
+        "overflow": {
+          "viewport": 1440,
+          "content": 1440
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/parchin-desktop-1440x900.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/account/support/requests/new?orderId=cmsnmi6ye000lpg2kwgj9ukfd&intent=cancel-before-delivery",
+      "viewport": "1440x900",
+      "heading": "درخواست پشتیبانی جدید",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "درخواست پشتیبانی جدید"
+          },
+          {
+            "level": 2,
+            "text": "ثبت درخواست"
+          }
+        ],
+        "overflow": {
+          "viewport": 1440,
+          "content": 1440
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/support-form-desktop-1440x900.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/",
+      "viewport": "390x844",
+      "heading": "زیرساختت رو\nسوار بر ابرها بساز.",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "زیرساختت رو سوار بر ابرها بساز."
+          },
+          {
+            "level": 2,
+            "text": "از نیازت شروع کنیم."
+          }
+        ],
+        "overflow": {
+          "viewport": 390,
+          "content": 390
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/home-mobile-390x844.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/cloud-servers",
+      "viewport": "390x844",
+      "heading": "چینش‌های سرور را بررسی کن؛ فروش عمومی هنوز فعال نیست.",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "چینش‌های سرور را بررسی کن؛ فروش عمومی هنوز فعال نیست."
+          }
+        ],
+        "overflow": {
+          "viewport": 390,
+          "content": 390
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/catalog-mobile-390x844.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/support",
+      "viewport": "390x844",
+      "heading": "پرچین یعنی سرورت بعد از تحویل تنها نمی‌ماند.",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "پرچین یعنی سرورت بعد از تحویل تنها نمی‌ماند."
+          },
+          {
+            "level": 2,
+            "text": "پرچین شروع"
+          },
+          {
+            "level": 3,
+            "text": "نتیجه‌ای که تحویل می‌گیری"
+          },
+          {
+            "level": 2,
+            "text": "پرچین استوار"
+          },
+          {
+            "level": 3,
+            "text": "نتیجه‌ای که تحویل می‌گیری"
+          },
+          {
+            "level": 2,
+            "text": "پرچین کهکشان"
+          },
+          {
+            "level": 3,
+            "text": "نتیجه‌ای که تحویل می‌گیری"
+          },
+          {
+            "level": 2,
+            "text": "تعریف دقیق خدمات"
+          }
+        ],
+        "overflow": {
+          "viewport": 390,
+          "content": 390
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/support-mobile-390x844.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/cloud-servers/quote/cmsnmi6xh000dpg2k4an2zclw",
+      "viewport": "390x844",
+      "heading": "چینش نو",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "چینش نو"
+          },
+          {
+            "level": 2,
+            "text": "فروش عمومی هنوز فعال نشده است"
+          }
+        ],
+        "overflow": {
+          "viewport": 390,
+          "content": 390
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/quote-mobile-390x844.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/account/orders/cmsnmi6ye000lpg2kwgj9ukfd",
+      "viewport": "390x844",
+      "heading": "سفارش در انتظار تأیید ساخت",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "سفارش در انتظار تأیید ساخت"
+          },
+          {
+            "level": 2,
+            "text": "خلاصه"
+          },
+          {
+            "level": 2,
+            "text": "اقدام بعدی"
+          },
+          {
+            "level": 3,
+            "text": "تأیید ساخت توسط ابرچین"
+          },
+          {
+            "level": 2,
+            "text": "قرارداد خرید (قفل‌شده در زمان سفارش)"
+          },
+          {
+            "level": 2,
+            "text": "زمان‌بندی"
+          },
+          {
+            "level": 2,
+            "text": "لغو پیش از تحویل"
+          }
+        ],
+        "overflow": {
+          "viewport": 390,
+          "content": 390
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/order-mobile-390x844.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/account/parchin",
+      "viewport": "390x844",
+      "heading": "پرچین‌های من",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "پرچین‌های من"
+          },
+          {
+            "level": 2,
+            "text": "قراردادهای فعال و قبلی"
+          },
+          {
+            "level": 3,
+            "text": "هنوز قرارداد پرچینی فعال نشده"
+          }
+        ],
+        "overflow": {
+          "viewport": 390,
+          "content": 390
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/parchin-mobile-390x844.png",
+      "result": "PASS"
+    },
+    {
+      "route": "/account/support/requests/new?orderId=cmsnmi6ye000lpg2kwgj9ukfd&intent=cancel-before-delivery",
+      "viewport": "390x844",
+      "heading": "درخواست پشتیبانی جدید",
+      "audit": {
+        "language": "fa",
+        "direction": "rtl",
+        "mainCount": 1,
+        "h1Count": 1,
+        "firstHeadingLevel": 1,
+        "emptyHeadings": [],
+        "unnamedInteractive": [],
+        "unlabeledFields": [],
+        "missingImageAlt": [],
+        "duplicateIds": [],
+        "positiveTabindex": [],
+        "hiddenFocusable": [],
+        "tooSmallControls": [],
+        "headings": [
+          {
+            "level": 1,
+            "text": "درخواست پشتیبانی جدید"
+          },
+          {
+            "level": 2,
+            "text": "ثبت درخواست"
+          }
+        ],
+        "overflow": {
+          "viewport": 390,
+          "content": 390
+        }
+      },
+      "skipLinkFocused": true,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "serverErrors": [],
+      "screenshot": "docs/launch/evidence/phase-8/support-form-mobile-390x844.png",
+      "result": "PASS"
+    }
+  ]
+}

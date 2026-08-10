@@ -10,6 +10,10 @@ import {
   revealInstanceCredential,
 } from "../lib/security/instance-credentials.ts";
 import { encryptCredential } from "../lib/security/credential-vault.ts";
+import {
+  defaultParchinContractForLevel,
+  snapshotParchinServiceContract,
+} from "../lib/parchin/service-contract.ts";
 import { allowAdminMobile } from "./test-admin-allowlist.mts";
 
 const db =
@@ -75,6 +79,12 @@ test("retryable delivery, concurrent approval and atomic one-time reveal", async
       provider: "ARVAN",
       providerApiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
+      parchinLevel: "PARCHIN_START",
+      parchinServiceSnapshot: snapshotParchinServiceContract(
+        defaultParchinContractForLevel("PARCHIN_START", {
+          monthlyPriceRial: 5_000_000n,
+        }),
+      ),
       productFlowState: "WAITING_ADMIN_DELIVERY_APPROVAL",
     },
   });
@@ -227,6 +237,18 @@ test("retryable delivery, concurrent approval and atomic one-time reveal", async
     }),
     1,
   );
+  const enrollment = await db.parchinEnrollment.findUniqueOrThrow({
+    where: { cloudInstanceId: instance.id },
+    include: { tasks: true },
+  });
+  assert.equal(enrollment.level, "PARCHIN_START");
+  assert.equal(enrollment.contractVersion, 3);
+  assert.equal(enrollment.routineRequestLimit, 1);
+  assert.equal(enrollment.tasks.length, 4);
+  assert.ok(
+    enrollment.tasks.some((task) => task.type === "INITIAL_HARDENING"),
+  );
+  assert.ok(enrollment.tasks.some((task) => task.type === "HEALTH_REPORT"));
   await assert.rejects(
     revealInstanceCredential({
       instanceId: instance.id,

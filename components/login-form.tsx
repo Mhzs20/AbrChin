@@ -4,7 +4,13 @@ import { ArrowRight, LoaderCircle, Smartphone } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
+import { safeCustomerReturnPath } from "@/lib/customer/navigation";
+
 type Step = "mobile" | "otp";
+type VerifiedUser = {
+  role: "ADMIN" | "CUSTOMER";
+  registrationComplete?: boolean;
+};
 
 function toEnglishDigits(value: string) {
   return value.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
@@ -22,6 +28,8 @@ export function LoginForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [resendIn, setResendIn] = useState(0);
+  const [claimRecoveryUser, setClaimRecoveryUser] =
+    useState<VerifiedUser | null>(null);
   const otpRequestInFlight = useRef(false);
 
   useEffect(() => {
@@ -89,10 +97,7 @@ export function LoginForm() {
       });
       const data = (await response.json()) as {
         error?: string;
-        user?: {
-          role: "ADMIN" | "CUSTOMER";
-          registrationComplete?: boolean;
-        };
+        user?: VerifiedUser;
       };
 
       if (!response.ok) {
@@ -107,38 +112,62 @@ export function LoginForm() {
             { method: "POST" },
           );
           if (!claimResponse.ok) {
+            setClaimRecoveryUser(data.user);
             setError(
-              "ورود انجام شد، اما اتصال گفت‌وگو به حساب کامل نشد. دوباره تلاش کن.",
+              "ورود انجام شد، اما اتصال پیش‌فاکتور به حساب کامل نشد. اتصال را دوباره امتحان کن؛ نیازی به کد تازه نیست.",
             );
             return;
           }
         } catch {
+          setClaimRecoveryUser(data.user);
           setError(
-            "ورود انجام شد، اما اتصال گفت‌وگو به حساب کامل نشد. دوباره تلاش کن.",
+            "ورود انجام شد، اما اتصال پیش‌فاکتور به حساب کامل نشد. اتصال را دوباره امتحان کن؛ نیازی به کد تازه نیست.",
           );
           return;
         }
       }
 
-      const requestedNext = searchParams.get("next");
-      const safeNext =
-        requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
-          ? requestedNext
-          : null;
-
-      if (data.user?.role === "ADMIN") {
-        router.replace("/admin");
-      } else if (data.user && data.user.registrationComplete === false) {
-        const qs = safeNext
-          ? `?next=${encodeURIComponent(safeNext)}`
-          : "";
-        router.replace(`/register/complete${qs}`);
-      } else {
-        router.replace(safeNext ?? "/account");
-      }
-      router.refresh();
+      continueAfterAuthentication(data.user);
     } catch {
       setError("ارتباط با سرور برقرار نشد.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function continueAfterAuthentication(user?: VerifiedUser) {
+    const safeNext = safeCustomerReturnPath(
+      searchParams.get("next") ?? undefined,
+    );
+
+    if (user?.role === "ADMIN") {
+      router.replace("/admin");
+    } else if (user && user.registrationComplete === false) {
+      const qs = safeNext ? `?next=${encodeURIComponent(safeNext)}` : "";
+      router.replace(`/register/complete${qs}`);
+    } else {
+      router.replace(safeNext ?? "/account");
+    }
+    router.refresh();
+  }
+
+  async function retryClaim() {
+    if (!claimRecoveryUser || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/recommendations/sessions/claim", {
+        method: "POST",
+      });
+      if (!response.ok) {
+        setError("اتصال هنوز کامل نشد؛ پیش‌فاکتور محفوظ است و می‌توانی دوباره تلاش کنی.");
+        return;
+      }
+      const user = claimRecoveryUser;
+      setClaimRecoveryUser(null);
+      continueAfterAuthentication(user);
+    } catch {
+      setError("ارتباط با سرور برقرار نشد؛ پیش‌فاکتور محفوظ است.");
     } finally {
       setLoading(false);
     }
@@ -239,6 +268,19 @@ export function LoginForm() {
           </div>
         </form>
       )}
+
+      {claimRecoveryUser ? (
+        <div className="auth-secondary" role="status">
+          <button
+            className="button button-primary"
+            type="button"
+            disabled={loading}
+            onClick={() => void retryClaim()}
+          >
+            اتصال دوباره و ادامه خرید
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -54,9 +54,9 @@ export function HomeStarter() {
         {selected ? (
           <Link
             className="button button-primary"
-            href={selected === "unsure" ? "/compass" : `/cloud-servers?project=${selected}`}
+            href={selected === "unsure" ? "/compass" : `/compass?project=${selected}`}
           >
-            {selected === "unsure" ? "راهنمای انتخاب" : "دیدن سرورهای آماده"}
+            {selected === "unsure" ? "راهنمای انتخاب" : "گرفتن پیشنهاد متناسب"}
             <ArrowLeft size={18} aria-hidden="true" />
           </Link>
         ) : (

@@ -161,4 +161,7 @@ export const AuditActions = {
   DELIVERY_APPROVED: "delivery_approved",
   DELIVERY_APPROVAL_BLOCKED: "delivery_approval_blocked",
   DELIVERY_HELD: "delivery_held",
+  PARCHIN_TASK_UPDATE: "parchin_task_update",
+  PARCHIN_REPORT_CREATE: "parchin_report_create",
+  PARCHIN_LEVEL_REQUEST: "parchin_level_request",
 } as const;

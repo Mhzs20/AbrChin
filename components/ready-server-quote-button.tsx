@@ -46,12 +46,23 @@ export type ReadyServerOrderSummary = {
   ipv6Available?: boolean | null;
   operatingSystemLabels?: string[];
   parchinTitle: string;
+  parchinLevel: "PARCHIN_START" | "PARCHIN_ACTIVE" | "PARCHIN_STABLE";
   parchinSummary?: string | null;
   parchinIncludedServices?: string[];
   parchinExcludedServices?: string[];
   salePriceRial: string;
   renewalPriceRial: string;
   instantDelivery?: boolean;
+};
+
+export type ReadyServerParchinOption = {
+  level: "PARCHIN_START" | "PARCHIN_ACTIVE" | "PARCHIN_STABLE";
+  title: string;
+  subtitle: string;
+  description: string;
+  monthlyPriceRial: string;
+  firstResponseTarget: string;
+  routineRequestLimit: number;
 };
 
 function imageDisplayName(image: DeliveryImage) {
@@ -75,20 +86,20 @@ export function ReadyServerQuoteButton({
   productPath = "cloud-servers",
   disabled = false,
   disabledReason,
-  requireLogin = false,
   standalone = false,
   initialOptions = null,
+  parchinOptions = [],
   orderSummary,
 }: {
   planId: string;
   productPath?: "cloud-servers" | "ready-servers";
   disabled?: boolean;
   disabledReason?: string;
-  requireLogin?: boolean;
-  /** Full configurator is rendered only on the dedicated account page. */
+  /** The full configurator is rendered on the dedicated public configuration page. */
   standalone?: boolean;
   /** Server-loaded options keep the dedicated checkout deterministic. */
   initialOptions?: DeliveryOptions | null;
+  parchinOptions?: ReadyServerParchinOption[];
   orderSummary?: ReadyServerOrderSummary;
 }) {
   const router = useRouter();
@@ -110,6 +121,15 @@ export function ReadyServerQuoteButton({
   const [serverNameTouched, setServerNameTouched] = useState(false);
   const [termMonths, setTermMonths] = useState<1 | 3 | 6 | 12>(1);
   const [couponCode, setCouponCode] = useState("");
+  const [requestedParchinLevel, setRequestedParchinLevel] = useState(
+    orderSummary?.parchinLevel ??
+      parchinOptions[0]?.level ??
+      ("PARCHIN_START" as const),
+  );
+  const selectedParchin =
+    parchinOptions.find((item) => item.level === requestedParchinLevel) ??
+    parchinOptions[0] ??
+    null;
   const termLabels: Record<1 | 3 | 6 | 12, string> = {
     1: "۱ ماه — بدون تخفیف دوره",
     3: "۳ ماه — ۵٪ تخفیف",
@@ -120,16 +140,11 @@ export function ReadyServerQuoteButton({
 
   function configurationPath() {
     const query = new URLSearchParams({ product: productPath });
-    return `/account/order/configure/${encodeURIComponent(planId)}?${query.toString()}`;
+    return `/cloud-servers/configure/${encodeURIComponent(planId)}?${query.toString()}`;
   }
 
   function beginOrder() {
-    const next = configurationPath();
-    if (requireLogin) {
-      router.push(`/login?next=${encodeURIComponent(next)}`);
-      return;
-    }
-    router.push(next);
+    router.push(configurationPath());
   }
 
   function applyImageSelection(imageId: string, images: DeliveryImage[]) {
@@ -157,6 +172,7 @@ export function ReadyServerQuoteButton({
         serverName: serverName.trim(),
         termMonths,
         couponCode: couponCode.trim().toUpperCase() || null,
+        requestedParchinLevel,
       });
       if (requestKeyRef.current?.fingerprint !== fingerprint) {
         requestKeyRef.current = {
@@ -177,6 +193,7 @@ export function ReadyServerQuoteButton({
           serverName: serverName.trim(),
           termMonths,
           couponCode: couponCode.trim() || null,
+          requestedParchinLevel,
           sshKeyName: null,
         }),
       });
@@ -187,7 +204,7 @@ export function ReadyServerQuoteButton({
       if (!response.ok || !body.quote?.id) {
         throw new Error(body.error ?? "ساخت پیش‌فاکتور ممکن نشد.");
       }
-      router.push(`/account/order/quote/${body.quote.id}`);
+      router.push(`/${productPath}/quote/${body.quote.id}`);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "ساخت پیش‌فاکتور ممکن نشد.",
@@ -245,9 +262,9 @@ export function ReadyServerQuoteButton({
             </dl>
             <div className="server-order-parchin">
               <span>سطح خدمات</span>
-              <strong>{orderSummary.parchinTitle}</strong>
-              {orderSummary.parchinSummary ? (
-                <p>{orderSummary.parchinSummary}</p>
+              <strong>{selectedParchin?.title ?? orderSummary.parchinTitle}</strong>
+              {selectedParchin?.description || orderSummary.parchinSummary ? (
+                <p>{selectedParchin?.description ?? orderSummary.parchinSummary}</p>
               ) : null}
             </div>
             <div className="server-order-base-price">
@@ -272,6 +289,48 @@ export function ReadyServerQuoteButton({
 
         {options ? (
           <div className="server-order-form">
+            {parchinOptions.length > 0 ? (
+              <fieldset className="server-order-parchin-options">
+                <legend>سطح پرچین</legend>
+                <p>
+                  سطح پیشنهادی این سرور حداقل انتخاب مجاز است؛ می‌توانی سطح
+                  بالاتر را انتخاب کنی.
+                </p>
+                <div>
+                  {parchinOptions.map((option, index) => (
+                    <label
+                      key={option.level}
+                      className={
+                        requestedParchinLevel === option.level
+                          ? "is-selected"
+                          : ""
+                      }
+                    >
+                      <input
+                        type="radio"
+                        name={`parchin-level-${planId}`}
+                        value={option.level}
+                        checked={requestedParchinLevel === option.level}
+                        onChange={() => setRequestedParchinLevel(option.level)}
+                      />
+                      <span>
+                        <strong>{option.title}</strong>
+                        {index === 0 ? <small>حداقل پیشنهادی</small> : null}
+                      </span>
+                      <p>{option.subtitle}</p>
+                      <small>{option.firstResponseTarget}</small>
+                      <small>
+                        {option.routineRequestLimit.toLocaleString("fa-IR")} درخواست
+                        روتین در ماه
+                      </small>
+                      <b>
+                        {formatStorefrontToman(option.monthlyPriceRial)} تومان / ماه
+                      </b>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            ) : null}
             <label>
               <span>سیستم‌عامل و نسخه</span>
               <select

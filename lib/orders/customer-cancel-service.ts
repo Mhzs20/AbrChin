@@ -263,6 +263,10 @@ export async function requestCustomerServiceCancellation(input: {
         autoRenew: false,
       },
     });
+    await tx.parchinEnrollment.updateMany({
+      where: { subscriptionId: subscription.id },
+      data: { status: "CANCELED", endedAt: new Date() },
+    });
 
     const request = await tx.resourceChangeRequest.create({
       data: {

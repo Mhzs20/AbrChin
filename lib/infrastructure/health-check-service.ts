@@ -24,6 +24,7 @@ import {
   addBillingMonths,
   addGracePeriod,
 } from "@/lib/subscriptions/period";
+import { activateParchinEnrollmentTx } from "@/lib/parchin/operations";
 
 const CONNECT_TIMEOUT_MS = 3_000;
 const MAX_CONNECT_ATTEMPTS = 3;
@@ -325,6 +326,7 @@ export async function activateApprovedDeliveryTx(
       message: `سرور سفارش ${order.serviceOrder.title} آماده است.`,
     },
   });
+  let subscription: { id: string; currentPeriodStart: Date; currentPeriodEnd: Date } | null = null;
   if (order.plan.billingModel === "PREPAID_TERM") {
     const termMonths =
       order.serviceOrder.termMonths === 3 ||
@@ -333,8 +335,8 @@ export async function activateApprovedDeliveryTx(
         ? order.serviceOrder.termMonths
         : 1;
     const periodEnd = addBillingMonths(deliveredAt, termMonths);
-    const policy = await getLifecyclePolicy();
-    await tx.serviceSubscription.upsert({
+    const policy = await getLifecyclePolicy(tx);
+    subscription = await tx.serviceSubscription.upsert({
       where: { cloudInstanceId: instance.id },
       update: {},
       create: {
@@ -362,6 +364,21 @@ export async function activateApprovedDeliveryTx(
         status: "ACTIVE",
         activeAt: deliveredAt,
       },
+    });
+  }
+  const parchinLevel = order.parchinLevel ?? order.serviceOrder.parchinLevel;
+  if (parchinLevel) {
+    await activateParchinEnrollmentTx(tx, {
+      userId: order.userId,
+      cloudInstanceId: instance.id,
+      serviceOrderId: order.serviceOrderId,
+      subscriptionId: subscription?.id ?? null,
+      level: parchinLevel,
+      contractSnapshot: order.serviceOrder.parchinServiceSnapshot,
+      activatedAt: deliveredAt,
+      quotaPeriodStart: subscription?.currentPeriodStart ?? deliveredAt,
+      quotaPeriodEnd:
+        subscription?.currentPeriodEnd ?? addBillingMonths(deliveredAt, 1),
     });
   }
 }

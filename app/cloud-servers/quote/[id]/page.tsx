@@ -4,6 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { OrderCheckoutPanel } from "@/components/account/order-checkout-panel";
+import { ToastProvider } from "@/components/product/toast";
 import { QuoteExpiredRefresh } from "@/components/quote/quote-expired-refresh";
 import {
   readyServerImageLabel,
@@ -23,6 +24,7 @@ import {
 } from "@/lib/recommendation/quote-service";
 import { getCurrentUser } from "@/lib/session";
 import { getWalletForUser } from "@/lib/wallet/ensure-wallet";
+import { getPublicSaleDecision } from "@/lib/infrastructure/public-sale-policy";
 
 export const metadata: Metadata = {
   title: "پیش‌فاکتور سرور ابری | ابرچین",
@@ -99,9 +101,15 @@ export default async function ReadyServerQuotePage({
   const ceilingDiscount = termDiscountCeilingLabel(quote.termMonths);
   const next = `/cloud-servers/quote/${quote.id}`;
   const wallet = user ? await getWalletForUser(user.id) : null;
+  const saleDecision = getPublicSaleDecision({
+    provider: quoteRecord.plan.provider,
+    productKind: quoteRecord.plan.productKind,
+    offerSource: quoteRecord.plan.offerSource,
+  });
 
   return (
-    <section className="ready-quote-page page-view" aria-labelledby="ready-quote-title">
+    <ToastProvider>
+      <section className="ready-quote-page page-view" aria-labelledby="ready-quote-title">
       <header className="ready-quote-heading">
         <div>
           <span className="eyebrow">
@@ -194,7 +202,18 @@ export default async function ReadyServerQuotePage({
               قیمت این انتخاب به‌روز و دوباره قفل شد؛ مشخصات سرورت حفظ شده است.
             </p>
           ) : null}
-          {user ? (
+          {!saleDecision.allowed ? (
+            <div className="ready-quote-login" role="status">
+              <h2>فروش عمومی هنوز فعال نشده است</h2>
+              <p>
+                پیش‌فاکتور و انتخاب‌های شما بدون تغییر قابل مشاهده‌اند، اما ثبت
+                سفارش و برداشت از کیف پول تا فعال‌سازی رسمی فروش متوقف است.
+              </p>
+              <Link className="button button-quiet" href="/cloud-servers">
+                بازگشت به فهرست سرورها
+              </Link>
+            </div>
+          ) : user ? (
             <OrderCheckoutPanel
               quoteId={quote.id}
               planTitle={quote.title}
@@ -241,6 +260,7 @@ export default async function ReadyServerQuotePage({
           )}
         </aside>
       </div>
-    </section>
+      </section>
+    </ToastProvider>
   );
 }

@@ -204,12 +204,14 @@ test("provider and API version remain locked in quote and paid-order snapshots",
 });
 
 test("Arvan ready/cloud and manual inventory sale gates are independent", () => {
+  const previousPublicSale = process.env.PUBLIC_SALE_ENABLED;
   const previousSale = process.env.ARVAN_PUBLIC_SALE_ENABLED;
   const previousReadySale = process.env.ARVAN_READY_PUBLIC_SALE_ENABLED;
   const previousCloudSale = process.env.ARVAN_CLOUD_PUBLIC_SALE_ENABLED;
   const previousManualSale = process.env.MANUAL_READY_PUBLIC_SALE_ENABLED;
   const previousMutations = process.env.ARVAN_MUTATIONS_ENABLED;
   try {
+    process.env.PUBLIC_SALE_ENABLED = "true";
     process.env.ARVAN_PUBLIC_SALE_ENABLED = "false";
     process.env.ARVAN_READY_PUBLIC_SALE_ENABLED = "false";
     process.env.ARVAN_CLOUD_PUBLIC_SALE_ENABLED = "false";
@@ -253,6 +255,8 @@ test("Arvan ready/cloud and manual inventory sale gates are independent", () => 
       true,
     );
   } finally {
+    if (previousPublicSale === undefined) delete process.env.PUBLIC_SALE_ENABLED;
+    else process.env.PUBLIC_SALE_ENABLED = previousPublicSale;
     if (previousSale === undefined) delete process.env.ARVAN_PUBLIC_SALE_ENABLED;
     else process.env.ARVAN_PUBLIC_SALE_ENABLED = previousSale;
     if (previousMutations === undefined) delete process.env.ARVAN_MUTATIONS_ENABLED;
@@ -267,10 +271,12 @@ test("Arvan ready/cloud and manual inventory sale gates are independent", () => 
 });
 
 test("ParsPack public sale can be closed explicitly and is independent from connectivity", () => {
+  const previousPublicSale = process.env.PUBLIC_SALE_ENABLED;
   const previousSale = process.env.PARSPACK_PUBLIC_SALE_ENABLED;
   const previousMutations = process.env.PARSPACK_MUTATIONS_ENABLED;
   const previousEnabled = process.env.PARSPACK_ENABLED;
   try {
+    process.env.PUBLIC_SALE_ENABLED = "true";
     process.env.PARSPACK_PUBLIC_SALE_ENABLED = "false";
     delete process.env.PARSPACK_MUTATIONS_ENABLED;
     process.env.PARSPACK_ENABLED = "true";
@@ -301,6 +307,8 @@ test("ParsPack public sale can be closed explicitly and is independent from conn
       { allowed: true, code: "sale_enabled" },
     );
   } finally {
+    if (previousPublicSale === undefined) delete process.env.PUBLIC_SALE_ENABLED;
+    else process.env.PUBLIC_SALE_ENABLED = previousPublicSale;
     if (previousSale === undefined) {
       delete process.env.PARSPACK_PUBLIC_SALE_ENABLED;
     } else {

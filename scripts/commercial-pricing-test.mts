@@ -537,16 +537,24 @@ test("legacy pricing write endpoints are retired (410)", async () => {
   assert.doesNotMatch(markup, /providerPricingConfig\.upsert/);
 });
 
-test("public storefront payloads zero markup/tax basis points", async () => {
+test("public storefront payloads omit supplier economics", async () => {
   const assortment = await readFile(
     "lib/storefront/assortment-service.ts",
     "utf8",
   );
   const plans = await readFile("lib/orders/plans.ts", "utf8");
-  assert.match(assortment, /markupBasisPoints: 0/);
-  assert.match(assortment, /taxBasisPoints: 0/);
-  assert.match(plans, /markupBasisPoints: 0/);
-  assert.match(plans, /taxBasisPoints: 0/);
+  assert.doesNotMatch(assortment, /providerBaseMonthlyPriceRial:/);
+  assert.doesNotMatch(assortment, /sourceCurrencyCode:/);
+  assert.doesNotMatch(assortment, /markupBasisPoints: 0/);
+  assert.doesNotMatch(assortment, /taxBasisPoints: 0/);
+  const publicOffer = plans.slice(
+    plans.indexOf("export type PublicPlanOffer"),
+    plans.indexOf("function withEffectivePricing"),
+  );
+  assert.doesNotMatch(
+    publicOffer,
+    /providerBasePrice|sourceCurrency|sourceAmount|markupBasisPoints|taxBasisPoints/,
+  );
   // Branding must not advertise a higher Parchin while billing START.
   assert.doesNotMatch(assortment, /brandingLevel/);
   assert.doesNotMatch(assortment, /brandingContract/);
