@@ -101,14 +101,27 @@ function messageGoConfig(): MessageGoConfig {
     url.password ||
     url.search ||
     url.hash ||
-    (env.isProduction ? url.protocol !== "https:" : !["http:", "https:"].includes(url.protocol))
+    (url.pathname !== "/" && url.pathname !== "") ||
+    (env.isProduction
+      ? url.protocol !== "https:"
+      : !["http:", "https:"].includes(url.protocol))
   ) {
     throw new Error("messagego_invalid_base_url");
   }
-  if (config.clientSecret.length < 32 || config.clientSecret.includes("\n") || config.clientSecret.includes("\r")) {
+  if (
+    config.clientSecret.length < 32 ||
+    config.clientSecret.includes("\n") ||
+    config.clientSecret.includes("\r")
+  ) {
     throw new Error("messagego_invalid_client_secret");
   }
   return config;
+}
+
+function requestHeaders(input?: HeadersInit) {
+  const headers = new Headers(input);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  return headers;
 }
 
 async function requestJson<T>(
@@ -124,12 +137,12 @@ async function requestJson<T>(
       cache: "no-store",
       redirect: "error",
       signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        ...(init.headers ?? {}),
-      },
+      headers: requestHeaders(init.headers),
     });
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(`messagego_auth_${response.status}`);
+      }
       throw new Error(`messagego_http_${response.status}`);
     }
     const contentType = response.headers.get("content-type") ?? "";
@@ -149,7 +162,10 @@ async function exchangeAccessToken(subjectId: string) {
     throw new Error("messagego_invalid_subject");
   }
 
-  const basic = Buffer.from(`${config.clientId}:${config.clientSecret}`, "utf8").toString("base64");
+  const basic = Buffer.from(
+    `${config.clientId}:${config.clientSecret}`,
+    "utf8",
+  ).toString("base64");
   const token = await requestJson<TokenExchangeResponse>(config, "/v1/auth/token", {
     method: "POST",
     headers: {
@@ -185,12 +201,11 @@ async function authenticatedJson<T>(
   init: RequestInit = {},
 ) {
   const { config, accessToken } = await exchangeAccessToken(subjectId);
+  const headers = requestHeaders(init.headers);
+  headers.set("Authorization", `Bearer ${accessToken}`);
   return requestJson<T>(config, path, {
     ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      ...(init.headers ?? {}),
-    },
+    headers,
   });
 }
 
