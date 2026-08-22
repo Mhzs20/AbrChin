@@ -79,7 +79,7 @@ Sync واقعی Production از Bundle مستقل، بدون Test Hook و داخ
 اجرا می‌شود:
 
 ```bash
-docker compose --env-file .env.production -f compose.production.yaml \
+docker compose --env-file .env -f compose.production.yaml \
   exec -T web npm run sync:catalog:parspack
 ```
 

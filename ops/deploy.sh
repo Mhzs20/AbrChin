@@ -4,7 +4,10 @@
 set -Eeuo pipefail
 
 APP_DIR="${APP_DIR:-/opt/abrchin}"
-ENV_FILE="${ENV_FILE:-.env.production}"
+# Production host keeps its secrets in /opt/abrchin/.env (fingerprinted by
+# ABRCHIN_IMAGE after every deploy). .env.production was a stale stub that
+# repeatedly blocked deploys, so .env is the canonical default.
+ENV_FILE="${ENV_FILE:-.env}"
 COMPOSE_FILE="${COMPOSE_FILE:-compose.production.yaml}"
 DEPLOY_IMAGE_SOURCE="${DEPLOY_IMAGE_SOURCE:-local}"
 BACKUP_BEFORE_DEPLOY="${BACKUP_BEFORE_DEPLOY:-1}"

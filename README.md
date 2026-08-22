@@ -61,7 +61,7 @@ npm run test:all
 
 - تست و انتشار Image به‌صورت دستی و کنترل‌شده از روی SHA تأییدشده انجام می‌شود؛
   این Repository به GitHub Actions یا Deploy خودکار متکی نیست.
-- Canonical deploy: `ops/deploy.sh` با `.env.production` و
+- Canonical deploy: `ops/deploy.sh` با `.env` و
   `compose.production.yaml` (جزئیات: `docs/production-deployment.md`).
 - Default: `DEPLOY_IMAGE_SOURCE=local` — Image immutable روی سرور Build می‌شود؛
   `docker compose pull` اجرا نمی‌شود.

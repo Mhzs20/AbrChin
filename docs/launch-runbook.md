@@ -82,7 +82,7 @@ git pull --ff-only origin main
 TARGET_SHA="$(git rev-parse HEAD)"
 test -z "$(git status --porcelain)"
 export APP_DIR="/opt/abrchin"
-export ENV_FILE=".env.production"
+export ENV_FILE=".env"
 export COMPOSE_FILE="compose.production.yaml"
 export ABRCHIN_IMAGE="abrchin:${TARGET_SHA:0:12}"
 export DEPLOY_IMAGE_SOURCE="local"
@@ -140,7 +140,7 @@ export PUBLIC_SALE_ENABLED="true"
 export ROLLBACK_IMAGE="REPLACE_WITH_PREVIOUS_IMAGE"
 test -n "$ROLLBACK_IMAGE"
 export ABRCHIN_IMAGE="$ROLLBACK_IMAGE"
-docker compose --env-file .env.production -f compose.production.yaml \
+docker compose --env-file .env -f compose.production.yaml \
   up -d --no-deps --force-recreate --wait --wait-timeout 120 \
   web worker catalog-sync
 curl -fsS http://127.0.0.1:3010/api/health

@@ -22,7 +22,7 @@ Production directory: `/opt/abrchin`
 
 ```text
 APP_DIR=/opt/abrchin
-ENV_FILE=.env.production
+ENV_FILE=.env
 COMPOSE_FILE=compose.production.yaml
 ABRCHIN_IMAGE=abrchin:<immutable-sha>
 DEPLOY_IMAGE_SOURCE=local|registry   # default: local
@@ -30,7 +30,7 @@ BACKUP_BEFORE_DEPLOY=1|0             # default: 1
 ```
 
 هر فرمان Compose Production باید `--env-file "$ENV_FILE"` داشته باشد
-(پیش‌فرض سازگار: `.env.production`؛ Production فعلی ابرچین ممکن است
+(پیش‌فرض: `.env` — همان فایل واقعی هاست Production؛ ممکن است
 `ENV_FILE=.env` باشد). `ops/deploy.sh` هرگز فایل env را با Bash `source`
 نمی‌کند — dotenv ممکن است شامل مقادیری مثل `PARSPACK_API_TOKEN=Bearer …`
 باشد که برای Compose معتبرند ولی برای Shell نیستند. متغیرهای کنترل Deploy
@@ -42,7 +42,7 @@ Secretها را در Shell، Log یا Screenshot چاپ نکنید.
 
 Production must send verification codes over SMTP (placeholders only in
 `.env.production.example` — never commit real credentials). Runtime source of
-truth remains the host env file (`.env.production` / `.env`):
+truth remains the host env file (`/opt/abrchin/.env`):
 
 ```text
 EMAIL_PROVIDER=smtp
@@ -80,7 +80,7 @@ git pull --ff-only origin main
 TARGET_SHA="$(git rev-parse HEAD)"
 
 export APP_DIR="/opt/abrchin"
-export ENV_FILE=".env.production"
+export ENV_FILE=".env"
 export COMPOSE_FILE="compose.production.yaml"
 export ABRCHIN_IMAGE="abrchin:${TARGET_SHA:0:12}"
 export DEPLOY_IMAGE_SOURCE="local"
@@ -132,7 +132,7 @@ After deploy health is green:
 
 ```bash
 # Dry-run first (writes = 0). Use the same ENV_FILE as production deploy
-# (historically /opt/abrchin/.env; deploy default remains .env.production).
+# (/opt/abrchin/.env is the canonical host env file and the deploy default).
 docker compose --env-file .env -f compose.production.yaml \
   exec -T web npm run accounting:backfill -- --dry-run
 ```
@@ -173,7 +173,7 @@ cd /opt/abrchin
 export ABRCHIN_IMAGE="abrchin:$(git rev-parse --short=12 HEAD)"
 
 docker compose \
-  --env-file .env.production \
+  --env-file .env \
   -f compose.production.yaml \
   ps db web worker catalog-sync
 
@@ -207,9 +207,9 @@ Manual code rollback (DB preserved):
 ```bash
 cd /opt/abrchin
 PREVIOUS_IMAGE="abrchin:<previous-sha>"
-sed -i "s|^ABRCHIN_IMAGE=.*$|ABRCHIN_IMAGE=${PREVIOUS_IMAGE}|" .env.production
+sed -i "s|^ABRCHIN_IMAGE=.*$|ABRCHIN_IMAGE=${PREVIOUS_IMAGE}|" .env
 export ABRCHIN_IMAGE="$PREVIOUS_IMAGE"
-docker compose --env-file .env.production -f compose.production.yaml \
+docker compose --env-file .env -f compose.production.yaml \
   up -d --no-deps --force-recreate --wait --wait-timeout 120 \
   web worker catalog-sync
 curl -fsS http://127.0.0.1:3010/api/health
@@ -219,10 +219,10 @@ curl -fsS http://127.0.0.1:3010/api/readiness
 ## Catalog Sync خواندنی
 
 ```bash
-docker compose --env-file .env.production -f compose.production.yaml \
+docker compose --env-file .env -f compose.production.yaml \
   exec -T web npm run sync:catalog:parspack
 
-docker compose --env-file .env.production -f compose.production.yaml \
+docker compose --env-file .env -f compose.production.yaml \
   exec -T web npm run sync:catalog:arvan
 ```
 
