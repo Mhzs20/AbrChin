@@ -18,7 +18,8 @@ import {
   DEFAULT_STOREFRONT_CAPACITY_RULES,
 } from "@/lib/storefront/capacity-rules";
 import { storefrontProviderCode } from "@/lib/storefront/provider-codes";
-import { storefrontServerTitle } from "@/lib/storefront/presentation";
+import { readyServerTitle } from "@/lib/cloud-servers/catalog";
+import { regionShortLabelFromDisplayName } from "@/lib/cloud-servers/region-naming";
 import { storefrontParchinLevel } from "@/lib/storefront/tiers";
 
 function safePlanCode(item: ProviderCatalogItem) {
@@ -93,9 +94,28 @@ export async function ensurePublishedPlanForCatalogItem(
           termMonths: 1,
         })
       : null;
-  const title = storefrontServerTitle({
+  // One canonical name per plan, derived from region + resources. The old
+  // generator numbered by render order and was called with a hardcoded
+  // index: 1, so every plan was stored as «ابر ۱ تهران».
+  // For a region the static map doesn't know, the persisted display name
+  // assigned at discovery keeps the title customer-safe.
+  const regionConfig = await prisma.providerRegionConfig.findUnique({
+    where: {
+      provider_apiVersion_regionCode: {
+        provider: item.provider,
+        apiVersion: item.apiVersion,
+        regionCode: item.regionCode,
+      },
+    },
+    select: { displayName: true },
+  });
+  const title = readyServerTitle({
     regionCode: item.regionCode,
-    index: 1,
+    vcpu: item.vcpu,
+    ramMb: item.ramMb,
+    locationLabel: regionConfig
+      ? regionShortLabelFromDisplayName(regionConfig.displayName)
+      : null,
   });
 
   if (
@@ -110,11 +130,13 @@ export async function ensurePublishedPlanForCatalogItem(
       existing.billingModel !== "PREPAID_TERM" ||
       existing.billingPolicyVersionId != null ||
       existing.minimumParchinLevel !== parchinLevel ||
+      existing.title !== title ||
       (priced != null && existing.salePriceRial !== priced.finalPriceRial)
     ) {
       return prisma.infrastructurePlan.update({
         where: { id: existing.id },
         data: {
+          title,
           billingModel: "PREPAID_TERM",
           billingPolicyVersionId: null,
           minimumParchinLevel: parchinLevel,
@@ -137,6 +159,7 @@ export async function ensurePublishedPlanForCatalogItem(
         publicationStatus: InfrastructurePlanPublicationStatus.PUBLISHED,
         catalogMappingStatus: "MAPPED",
         catalogMappedAt: existing.catalogMappedAt ?? new Date(),
+        title,
         regionCode: item.regionCode,
         sizeCode: item.sizeCode,
         imageCode,
@@ -175,7 +198,7 @@ export async function ensurePublishedPlanForCatalogItem(
         regionCode: item.regionCode,
         sizeCode: item.sizeCode,
         imageCode,
-        title: collision.title || title,
+        title,
         salePriceRial: priced?.finalPriceRial ?? collision.salePriceRial,
         renewalPriceRial: priced?.finalPriceRial ?? collision.renewalPriceRial,
         estimatedProviderCostRial:

@@ -9,6 +9,7 @@ import { deliveryModeLabel } from "@/lib/labels/infrastructure";
 import { formatTomanFa } from "@/lib/money";
 import { getActivePlanById } from "@/lib/orders/plans";
 import { parchinPlanLabel, parchinPlanSummary } from "@/lib/parchin/catalog";
+import { specGbFa, specVcpuFa } from "@/lib/labels/customer";
 
 export const metadata: Metadata = {
   title: "تکمیل سفارش | حساب من | ابرچین",
@@ -42,9 +43,9 @@ export default async function AccountOrderPlanPage({ params }: { params: Promise
         <p style={{ marginTop: 0 }}>{plan.description}</p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
           <StatusBadge label={deliveryModeLabel[plan.deliveryMode]} tone="info" />
-          {plan.vcpu ? <span className="product-tech">{plan.vcpu} vCPU</span> : null}
-          {plan.ramGb ? <span className="product-tech">{plan.ramGb} GB RAM</span> : null}
-          {plan.storageGb ? <span className="product-tech">{plan.storageGb} GB فضا</span> : null}
+          {plan.vcpu ? <span className="product-tech">{specVcpuFa(plan.vcpu)}</span> : null}
+          {plan.ramGb ? <span className="product-tech">{specGbFa(plan.ramGb)} رم</span> : null}
+          {plan.storageGb ? <span className="product-tech">{specGbFa(plan.storageGb)} فضا</span> : null}
           <span className="product-tech">ماه اول</span>{" "}
           <MoneyDisplay amount={formatTomanFa(plan.salePriceRial)} />
         </div>

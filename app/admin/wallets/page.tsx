@@ -96,7 +96,7 @@ export default async function AdminWalletsPage({
         <StatCard
           label="جمع شارژ موفق کیف پول"
           value={<MoneyDisplay amount={formatTomanFa(overview.topUpCreditRial)} />}
-          hint={`${overview.topUpCreditCount.toLocaleString("fa-IR")} سند TOP_UP تکمیل‌شده`}
+          hint={`${overview.topUpCreditCount.toLocaleString("fa-IR")} سند شارژ کیف پول تکمیل‌شده`}
         />
         <StatCard
           label="شارژ خالص (پس از Refund)"
@@ -117,7 +117,7 @@ export default async function AdminWalletsPage({
           hint={`${overview.walletCount.toLocaleString("fa-IR")} کیف پول · ${overview.customerCount.toLocaleString("fa-IR")} مشتری`}
         />
         <StatCard
-          label="شارژ درگاه (SUCCEEDED)"
+          label="شارژ موفق از درگاه"
           value={
             <MoneyDisplay
               amount={formatTomanFa(overview.succeededGatewayTopUpRial)}

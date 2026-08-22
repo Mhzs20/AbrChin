@@ -17,6 +17,7 @@ import type {
   PublicRecommendationQuote,
   RecommendationOfferRole,
 } from "@/lib/recommendation/types";
+import { specGbFa, specVcpuFa } from "@/lib/labels/customer";
 
 const positionLabels = ["اقتصادی", "پیشنهاد ابرچین", "آماده رشد"] as const;
 const roleLabels: Record<RecommendationOfferRole, string> = {
@@ -103,9 +104,9 @@ export function QuickCloudPlans({
             <p>{plan.description ?? "سرور دوره‌ای با قیمت شفاف و تمدید دستی در اختیار خودت."}</p>
 
             <div className="quick-plan-resources" aria-label="منابع سرور">
-              <span><small>پردازنده</small><strong dir="ltr">{plan.vcpu ?? "—"} vCPU</strong></span>
-              <span><small>حافظه</small><strong dir="ltr">{plan.ramGb ?? "—"} GB</strong></span>
-              <span><small>فضا</small><strong dir="ltr">{plan.storageGb ?? "—"} GB</strong></span>
+              <span><small>پردازنده</small><strong>{specVcpuFa(plan.vcpu)}</strong></span>
+              <span><small>حافظه</small><strong>{specGbFa(plan.ramGb)}</strong></span>
+              <span><small>فضا</small><strong>{specGbFa(plan.storageGb)}</strong></span>
             </div>
 
             <div className="quick-plan-price">

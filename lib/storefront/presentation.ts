@@ -147,14 +147,6 @@ export function storefrontLocationZone(
   return "ABROAD";
 }
 
-export function storefrontServerTitle(params: {
-  regionCode: string;
-  index: number;
-}): string {
-  const city = storefrontCityName(params.regionCode);
-  return `ابر ${params.index.toLocaleString("fa-IR")} ${city}`;
-}
-
 export function storefrontParchinForTier(
   tier: StorefrontChinishTier,
 ): ParchinLevel {

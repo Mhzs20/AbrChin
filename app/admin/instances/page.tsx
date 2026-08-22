@@ -32,6 +32,7 @@ export default async function AdminInstancesPage() {
     { key: "providerId", header: "Provider ID" },
     { key: "ip", header: "IP" },
     { key: "region", header: "Region" },
+    { key: "delivery", header: "نوع تحویل" },
     { key: "status", header: "وضعیت" },
     { key: "actions", header: "" },
   ];
@@ -44,6 +45,7 @@ export default async function AdminInstancesPage() {
       providerId: <TechnicalValue>{instance.providerInstanceId}</TechnicalValue>,
       ip: instance.ipv4 ? <TechnicalValue>{instance.ipv4}</TechnicalValue> : "—",
       region: <TechnicalValue>{instance.region}</TechnicalValue>,
+      delivery: deliveryModeLabel[instance.deliveryMode],
       status: <StatusBadge label={cloudInstanceStatusLabel[instance.status]} tone={instance.status === "ACTIVE" ? "success" : "warning"} />,
       actions: (
         <Link href={`/admin/instances/${instance.id}`} className="product-btn product-btn--quiet">
@@ -57,9 +59,6 @@ export default async function AdminInstancesPage() {
     <>
       <PageHeader title="سرورها" description="CloudInstanceهای فعال و در حال آماده‌سازی" />
       <DataTable columns={columns} rows={rows} emptyMessage="سروری ثبت نشده است." />
-      <p style={{ marginTop: 12, color: "var(--product-muted)" }}>
-        نوع تحویل نمونه: {instances[0] ? deliveryModeLabel[instances[0].deliveryMode] : "—"}
-      </p>
     </>
   );
 }

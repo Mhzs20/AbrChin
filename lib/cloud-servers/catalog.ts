@@ -146,17 +146,47 @@ export function readyServerSortOrder(params: {
   return region * 1_000_000 + resources;
 }
 
+/**
+ * The one server name. Stored on the plan and shown to the customer on the
+ * card (region segment only) and on the quote (in full), so the two can never
+ * disagree.
+ *
+ * Two rules keep it readable in an RTL page and are not cosmetic:
+ *   - Persian digits throughout, so numerals never switch script mid-name.
+ *   - The resources sit inside parentheses. A middot or a comma between the
+ *     region number and the vCPU count is a bidi numeric separator: the two
+ *     numbers merge into one, and «ابر تهران ۲ · ۱ هسته» renders to the
+ *     customer as «ابر تهران ۱۰۲ هسته». A bracket pair isolates them.
+ */
 export function readyServerTitle(params: {
   regionCode: string;
   vcpu: number | null;
   ramMb: number | null;
+  /** Persisted region display name, for codes the static map doesn't know. */
+  locationLabel?: string | null;
 }) {
-  const location = readyServerLocation(params.regionCode).shortLabel;
+  const staticLabel = readyServerLocation(params.regionCode).shortLabel;
+  const location =
+    staticLabel !== "موقعیت ابری"
+      ? staticLabel
+      : params.locationLabel?.trim() || staticLabel;
   const ramGb = params.ramMb == null ? null : Math.ceil(params.ramMb / 1024);
   if (params.vcpu != null && ramGb != null) {
-    return `ابر ${location} · ${params.vcpu} هسته / ${ramGb} گیگ`;
+    const cores = params.vcpu.toLocaleString("fa-IR");
+    const memory = ramGb.toLocaleString("fa-IR");
+    return `ابر ${location} (${cores} هسته / ${memory} گیگ)`;
   }
   return `سرور ابری ${location}`;
+}
+
+/**
+ * Card heading: the region segment of the stored title. The card already
+ * carries CPU/RAM/Disk chips, so repeating them in the heading is noise —
+ * but the customer must still recognise the same server on the quote.
+ */
+export function readyServerTitleRegionSegment(title: string): string {
+  const open = title.indexOf(" (");
+  return open === -1 ? title.trim() : title.slice(0, open).trim();
 }
 
 export function readyServerDescription(params: {

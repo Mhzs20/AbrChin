@@ -595,13 +595,15 @@ test("Arvan regions accept validated database input with presentation-only label
     () => emptyAdapter.syncRegions(),
     /No enabled provider region is configured/,
   );
+  // Customer-facing labels: real city + stable number, never Arvan's
+  // internal datacenter codenames (سیمین / گوته / …).
   assert.equal(
     arvanRegionPresentation("ir-thr-si1").label,
-    "سیمین، غرب تهران",
+    "تهران ۱، ایران",
   );
   assert.equal(
     arvanRegionPresentation("eu-west1-a").label,
-    "گوته، آلمان",
+    "اروپا",
   );
 });
 

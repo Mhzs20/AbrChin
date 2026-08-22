@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { QuoteCountdown } from "@/components/quote-countdown";
+import { specGbFa, specVcpuFa } from "@/lib/labels/customer";
 
 function formatResources(r: {
   vcpu: number;
   ramGb: number;
   diskGb: number;
 }) {
-  return `${r.vcpu} vCPU / ${r.ramGb} GB RAM / ${r.diskGb} GB Disk`;
+  return `${specVcpuFa(r.vcpu)} / ${specGbFa(r.ramGb)} رم / ${specGbFa(r.diskGb)} دیسک`;
 }
 
 function rialToTomanCeil(value: bigint) {
@@ -165,20 +166,20 @@ export function ServiceUpgradeChooser({
           <div className="product-stat-grid">
             <div className="product-stat-card">
               <div className="product-stat-card-label">پردازنده</div>
-              <div className="product-stat-card-value" dir="ltr">
-                {current.vcpu} vCPU
+              <div className="product-stat-card-value">
+                {specVcpuFa(current.vcpu)}
               </div>
             </div>
             <div className="product-stat-card">
               <div className="product-stat-card-label">حافظه</div>
-              <div className="product-stat-card-value" dir="ltr">
-                {current.ramGb} GB
+              <div className="product-stat-card-value">
+                {specGbFa(current.ramGb)}
               </div>
             </div>
             <div className="product-stat-card">
               <div className="product-stat-card-label">دیسک</div>
-              <div className="product-stat-card-value" dir="ltr">
-                {current.diskGb} GB
+              <div className="product-stat-card-value">
+                {specGbFa(current.diskGb)}
               </div>
             </div>
           </div>
@@ -201,20 +202,20 @@ export function ServiceUpgradeChooser({
             <div className="product-stat-grid" style={{ marginTop: 10 }}>
               <div className="product-stat-card">
                 <div className="product-stat-card-label">پردازنده</div>
-                <div className="product-stat-card-value" dir="ltr">
-                  {target.vcpu} vCPU
+                <div className="product-stat-card-value">
+                  {specVcpuFa(target.vcpu)}
                 </div>
               </div>
               <div className="product-stat-card">
                 <div className="product-stat-card-label">حافظه</div>
-                <div className="product-stat-card-value" dir="ltr">
-                  {target.ramGb} GB
+                <div className="product-stat-card-value">
+                  {specGbFa(target.ramGb)}
                 </div>
               </div>
               <div className="product-stat-card">
                 <div className="product-stat-card-label">دیسک</div>
-                <div className="product-stat-card-value" dir="ltr">
-                  {target.diskGb} GB
+                <div className="product-stat-card-value">
+                  {specGbFa(target.diskGb)}
                 </div>
               </div>
             </div>
@@ -351,9 +352,9 @@ export function ServiceUpgradeQuotePanel({
           </div>
           <div className="order-checkout-summary-row">
             <span>تغییر مؤثر</span>
-            <strong dir="ltr">
-              +{quote.delta.vcpu} vCPU / +{quote.delta.ramGb} GB / +
-              {quote.delta.diskGb} GB
+            <strong>
+              +{specVcpuFa(quote.delta.vcpu)} / +{specGbFa(quote.delta.ramGb)} رم / +
+              {specGbFa(quote.delta.diskGb)} دیسک
             </strong>
           </div>
         </section>

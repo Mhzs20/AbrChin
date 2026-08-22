@@ -4,6 +4,7 @@ import { motion, useReducedMotion } from "motion/react";
 import Image from "next/image";
 
 import type { RecommendationDirection, ResourceProfile } from "@/lib/recommendation/types";
+import { specGbFa, specVcpuFa } from "@/lib/labels/customer";
 
 const nodes = [
   { id: "location", label: "موقعیت", icon: "location", threshold: 1, className: "node-location" },
@@ -121,15 +122,15 @@ export function ConversationCloud({
       <div className="cloud-resource-strip" aria-live="polite">
         <span>
           <small>پردازنده</small>
-          <strong dir="ltr">{profile.vcpu} vCPU</strong>
+          <strong>{specVcpuFa(profile.vcpu)}</strong>
         </span>
         <span>
           <small>حافظه</small>
-          <strong dir="ltr">{profile.ramGb} GB</strong>
+          <strong>{specGbFa(profile.ramGb)}</strong>
         </span>
         <span>
           <small>فضا</small>
-          <strong dir="ltr">{profile.storageGb} GB</strong>
+          <strong>{specGbFa(profile.storageGb)}</strong>
         </span>
       </div>
 

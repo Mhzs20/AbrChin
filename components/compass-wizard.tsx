@@ -32,6 +32,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { specGbFa, specVcpuFa } from "@/lib/labels/customer";
 
 export type CompassAnswers = Partial<
   Record<"project" | "stage" | "scale" | "management" | "priority" | "location", string>
@@ -304,7 +305,7 @@ export function CompassWizard({ initialAnswers = {} }: { initialAnswers?: Compas
   const requestSummary = [
     `پروژه: ${result.project}`,
     `چینش: ${selectedPlan.title}`,
-    `منابع اولیه: ${selectedPlan.cpu} vCPU / ${selectedPlan.ram} GB RAM / ${selectedPlan.storage} GB Storage`,
+    `منابع اولیه: ${specVcpuFa(selectedPlan.cpu)} / ${specGbFa(selectedPlan.ram)} رم / ${specGbFa(selectedPlan.storage)} دیسک`,
     `موقعیت: ${result.location}`,
     `سطح همراهی: ${result.management}`,
     `پرچین: ${parchinIsActive ? "پایه" : "ندارد"}`,
@@ -352,8 +353,8 @@ export function CompassWizard({ initialAnswers = {} }: { initialAnswers?: Compas
                   <strong>{plan.title}</strong>
                   <p>{plan.description}</p>
                   <span className="plan-resources" dir="ltr">
-                    <span>{plan.cpu} <small>vCPU</small></span>
-                    <span>{plan.ram} <small>GB RAM</small></span>
+                    <span>{specVcpuFa(plan.cpu)}</span>
+                    <span>{specGbFa(plan.ram)} <small>رم</small></span>
                     <span>{plan.storage} <small>GB</small></span>
                   </span>
                 </button>
@@ -387,9 +388,9 @@ export function CompassWizard({ initialAnswers = {} }: { initialAnswers?: Compas
             </div>
 
             <div className="resource-grid" dir="ltr">
-              <div><span>CPU</span><strong>{selectedPlan.cpu} vCPU</strong></div>
-              <div><span>RAM</span><strong>{selectedPlan.ram} GB</strong></div>
-              <div><span>STORAGE</span><strong>{selectedPlan.storage} GB</strong></div>
+              <div><span>پردازنده</span><strong>{specVcpuFa(selectedPlan.cpu)}</strong></div>
+              <div><span>حافظه</span><strong>{specGbFa(selectedPlan.ram)}</strong></div>
+              <div><span>دیسک</span><strong>{specGbFa(selectedPlan.storage)}</strong></div>
             </div>
 
             <div className="result-details">

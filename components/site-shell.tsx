@@ -133,7 +133,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
             <img
               referrerPolicy="origin"
               src="https://trustseal.enamad.ir/logo.aspx?id=762937&Code=dtWarV79z2vgp5pSlQKKMjz8QPhgWitc"
-              alt=""
+              alt="نماد اعتماد الکترونیکی (اینماد) ابرچین"
               style={{ cursor: "pointer" }}
             />
           </a>

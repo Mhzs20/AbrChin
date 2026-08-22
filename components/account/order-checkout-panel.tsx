@@ -7,9 +7,20 @@ import { useEffect, useRef, useState } from "react";
 import { QuoteCountdown } from "@/components/quote-countdown";
 import { MoneyDisplay } from "@/components/product";
 import { useToast } from "@/components/product/toast";
+import { specGbFa, specVcpuFa } from "@/lib/labels/customer";
 
+/**
+ * Rial → toman for display, rounded toward negative infinity.
+ *
+ * BigInt division truncates toward zero, which rounds a negative discount
+ * line UP (‎−489,715.9 → ‎−489,715). The lines then summed to one toman more
+ * than «جمع قفل‌شده» on a real invoice. Flooring negatives the other way
+ * (‎−489,716) keeps the displayed lines summing to the displayed total.
+ */
 function formatRialAsToman(value: string | bigint) {
-  return (BigInt(value) / 10n).toLocaleString("fa-IR");
+  const rial = BigInt(value);
+  const toman = rial >= 0n ? rial / 10n : (rial - 9n) / 10n;
+  return toman.toLocaleString("fa-IR");
 }
 
 /** Rial → whole toman, rounded up so the top-up always covers the gap. */
@@ -289,15 +300,15 @@ export function OrderCheckoutPanel({
         </div>
         <div className="order-checkout-summary-row">
           <span>پردازنده</span>
-          <strong dir="ltr">{summary.vcpu ?? "—"} vCPU</strong>
+          <strong>{specVcpuFa(summary.vcpu)}</strong>
         </div>
         <div className="order-checkout-summary-row">
           <span>حافظه</span>
-          <strong dir="ltr">{summary.ramGb ?? "—"} GB</strong>
+          <strong>{specGbFa(summary.ramGb)}</strong>
         </div>
         <div className="order-checkout-summary-row">
           <span>دیسک</span>
-          <strong dir="ltr">{summary.storageGb ?? "—"} GB</strong>
+          <strong>{specGbFa(summary.storageGb)}</strong>
         </div>
         <div className="order-checkout-summary-row">
           <span>سیستم‌عامل</span>

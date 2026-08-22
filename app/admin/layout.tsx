@@ -1,7 +1,6 @@
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
 
-import "../product.css";
 import { AdminShell } from "@/components/product/admin-shell";
 import { AdminAccessDenied } from "@/components/product/panel-access-denied";
 import { ToastProvider } from "@/components/product/toast";

@@ -53,6 +53,8 @@ import {
   resolveParchinLevelLabel,
 } from "@/lib/parchin/labels";
 
+import { specGbFa, specVcpuFa } from "@/lib/labels/customer";
+
 const storageKey = "abrchin:conversation:v1";
 
 const confidenceLabels = {
@@ -1201,15 +1203,15 @@ export function ConversationBuilder({
                 <div className="recommendation-resources">
                   <span>
                     <small>پردازنده</small>
-                    <strong dir="ltr">{activeProfile.vcpu} vCPU</strong>
+                    <strong>{specVcpuFa(activeProfile.vcpu)}</strong>
                   </span>
                   <span>
                     <small>حافظه</small>
-                    <strong dir="ltr">{activeProfile.ramGb} GB RAM</strong>
+                    <strong>{specGbFa(activeProfile.ramGb)} رم</strong>
                   </span>
                   <span>
                     <small>فضای اولیه</small>
-                    <strong dir="ltr">{activeProfile.storageGb} GB</strong>
+                    <strong>{specGbFa(activeProfile.storageGb)}</strong>
                   </span>
                   <span>
                     <small>تحویل</small>
@@ -1371,8 +1373,8 @@ export function ConversationBuilder({
                             >
                               {deliveryOptions.map((option) => (
                                 <option key={option.id} value={option.id}>
-                                  {option.region} — {option.vcpu} vCPU،{" "}
-                                  {option.ramGb} GB RAM، {option.storageGb} GB
+                                  {option.region} — {specVcpuFa(option.vcpu)}،{" "}
+                                  {specGbFa(option.ramGb)} رم، {specGbFa(option.storageGb)}
                                 </option>
                               ))}
                             </select>

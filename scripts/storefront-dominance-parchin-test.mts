@@ -209,7 +209,11 @@ test("dominance uses final commercial price axis, never invents missing traits",
   assert.equal(withTransfer.ipv4Key, "yes");
   assert.equal(withTransfer.ipv6Key, "no");
 
-  // Different recorded traffic → separate markets → both kept.
+  // Traits the card does not render must NOT split the market: a plan with
+  // equal resources and a higher price is removed even when its recorded
+  // traffic differs. (Production regression: 38 of 49 کارت چینش نو survived as
+  // strictly worse-and-pricier because invisible traits shielded them.)
+  // Reinstate the split only once traffic/disk/IP are shown on the card.
   const a = candidate({
     id: "a",
     traits: { ...withTransfer },
@@ -229,7 +233,8 @@ test("dominance uses final commercial price axis, never invents missing traits",
     },
   });
   const result = filterDominatedPlans([a, b]);
-  assert.equal(result.stats.finalCount, 2);
+  assert.equal(result.stats.finalCount, 1);
+  assert.equal(result.kept[0]?.id, "a");
 });
 
 test("incomplete resources never dominate another plan", () => {

@@ -303,7 +303,7 @@ a {
   border: 1px solid transparent;
   border-radius: 17px;
   color: #6f819a;
-  font-size: 10px;
+  font-size: 11px;
   transition: 170ms ease;
   flex-direction: column;
 }
@@ -373,8 +373,22 @@ a {
 .rail-copyright {
   margin-top: 8px;
   color: var(--muted-2);
-  font-family: Arial, sans-serif;
-  font-size: 9px;
+  font-size: 11px;
+}
+
+/* One icon scale (P3-4): call sites pass 15–21px by hand; the component
+   family, not the call site, owns icon size. */
+.button svg {
+  width: 16px;
+  height: 16px;
+}
+.rail-link svg {
+  width: 20px;
+  height: 20px;
+}
+.eyebrow svg {
+  width: 15px;
+  height: 15px;
 }
 
 .page-stage {
@@ -2493,6 +2507,10 @@ a {
 }
 
 .site-footer-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 4px;
   color: var(--navy-800);
   text-decoration: none;
 }
@@ -5922,7 +5940,8 @@ a:focus-visible {
 }
 
 .server-order-form label > small {
-  color: #a64036;
+  /* Informational hints — red reads as an error in this design system. */
+  color: var(--muted-2);
   font-size: 0.76rem;
   font-weight: 500;
 }

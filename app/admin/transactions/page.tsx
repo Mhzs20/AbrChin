@@ -3,7 +3,11 @@ import type { Metadata } from "next";
 import { DataTable, MoneyDisplay, PageHeader } from "@/components/product";
 import { getAdminPageAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
-import { ledgerDirectionLabel, ledgerTypeLabel } from "@/lib/labels/ledger";
+import {
+  ledgerDirectionLabel,
+  ledgerStatusLabel,
+  ledgerTypeLabel,
+} from "@/lib/labels/ledger";
 import { formatTomanFa } from "@/lib/money";
 
 export const metadata: Metadata = {
@@ -41,7 +45,7 @@ export default async function AdminTransactionsPage() {
       direction: ledgerDirectionLabel[entry.direction],
       amount: <MoneyDisplay amount={formatTomanFa(entry.amount)} />,
       balance: <MoneyDisplay amount={formatTomanFa(entry.balanceAfter)} />,
-      status: entry.status,
+      status: ledgerStatusLabel[entry.status],
       createdAt: new Date(entry.createdAt).toLocaleString("fa-IR"),
     },
   }));

@@ -1,6 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./conversation.css";
+// product.css is the shared component layer (buttons, sections, checkout,
+// parchin option cards). Public routes render those components too, so it
+// belongs to the root layout — importing it only in the admin/account layouts
+// left the public purchase pages with unstyled controls.
+import "./product.css";
 
 import { SiteShell } from "@/components/site-shell";
 

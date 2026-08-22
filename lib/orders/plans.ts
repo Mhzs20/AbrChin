@@ -38,10 +38,10 @@ import {
 } from "@/lib/pricing/commercial-engine";
 import {
   buildCommercialEconomicsSnapshot,
-  coerceProfitCurveConfig,
   minimumPostDiscountMarginFromConfigs,
   resolveProviderMarkupForPlan,
 } from "@/lib/pricing/profit-curve-apply";
+import { loadProfitCurveConfiguration } from "@/lib/pricing/profit-curve-store";
 import {
   calculateFinalPriceRial,
   decimalToScaledInteger,
@@ -288,31 +288,14 @@ export function toPublicPlanOffer(
 }
 
 export async function pricingConfigs() {
-  const [providers, products, commerce, parchin, profitCurveRow] =
+  const [providers, products, commerce, parchin, profitCurve] =
     await Promise.all([
       prisma.providerPricingConfig.findMany(),
       prisma.productPricingConfig.findMany({ where: { enabled: true } }),
       prisma.commercePricingConfig.findUnique({ where: { id: "default" } }),
       prisma.parchinPricingConfig.findMany({ where: { active: true } }),
-      prisma.profitCurveConfiguration.findUnique({
-        where: { id: "default" },
-        include: { bands: { orderBy: { sortOrder: "asc" } } },
-      }),
+      loadProfitCurveConfiguration(),
     ]);
-  const profitCurve = profitCurveRow
-    ? {
-        enabled: profitCurveRow.enabled,
-        minimumPostDiscountGrossMarginBps:
-          profitCurveRow.minimumPostDiscountGrossMarginBps,
-        bands: profitCurveRow.bands.map((band) => ({
-          id: band.id,
-          sortOrder: band.sortOrder,
-          minProviderCostRial: band.minProviderCostRial,
-          maxProviderCostRial: band.maxProviderCostRial,
-          targetGrossMarginBps: band.targetGrossMarginBps,
-        })),
-      }
-    : { ...coerceProfitCurveConfig(null), enabled: false };
   return { providers, products, commerce, parchin, profitCurve };
 }
 

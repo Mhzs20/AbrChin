@@ -106,16 +106,34 @@ export async function recordOperationalIncident(input: {
         lastOccurredAt: occurredAt,
       },
     });
-    await tx.adminNotification.create({
-      data: {
-        type:
-          input.notificationType ??
-          AdminNotificationType.PROVIDER_UNAVAILABLE,
+    // One unread notification per (type, title): a flapping provider must not
+    // bury real alerts under hundreds of identical rows. The incident table
+    // keeps the full occurrence history; the notification is the signal.
+    const notificationType =
+      input.notificationType ?? AdminNotificationType.PROVIDER_UNAVAILABLE;
+    const unreadTwin = await tx.adminNotification.findFirst({
+      where: {
+        type: notificationType,
         title: input.title,
-        message: input.safeMessage,
         status: AdminNotificationStatus.UNREAD,
       },
+      orderBy: { createdAt: "desc" },
     });
+    if (unreadTwin) {
+      await tx.adminNotification.update({
+        where: { id: unreadTwin.id },
+        data: { message: input.safeMessage },
+      });
+    } else {
+      await tx.adminNotification.create({
+        data: {
+          type: notificationType,
+          title: input.title,
+          message: input.safeMessage,
+          status: AdminNotificationStatus.UNREAD,
+        },
+      });
+    }
     const recipients = await alertRecipients(tx, input.severity);
     if (recipients.length > 0) {
       await tx.operationalAlertOutbox.createMany({

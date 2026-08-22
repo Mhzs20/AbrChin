@@ -12,7 +12,26 @@ import {
   parseArvanRegionCodes,
 } from "@/lib/infrastructure/arvan/regions";
 import { readyServerLocation } from "@/lib/cloud-servers/catalog";
+import { assignRegionDisplayName } from "@/lib/cloud-servers/region-naming";
 import { createParsPackProviderClient } from "@/lib/infrastructure/provider-factory";
+
+const GENERIC_REGION_LABEL = "موقعیت ابری";
+
+/**
+ * Customer display name for a newly discovered region. Curated presentation
+ * first; otherwise the automatic resolver. The provider's own label and the
+ * raw region code are never eligible — provider identity stays hidden.
+ */
+function discoveredRegionDisplayName(
+  curatedLabel: string,
+  regionCode: string,
+  existingDisplayNames: string[],
+): string {
+  if (curatedLabel && curatedLabel !== GENERIC_REGION_LABEL) {
+    return curatedLabel;
+  }
+  return assignRegionDisplayName(regionCode, existingDisplayNames);
+}
 
 const REGION_CODE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -151,6 +170,11 @@ export async function syncArvanRegionsFromProvider(input?: {
     let unchanged = 0;
     let refreshed = 0;
 
+    // All display names across providers: the numbering pool for new regions.
+    const existingNames = (
+      await tx.providerRegionConfig.findMany({ select: { displayName: true } })
+    ).map((row) => row.displayName);
+
     for (const [index, region] of discovered.entries()) {
       const presentation = arvanRegionPresentation(region.regionCode);
       const existing = await tx.providerRegionConfig.findUnique({
@@ -164,12 +188,18 @@ export async function syncArvanRegionsFromProvider(input?: {
       });
 
       if (!existing) {
+        const displayName = discoveredRegionDisplayName(
+          presentation.label,
+          region.regionCode,
+          existingNames,
+        );
+        existingNames.push(displayName);
         await tx.providerRegionConfig.create({
           data: {
             provider: InfrastructureProvider.ARVAN,
             apiVersion: "v1",
             regionCode: region.regionCode,
-            displayName: region.displayName,
+            displayName,
             source: ProviderRegionConfigSource.PROVIDER_DISCOVERY,
             syncEnabled: true,
             saleEnabled: true,
@@ -190,9 +220,14 @@ export async function syncArvanRegionsFromProvider(input?: {
         continue;
       }
 
+      // An assigned name is stable: refresh only pulls in a curated rename.
+      const nextDisplayName =
+        presentation.label !== GENERIC_REGION_LABEL
+          ? presentation.label
+          : existing.displayName;
       const nextSortOrder = presentation.sortOrder || existing.sortOrder;
       if (
-        existing.displayName === region.displayName &&
+        existing.displayName === nextDisplayName &&
         existing.sortOrder === nextSortOrder &&
         existing.lastValidationCode === "provider_region_discovered"
       ) {
@@ -203,7 +238,7 @@ export async function syncArvanRegionsFromProvider(input?: {
       await tx.providerRegionConfig.update({
         where: { id: existing.id },
         data: {
-          displayName: region.displayName,
+          displayName: nextDisplayName,
           sortOrder: nextSortOrder,
           source: ProviderRegionConfigSource.PROVIDER_DISCOVERY,
           lastValidatedAt: new Date(),
@@ -248,6 +283,11 @@ export async function syncParsPackRegionsFromProvider(input?: {
 
     const acceptedCodes: string[] = [];
 
+    // All display names across providers: the numbering pool for new regions.
+    const existingNames = (
+      await tx.providerRegionConfig.findMany({ select: { displayName: true } })
+    ).map((row) => row.displayName);
+
     for (const [index, region] of discovered.entries()) {
       let regionCode: string;
       try {
@@ -257,8 +297,8 @@ export async function syncParsPackRegionsFromProvider(input?: {
       }
       acceptedCodes.push(regionCode);
       const presentation = readyServerLocation(regionCode);
-      const displayName =
-        region.name?.trim() || presentation.label || regionCode;
+      // Curated label or the automatic resolver — never the provider's own
+      // region name (region.name), which is provider identity.
       const existing = await tx.providerRegionConfig.findUnique({
         where: {
           provider_apiVersion_regionCode: {
@@ -270,6 +310,12 @@ export async function syncParsPackRegionsFromProvider(input?: {
       });
 
       if (!existing) {
+        const displayName = discoveredRegionDisplayName(
+          presentation.label,
+          regionCode,
+          existingNames,
+        );
+        existingNames.push(displayName);
         await tx.providerRegionConfig.create({
           data: {
             provider: InfrastructureProvider.PARSPACK,
@@ -295,9 +341,14 @@ export async function syncParsPackRegionsFromProvider(input?: {
         continue;
       }
 
+      // An assigned name is stable: refresh only pulls in a curated rename.
+      const nextDisplayName =
+        presentation.label !== GENERIC_REGION_LABEL
+          ? presentation.label
+          : existing.displayName;
       const nextSortOrder = presentation.sortOrder || existing.sortOrder;
       if (
-        existing.displayName === displayName &&
+        existing.displayName === nextDisplayName &&
         existing.sortOrder === nextSortOrder &&
         existing.lastValidationCode === "provider_region_discovered"
       ) {
@@ -308,7 +359,7 @@ export async function syncParsPackRegionsFromProvider(input?: {
       await tx.providerRegionConfig.update({
         where: { id: existing.id },
         data: {
-          displayName,
+          displayName: nextDisplayName,
           sortOrder: nextSortOrder,
           source: ProviderRegionConfigSource.PROVIDER_DISCOVERY,
           lastValidatedAt: new Date(),

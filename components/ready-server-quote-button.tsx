@@ -9,6 +9,7 @@ import {
   isValidCustomerServerName,
 } from "@/lib/infrastructure/image-identity";
 import { formatStorefrontToman } from "@/lib/storefront/presentation";
+import { specGbFa, specVcpuFa } from "@/lib/labels/customer";
 
 type AccessMethod =
   | "SSH_KEY"
@@ -249,15 +250,15 @@ export function ReadyServerQuoteButton({
             <dl className="server-order-specs">
               <div>
                 <dt>پردازنده</dt>
-                <dd dir="ltr">{orderSummary.vcpu ?? "—"} vCPU</dd>
+                <dd>{specVcpuFa(orderSummary.vcpu)}</dd>
               </div>
               <div>
                 <dt>حافظه</dt>
-                <dd dir="ltr">{orderSummary.ramGb ?? "—"} GB</dd>
+                <dd>{specGbFa(orderSummary.ramGb)}</dd>
               </div>
               <div>
                 <dt>فضای دیسک</dt>
-                <dd dir="ltr">{orderSummary.storageGb ?? "—"} GB</dd>
+                <dd>{specGbFa(orderSummary.storageGb)}</dd>
               </div>
             </dl>
             <div className="server-order-parchin">

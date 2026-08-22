@@ -10,11 +10,7 @@ import {
   readyServerImageLabel,
   readyServerLocation,
 } from "@/lib/cloud-servers/catalog";
-import {
-  accessMethodLabel,
-  effectiveTermDiscountLabel,
-  termDiscountCeilingLabel,
-} from "@/lib/labels/customer";
+import { accessMethodLabel, effectiveTermDiscountLabel, specGbFa, specVcpuFa, termDiscountCeilingLabel } from "@/lib/labels/customer";
 import { formatTomanFa } from "@/lib/money";
 import { readParchinServiceSnapshot } from "@/lib/parchin/service-contract";
 import { getRecommendationGuestToken } from "@/lib/recommendation/guest-session-cookie";
@@ -138,9 +134,9 @@ export default async function ReadyServerQuotePage({
             </span>
           </div>
           <div className="ready-quote-resources">
-            <span><small>پردازنده</small><strong dir="ltr">{quote.vcpu ?? "—"} vCPU</strong></span>
-            <span><small>حافظه</small><strong dir="ltr">{quote.ramGb ?? "—"} GB</strong></span>
-            <span><small>فضای دیسک</small><strong dir="ltr">{quote.storageGb ?? "—"} GB</strong></span>
+            <span><small>پردازنده</small><strong>{specVcpuFa(quote.vcpu)}</strong></span>
+            <span><small>حافظه</small><strong>{specGbFa(quote.ramGb)}</strong></span>
+            <span><small>فضای دیسک</small><strong>{specGbFa(quote.storageGb)}</strong></span>
             <span><small>موقعیت</small><strong>{location}</strong></span>
             <span><small>سیستم‌عامل</small><strong dir="ltr">{lockedOsLabel}</strong></span>
             {accessMethod ? (

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { specGbFa, specVcpuFa } from "@/lib/labels/customer";
 
 export function ServiceChangeRequestButtons({
   instanceId,
@@ -21,10 +22,12 @@ export function ServiceChangeRequestButtons({
     currentResources &&
     (currentResources.vcpu || currentResources.ramGb || currentResources.diskGb)
       ? [
-          currentResources.vcpu != null ? `${currentResources.vcpu} vCPU` : null,
-          currentResources.ramGb != null ? `${currentResources.ramGb} GB RAM` : null,
+          currentResources.vcpu != null ? specVcpuFa(currentResources.vcpu) : null,
+          currentResources.ramGb != null
+            ? `${specGbFa(currentResources.ramGb)} رم`
+            : null,
           currentResources.diskGb != null
-            ? `${currentResources.diskGb} GB Disk`
+            ? `${specGbFa(currentResources.diskGb)} دیسک`
             : null,
         ]
           .filter(Boolean)

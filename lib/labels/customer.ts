@@ -73,3 +73,24 @@ export const SUPPORT_PRIORITY_LABELS: Record<string, string> = {
   HIGH: "بالا",
   URGENT: "فوری",
 };
+
+/**
+ * Customer-facing digit rule (P1-4): every numeral a customer reads is
+ * Persian, with two exceptions — product names (AlmaLinux 9, Ubuntu 22.04)
+ * and identifiers the customer typed (server name). Admin surfaces stay
+ * technical/Latin on purpose.
+ */
+export function faDigits(value: string | number | null | undefined): string {
+  if (value == null) return "—";
+  return String(value).replace(/[0-9]/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]!);
+}
+
+/** «۲ هسته» — customer wording matches the server title, not the admin UI. */
+export function specVcpuFa(value: number | null | undefined): string {
+  return value == null ? "—" : `${faDigits(value)} هسته`;
+}
+
+/** «۴ گیگ» for RAM and disk alike. */
+export function specGbFa(value: number | null | undefined): string {
+  return value == null ? "—" : `${faDigits(value)} گیگ`;
+}

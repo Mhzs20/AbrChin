@@ -11,8 +11,8 @@ import { storefrontLocationLabel } from "@/lib/storefront/presentation";
  *
  * Provider identity is intentionally ignored: customers never see the supplier
  * name, so a weaker/expensive twin must not survive just because it came from
- * a different provider. Meaningful recorded commercial traits (traffic, disk
- * type, IPv4/IPv6) split the market so those plans are not compared.
+ * a different provider. The same reasoning now applies to traffic, disk type
+ * and IPv4/IPv6 — invisible traits must not shield a dominated card either.
  */
 
 export type DominanceComparableTraits = {
@@ -203,16 +203,21 @@ function coerceBoolish(value: unknown): boolean | null {
   return null;
 }
 
+/**
+ * The comparable market is what the customer can actually see on the card:
+ * location, product kind and delivery mode.
+ *
+ * Traffic, disk type and IPv4/IPv6 used to split the market too. Because none
+ * of them is rendered on the card, that split let 38 of 49 cards survive while
+ * being strictly worse and more expensive than a card sitting next to them —
+ * same city, half the RAM, less disk, higher price. Put those traits back into
+ * the key only after they are visible on the card.
+ */
 export function dominanceMarketKey(candidate: DominanceCandidate): string {
-  const traits = candidate.traits;
   return [
     candidate.locationKey,
     candidate.productKind,
     candidate.deliveryMode,
-    traits.transferKey ?? "transfer:unset",
-    traits.diskTypeKey ?? "disk:unset",
-    traits.ipv4Key ?? "ipv4:unset",
-    traits.ipv6Key ?? "ipv6:unset",
   ].join("|");
 }
 

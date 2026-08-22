@@ -20,7 +20,9 @@ import {
 import { createUpgradeQuote } from "../lib/orders/upgrade-quote.ts";
 import { getActivePlanByCode, toPlanSnapshot } from "../lib/orders/plans.ts";
 import { RECOMMENDATION_QUOTE_VALIDITY_MS } from "../lib/recommendation/quote-service.ts";
-import { createUserSession } from "../lib/session.ts";
+// session-store, not session: lib/session pulls next/headers, which only
+// resolves inside a Next.js runtime — this seed runs under plain node.
+import { createUserSession } from "../lib/session-store.ts";
 import { tomanToRial } from "../lib/money.ts";
 import { decimalToScaledInteger } from "../lib/pricing/provider-pricing.ts";
 

@@ -15,11 +15,7 @@ import { ServiceCancelPanel } from "@/components/account/service-cancel-panel";
 import { SubscriptionPanel } from "@/components/account/subscription-panel";
 import { requireCustomerPage } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
-import {
-  accessMethodLabel,
-  customerBillingModelLabel,
-  effectiveTermDiscountLabel,
-} from "@/lib/labels/customer";
+import { accessMethodLabel, customerBillingModelLabel, effectiveTermDiscountLabel, specGbFa, specVcpuFa } from "@/lib/labels/customer";
 import {
   getInfrastructureStage,
   serviceOrderStatusLabel,
@@ -303,9 +299,9 @@ export default async function AccountOrderDetailPage({
   const resourcesLabel =
     vcpu || ramGb || diskGb
       ? [
-          vcpu != null ? `${vcpu} vCPU` : null,
-          ramGb != null ? `${ramGb} GB RAM` : null,
-          diskGb != null ? `${diskGb} GB Disk` : null,
+          vcpu != null ? specVcpuFa(vcpu) : null,
+          ramGb != null ? `${specGbFa(ramGb)} رم` : null,
+          diskGb != null ? `${specGbFa(diskGb)} دیسک` : null,
         ]
           .filter(Boolean)
           .join(" / ")

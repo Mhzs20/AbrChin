@@ -119,8 +119,8 @@ test("Arvan region discovery parses GET /regions into storefront-safe rows", () 
     discovered.map((row) => row.regionCode),
     ["ir-thr-si1", "eu-west1-a"],
   );
-  assert.equal(discovered[0]?.displayName, "سیمین، غرب تهران");
-  assert.equal(discovered[1]?.displayName, "گوته، آلمان");
+  assert.equal(discovered[0]?.displayName, "تهران ۱، ایران");
+  assert.equal(discovered[1]?.displayName, "اروپا");
 });
 
 test("Arvan region discovery fetch uses read-only GET /regions", async () => {
@@ -143,7 +143,7 @@ test("Arvan region discovery fetch uses read-only GET /regions", async () => {
     });
     assert.equal(request?.url, "https://napi.arvancloud.ir/ecc/v1/regions");
     assert.equal(request?.init?.method, "GET");
-    assert.equal(discovered[0]?.displayName, "قیصر، اهواز");
+    assert.equal(discovered[0]?.displayName, "اهواز ۱، ایران");
     assert.equal(discovered[1]?.displayName, "Provider Label");
   } finally {
     if (previousKey === undefined) delete process.env.ARVAN_API_KEY;

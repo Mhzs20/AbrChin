@@ -8,6 +8,7 @@ import {
   readyServerDescription,
   readyServerImageLabel,
   readyServerTitle,
+  readyServerTitleRegionSegment,
   selectReadyServerImage,
 } from "@/lib/cloud-servers/catalog";
 import { prisma } from "@/lib/db";
@@ -27,6 +28,11 @@ import {
   DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
   deriveUsageEquivalentPrices,
 } from "@/lib/pricing/commercial-engine";
+import {
+  minimumPostDiscountMarginFromConfigs,
+  resolveProviderMarkupForPlan,
+} from "@/lib/pricing/profit-curve-apply";
+import { loadProfitCurveConfiguration } from "@/lib/pricing/profit-curve-store";
 import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
 import {
   classifyStorefrontCapacityTier,
@@ -50,7 +56,6 @@ import {
 import {
   isStorefrontDisplayFresh,
   storefrontLocationLabel,
-  storefrontServerTitle,
 } from "@/lib/storefront/presentation";
 import {
   STOREFRONT_DISPLAY_LIMIT,
@@ -155,6 +160,8 @@ function toPublicOffer(input: {
   purchaseState: PublicPlanOffer["purchaseState"];
   purchasable: boolean;
   planId?: string;
+  /** The plan's stored title — the same string the quote shows. */
+  planTitle?: string;
   parchinTitle?: string;
   parchinSubtitle?: string;
   parchinSummary?: string;
@@ -179,10 +186,17 @@ function toPublicOffer(input: {
     selectReadyServerImage(imageCodes) ?? imageCodes[0] ?? "linux";
   return {
     id: input.planId ?? input.item.id,
-    title: storefrontServerTitle({
-      regionCode: input.item.regionCode,
-      index: 1,
-    }),
+    // Same name as the quote, minus the resource segment the card already
+    // shows as chips. Never a render-order counter: the customer must find
+    // the same server under the same name on the next page and the next day.
+    title: readyServerTitleRegionSegment(
+      input.planTitle ||
+        readyServerTitle({
+          regionCode: input.item.regionCode,
+          vcpu: input.item.vcpu,
+          ramMb: input.item.ramMb,
+        }),
+    ),
     description: readyServerDescription({
       regionCode: input.item.regionCode,
       imageCode,
@@ -261,6 +275,7 @@ async function loadPricingContext() {
     arvanRegions,
     parsPackRegions,
     publishedPlans,
+    profitCurve,
   ] = await Promise.all([
       prisma.providerPricingConfig.findMany(),
       prisma.productPricingConfig.findMany({ where: { enabled: true } }),
@@ -293,10 +308,13 @@ async function loadPricingContext() {
           provider: true,
           productKind: true,
           offerSource: true,
+          title: true,
+          skuMarkupBasisPoints: true,
           displayDuringProviderOutage: true,
           regionCode: true,
         },
       }),
+      loadProfitCurveConfiguration(),
     ]);
   const freshnessByProvider = {
     ARVAN: arvanFreshness,
@@ -327,6 +345,7 @@ async function loadPricingContext() {
     providers,
     products,
     commerce,
+    profitCurve,
     parchinByLevel,
     parchinTitleByLevel,
     parchinContractByLevel,
@@ -367,19 +386,52 @@ function buildOfferForItem(
   // Capacity tier and billed service tier are one storefront contract.
   const pricingParchinLevel = storefrontParchinLevel(tier);
   const customerParchinTitle = storefrontParchinTitle(tier);
-  const priced =
+  // The card price and the quote price must come from the same markup
+  // resolution. resolveConfiguredPlanPricing() in lib/orders/plans.ts is the
+  // reference implementation; the four inputs below (profit-curve markup, SKU
+  // markup override, minimum post-discount margin and the transition-band sale
+  // override) are the ones that must stay in step with it. Dropping any of
+  // them here makes the storefront advertise a price the checkout will not
+  // honour.
+  const providerCostRial = catalogItemBasePriceRial(item);
+  const curveMarkup =
     providerPricing && productPricing
-      ? resolveCatalogItemPricing(item, providerPricing, {
-          productMarkupBasisPoints: productPricing.markupBasisPoints,
-          taxBasisPoints: context.commerce?.taxBps ?? 1000,
-          parchinLevel: pricingParchinLevel,
-          parchinPriceRial:
-            context.parchinByLevel.get(pricingParchinLevel) ?? 0n,
-          parchinTitle: customerParchinTitle,
-          parchinVersion:
-            context.parchinContractByLevel.get(pricingParchinLevel)?.version,
-          termMonths: 1,
+      ? resolveProviderMarkupForPlan({
+          plan: {
+            offerSource: published?.offerSource ?? "API_CATALOG",
+            productKind: item.productKind,
+          },
+          providerMonthlyCostRial: providerCostRial ?? 0n,
+          providerConfigMarkupBps: providerPricing.markupBasisPoints,
+          profitCurve: context.profitCurve,
         })
+      : null;
+  const priced =
+    providerPricing && productPricing && curveMarkup
+      ? resolveCatalogItemPricing(
+          item,
+          { markupBasisPoints: curveMarkup.providerMarkupBps },
+          {
+            productMarkupBasisPoints:
+              published?.skuMarkupBasisPoints ??
+              productPricing.markupBasisPoints,
+            taxBasisPoints: context.commerce?.taxBps ?? 1000,
+            parchinLevel: pricingParchinLevel,
+            parchinPriceRial:
+              context.parchinByLevel.get(pricingParchinLevel) ?? 0n,
+            parchinTitle: customerParchinTitle,
+            parchinVersion:
+              context.parchinContractByLevel.get(pricingParchinLevel)?.version,
+            termMonths: 1,
+            minimumPostDiscountGrossMarginBps:
+              minimumPostDiscountMarginFromConfigs(
+                context.commerce,
+                context.profitCurve,
+              ),
+            infrastructureSaleRialOverride:
+              curveMarkup.infrastructureSaleRialOverride,
+          },
+        )
       : null;
   const fallbackTaxBasisPoints = context.commerce?.taxBps ?? 1000;
 
@@ -424,6 +476,7 @@ function buildOfferForItem(
       purchaseState: access.purchaseState,
       purchasable: access.purchasable,
       planId: published.id,
+      planTitle: published.title,
       parchinTitle,
       parchinSubtitle,
       parchinSummary,
@@ -463,23 +516,6 @@ function buildOfferForItem(
     diskTypeLabel,
     ipv4Available,
     ipv6Available,
-  });
-}
-
-function withStorefrontDisplayTitles(offers: PublicPlanOffer[]): PublicPlanOffer[] {
-  const cityCounters = new Map<string, number>();
-  return offers.map((offer) => {
-    const cityKey = storefrontLocationLabel(offer.regionCode);
-    const index = (cityCounters.get(cityKey) ?? 0) + 1;
-    cityCounters.set(cityKey, index);
-    return {
-      ...offer,
-      title: storefrontServerTitle({
-        regionCode: offer.regionCode,
-        index,
-      }),
-      locationLabel: storefrontLocationLabel(offer.regionCode),
-    };
   });
 }
 
@@ -685,7 +721,7 @@ export async function resolveStorefrontTierOffers(
 
   return {
     availableCount: capped.length,
-    offers: withStorefrontDisplayTitles(capped),
+    offers: capped,
     diagnostics,
   };
 }

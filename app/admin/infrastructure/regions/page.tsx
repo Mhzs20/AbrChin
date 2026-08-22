@@ -20,26 +20,11 @@ export default async function AdminRegionsPage() {
   const access = await getAdminPageAccess();
   if (!access.allowed) return null;
 
-  let discovery: Awaited<
-    ReturnType<typeof syncAllProviderRegionsFromProviders>
-  > | null = null;
-  let discoveryError: string | null = null;
-  try {
-    discovery = await syncAllProviderRegionsFromProviders({
-      actorUserId: access.user.id,
-    });
-    if (discovery.providers.every((row) => !row.ok)) {
-      discoveryError =
-        discovery.providers.find((row) => row.error)?.error ??
-        "provider_region_discovery_failed";
-    }
-  } catch (error) {
-    discoveryError =
-      error instanceof Error ? error.message : "provider_region_discovery_failed";
-    console.error("[admin/regions/page-discover]", discoveryError);
-  }
-
-  const [arvanRegions, parsPackRegions] = await Promise.all([
+  // Render from the stored configs. Live provider discovery is slow (multiple
+  // provider calls) and is a write — it must not run on every page view. It
+  // runs here only once, when the table has never been filled; after that the
+  // explicit «دریافت از سرویس‌دهنده» button owns it.
+  let [arvanRegions, parsPackRegions] = await Promise.all([
     listProviderRegionConfigs({
       provider: "ARVAN",
       apiVersion: "v1",
@@ -51,6 +36,39 @@ export default async function AdminRegionsPage() {
       purpose: "ALL",
     }),
   ]);
+
+  let discovery: Awaited<
+    ReturnType<typeof syncAllProviderRegionsFromProviders>
+  > | null = null;
+  let discoveryError: string | null = null;
+  if (arvanRegions.length + parsPackRegions.length === 0) {
+    try {
+      discovery = await syncAllProviderRegionsFromProviders({
+        actorUserId: access.user.id,
+      });
+      if (discovery.providers.every((row) => !row.ok)) {
+        discoveryError =
+          discovery.providers.find((row) => row.error)?.error ??
+          "provider_region_discovery_failed";
+      }
+      [arvanRegions, parsPackRegions] = await Promise.all([
+        listProviderRegionConfigs({
+          provider: "ARVAN",
+          apiVersion: "v1",
+          purpose: "ALL",
+        }),
+        listProviderRegionConfigs({
+          provider: "PARSPACK",
+          apiVersion: "v1",
+          purpose: "ALL",
+        }),
+      ]);
+    } catch (error) {
+      discoveryError =
+        error instanceof Error ? error.message : "provider_region_discovery_failed";
+      console.error("[admin/regions/page-discover]", discoveryError);
+    }
+  }
 
   const totalRegions = arvanRegions.length + parsPackRegions.length;
 

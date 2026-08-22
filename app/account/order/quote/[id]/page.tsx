@@ -15,6 +15,7 @@ import {
   toPublicRecommendationQuote,
 } from "@/lib/recommendation/quote-service";
 import { getWalletForUser } from "@/lib/wallet/ensure-wallet";
+import { specGbFa, specVcpuFa } from "@/lib/labels/customer";
 
 export const metadata: Metadata = {
   title: "بررسی و پرداخت سفارش | حساب من | ابرچین",
@@ -101,9 +102,9 @@ export default async function AccountQuoteCheckoutPage({
           </div>
 
           <dl className="account-quote-specs">
-            <div><dt>پردازنده</dt><dd dir="ltr">{quote.vcpu ?? "—"} vCPU</dd></div>
-            <div><dt>حافظه</dt><dd dir="ltr">{quote.ramGb ?? "—"} GB</dd></div>
-            <div><dt>دیسک</dt><dd dir="ltr">{quote.storageGb ?? "—"} GB</dd></div>
+            <div><dt>پردازنده</dt><dd>{specVcpuFa(quote.vcpu)}</dd></div>
+            <div><dt>حافظه</dt><dd>{specGbFa(quote.ramGb)}</dd></div>
+            <div><dt>دیسک</dt><dd>{specGbFa(quote.storageGb)}</dd></div>
             <div><dt>سیستم‌عامل</dt><dd dir="ltr">{operatingSystem}</dd></div>
             <div><dt>نام سرور</dt><dd dir="ltr">{serverName ?? "—"}</dd></div>
             <div><dt>مدت</dt><dd>{quote.termMonths.toLocaleString("fa-IR")} ماه</dd></div>

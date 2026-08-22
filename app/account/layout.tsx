@@ -1,7 +1,6 @@
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
 
-import "../product.css";
 import { CustomerShell } from "@/components/product/customer-shell";
 import { ToastProvider } from "@/components/product/toast";
 import { requireCustomerPage } from "@/lib/auth/guards";

@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 import { ParchinDetailsDialog } from "@/components/parchin-details-dialog";
 import { ReadyServerQuoteButton } from "@/components/ready-server-quote-button";
 import type { PublicPlanOffer } from "@/lib/orders/plans";
+import { specGbFa, specVcpuFa } from "@/lib/labels/customer";
 import { resolveParchinLevelLabel } from "@/lib/parchin/labels";
 import type {
   StorefrontPublicTier,
@@ -204,19 +205,19 @@ export function ChinishCloudCatalog({
                       <small>
                         <Cpu size={12} aria-hidden="true" /> پردازنده
                       </small>
-                      <strong dir="ltr">{offer.vcpu ?? "—"} vCPU</strong>
+                      <strong>{specVcpuFa(offer.vcpu)}</strong>
                     </span>
                     <span>
                       <small>
                         <MemoryStick size={12} aria-hidden="true" /> حافظه
                       </small>
-                      <strong dir="ltr">{offer.ramGb ?? "—"} GB</strong>
+                      <strong>{specGbFa(offer.ramGb)}</strong>
                     </span>
                     <span>
                       <small>
                         <Database size={12} aria-hidden="true" /> فضای دیسک
                       </small>
-                      <strong dir="ltr">{offer.storageGb ?? "—"} GB</strong>
+                      <strong>{specGbFa(offer.storageGb)}</strong>
                     </span>
                   </div>
                 </div>

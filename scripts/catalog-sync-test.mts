@@ -808,7 +808,9 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
   assert.match(priceBandMigration, /StorefrontAssortmentStyle/);
   assert.match(priceBandMigration, /noMinMonthlyPriceRial/);
   assert.match(priceBandMigration, /assortmentStyle/);
-  assert.match(presentation, /storefrontServerTitle/);
+  // The server name comes from readyServerTitle (region + resources), never
+  // from a render-order counter in the storefront layer.
+  assert.doesNotMatch(presentation, /storefrontServerTitle/);
   assert.match(presentation, /storefrontLocationLabel/);
   // Card display must be the exact billed toman — no rounding step allowed.
   assert.match(presentation, /displayTomanFromRial/);
@@ -852,15 +854,26 @@ test("storefront presentation and capacity rules stay customer-safe", async () =
     storefrontLocationLabel,
     storefrontLocationZone,
     storefrontParchinForTier,
-    storefrontServerTitle,
   } = await import("../lib/storefront/presentation.ts");
+  const { readyServerTitle, readyServerTitleRegionSegment } = await import(
+    "../lib/cloud-servers/catalog.ts"
+  );
 
   // Exact billed toman: no display rounding may change the invoice amount.
   assert.equal(displayTomanFromRial(14_530n), 1453n);
   assert.equal(displayTomanFromRial(13_200n), 1320n);
   assert.equal(storefrontCityName("tehran3"), "تهران");
   assert.equal(storefrontLocationLabel("tehran3"), "تهران ایران");
-  assert.equal(storefrontServerTitle({ regionCode: "tehran3", index: 2 }), "ابر ۲ تهران");
+  // Persian digits and a bracket pair — a middot here merges the region number
+  // and the vCPU count into one numeral for an RTL reader.
+  assert.equal(
+    readyServerTitle({ regionCode: "tehran3", vcpu: 1, ramMb: 2048 }),
+    "ابر تهران ۳ (۱ هسته / ۲ گیگ)",
+  );
+  assert.equal(
+    readyServerTitleRegionSegment("ابر تهران ۳ (۱ هسته / ۲ گیگ)"),
+    "ابر تهران ۳",
+  );
   assert.equal(storefrontLocationZone("tehran3"), "IRAN");
   assert.equal(storefrontLocationZone("ir-thr-si1"), "IRAN");
   assert.equal(storefrontLocationZone("toronto2"), "ABROAD");
