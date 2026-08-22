@@ -57,6 +57,12 @@ export function getEnv() {
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean),
+    messageGoBaseUrl: (process.env.MESSAGEGO_BASE_URL ?? "").trim(),
+    messageGoClientId: (process.env.MESSAGEGO_CLIENT_ID ?? "").trim(),
+    messageGoClientSecret: process.env.MESSAGEGO_CLIENT_SECRET ?? "",
+    messageGoTenantId: (process.env.MESSAGEGO_TENANT_ID ?? "").trim(),
+    messageGoWorkspaceId: (process.env.MESSAGEGO_WORKSPACE_ID ?? "").trim(),
+    messageGoTimeoutMs: readInt("MESSAGEGO_TIMEOUT_MS", 15_000),
     // Founder policy (2026-08-10): public sale stays open by default. The
     // provider/source gates and freshness/availability checks still prevent an
     // invalid offer from being sold, without coupling checkout to mutations.
