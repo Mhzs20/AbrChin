@@ -93,8 +93,12 @@ test("ready catalog supports Arvan fixed offers and manual Admin delivery", asyn
     readFile("lib/orders/pay-order-tx.ts", "utf8"),
     readFile("lib/infrastructure/manual-ready-delivery.ts", "utf8"),
   ]);
-  assert.match(routing, /READY_INSTANT_SERVER/);
+  // Both product kinds route to Arvan now that it is the only provider, and
+  // the module refuses anything else — the ready-server branch that used to
+  // allow a second provider is gone.
   assert.match(routing, /InfrastructureProvider\.ARVAN/);
+  assert.match(routing, /resolvedProvider !== InfrastructureProvider\.ARVAN/);
+  assert.match(routing, /provider_route_mismatch/);
   assert.match(plans, /offerSource === "MANUAL_ADMIN"/);
   assert.match(payment, /manualAvailableUnits: \{ decrement: 1 \}/);
   assert.match(delivery, /operation: "MANUAL_PROVISION"/);

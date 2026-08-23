@@ -28,7 +28,11 @@ test("stale catalogs fail closed and customer requests never trigger a full sync
   assert.doesNotMatch(quotes, /requestCatalogSync/);
   assert.match(plans, /if \(!access\.visible\) return \[\]/);
   assert.match(plans, /const purchasable = access\.purchasable && capacityAvailable/);
-  assert.match(plans, /freshness\?\.fresh === true/);
+  // The public offer list still gates on catalog freshness; the provider
+  // ternary that produced an intermediate "freshness" variable is gone now
+  // that Arvan is the only provider.
+  assert.match(plans, /catalogFresh = apiCatalog/);
+  assert.match(plans, /arvanResult\?\.fresh === true/);
   assert.match(quotes, /quote_revalidation_failed/);
 });
 
