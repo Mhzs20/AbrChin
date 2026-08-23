@@ -85,3 +85,27 @@ test("classes used on public purchase pages have a rule in a loaded stylesheet",
     );
   }
 });
+
+test("the topbar auth link never loses both its label and its icon", async () => {
+  const [css, link] = await Promise.all([
+    readFile("app/globals.css", "utf8"),
+    readFile("components/auth-nav-link.tsx", "utf8"),
+  ]);
+
+  // The control carries both class families, so a rule written for either one
+  // lands on it.
+  assert.match(link, /button-compact[^"]*auth-nav-link/);
+  assert.match(link, /<UserRound/);
+
+  // Below 860px the label is hidden and the control is icon-only…
+  assert.match(css, /\.auth-nav-link span \{\s*display: none;/);
+
+  // …so no rule may hide that icon. The compact-button icon rule hid it at
+  // 980px, which left an empty 40px box in the mobile topbar.
+  assert.doesNotMatch(
+    css,
+    /\.button-compact svg\s*\{[^}]*display:\s*none/,
+    "a bare .button-compact svg rule also hides the icon-only auth link",
+  );
+  assert.match(css, /\.button-compact:not\(\.auth-nav-link\) svg\s*\{[^}]*display:\s*none/);
+});

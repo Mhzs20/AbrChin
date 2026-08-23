@@ -2944,7 +2944,10 @@ a:focus-visible {
     font-size: 11px;
   }
 
-  .button-compact svg {
+  /* The auth link is the one compact button that goes icon-only below 860px
+     (its label is hidden there), so it must keep its icon — otherwise the
+     topbar renders an empty 40px box with no affordance at all. */
+  .button-compact:not(.auth-nav-link) svg {
     display: none;
   }
 
