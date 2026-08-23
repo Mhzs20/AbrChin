@@ -11,9 +11,7 @@ import {
   arvanRegionPresentation,
   parseArvanRegionCodes,
 } from "@/lib/infrastructure/arvan/regions";
-import { readyServerLocation } from "@/lib/cloud-servers/catalog";
 import { assignRegionDisplayName } from "@/lib/cloud-servers/region-naming";
-import { createParsPackProviderClient } from "@/lib/infrastructure/provider-factory";
 
 const GENERIC_REGION_LABEL = "موقعیت ابری";
 
@@ -259,134 +257,13 @@ export async function syncArvanRegionsFromProvider(input?: {
   });
 }
 
-/**
- * Pull every ParsPack region from public /regions into ProviderRegionConfig.
- * New rows default Sync+Sale enabled. Admin disables are never re-enabled.
- */
-export async function syncParsPackRegionsFromProvider(input?: {
-  actorUserId?: string | null;
-}) {
-  const client = createParsPackProviderClient();
-  const discovered = await client.listRegions();
-  const actorUserId = input?.actorUserId ?? null;
-
-  return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`
-      SELECT pg_advisory_xact_lock(
-        hashtextextended(${"provider-region-discovery:PARSPACK:v1"}, 0)
-      )::text AS locked
-    `;
-
-    let created = 0;
-    let unchanged = 0;
-    let refreshed = 0;
-
-    const acceptedCodes: string[] = [];
-
-    // All display names across providers: the numbering pool for new regions.
-    const existingNames = (
-      await tx.providerRegionConfig.findMany({ select: { displayName: true } })
-    ).map((row) => row.displayName);
-
-    for (const [index, region] of discovered.entries()) {
-      let regionCode: string;
-      try {
-        regionCode = normalizeProviderRegionCode(region.code);
-      } catch {
-        continue;
-      }
-      acceptedCodes.push(regionCode);
-      const presentation = readyServerLocation(regionCode);
-      // Curated label or the automatic resolver — never the provider's own
-      // region name (region.name), which is provider identity.
-      const existing = await tx.providerRegionConfig.findUnique({
-        where: {
-          provider_apiVersion_regionCode: {
-            provider: InfrastructureProvider.PARSPACK,
-            apiVersion: "v1",
-            regionCode,
-          },
-        },
-      });
-
-      if (!existing) {
-        const displayName = discoveredRegionDisplayName(
-          presentation.label,
-          regionCode,
-          existingNames,
-        );
-        existingNames.push(displayName);
-        await tx.providerRegionConfig.create({
-          data: {
-            provider: InfrastructureProvider.PARSPACK,
-            apiVersion: "v1",
-            regionCode,
-            displayName,
-            source: ProviderRegionConfigSource.PROVIDER_DISCOVERY,
-            syncEnabled: true,
-            saleEnabled: true,
-            sortOrder: presentation.sortOrder || index,
-            lastValidatedAt: new Date(),
-            lastValidationCode: "provider_region_discovered",
-            createdById: actorUserId,
-            updatedById: actorUserId,
-          },
-        });
-        created += 1;
-        continue;
-      }
-
-      if (existing.source === ProviderRegionConfigSource.ADMIN) {
-        unchanged += 1;
-        continue;
-      }
-
-      // An assigned name is stable: refresh only pulls in a curated rename.
-      const nextDisplayName =
-        presentation.label !== GENERIC_REGION_LABEL
-          ? presentation.label
-          : existing.displayName;
-      const nextSortOrder = presentation.sortOrder || existing.sortOrder;
-      if (
-        existing.displayName === nextDisplayName &&
-        existing.sortOrder === nextSortOrder &&
-        existing.lastValidationCode === "provider_region_discovered"
-      ) {
-        unchanged += 1;
-        continue;
-      }
-
-      await tx.providerRegionConfig.update({
-        where: { id: existing.id },
-        data: {
-          displayName: nextDisplayName,
-          sortOrder: nextSortOrder,
-          source: ProviderRegionConfigSource.PROVIDER_DISCOVERY,
-          lastValidatedAt: new Date(),
-          lastValidationCode: "provider_region_discovered",
-          updatedById: actorUserId,
-        },
-      });
-      refreshed += 1;
-    }
-
-    return {
-      discoveredCount: acceptedCodes.length,
-      created,
-      refreshed,
-      unchanged,
-      regionCodes: acceptedCodes,
-    };
-  });
-}
-
-/** Discover regions for every Launch provider (Arvan + ParsPack). */
+/** Discover regions for the Launch provider (ArvanCloud). */
 export async function syncAllProviderRegionsFromProviders(input?: {
   actorUserId?: string | null;
 }) {
   const actorUserId = input?.actorUserId ?? null;
   const results: Array<{
-    provider: "ARVAN" | "PARSPACK";
+    provider: "ARVAN";
     ok: boolean;
     discovery?: Awaited<ReturnType<typeof syncArvanRegionsFromProvider>>;
     error?: string;
@@ -401,20 +278,6 @@ export async function syncAllProviderRegionsFromProviders(input?: {
   } catch (error) {
     results.push({
       provider: "ARVAN",
-      ok: false,
-      error: error instanceof Error ? error.message : "provider_region_discovery_failed",
-    });
-  }
-
-  try {
-    results.push({
-      provider: "PARSPACK",
-      ok: true,
-      discovery: await syncParsPackRegionsFromProvider({ actorUserId }),
-    });
-  } catch (error) {
-    results.push({
-      provider: "PARSPACK",
       ok: false,
       error: error instanceof Error ? error.message : "provider_region_discovery_failed",
     });

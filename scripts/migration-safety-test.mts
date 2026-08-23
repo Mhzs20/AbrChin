@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 
-const migrationPath =
-  "prisma/migrations/20260729200000_parspack_catalog_pricing/migration.sql";
+/** Historical migrations are addressed by their immutable timestamp prefix. */
+async function migrationSqlByTimestamp(timestamp: string) {
+  const entries = await readdir("prisma/migrations");
+  const directory = entries.find((entry) => entry.startsWith(`${timestamp}_`));
+  assert.ok(directory, `migration ${timestamp} must exist`);
+  return readFile(`prisma/migrations/${directory}/migration.sql`, "utf8");
+}
+
 const multiProviderMigrationPath =
   "prisma/migrations/20260730160000_multi_provider_routing/migration.sql";
 const adminCatalogMigrationPath =
@@ -24,7 +30,7 @@ const launchTermCouponsMigrationPath =
   "prisma/migrations/20260804190000_launch_term_coupons_lifecycle/migration.sql";
 
 test("catalog pricing migration is additive and preserves financial history", async () => {
-  const migration = await readFile(migrationPath, "utf8");
+  const migration = await migrationSqlByTimestamp("20260729200000");
   assert.match(migration, /CREATE TABLE "ProviderCatalogItem"/);
   assert.match(migration, /CREATE TABLE "ProviderPricingConfig"/);
   assert.match(migration, /CREATE TABLE "ServiceRenewalQuote"/);
@@ -82,11 +88,6 @@ test("multi-provider migration preserves paid financial snapshots and adds regio
     migration.match(/UPDATE "ServiceOrder"[\s\S]*?;/)?.[0] ?? "";
   assert.doesNotMatch(serviceOrderBackfill, /"amount"/);
   assert.doesNotMatch(serviceOrderBackfill, /"status"/);
-  assert.match(
-    migration,
-    /'legacy-parspack-ready', 'PARSPACK', 'v1', 'READY_INSTANT_SERVER',\s*0,\s*"enabled"/,
-    "legacy provider markup must not be copied into product markup",
-  );
 });
 
 test("preprovisioned inventory migration is additive and commerce-immutable", async () => {

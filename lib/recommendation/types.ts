@@ -168,7 +168,7 @@ export type PublicRecommendationQuote = {
 export type ProviderOffer = {
   id: string;
   planId: string;
-  provider: "PARSPACK" | "ARVAN";
+  provider: "ARVAN";
   providerLabel: string;
   regionCode: string;
   countryCode: "IR";

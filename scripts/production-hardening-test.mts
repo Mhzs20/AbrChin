@@ -53,15 +53,15 @@ async function seedInfra(mobile: string, suffix: string) {
   const db = prisma!;
   await db.user.deleteMany({ where: { mobile } });
   const delivery = {
-    provider: InfrastructureProvider.PARSPACK,
+    provider: InfrastructureProvider.ARVAN,
     providerApiVersion: "v1",
     productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
     region: "tehran11",
     externalPlanId: "irLinuxVPS4",
     externalImageId: "ubuntu24-cloudinit-qcow2",
-    externalNetworkId: null,
-    externalSecurityId: null,
-    topologyVerificationMode: "PROVIDER_MANAGED",
+    externalNetworkId: "network-1",
+    externalSecurityId: "security-1",
+    topologyVerificationMode: "STRICT_OBSERVED",
     accessMethod: "ONE_TIME_PASSWORD",
     sshKeyName: null,
     initScript: null,
@@ -69,7 +69,7 @@ async function seedInfra(mobile: string, suffix: string) {
   const plan = await db.infrastructurePlan.upsert({
     where: { code: "DEV_STARTER" },
     update: {
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       providerApiVersion: "v1",
       productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
       deliveryMode: "MANAGED",
@@ -79,7 +79,7 @@ async function seedInfra(mobile: string, suffix: string) {
     create: {
       code: "DEV_STARTER",
       title: "شروع",
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       providerApiVersion: "v1",
       productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
       regionCode: "tehran11",
@@ -110,7 +110,7 @@ async function seedInfra(mobile: string, suffix: string) {
       planId: plan.id,
       planCode: plan.code,
       paidAt: new Date(),
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       providerApiVersion: "v1",
       productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
       parchinLevel: "PARCHIN_START",
@@ -122,7 +122,7 @@ async function seedInfra(mobile: string, suffix: string) {
       serviceOrderId: serviceOrder.id,
       userId: user.id,
       planId: plan.id,
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       providerApiVersion: "v1",
       productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
       parchinLevel: "PARCHIN_START",
@@ -169,7 +169,7 @@ test("failure before create leaves order retryable without cloud instance", asyn
   const mobile = "09128883001";
   const { infra, job } = await seedInfra(mobile, "pre");
   const provider = new FakeCloudProviderAdapter({
-    provider: InfrastructureProvider.PARSPACK,
+    provider: InfrastructureProvider.ARVAN,
     createBehavior: "insufficient_balance",
   });
   const claimed = await claimNextProvisioningJob("worker-a");
@@ -217,7 +217,7 @@ test("timeout after create marks NEEDS_RECONCILIATION without second create", as
     }),
   ]);
   const provider = new FakeCloudProviderAdapter({
-    provider: InfrastructureProvider.PARSPACK,
+    provider: InfrastructureProvider.ARVAN,
     createBehavior: "timeout_after_accept",
   });
   await processProvisioningJob(job.id, provider, {
@@ -268,7 +268,7 @@ test("refund blocked for active cloud instance", async (t) => {
     data: {
       infrastructureOrderId: infra.id,
       userId: user.id,
-      provider: "PARSPACK",
+      provider: "ARVAN",
       providerInstanceId: "vm_test_1",
       name: "test",
       region: "tehran11",
@@ -476,7 +476,7 @@ test("deploy treats ENV_FILE as dotenv not bash and survives Bearer tokens", asy
     await writeFile(
       envPath,
       [
-        "PARSPACK_API_TOKEN=Bearer token-value",
+        "ARVAN_API_KEY=Bearer token-value",
         "DATABASE_URL=postgresql://abrchin:x@db:5432/abrchin",
         "ABRCHIN_IMAGE=abrchin:deadbeefcafe",
         "",

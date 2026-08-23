@@ -188,33 +188,6 @@ test("provider-managed topology still requires active state, IPv4 and observatio
   );
 });
 
-test("ParsPack paid snapshots normalize legacy defaults to provider-managed topology", () => {
-  const delivery = {
-    provider: InfrastructureProvider.PARSPACK,
-    providerApiVersion: "v1",
-    productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
-    region: "tehran",
-    externalPlanId: "s1",
-    externalImageId: "ubuntu",
-    externalNetworkId: "provider-default",
-    externalSecurityId: "provider-default",
-    accessMethod: "ONE_TIME_PASSWORD",
-  };
-  const parsed = parseLockedProvisioningSelection({
-    snapshot: {
-      ...delivery,
-      deliveryConfiguration: delivery,
-    },
-    provider: InfrastructureProvider.PARSPACK,
-    providerApiVersion: "v1",
-    productKind:
-      InfrastructureProductKind.READY_INSTANT_SERVER,
-  });
-  assert.equal(parsed.topologyVerificationMode, "PROVIDER_MANAGED");
-  assert.equal(parsed.externalNetworkId, null);
-  assert.equal(parsed.externalSecurityId, null);
-});
-
 test("Arvan SSH key validation uses the official read-only v1 endpoint", async () => {
   const requests: Array<{ url: string; method: string }> = [];
   const adapter = new ArvanV1Adapter({

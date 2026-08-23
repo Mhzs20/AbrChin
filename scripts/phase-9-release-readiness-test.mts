@@ -56,7 +56,6 @@ test("production templates keep public sale open and mutations fail closed", asy
     ]);
   for (const key of [
     "PUBLIC_SALE_ENABLED",
-    "PARSPACK_PUBLIC_SALE_ENABLED",
     "ARVAN_PUBLIC_SALE_ENABLED",
     "ARVAN_READY_PUBLIC_SALE_ENABLED",
     "ARVAN_CLOUD_PUBLIC_SALE_ENABLED",
@@ -66,10 +65,7 @@ test("production templates keep public sale open and mutations fail closed", asy
     assert.match(production, new RegExp(`^${key}=true$`, "m"));
     assert.ok(compose.includes(`${key}: \${${key}:-true}`));
   }
-  for (const key of [
-    "PARSPACK_MUTATIONS_ENABLED",
-    "ARVAN_MUTATIONS_ENABLED",
-  ]) {
+  for (const key of ["ARVAN_MUTATIONS_ENABLED"]) {
     assert.match(development, new RegExp(`^${key}=false$`, "m"));
     assert.match(production, new RegExp(`^${key}=false$`, "m"));
     assert.ok(compose.includes(`${key}: \${${key}:-false}`));

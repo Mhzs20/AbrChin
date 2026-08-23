@@ -140,15 +140,15 @@ test("Parchin has no global evidence flag and relies on contract-scoped operatio
   const previous = {
     NODE_ENV: process.env.NODE_ENV,
     PUBLIC_SALE_ENABLED: process.env.PUBLIC_SALE_ENABLED,
-    PARSPACK_PUBLIC_SALE_ENABLED: process.env.PARSPACK_PUBLIC_SALE_ENABLED,
+    ARVAN_PUBLIC_SALE_ENABLED: process.env.ARVAN_PUBLIC_SALE_ENABLED,
   };
   try {
     process.env.NODE_ENV = "production";
     process.env.PUBLIC_SALE_ENABLED = "true";
-    process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
+    process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
     assert.deepEqual(
       getPublicSaleDecision({
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         offerSource: InfrastructureOfferSource.API_CATALOG,
         productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
       }),

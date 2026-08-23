@@ -64,7 +64,7 @@ cd "$APP_DIR"
 [[ -x ./ops/backup-postgres.sh || -f ./ops/backup-postgres.sh ]] || die "ops/backup-postgres.sh missing"
 
 # ENV_FILE is a Docker Compose dotenv, not a Bash script.
-# Never `source` / `.` it: values such as `PARSPACK_API_TOKEN=Bearer …` are
+# Never `source` / `.` it: values such as `ARVAN_API_KEY=Apikey …` are
 # legal for Compose but are NOT valid shell assignments and will break deploy
 # before build/migration. App and DB secrets load only through:
 #   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ...

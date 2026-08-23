@@ -12,8 +12,6 @@ test("production placeholders keep public sale open and provider mutations close
   const productionEnv = await source(".env.production.example");
   for (const key of [
     "PUBLIC_SALE_ENABLED=true",
-    "PARSPACK_PUBLIC_SALE_ENABLED=true",
-    "PARSPACK_MUTATIONS_ENABLED=false",
     "ARVAN_PUBLIC_SALE_ENABLED=true",
     "ARVAN_READY_PUBLIC_SALE_ENABLED=true",
     "ARVAN_CLOUD_PUBLIC_SALE_ENABLED=true",

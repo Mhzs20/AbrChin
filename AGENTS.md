@@ -8,7 +8,7 @@
 
 این سند برای فاز ۱ LOCKED است. هیچ Agentی مجاز نیست بدون دستور صریح Founder موارد زیر را تغییر، تفسیر مجدد یا دور بزند:
 
-- مدل تأمین Arvan / ParsPack / AbrChin Inventory
+- مدل تأمین Arvan / AbrChin Inventory
 - مدل SKU و Markup
 - جریان Customer تا Payment
 - تأیید اول Admin برای Provision
@@ -88,7 +88,7 @@
 
 ## Provider and SKU Rules
 
-- منابع اصلی فعلی Arvan و ParsPack هستند.
+- تنها Provider زیرساخت فعلی Arvan است.
 - AbrChin Inventory منبع قابل پشتیبانی است، نه پیش‌فرض Launch.
 - Catalog Provider هیچ‌وقت Auto-publish نمی‌شود.
 - Admin SKU منتخب را می‌سازد/Map می‌کند، Markup را تعیین و سپس Publish می‌کند.
@@ -117,5 +117,5 @@ Stack: Next.js 16 (Turbopack) + React 19 + Prisma 6 + PostgreSQL 16 monolith on 
 - Apply schema after Postgres is up: `npx prisma migrate deploy` (migrations are intentionally NOT part of the startup update script).
 - Web dev server: `npm run dev` → `http://localhost:3010`. Liveness is `/api/health`; readiness is `/api/readiness`.
 - Worker: there is no npm run script to launch it. Build with `npm run build:worker`, then run `node dist/worker/provisioning-worker.js` with the env loaded (e.g. `set -a; . ./.env; set +a; node dist/worker/provisioning-worker.js`). It has no HTTP port; it heartbeats via the DB and `/api/readiness` reports the worker `degraded/outage` when it is not running.
-- Expected dev readiness: `/api/readiness` returns `degraded` with `billingContracts: stale` because provider billing contracts are unverified without real Arvan/ParsPack credentials. This is normal in dev; `web`, `database`, `provisioningWorker`, and `billingCatchUp` should be `healthy`.
+- Expected dev readiness: `/api/readiness` returns `degraded` with `billingContracts: stale` because provider billing contracts are unverified without real Arvan credentials. This is normal in dev; `web`, `database`, `provisioningWorker`, and `billingCatchUp` should be `healthy`.
 - OTP login in dev uses `SMS_PROVIDER=console`, so the login code is printed to the web server console, not sent by SMS. Find it with a `[sms:console]` log line (e.g. `otp=NNNNNN`). Providers/payments default to mock/fail-closed gates, so no external credentials are needed for local dev.

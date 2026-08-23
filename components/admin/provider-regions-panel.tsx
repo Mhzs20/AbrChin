@@ -36,7 +36,7 @@ export function ProviderRegionsPanel({
   initialDiscovery = null,
   initialDiscoveryError = null,
 }: {
-  provider?: "ARVAN" | "PARSPACK";
+  provider?: "ARVAN";
   providerLabel?: string;
   initialRegions: RegionRow[];
   initialDiscovery?: DiscoverySummary | null;
@@ -185,7 +185,7 @@ export function ProviderRegionsPanel({
               id={`provider-region-code-${provider}`}
               value={regionCode}
               onChange={(event) => setRegionCode(event.target.value)}
-              placeholder={provider === "PARSPACK" ? "tehran2" : "ir-thr-si1"}
+              placeholder="ir-thr-si1"
             />
           </FormField>
           <FormField
@@ -196,9 +196,7 @@ export function ProviderRegionsPanel({
               id={`provider-region-name-${provider}`}
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
-              placeholder={
-                provider === "PARSPACK" ? "تهران ۲، ایران" : "سیمین، غرب تهران"
-              }
+              placeholder="سیمین، غرب تهران"
             />
           </FormField>
           <button

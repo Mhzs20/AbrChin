@@ -24,7 +24,6 @@ import {
 } from "@prisma/client";
 
 import { FakeCloudProviderAdapter } from "../lib/infrastructure/fake-cloud-provider-adapter.ts";
-import { calculateQuotePricing } from "../lib/pricing/quote-line-items.ts";
 import { allowAdminMobile } from "./test-admin-allowlist.mts";
 
 const execFileAsync = promisify(execFile);
@@ -129,42 +128,8 @@ const db = new PrismaClient({
 });
 let flowDb: PrismaClient | null = null;
 try {
-  await executeStatements(db, `
-    INSERT INTO "ProviderPricingConfig" (
-      "id", "provider", "markupBasisPoints", "updatedAt"
-    ) VALUES (
-      'parspack', 'PARSPACK', 2500, CURRENT_TIMESTAMP
-    )
-    ON CONFLICT ("provider") DO UPDATE
-    SET "markupBasisPoints" = EXCLUDED."markupBasisPoints",
-        "updatedAt" = EXCLUDED."updatedAt"
-  `);
-
   await copyThrough(multiProvider);
   await deploy();
-  const pricing = await db.$queryRawUnsafe<
-    Array<{ providerMarkup: number; productMarkup: number }>
-  >(`
-    SELECT p."markupBasisPoints" AS "providerMarkup",
-           k."markupBasisPoints" AS "productMarkup"
-    FROM "ProviderPricingConfig" p
-    JOIN "ProductPricingConfig" k
-      ON k."provider" = p."provider"
-    WHERE p."provider" = 'PARSPACK'
-      AND k."productKind" = 'READY_INSTANT_SERVER'
-  `);
-  assert.deepEqual(pricing, [
-    { providerMarkup: 2500, productMarkup: 0 },
-  ]);
-  const calculated = calculateQuotePricing({
-    providerMonthlyPriceIrr: 5_000_000n,
-    providerMarkupBps: pricing[0]!.providerMarkup,
-    productMarkupBps: pricing[0]!.productMarkup,
-    parchinLevel: "PARCHIN_START",
-    parchinPriceIrr: 0n,
-    taxBps: 0,
-  });
-  assert.equal(calculated.markupAmountIrr, 1_250_000n);
 
   await executeStatements(db, `
     INSERT INTO "User" (
@@ -187,11 +152,11 @@ try {
       "externalKey", status, "providerMonthlyPriceIrr", "lastSeenAt",
       "rawPayload", "payloadHash", "catalogVersion"
     ) VALUES (
-      'migration-catalog', 'PARSPACK', 'tehran', 's1', 'S1',
+      'migration-catalog', 'ARVAN', 'tehran', 's1', 'S1',
       '["ubuntu"]', 2, 2048, 40, true, true,
       5000000, 'IRR', 'RIAL', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
       'v1', 'READY_INSTANT_SERVER', 's1',
-      'parspack:v1:tehran:s1', 'ACTIVE', 5000000,
+      'arvan:v1:tehran:s1', 'ACTIVE', 5000000,
       CURRENT_TIMESTAMP, '{}', 'payload-hash', 'catalog-v1'
     );
     INSERT INTO "InfrastructurePlan" (
@@ -202,7 +167,7 @@ try {
       "catalogMappingStatus", "providerApiVersion", "productKind",
       "minimumParchinLevel"
     ) VALUES (
-      'migration-plan', 'MIGRATION_PLAN', 'Migration Plan', 'PARSPACK',
+      'migration-plan', 'MIGRATION_PLAN', 'Migration Plan', 'ARVAN',
       'tehran', 's1', 'ubuntu', 'MANAGED', 6250000, 5000000,
       true, CURRENT_TIMESTAMP, 2, 2, 40, 6250000, true,
       'migration-catalog', 'MAPPED', 'v1', 'READY_INSTANT_SERVER',
@@ -243,7 +208,7 @@ try {
         'quote-valid', 'legacy-valid', 'migration-plan', 'RECOMMENDED',
         'SELECTED', 100, '{}', '[]', '{}',
         jsonb_build_object('deliveryConfiguration', jsonb_build_object(
-          'provider','PARSPACK','providerApiVersion','v1',
+          'provider','ARVAN','providerApiVersion','v1',
           'productKind','READY_INSTANT_SERVER','region','tehran',
           'externalPlanId','s1','externalImageId','ubuntu',
           'externalNetworkId','provider-default',
@@ -251,7 +216,7 @@ try {
           'accessMethod','ONE_TIME_PASSWORD','imageAssetId','legacy-image'
         )),
         6250000, 6250000, 'migration-catalog', 5000000, 2500,
-        6250000, 'IRR', CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        6250000, 'IRR', CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'tehran', 's1', 'ubuntu',
         'provider-default', 'provider-default', 2, 2048, 40, 'Ubuntu',
         5000000, 1250000, 'PARCHIN_START', 0, '[]', 0, 0, '[]',
@@ -262,7 +227,7 @@ try {
         'quote-incomplete', 'legacy-incomplete', 'migration-plan',
         'RECOMMENDED', 'ACTIVE', 100, '{}', '[]', '{}', '{}',
         6250000, 6250000, 'migration-catalog', 5000000, 2500,
-        6250000, 'IRR', CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        6250000, 'IRR', CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'tehran', 's1', 'ubuntu',
         NULL, NULL, 2, 2048, 40, 'Ubuntu',
         5000000, 1250000, 'PARCHIN_START', 0, '[]', 0, 0, '[]',
@@ -273,7 +238,7 @@ try {
         'quote-expired', 'legacy-expired', 'migration-plan', 'RECOMMENDED',
         'ACTIVE', 100, '{}', '[]', '{}', '{}',
         6250000, 6250000, 'migration-catalog', 5000000, 2500,
-        6250000, 'IRR', CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        6250000, 'IRR', CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'tehran', 's1', 'ubuntu',
         NULL, NULL, 2, 2048, 40, 'Ubuntu',
         5000000, 1250000, 'PARCHIN_START', 0, '[]', 0, 0, '[]',
@@ -284,7 +249,7 @@ try {
         'quote-no-order', 'legacy-no-order', 'migration-plan', 'RECOMMENDED',
         'ACTIVE', 100, '{}', '[]', '{}', '{}',
         6250000, 6250000, 'migration-catalog', 5000000, 2500,
-        6250000, 'IRR', CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        6250000, 'IRR', CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'tehran', 's1', 'ubuntu',
         NULL, NULL, 2, 2048, 40, 'Ubuntu',
         5000000, 1250000, 'PARCHIN_START', 0, '[]', 0, 0, '[]',
@@ -295,7 +260,7 @@ try {
         'quote-paid', 'legacy-paid', 'migration-plan', 'RECOMMENDED',
         'CONVERTED', 100, '{}', '[]', '{}', '{}',
         6250000, 6250000, 'migration-catalog', 5000000, 2500,
-        6250000, 'IRR', CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        6250000, 'IRR', CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'tehran', 's1', 'ubuntu',
         'provider-default', 'provider-default', 2, 2048, 40, 'Ubuntu',
         5000000, 1250000, 'PARCHIN_START', 0, '[]', 0, 0, '[]',
@@ -369,22 +334,22 @@ try {
     ) VALUES
       ('order-valid', 'migration-user', 'Valid', 6250000,
        'PENDING_PAYMENT', 'migration-plan', '{}', 'quote-valid',
-       CURRENT_TIMESTAMP + INTERVAL '10 minutes', 'PARSPACK', 'v1',
+       CURRENT_TIMESTAMP + INTERVAL '10 minutes', 'ARVAN', 'v1',
        'READY_INSTANT_SERVER', 'PARCHIN_START', 'DRAFT', NULL,
        CURRENT_TIMESTAMP),
       ('order-incomplete', 'migration-user', 'Incomplete', 6250000,
        'PENDING_PAYMENT', 'migration-plan', '{}', 'quote-incomplete',
-       CURRENT_TIMESTAMP + INTERVAL '10 minutes', 'PARSPACK', 'v1',
+       CURRENT_TIMESTAMP + INTERVAL '10 minutes', 'ARVAN', 'v1',
        'READY_INSTANT_SERVER', 'PARCHIN_START', 'AWAITING_PAYMENT', NULL,
        CURRENT_TIMESTAMP),
       ('order-expired', 'migration-user', 'Expired', 6250000,
        'PENDING_PAYMENT', 'migration-plan', '{}', 'quote-expired',
-       CURRENT_TIMESTAMP - INTERVAL '10 minutes', 'PARSPACK', 'v1',
+       CURRENT_TIMESTAMP - INTERVAL '10 minutes', 'ARVAN', 'v1',
        'READY_INSTANT_SERVER', 'PARCHIN_START', 'AWAITING_PAYMENT', NULL,
        CURRENT_TIMESTAMP),
       ('order-paid', 'migration-user', 'Paid', 6250000, 'PAID',
        'migration-plan', '{"immutable":"paid"}', 'quote-paid',
-       CURRENT_TIMESTAMP - INTERVAL '1 hour', 'PARSPACK', 'v1',
+       CURRENT_TIMESTAMP - INTERVAL '1 hour', 'ARVAN', 'v1',
        'READY_INSTANT_SERVER', 'PARCHIN_START', 'PAID',
        CURRENT_TIMESTAMP - INTERVAL '1 hour', CURRENT_TIMESTAMP);
 
@@ -403,7 +368,7 @@ try {
       status, "requiredFundingRial", "updatedAt"
     ) VALUES (
       'infra-paid', 'order-paid', 'migration-user', 'migration-plan',
-      'PARSPACK', 'v1', 'READY_INSTANT_SERVER', 'PARCHIN_START',
+      'ARVAN', 'v1', 'READY_INSTANT_SERVER', 'PARCHIN_START',
       '{"immutable":"paid"}', 'DRAFT', 'MANAGED', 'QUEUED',
       5000000, CURRENT_TIMESTAMP
     );
@@ -469,7 +434,7 @@ try {
         'order-refunded', 'migration-user', 'Refunded', 6250000,
         'REFUNDED', 'migration-plan', '{"immutable":"refund-order"}',
         'quote-refunded', CURRENT_TIMESTAMP + INTERVAL '10 minutes',
-        'PARSPACK', 'v1', 'READY_INSTANT_SERVER', 'PARCHIN_START',
+        'ARVAN', 'v1', 'READY_INSTANT_SERVER', 'PARCHIN_START',
         'CANCELLED', CURRENT_TIMESTAMP - INTERVAL '1 hour',
         CURRENT_TIMESTAMP
       ),
@@ -477,7 +442,7 @@ try {
         'order-canceled', 'migration-user', 'Canceled', 6250000,
         'CANCELED', 'migration-plan', '{"immutable":"cancel-order"}',
         'quote-canceled', CURRENT_TIMESTAMP + INTERVAL '10 minutes',
-        'PARSPACK', 'v1', 'READY_INSTANT_SERVER', 'PARCHIN_START',
+        'ARVAN', 'v1', 'READY_INSTANT_SERVER', 'PARCHIN_START',
         'CANCELLED', NULL, CURRENT_TIMESTAMP
       );
 
@@ -489,14 +454,14 @@ try {
     ) VALUES
       (
         'infra-refunded', 'order-refunded', 'migration-user',
-        'migration-plan', 'PARSPACK', 'v1',
+        'migration-plan', 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START',
         '{"immutable":"refund-provider"}', 'CANCELLED',
         'MANAGED', 'REFUNDED', 5000000, CURRENT_TIMESTAMP
       ),
       (
         'infra-canceled', 'order-canceled', 'migration-user',
-        'migration-plan', 'PARSPACK', 'v1',
+        'migration-plan', 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START',
         '{"immutable":"cancel-provider"}', 'CANCELLED',
         'MANAGED', 'CANCELED', 5000000, CURRENT_TIMESTAMP
@@ -763,21 +728,21 @@ try {
       (
         'v4-order-refund', 'migration-user', 'V4 Refund', 6250000,
         'REFUNDED', 'migration-plan', '{"immutable":"v4-refund"}',
-        'v4-quote-refund', CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        'v4-quote-refund', CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', 'CANCELLED', 4,
         CURRENT_TIMESTAMP - INTERVAL '1 hour', CURRENT_TIMESTAMP
       ),
       (
         'v4-order-paid', 'migration-user', 'V4 Paid', 6250000,
         'PAID', 'migration-plan', '{"immutable":"v4-paid"}',
-        'v4-quote-paid', CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        'v4-quote-paid', CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', 'ACTIVE', 10,
         CURRENT_TIMESTAMP - INTERVAL '1 hour', CURRENT_TIMESTAMP
       ),
       (
         'v4-order-cancel', 'migration-user', 'V4 Cancel', 6250000,
         'CANCELED', 'migration-plan', '{"immutable":"v4-cancel"}',
-        'v4-quote-cancel', CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        'v4-quote-cancel', CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', 'CANCELLED', 5,
         NULL, CURRENT_TIMESTAMP
       ),
@@ -785,7 +750,7 @@ try {
         'v4-order-pending', 'migration-user', 'V4 Pending', 6250000,
         'PENDING_PAYMENT', 'migration-plan',
         '{"immutable":"v4-pending"}', 'v4-quote-pending',
-        CURRENT_TIMESTAMP + INTERVAL '10 minutes', 'PARSPACK', 'v1',
+        CURRENT_TIMESTAMP + INTERVAL '10 minutes', 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START',
         'AWAITING_PAYMENT', 12, NULL, CURRENT_TIMESTAMP
       ),
@@ -793,7 +758,7 @@ try {
         'v4-order-terminal-a', 'migration-user', 'V4 Terminal A',
         6250000, 'REFUNDED', 'migration-plan',
         '{"immutable":"v4-terminal-a"}', 'v4-quote-terminal-a',
-        CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', 'CANCELLED', 7,
         CURRENT_TIMESTAMP - INTERVAL '1 hour', CURRENT_TIMESTAMP
       ),
@@ -801,21 +766,21 @@ try {
         'v4-order-terminal-b', 'migration-user', 'V4 Terminal B',
         6250000, 'CANCELED', 'migration-plan',
         '{"immutable":"v4-terminal-b"}', 'v4-quote-terminal-b',
-        CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', 'CANCELLED', 9,
         NULL, CURRENT_TIMESTAMP
       ),
       (
         'v4-order-correct-a', 'migration-user', 'V4 Correct A',
         6250000, 'REFUNDED', 'migration-plan', '{}',
-        'v4-quote-correct-a', CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        'v4-quote-correct-a', CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', 'CANCELLED', 20,
         CURRENT_TIMESTAMP - INTERVAL '1 hour', CURRENT_TIMESTAMP
       ),
       (
         'v4-order-correct-b', 'migration-user', 'V4 Correct B',
         6250000, 'CANCELED', 'migration-plan', '{}',
-        'v4-quote-correct-b', CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        'v4-quote-correct-b', CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', 'CANCELLED', 20,
         NULL, CURRENT_TIMESTAMP
       ),
@@ -823,7 +788,7 @@ try {
         'v4-order-conflict-refund', 'migration-user',
         'V4 Conflict Refund', 6250000, 'REFUNDED',
         'migration-plan', '{}', 'v4-quote-conflict-refund',
-        CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', 'CANCELLED', 3,
         CURRENT_TIMESTAMP - INTERVAL '1 hour', CURRENT_TIMESTAMP
       ),
@@ -831,7 +796,7 @@ try {
         'v4-order-conflict-paid', 'migration-user',
         'V4 Conflict Paid', 6250000, 'PAID',
         'migration-plan', '{}', 'v4-quote-conflict-paid',
-        CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', 'ACTIVE', 30,
         CURRENT_TIMESTAMP - INTERVAL '1 hour', CURRENT_TIMESTAMP
       ),
@@ -839,7 +804,7 @@ try {
         'v4-order-conflict-pending', 'migration-user',
         'V4 Conflict Pending', 6250000, 'PENDING_PAYMENT',
         'migration-plan', '{}', 'v4-quote-conflict-pending',
-        CURRENT_TIMESTAMP, 'PARSPACK', 'v1',
+        CURRENT_TIMESTAMP, 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START',
         'AWAITING_PAYMENT', 31, NULL, CURRENT_TIMESTAMP
       );
@@ -853,63 +818,63 @@ try {
     ) VALUES
       (
         'v4-infra-refund', 'v4-order-refund', 'migration-user',
-        'migration-plan', 'PARSPACK', 'v1',
+        'migration-plan', 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START',
         '{"immutable":"v4-refund-provider"}', 'CANCELLED', 4,
         'MANAGED', 'REFUNDED', 5000000, CURRENT_TIMESTAMP
       ),
       (
         'v4-infra-paid', 'v4-order-paid', 'migration-user',
-        'migration-plan', 'PARSPACK', 'v1',
+        'migration-plan', 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START',
         '{"immutable":"v4-paid-provider"}', 'ACTIVE', 10,
         'MANAGED', 'ACTIVE', 5000000, CURRENT_TIMESTAMP
       ),
       (
         'v4-infra-cancel', 'v4-order-cancel', 'migration-user',
-        'migration-plan', 'PARSPACK', 'v1',
+        'migration-plan', 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', '{}',
         'CANCELLED', 5, 'MANAGED', 'CANCELED', 5000000,
         CURRENT_TIMESTAMP
       ),
       (
         'v4-infra-terminal-a', 'v4-order-terminal-a',
-        'migration-user', 'migration-plan', 'PARSPACK', 'v1',
+        'migration-user', 'migration-plan', 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', '{}',
         'CANCELLED', 7, 'MANAGED', 'REFUNDED', 5000000,
         CURRENT_TIMESTAMP
       ),
       (
         'v4-infra-terminal-b', 'v4-order-terminal-b',
-        'migration-user', 'migration-plan', 'PARSPACK', 'v1',
+        'migration-user', 'migration-plan', 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', '{}',
         'CANCELLED', 9, 'MANAGED', 'CANCELED', 5000000,
         CURRENT_TIMESTAMP
       ),
       (
         'v4-infra-correct-a', 'v4-order-correct-a',
-        'migration-user', 'migration-plan', 'PARSPACK', 'v1',
+        'migration-user', 'migration-plan', 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', '{}',
         'CANCELLED', 20, 'MANAGED', 'REFUNDED', 5000000,
         CURRENT_TIMESTAMP
       ),
       (
         'v4-infra-correct-b', 'v4-order-correct-b',
-        'migration-user', 'migration-plan', 'PARSPACK', 'v1',
+        'migration-user', 'migration-plan', 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', '{}',
         'CANCELLED', 20, 'MANAGED', 'CANCELED', 5000000,
         CURRENT_TIMESTAMP
       ),
       (
         'v4-infra-conflict-refund', 'v4-order-conflict-refund',
-        'migration-user', 'migration-plan', 'PARSPACK', 'v1',
+        'migration-user', 'migration-plan', 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', '{}',
         'CANCELLED', 3, 'MANAGED', 'REFUNDED', 5000000,
         CURRENT_TIMESTAMP
       ),
       (
         'v4-infra-conflict-paid', 'v4-order-conflict-paid',
-        'migration-user', 'migration-plan', 'PARSPACK', 'v1',
+        'migration-user', 'migration-plan', 'ARVAN', 'v1',
         'READY_INSTANT_SERVER', 'PARCHIN_START', '{}',
         'ACTIVE', 30, 'MANAGED', 'ACTIVE', 5000000,
         CURRENT_TIMESTAMP
@@ -1298,7 +1263,7 @@ try {
       'migration-plan', '{"immutable":"semantic-invalid"}',
       'v5-quote-semantic-invalid',
       CURRENT_TIMESTAMP + INTERVAL '10 minutes',
-      'PARSPACK', 'v1', 'READY_INSTANT_SERVER',
+      'ARVAN', 'v1', 'READY_INSTANT_SERVER',
       'PARCHIN_START', 'ACTIVE', 44, CURRENT_TIMESTAMP
     );
 
@@ -1343,7 +1308,7 @@ try {
       '{"immutable":"v6-service-order-snapshot"}',
       'v6-quote-payment-review',
       CURRENT_TIMESTAMP + INTERVAL '10 minutes',
-      'PARSPACK', 'v1', 'READY_INSTANT_SERVER',
+      'ARVAN', 'v1', 'READY_INSTANT_SERVER',
       'PARCHIN_START', 'PAYMENT_REVIEW', 6, CURRENT_TIMESTAMP
     );
 
@@ -1405,7 +1370,7 @@ try {
       '{"immutable":"v6-quote-expired-service-snapshot"}',
       'v6-quote-expired-quote',
       CURRENT_TIMESTAMP - INTERVAL '1 minute',
-      'PARSPACK', 'v1', 'READY_INSTANT_SERVER',
+      'ARVAN', 'v1', 'READY_INSTANT_SERVER',
       'PARCHIN_START', 'QUOTE_EXPIRED', 9, CURRENT_TIMESTAMP
     );
   `);
@@ -2245,13 +2210,6 @@ try {
       version: 1,
       calculationUnit: null,
     },
-    {
-      provider: InfrastructureProvider.PARSPACK,
-      status: "UNVERIFIED",
-      source: "adapter_contract_not_verified",
-      version: 1,
-      calculationUnit: null,
-    },
   ]);
 
   const finalPaygUpgrade =
@@ -2685,7 +2643,7 @@ try {
         planId: "migration-plan",
         planSnapshot: { immutable: input.id },
         recommendationQuoteId: quote.id,
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         providerApiVersion: "v1",
         productKind:
           InfrastructureProductKind.READY_INSTANT_SERVER,
@@ -2701,32 +2659,32 @@ try {
         serviceOrderId: serviceOrder.id,
         userId: "migration-user",
         planId: "migration-plan",
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         providerApiVersion: "v1",
         productKind:
           InfrastructureProductKind.READY_INSTANT_SERVER,
         parchinLevel: ParchinLevel.PARCHIN_START,
         providerSelectionSnapshot: {
           immutable: input.id,
-          provider: "PARSPACK",
+          provider: "ARVAN",
           providerApiVersion: "v1",
           productKind: "READY_INSTANT_SERVER",
           region: "tehran",
           externalPlanId: "s1",
           externalImageId: "ubuntu",
-          externalNetworkId: null,
-          externalSecurityId: null,
-          topologyVerificationMode: "PROVIDER_MANAGED",
+          externalNetworkId: "network-1",
+          externalSecurityId: "security-1",
+          topologyVerificationMode: "STRICT_OBSERVED",
           deliveryConfiguration: {
-            provider: "PARSPACK",
+            provider: "ARVAN",
             providerApiVersion: "v1",
             productKind: "READY_INSTANT_SERVER",
             region: "tehran",
             externalPlanId: "s1",
             externalImageId: "ubuntu",
-            externalNetworkId: null,
-            externalSecurityId: null,
-            topologyVerificationMode: "PROVIDER_MANAGED",
+            externalNetworkId: "network-1",
+            externalSecurityId: "security-1",
+            topologyVerificationMode: "STRICT_OBSERVED",
             accessMethod: "SSH_KEY",
             sshKeyName: "migration-key",
           },
@@ -2920,7 +2878,7 @@ try {
       planId: "migration-plan",
       planSnapshot: { immutable: "live-sibling-order" },
       recommendationQuoteId: siblingQuote.id,
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       providerApiVersion: "v1",
       productKind:
         InfrastructureProductKind.READY_INSTANT_SERVER,
@@ -2937,7 +2895,7 @@ try {
         serviceOrderId: siblingService.id,
         userId: "migration-user",
         planId: "migration-plan",
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         providerApiVersion: "v1",
         productKind:
           InfrastructureProductKind.READY_INSTANT_SERVER,
@@ -3190,7 +3148,7 @@ try {
     },
   });
   const absenceAdapter = new FakeCloudProviderAdapter({
-    provider: InfrastructureProvider.PARSPACK,
+    provider: InfrastructureProvider.ARVAN,
     observedResource: null,
   });
   await confirmNoProviderResource(
@@ -3260,7 +3218,7 @@ try {
     data: {
       infrastructureOrderId: terminatedResource.infrastructureOrder.id,
       userId: "migration-user",
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       providerApiVersion: "v1",
       providerInstanceId: "terminated-provider-resource",
       name: "abrchin-terminated-resource",
@@ -3338,7 +3296,7 @@ try {
     },
   });
   const retryAbsenceAdapter = new FakeCloudProviderAdapter({
-    provider: InfrastructureProvider.PARSPACK,
+    provider: InfrastructureProvider.ARVAN,
     observedResource: null,
   });
   await confirmNoProviderResource(
@@ -3402,7 +3360,7 @@ try {
     productFlowState: "PROVISIONING_MANUAL_REVIEW",
   });
   const resourceFoundAdapter = new FakeCloudProviderAdapter({
-    provider: InfrastructureProvider.PARSPACK,
+    provider: InfrastructureProvider.ARVAN,
     observedResource: {
       state: "active",
       ipv4: "192.0.2.60",
@@ -3672,20 +3630,13 @@ try {
     providerObservedAt: Date | null;
     providerInstanceId?: string;
   }) {
-    const arvan = input.provider === InfrastructureProvider.ARVAN;
-    const productKind = arvan
-      ? InfrastructureProductKind.CLOUD_SERVER
-      : InfrastructureProductKind.READY_INSTANT_SERVER;
-    const planId = arvan
-      ? "migration-arvan-plan"
-      : "migration-plan";
-    const region = arvan ? "ir-thr-ba1" : "tehran";
-    const externalPlanId = arvan ? "g6" : "s1";
-    const topologyVerificationMode = arvan
-      ? "STRICT_OBSERVED"
-      : "PROVIDER_MANAGED";
-    const externalNetworkId = arvan ? "network-1" : null;
-    const externalSecurityId = arvan ? "security-1" : null;
+    const productKind = InfrastructureProductKind.CLOUD_SERVER;
+    const planId = "migration-arvan-plan";
+    const region = "ir-thr-ba1";
+    const externalPlanId = "g6";
+    const topologyVerificationMode = "STRICT_OBSERVED";
+    const externalNetworkId = "network-1";
+    const externalSecurityId = "security-1";
     const delivery = {
       provider: input.provider,
       providerApiVersion: "v1",
@@ -3813,26 +3764,26 @@ try {
     return `infra-${input.id}`;
   }
 
-  const parsPackSuccess = await seedHealthGraph({
-    id: "parspack-success",
-    provider: InfrastructureProvider.PARSPACK,
+  const arvanSuccess = await seedHealthGraph({
+    id: "arvan-success",
+    provider: InfrastructureProvider.ARVAN,
     providerState: "active",
     ipv4: "192.0.2.21",
-    networkId: null,
-    securityId: null,
+    networkId: "network-1",
+    securityId: "security-1",
     providerObservedAt: now,
   });
-  const parsPackResult = await runInfrastructureHealthCheck({
-    infrastructureOrderId: parsPackSuccess,
+  const arvanResult = await runInfrastructureHealthCheck({
+    infrastructureOrderId: arvanSuccess,
     probe: async () => true,
   });
-  assert.deepEqual(parsPackResult, {
+  assert.deepEqual(arvanResult, {
     healthy: true,
     delivered: false,
   });
   assert.deepEqual(
     await db.infrastructureOrder.findUniqueOrThrow({
-      where: { id: parsPackSuccess },
+      where: { id: arvanSuccess },
       select: {
         productFlowState: true,
         secureDeliveryEvents: {
@@ -3850,24 +3801,24 @@ try {
       ],
     },
   );
-  const parsPackCheck =
+  const arvanCheck =
     await db.infrastructureHealthCheck.findFirstOrThrow({
-      where: { infrastructureOrderId: parsPackSuccess },
+      where: { infrastructureOrderId: arvanSuccess },
     });
   assert.equal(
-    parsPackCheck.topologyVerificationMode,
-    "PROVIDER_MANAGED",
+    arvanCheck.topologyVerificationMode,
+    "STRICT_OBSERVED",
   );
-  assert.equal(parsPackCheck.observedNetworkId, null);
-  assert.equal(parsPackCheck.observedSecurityId, null);
+  assert.equal(arvanCheck.observedNetworkId, "network-1");
+  assert.equal(arvanCheck.observedSecurityId, "security-1");
 
   for (const [id, providerState, ipv4] of [
-    ["parspack-no-ip", "active", null],
-    ["parspack-unknown", "unknown", "192.0.2.22"],
+    ["arvan-no-ip", "active", null],
+    ["arvan-unknown", "unknown", "192.0.2.22"],
   ] as const) {
     const infraId = await seedHealthGraph({
       id,
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       providerState,
       ipv4,
       networkId: null,
@@ -4749,7 +4700,7 @@ try {
 
   function mainAdapter() {
     return new FakeCloudProviderAdapter({
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       observedResource: {
         state: "active",
         ipv4: "192.0.2.80",
@@ -4935,7 +4886,7 @@ try {
     id: "stale-reconciling-fence",
   });
   const reconcilingAdapter = new FakeCloudProviderAdapter({
-    provider: InfrastructureProvider.PARSPACK,
+    provider: InfrastructureProvider.ARVAN,
     createBehavior: "timeout_after_accept",
     observedResource: {
       state: "active",
@@ -5012,7 +4963,7 @@ try {
     id: "transactional-failure-outbox",
   });
   const durableFailureAdapter = new FakeCloudProviderAdapter({
-    provider: InfrastructureProvider.PARSPACK,
+    provider: InfrastructureProvider.ARVAN,
     createBehavior: "failure",
   });
   const durableFailureClaim = await claimOnly(
@@ -5370,7 +5321,7 @@ try {
         id: `outbox-instance-${id}`,
         infrastructureOrderId: seeded.infrastructureOrder.id,
         userId: "migration-user",
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         providerApiVersion: "v1",
         providerInstanceId: `outbox-provider-${id}`,
         name: `abrchin-outbox-${id}`,
@@ -5921,12 +5872,6 @@ try {
   const { syncMultiProviderCatalog } = await import(
     "../lib/infrastructure/multi-provider-catalog-service.ts"
   );
-  const { syncParsPackCatalog } = await import(
-    "../lib/infrastructure/catalog-service.ts"
-  );
-  const { ParsPackProvider } = await import(
-    "../lib/infrastructure/parspack/client.ts"
-  );
 
   const arvanRegionGood = "ir-runtime-good";
   const arvanRegionOther = "ir-runtime-other";
@@ -6175,122 +6120,67 @@ try {
     false,
   );
 
-  const parsPackSuccessCalls: string[] = [];
-  const parsPackSuccessFetch: typeof fetch = async (input) => {
-    const url = String(input);
-    parsPackSuccessCalls.push(url);
-    if (url.includes("/regions?")) {
-      return Response.json({
-        regions: [
-          {
-            slug: "runtime-tehran",
-            name: "Runtime Tehran",
-            available: true,
-          },
-        ],
-      });
-    }
-    if (url.includes("/sizes?")) {
-      return Response.json({
-        sizes: [
-          {
-            slug: "runtime-priced",
-            description: "Runtime Priced",
-            regions: ["runtime-tehran"],
-            available: true,
-            vcpus: 2,
-            memory: 2048,
-            disk: 40,
-            price_hourly: "1200",
-            price_monthly: "829440",
-          },
-          {
-            slug: "runtime-no-price",
-            description: "Runtime Missing Price",
-            regions: ["runtime-tehran"],
-            available: true,
-            vcpus: 1,
-            memory: 1024,
-            disk: 25,
-          },
-        ],
-      });
-    }
-    if (url.includes("/images?")) {
-      return Response.json({
-        images: [
-          {
-            slug: "ubuntu24-cloudinit-qcow2",
-            name: "Ubuntu 24.04",
-            regions: ["runtime-tehran"],
-            min_disk_size: 20,
-            status: "available",
-          },
-        ],
-      });
-    }
-    return Response.json({ message: "not found" }, { status: 404 });
-  };
-  const parsPackCatalogProvider = new ParsPackProvider({
-    managementBaseUrl: "https://my.parspack.com/cserver/api/v1",
-    publicBaseUrl: "https://my.parspack.com/cserver/api/public/v1",
-    token: "postgres-contract-token",
-    timeoutMs: 1000,
-    priceCurrencyCode: "IRR",
-    priceAmountUnit: "TOMAN",
-    fetchImpl: parsPackSuccessFetch,
-  });
-  const parsPackSuccessResult = await syncParsPackCatalog(
-    parsPackCatalogProvider,
-    new Date("2026-08-01T00:10:00.000Z"),
-  );
-  assert.equal(parsPackSuccessCalls.length, 3);
-  // Provider synchronization refreshes raw catalog only. Publishing a SKU is
-  // an explicit Admin action and must never be materialized from provider data.
-  assert.equal(parsPackSuccessResult.readyPlanCount, 0);
-  const parsPackPriced =
-    await db.providerCatalogItem.findUniqueOrThrow({
-      where: {
-        provider_apiVersion_regionCode_externalPlanId: {
-          provider: InfrastructureProvider.PARSPACK,
-          apiVersion: "v1",
-          regionCode: "runtime-tehran",
-          externalPlanId: "runtime-priced",
-        },
-      },
-    });
-  assert.equal(parsPackPriced.providerMonthlyPriceIrr, 8_294_400n);
-  assert.equal(parsPackPriced.available, true);
-  assert.equal(parsPackPriced.status, "ACTIVE");
-  const parsPackNoPrice =
-    await db.providerCatalogItem.findUniqueOrThrow({
-      where: {
-        provider_apiVersion_regionCode_externalPlanId: {
-          provider: InfrastructureProvider.PARSPACK,
-          apiVersion: "v1",
-          regionCode: "runtime-tehran",
-          externalPlanId: "runtime-no-price",
-        },
-      },
-    });
-  assert.equal(parsPackNoPrice.available, false);
-  assert.equal(parsPackNoPrice.status, "INVALID_PRICE");
-  const parsPackReadyPlans = await db.infrastructurePlan.findMany({
+  // Published ready-server offer used by the sale-gate replay below. A raw
+  // catalog row plus an explicit Admin publication — provider sync never
+  // materializes a sellable SKU on its own.
+  const runtimeReadyNow = new Date();
+  await db.providerRegionConfig.upsert({
     where: {
-      provider: InfrastructureProvider.PARSPACK,
-      regionCode: "runtime-tehran",
-      code: { startsWith: "READY_PARSPACK_" },
+      provider_apiVersion_regionCode: {
+        provider: InfrastructureProvider.ARVAN,
+        apiVersion: "v1",
+        regionCode: "runtime-tehran",
+      },
     },
-    orderBy: { sizeCode: "asc" },
+    update: { saleEnabled: true, syncEnabled: true },
+    create: {
+      provider: InfrastructureProvider.ARVAN,
+      apiVersion: "v1",
+      regionCode: "runtime-tehran",
+      displayName: "تهران ۹، ایران",
+      saleEnabled: true,
+      syncEnabled: true,
+    },
   });
-  assert.equal(parsPackReadyPlans.length, 0);
-  const parsPackPublishedReadyPlan =
+  const runtimeReadyCatalogItem = await db.providerCatalogItem.create({
+    data: {
+      id: "runtime-ready-catalog",
+      provider: InfrastructureProvider.ARVAN,
+      apiVersion: "v1",
+      productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
+      source: "API_CATALOG",
+      regionCode: "runtime-tehran",
+      sizeCode: "runtime-priced",
+      externalPlanId: "runtime-priced",
+      externalKey: "arvan:v1:runtime-tehran:runtime-priced",
+      sizeName: "Runtime Priced",
+      compatibleImageCodes: ["ubuntu24-cloudinit-qcow2"],
+      vcpu: 2,
+      ramMb: 2048,
+      diskGb: 40,
+      available: true,
+      active: true,
+      status: "ACTIVE",
+      priceMonthlyAmount: 8_294_400n,
+      priceScale: 0,
+      currencyCode: "IRR",
+      amountUnit: "RIAL",
+      providerMonthlyPriceIrr: 8_294_400n,
+      providerHourlyPriceIrr: 12_000n,
+      lastSyncedAt: runtimeReadyNow,
+      lastSeenAt: runtimeReadyNow,
+      rawPayload: {},
+      payloadHash: "runtime-ready-hash",
+      catalogVersion: "runtime-ready-v1",
+    },
+  });
+  const arvanPublishedReadyPlan =
     await db.infrastructurePlan.create({
       data: {
-        id: "runtime-parspack-ready-plan",
-        code: "READY_PARSPACK_RUNTIME_PRICED",
-        title: "Runtime ParsPack Ready",
-        provider: InfrastructureProvider.PARSPACK,
+        id: "runtime-arvan-ready-plan",
+        code: "READY_SERVER_RUNTIME_PRICED",
+        title: "Runtime Arvan Ready",
+        provider: InfrastructureProvider.ARVAN,
         providerApiVersion: "v1",
         productKind:
           InfrastructureProductKind.READY_INSTANT_SERVER,
@@ -6308,111 +6198,11 @@ try {
         minimumParchinLevel: ParchinLevel.PARCHIN_START,
         active: true,
         publicationStatus: "PUBLISHED",
-        catalogItemId: parsPackPriced.id,
+        catalogItemId: runtimeReadyCatalogItem.id,
         catalogMappingStatus: "MAPPED",
-        catalogMappedAt: new Date(),
+        catalogMappedAt: runtimeReadyNow,
       },
     });
-  const parsPackSnapshotBeforeFailure = {
-    available: parsPackPriced.available,
-    active: parsPackPriced.active,
-    status: parsPackPriced.status,
-    providerMonthlyPriceIrr: parsPackPriced.providerMonthlyPriceIrr,
-    priceMonthlyAmount: parsPackPriced.priceMonthlyAmount,
-    catalogVersion: parsPackPriced.catalogVersion,
-    payloadHash: parsPackPriced.payloadHash,
-    lastSeenAt: parsPackPriced.lastSeenAt,
-  };
-  const parsPackFailureCalls: string[] = [];
-  const parsPackFailure = new ParsPackProvider({
-    managementBaseUrl: "https://my.parspack.com/cserver/api/v1",
-    publicBaseUrl: "https://my.parspack.com/cserver/api/public/v1",
-    token: "postgres-secret-token-must-not-persist",
-    timeoutMs: 1000,
-    priceCurrencyCode: "IRR",
-    priceAmountUnit: "TOMAN",
-    fetchImpl: async (input) => {
-      parsPackFailureCalls.push(String(input));
-      return Response.json(
-        {
-          message: "forbidden",
-          authorization: "Bearer postgres-secret-token-must-not-persist",
-          token: "raw-response-secret-must-not-persist",
-        },
-        { status: 403 },
-      );
-    },
-  });
-  await assert.rejects(
-    syncParsPackCatalog(
-      parsPackFailure,
-      new Date("2026-08-01T00:15:00.000Z"),
-    ),
-    (error: unknown) =>
-      error instanceof Error &&
-      "code" in error &&
-      error.code === "provider_auth_failed",
-  );
-  assert.equal(parsPackFailureCalls.length, 3);
-  const parsPackFailedState =
-    await db.providerCatalogState.findUniqueOrThrow({
-      where: { provider: InfrastructureProvider.PARSPACK },
-    });
-  assert.equal(parsPackFailedState.lastSyncStatus, "FAILED");
-  assert.ok(parsPackFailedState.lastCatalogSync);
-  assert.ok(parsPackFailedState.lastSyncDurationMs != null);
-  assert.match(parsPackFailedState.lastError ?? "", /احراز هویت/);
-  const parsPackFailedRun =
-    await db.providerCatalogSyncRun.findFirstOrThrow({
-      where: {
-        provider: InfrastructureProvider.PARSPACK,
-        status: "FAILED",
-      },
-      orderBy: { startedAt: "desc" },
-    });
-  assert.ok(parsPackFailedRun.finishedAt);
-  assert.ok(parsPackFailedRun.durationMs != null);
-  assert.match(
-    JSON.stringify(parsPackFailedRun.report),
-    /provider_auth_failed/,
-  );
-  const persistedFailureEvidence = JSON.stringify({
-    stateError: parsPackFailedState.lastError,
-    stateRegions: parsPackFailedState.regionErrors,
-    runReport: parsPackFailedRun.report,
-  });
-  assert.equal(
-    persistedFailureEvidence.includes(
-      "postgres-secret-token-must-not-persist",
-    ),
-    false,
-  );
-  assert.equal(
-    persistedFailureEvidence.includes("raw-response-secret-must-not-persist"),
-    false,
-  );
-  const parsPackAfterFailure =
-    await db.providerCatalogItem.findUniqueOrThrow({
-      where: {
-        provider_apiVersion_regionCode_externalPlanId: {
-          provider: InfrastructureProvider.PARSPACK,
-          apiVersion: "v1",
-          regionCode: "runtime-tehran",
-          externalPlanId: "runtime-priced",
-        },
-      },
-      select: {
-        available: true,
-        active: true,
-        status: true,
-        providerMonthlyPriceIrr: true,
-        priceMonthlyAmount: true,
-        catalogVersion: true,
-        payloadHash: true,
-        lastSeenAt: true,
-      },
-    });
-  assert.deepEqual(parsPackAfterFailure, parsPackSnapshotBeforeFailure);
 
   const {
     ProviderCatalogSyncError,
@@ -6428,11 +6218,11 @@ try {
     for (let occurrence = 0; occurrence < 2; occurrence += 1) {
       await settleProviderCatalogSyncTasks(
         [{
-          provider: InfrastructureProvider.PARSPACK,
+          provider: InfrastructureProvider.ARVAN,
           apiVersion: "v1",
           operation: "catalog_sync",
           promise: Promise.reject(new ProviderCatalogSyncError({
-            provider: InfrastructureProvider.PARSPACK,
+            provider: InfrastructureProvider.ARVAN,
             apiVersion: "v1",
             operation: "catalog_sync",
             code: "provider_auth_failed",
@@ -6444,7 +6234,7 @@ try {
     }
     const incident = await db.operationalIncident.findFirstOrThrow({
       where: {
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         operation: "catalog_sync",
         safeCode: "provider_auth_failed",
         status: "OPEN",
@@ -6470,7 +6260,7 @@ try {
     );
     await settleProviderCatalogSyncTasks(
       [{
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         apiVersion: "v1",
         operation: "catalog_sync",
         promise: Promise.resolve({ status: "SUCCEEDED" }),
@@ -7385,29 +7175,22 @@ try {
     "RESERVED",
   );
 
-  const previousParsPackEnv = {
-    sale: process.env.PARSPACK_PUBLIC_SALE_ENABLED,
-    enabled: process.env.PARSPACK_ENABLED,
-    token: process.env.PARSPACK_API_TOKEN,
-    managementBase: process.env.PARSPACK_API_BASE_URL,
-    publicBase: process.env.PARSPACK_PUBLIC_API_BASE_URL,
-    currency: process.env.PARSPACK_PRICE_CURRENCY,
-    amountUnit: process.env.PARSPACK_PRICE_AMOUNT_UNIT,
+  const previousReadyGateEnv = {
+    sale: process.env.ARVAN_PUBLIC_SALE_ENABLED,
+    readySale: process.env.ARVAN_READY_PUBLIC_SALE_ENABLED,
+    enabled: process.env.ARVAN_ENABLED,
+    apiKey: process.env.ARVAN_API_KEY,
+    baseUrl: process.env.ARVAN_API_BASE_URL,
   };
-  const previousFetch = globalThis.fetch;
   try {
-    process.env.PARSPACK_ENABLED = "true";
-    process.env.PARSPACK_API_TOKEN = "postgres-contract-token";
-    process.env.PARSPACK_API_BASE_URL =
-      "https://my.parspack.com/cserver/api/v1";
-    process.env.PARSPACK_PUBLIC_API_BASE_URL =
-      "https://my.parspack.com/cserver/api/public/v1";
-    process.env.PARSPACK_PRICE_CURRENCY = "IRR";
-    process.env.PARSPACK_PRICE_AMOUNT_UNIT = "TOMAN";
-    process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
-    globalThis.fetch = parsPackSuccessFetch;
+    process.env.ARVAN_ENABLED = "true";
+    process.env.ARVAN_API_KEY = "postgres-contract-key";
+    process.env.ARVAN_API_BASE_URL =
+      "https://napi.arvancloud.ir/ecc/v1";
+    process.env.ARVAN_READY_PUBLIC_SALE_ENABLED = "true";
+    process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
     await db.providerCatalogState.update({
-      where: { provider: InfrastructureProvider.PARSPACK },
+      where: { provider: InfrastructureProvider.ARVAN },
       data: {
         enabled: true,
         lastSyncStatus: "SUCCEEDED",
@@ -7418,11 +7201,11 @@ try {
     // Selling requires Admin-enabled pricing configs (Financial Center):
     // provider margin + product markup must be switched on for the route.
     await db.providerPricingConfig.upsert({
-      where: { provider: InfrastructureProvider.PARSPACK },
+      where: { provider: InfrastructureProvider.ARVAN },
       update: { enabled: true },
       create: {
-        id: "parspack-v1",
-        provider: InfrastructureProvider.PARSPACK,
+        id: "arvan-v1",
+        provider: InfrastructureProvider.ARVAN,
         apiVersion: "v1",
         enabled: true,
         markupBasisPoints: 2500,
@@ -7431,14 +7214,14 @@ try {
     await db.productPricingConfig.upsert({
       where: {
         provider_apiVersion_productKind: {
-          provider: InfrastructureProvider.PARSPACK,
+          provider: InfrastructureProvider.ARVAN,
           apiVersion: "v1",
           productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
         },
       },
       update: { enabled: true },
       create: {
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         apiVersion: "v1",
         productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
         enabled: true,
@@ -7456,12 +7239,12 @@ try {
     });
     const readyPlan =
       await db.infrastructurePlan.findUniqueOrThrow({
-        where: { id: parsPackPublishedReadyPlan.id },
+        where: { id: arvanPublishedReadyPlan.id },
       });
     const readyImage = await db.providerCatalogAsset.upsert({
       where: {
         provider_apiVersion_regionCode_kind_externalId: {
-          provider: InfrastructureProvider.PARSPACK,
+          provider: InfrastructureProvider.ARVAN,
           apiVersion: "v1",
           regionCode: "runtime-tehran",
           kind: "IMAGE",
@@ -7470,7 +7253,7 @@ try {
       },
       update: { status: "ACTIVE", available: true },
       create: {
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         apiVersion: "v1",
         regionCode: "runtime-tehran",
         kind: "IMAGE",
@@ -7481,7 +7264,7 @@ try {
         lastSeenAt: new Date(),
         lastSyncedAt: new Date(),
         rawPayload: { ssh_password: true },
-        payloadHash: "parspack-ready-gate-image",
+        payloadHash: "arvan-ready-gate-image",
       },
     });
     const {
@@ -7491,7 +7274,7 @@ try {
     const readyDelivery = {
       imageAssetId: readyImage.id,
       accessMethod: "ONE_TIME_PASSWORD" as const,
-      serverName: "parspack-gate",
+      serverName: "arvan-gate",
     };
     const deliveryOptions = await getCatalogServerDeliveryOptions({
       planId: readyPlan.id,
@@ -7505,18 +7288,18 @@ try {
     const quoteBeforeGateClosed = await createReadyServerQuote({
       planId: readyPlan.id,
       userId: "inventory-customer",
-      idempotencyKey: "parspack-gate-quote-before-close",
+      idempotencyKey: "arvan-gate-quote-before-close",
       delivery: readyDelivery,
     });
 
-    process.env.PARSPACK_PUBLIC_SALE_ENABLED = "false";
+    process.env.ARVAN_PUBLIC_SALE_ENABLED = "false";
     // Admin publication keeps the offer browse-visible; the sale flag only
     // closes purchase (fail-closed), it no longer hides the listing.
     const saleClosedReadyOffers = await listLiveReadyServerOffers();
     assert.equal(saleClosedReadyOffers.offers.length, 1);
     assert.equal(
       saleClosedReadyOffers.offers[0]?.id,
-      "runtime-parspack-ready-plan",
+      "runtime-arvan-ready-plan",
     );
     assert.equal(saleClosedReadyOffers.offers[0]?.purchasable, false);
     assert.equal(
@@ -7535,7 +7318,7 @@ try {
       createReadyServerQuote({
         planId: readyPlan.id,
         userId: "inventory-customer",
-        idempotencyKey: "parspack-gate-new-quote-blocked",
+        idempotencyKey: "arvan-gate-new-quote-blocked",
         delivery: readyDelivery,
       }),
       /فروش عمومی/,
@@ -7553,31 +7336,31 @@ try {
       ordersBeforeBlockedConversion,
     );
 
-    process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
+    process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
     const payableQuote = await createReadyServerQuote({
       planId: readyPlan.id,
       userId: "inventory-customer",
-      idempotencyKey: "parspack-gate-old-order-payment",
+      idempotencyKey: "arvan-gate-old-order-payment",
       delivery: readyDelivery,
     });
-    const oldParsPackOrder = await createServiceOrderFromQuote(
+    const oldArvanOrder = await createServiceOrderFromQuote(
       "inventory-customer",
       payableQuote.quote.id,
     );
-    const walletBeforeParsPackGate =
+    const walletBeforeArvanGate =
       await db.wallet.findUniqueOrThrow({
         where: { userId: "inventory-customer" },
       });
-    const ledgerBeforeParsPackGate = await db.walletLedgerEntry.count({
+    const ledgerBeforeArvanGate = await db.walletLedgerEntry.count({
       where: {
         referenceType: "order",
-        referenceId: oldParsPackOrder.id,
+        referenceId: oldArvanOrder.id,
       },
     });
-    const topupsBeforeParsPackGate = await db.walletTopUp.count();
-    const orderBeforeParsPackGate =
+    const topupsBeforeArvanGate = await db.walletTopUp.count();
+    const orderBeforeArvanGate =
       await db.serviceOrder.findUniqueOrThrow({
-        where: { id: oldParsPackOrder.id },
+        where: { id: oldArvanOrder.id },
         select: {
           status: true,
           paidAt: true,
@@ -7588,30 +7371,30 @@ try {
           productKind: true,
         },
       });
-    process.env.PARSPACK_PUBLIC_SALE_ENABLED = "false";
+    process.env.ARVAN_PUBLIC_SALE_ENABLED = "false";
     await assert.rejects(
-      payOrderWithWallet("inventory-customer", oldParsPackOrder.id),
+      payOrderWithWallet("inventory-customer", oldArvanOrder.id),
       /فروش عمومی.*مبلغی برداشت نشد/,
     );
     assert.deepEqual(
       await db.wallet.findUniqueOrThrow({
         where: { userId: "inventory-customer" },
       }),
-      walletBeforeParsPackGate,
+      walletBeforeArvanGate,
     );
     assert.equal(
       await db.walletLedgerEntry.count({
         where: {
           referenceType: "order",
-          referenceId: oldParsPackOrder.id,
+          referenceId: oldArvanOrder.id,
         },
       }),
-      ledgerBeforeParsPackGate,
+      ledgerBeforeArvanGate,
     );
-    assert.equal(await db.walletTopUp.count(), topupsBeforeParsPackGate);
+    assert.equal(await db.walletTopUp.count(), topupsBeforeArvanGate);
     assert.deepEqual(
       await db.serviceOrder.findUniqueOrThrow({
-        where: { id: oldParsPackOrder.id },
+        where: { id: oldArvanOrder.id },
         select: {
           status: true,
           paidAt: true,
@@ -7622,16 +7405,15 @@ try {
           productKind: true,
         },
       }),
-      orderBeforeParsPackGate,
+      orderBeforeArvanGate,
     );
     assert.equal(
       await db.infrastructureOrder.count({
-        where: { serviceOrderId: oldParsPackOrder.id },
+        where: { serviceOrderId: oldArvanOrder.id },
       }),
       0,
     );
   } finally {
-    globalThis.fetch = previousFetch;
     const restore = (
       name: string,
       value: string | undefined,
@@ -7639,16 +7421,14 @@ try {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     };
-    restore("PARSPACK_PUBLIC_SALE_ENABLED", previousParsPackEnv.sale);
-    restore("PARSPACK_ENABLED", previousParsPackEnv.enabled);
-    restore("PARSPACK_API_TOKEN", previousParsPackEnv.token);
-    restore("PARSPACK_API_BASE_URL", previousParsPackEnv.managementBase);
+    restore("ARVAN_PUBLIC_SALE_ENABLED", previousReadyGateEnv.sale);
     restore(
-      "PARSPACK_PUBLIC_API_BASE_URL",
-      previousParsPackEnv.publicBase,
+      "ARVAN_READY_PUBLIC_SALE_ENABLED",
+      previousReadyGateEnv.readySale,
     );
-    restore("PARSPACK_PRICE_CURRENCY", previousParsPackEnv.currency);
-    restore("PARSPACK_PRICE_AMOUNT_UNIT", previousParsPackEnv.amountUnit);
+    restore("ARVAN_ENABLED", previousReadyGateEnv.enabled);
+    restore("ARVAN_API_KEY", previousReadyGateEnv.apiKey);
+    restore("ARVAN_API_BASE_URL", previousReadyGateEnv.baseUrl);
   }
   const { assertProviderRoute } = await import(
     "../lib/infrastructure/provider-routing.ts"
@@ -7656,7 +7436,7 @@ try {
   assert.doesNotThrow(() =>
     assertProviderRoute({
       productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       apiVersion: "v1",
     }),
   );
@@ -7711,7 +7491,7 @@ try {
   else process.env.ADMIN_MOBILES = priorAdminMobiles;
 
   console.log(
-    "PostgreSQL integration passed (143 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, durable concurrent health-retry dispatch, poison dispatch isolation, persisted dispatch backoff, dead-letter manual review, three-attempt health retry ceiling, missing-outbox batch progress, concurrent outbox uniqueness, idempotent reconciler replay, forward-only Admin catalog, preprovisioned inventory and inventory-credential migrations with immutable commerce snapshots, Arvan master-sale gate at quote and pre-debit payment, old-quote gate revalidation, API-backed mutation-gate enforcement, inventory-only sale with mutations disabled, credentialless/revoked/transferred inventory exclusion, unique encrypted inventory credentials, raw-secret non-disclosure, atomic credential transfer, post-debit rollback, idempotent payment replay, concurrent no-double-sell, shared Network/Security eligibility, secure delivery to ACTIVE, zero-create inventory recovery, API/manual outage fail-closed behavior, real healthy inventory-only outage sale, atomic no-double-sell reservation, expired and failed-payment reservation release, exact post-payment assignment, idempotent debit/assignment replay, unsellable inventory states, ParsPack fail-closed listing, delivery, new-quote, old-quote conversion and pre-debit payment gates with immutable wallet, ledger, order and payment state, immutable routing, Kavenegar CONFIG_REQUIRED safety, Admin-curated Arvan publication isolation, Arvan partial-region last-known-good preservation, ParsPack 403 audit persistence without retry, exact TOMAN-to-IRR materialization, non-sellable invalid-price catalog enforcement, critical incident deduplication, durable SMS outbox delivery, and incident recovery",
+    "PostgreSQL integration passed (139 scenarios): V6 PAYMENT_REVIEW recovery after V4/V5, V6 QUOTE_EXPIRED semantic recovery, monotonic revisions, stale-revision conflict, immutable financial/provider snapshots, multi-order terminal recovery, live-sibling protection, all-terminal alignment, transactional runtime refund, fail-closed resource disposition, global Admin receipt conflicts, direct-catalog audit, provider-capability health verification, manual recovery, Admin action/backend parity, mandatory main-worker claim tokens, fenced desired-name persistence, fenced stale-worker create recovery, RECONCILING fence rollback, one-create reconciliation, transactional failure outbox, ACTIVE outbox reconciliation and retry delivery, finalize-only replay for successful and failed health results, durable concurrent health-retry dispatch, poison dispatch isolation, persisted dispatch backoff, dead-letter manual review, three-attempt health retry ceiling, missing-outbox batch progress, concurrent outbox uniqueness, idempotent reconciler replay, forward-only Admin catalog, preprovisioned inventory and inventory-credential migrations with immutable commerce snapshots, Arvan master-sale gate at quote and pre-debit payment, old-quote gate revalidation, API-backed mutation-gate enforcement, inventory-only sale with mutations disabled, credentialless/revoked/transferred inventory exclusion, unique encrypted inventory credentials, raw-secret non-disclosure, atomic credential transfer, post-debit rollback, idempotent payment replay, concurrent no-double-sell, shared Network/Security eligibility, secure delivery to ACTIVE, zero-create inventory recovery, API/manual outage fail-closed behavior, real healthy inventory-only outage sale, atomic no-double-sell reservation, expired and failed-payment reservation release, exact post-payment assignment, idempotent debit/assignment replay, unsellable inventory states, Arvan fail-closed listing, delivery, new-quote, old-quote conversion and pre-debit payment gates with immutable wallet, ledger, order and payment state, immutable routing, Kavenegar CONFIG_REQUIRED safety, Admin-curated Arvan publication isolation, Arvan partial-region last-known-good preservation, critical incident deduplication, durable SMS outbox delivery, and incident recovery",
   );
 } finally {
   try {

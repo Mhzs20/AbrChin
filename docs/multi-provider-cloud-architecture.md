@@ -1,4 +1,9 @@
-# معماری چندارائه‌دهنده‌ای زیرساخت ابرچین
+# معماری زیرساخت ابری ابرچین
+
+تنها Provider زیرساخت ابرچین **آروان‌کلاد** است. منابع تحویل چند تا هستند —
+Catalog API آروان، Offer ثابت آروان و موجودی Admin — اما همه به همین یک
+Provider ختم می‌شوند. هیچ Provider دومی در Routing، Catalog، Sync، Pricing یا
+Provisioning وجود ندارد و دیتابیس هم نمی‌تواند Provider دیگری را نمایش دهد.
 
 ## Routing قطعی محصول
 
@@ -6,19 +11,17 @@ Routing سمت Server اعمال می‌شود و ورودی Client نمی‌ت�
 
 | Product Kind | Source / Provider | API |
 | --- | --- | --- |
-| `READY_INSTANT_SERVER` | ParsPack | `v1` |
 | `READY_INSTANT_SERVER` | ArvanCloud fixed offer | IaaS `v1` |
 | `READY_INSTANT_SERVER` | `MANUAL_ADMIN` / preprovisioned | Admin inventory |
 | `CLOUD_SERVER` | ArvanCloud | IaaS `v1` |
 
-`CLOUD_SERVER + PARSPACK` رد می‌شود. سرور فوری می‌تواند ParsPack، آروان یا
-موجودی Admin باشد، اما Source و Provider انتخاب‌شده پیش از Quote در Snapshot
-قفل می‌شوند و Order پرداخت‌شده فقط از همان Snapshot برای Provisioning یا
-تحویل دستی استفاده می‌کند. Provider Swap پس از پرداخت وجود ندارد. Arvan API
+سرور فوری می‌تواند Offer ثابت آروان یا موجودی Admin باشد، اما Source و
+Provider انتخاب‌شده پیش از Quote در Snapshot قفل می‌شوند و Order پرداخت‌شده
+فقط از همان Snapshot برای Provisioning یا تحویل دستی استفاده می‌کند. Provider Swap پس از پرداخت وجود ندارد. Arvan API
 v3 غیرفعال است و Base URL حاوی `/v3` پیش از هر Network Call رد می‌شود.
 
 مسیر `/cloud-servers` فقط Planهای Regionمحور آروان را نمایش می‌دهد. مسیر
-`/ready-servers` کاتالوگ واحد پلن‌های ثابت ParsPack، آروان و Admin را نشان می‌دهد.
+`/ready-servers` کاتالوگ واحد پلن‌های ثابت آروان و Admin را نشان می‌دهد.
 Plan ناموجود، بدون قیمت یا ناسازگار با Image قابل خرید نیست. هنگام اختلال
 Provider، فقط Planهایی که Admin برای حالت Last-known-good مجاز کرده می‌تواند
 با برچسب روشن نمایش داده شود؛ Quote آن تا بازیابی Provider غیرفعال است. تعریف
@@ -132,37 +135,6 @@ Top-up و Activation را مجاز و Fulfillment را دستی/کنترل‌ش�
 پس از تأیید عملیاتی Founder مجاز است؛ در کد و نمونه Environment Gateهای فروش
 `true` و Gateهای Mutation `false` باقی می‌مانند.
 
-## ParsPack v1
-
-ParsPack فقط `READY_INSTANT_SERVER` است. Catalog از این Endpointها می‌آید:
-
-```text
-GET https://my.parspack.com/cserver/api/public/v1/regions
-GET https://my.parspack.com/cserver/api/public/v1/sizes
-GET https://my.parspack.com/cserver/api/public/v1/images
-```
-
-هویت داخلی:
-
-```text
-parspack:v1:{region}:{sizeSlug}
-```
-
-Size بدون Region قطعی با `__unscoped__` حفظ ولی غیرقابل فروش می‌شود. مسیر
-آماده Slider سفارشی CPU/RAM/Disk ندارد و Hybrid، Macro، Bare Metal یا
-محصولات غیر Cloud Server را وارد نمی‌کند.
-
-واحد `price_hourly` و `price_monthly` باید با
-`PARSPACK_PRICE_CURRENCY=IRR` و `PARSPACK_PRICE_AMOUNT_UNIT=RIAL|TOMAN`
-مطابق Contract رسمی تنظیم شود. بدون آن، مقدار خام Persist ولی فروش Fail-closed
-می‌شود.
-
-سه Gate ParsPack مستقل‌اند: `PARSPACK_ENABLED` فقط اتصال و Sync،
-`PARSPACK_PUBLIC_SALE_ENABLED` فروش عمومی و `PARSPACK_MUTATIONS_ENABLED`
-ساخت Resource را کنترل می‌کند. Sale برای Estimate/Request به Mutation وابسته
-نیست؛ Dispatch واقعی هر دو Admin Approval و Mutation Gate را می‌خواهد. همه
-مقادیر به‌صورت پیش‌فرض `false` هستند.
-
 ## Persist و Sync
 
 `ProviderCatalogItem` علاوه بر فیلدهای Legacy این اطلاعات را نگه می‌دارد:
@@ -235,28 +207,27 @@ Ciphertext و تغییر Credential موجودی به `TRANSFERRED` در Transac
 Idempotent انجام می‌شوند. شکست هر مرحله همه Writeها را Rollback می‌کند؛ Secure
 Delivery نیز همان مکانیزم نمایش یک‌بارمصرف را استفاده می‌کند.
 
-پاسخ `401/403` ParsPack با کد امن `provider_auth_failed` و بدون Retry ثبت
+پاسخ `401/403` آروان با کد امن `provider_auth_failed` و بدون Retry ثبت
 می‌شود. شکست Provider، Timeout، ناسازگاری Response Contract و شکست
-Persistence کدهای جدا دارند. هر تلاش ParsPack، حتی در صورت شکست، یک
+Persistence کدهای جدا دارند. هر تلاش Sync، حتی در صورت شکست، یک
 `ProviderCatalogSyncRun` و نتیجهٔ Sanitized در `ProviderCatalogState` دارد؛
 Token، Header احراز هویت و Response خام در Log، Audit یا Admin ذخیره نمی‌شود.
 
 Sync دستی از پنل Admin در دسترس است. Sync Production همچنین با فرمان مستقل
 داخل Container وب اجرا می‌شود و به چرخه یا Restart شدن Worker Provisioning
 وابسته نیست. Process مستقل `catalog-sync` همین GETها را با
-`CATALOG_SYNC_INTERVAL_MS` زمان‌بندی می‌کند. شکست یک Provider مانع Sync
-Provider دیگر یا پردازش Provisioning نمی‌شود.
+`CATALOG_SYNC_INTERVAL_MS` زمان‌بندی می‌کند. شکست Sync یک Region مانع Sync
+Regionهای دیگر یا پردازش Provisioning نمی‌شود.
 
 ورودی صریح Production از Bundle داخل Image استفاده می‌کند و به Source
 TypeScript یا Resolver تست وابسته نیست:
 
 ```text
-npm run sync:catalog:parspack
 npm run sync:catalog:arvan
 npm run sync:catalog:all
 ```
 
-هر سه فرمان فقط Adapterهای `CloudProviderAdapter` و Endpointهای GET همین سند
+هر دو فرمان فقط Adapter `CloudProviderAdapter` و Endpointهای GET همین سند
 را فراخوانی می‌کنند. خروجی شامل Provider، زمان شروع/پایان، Status، Countها و
 کد خطای Sanitized است و هیچ Secret یا Response خامی ندارد.
 
@@ -284,9 +255,9 @@ Incident، Outbox یا متن پیام ذخیره نمی‌شود.
 اگر Provider پیامک Kavenegar، Template هشدار یا شمارهٔ Admin تنظیم نشده باشد،
 Web و Worker Crash نمی‌کنند. وضعیت عملیاتی `CONFIG_REQUIRED` در Admin نمایش
 داده می‌شود و Alertهای Pending تا تکمیل تنظیمات بدون Claim اشتباه حفظ می‌شوند.
-فروش عمومی ParsPack با `PARSPACK_PUBLIC_SALE_ENABLED=true` باز می‌ماند؛ در
+فروش عمومی آروان با `ARVAN_PUBLIC_SALE_ENABLED=true` باز می‌ماند؛ در
 اختلال Sync، کنترل‌های freshness/availability خرید Offer نامعتبر را متوقف
-می‌کنند و Catalog یا Route پارس‌پک حذف یا به آروان منتقل نمی‌شود.
+می‌کنند و Catalog یا Route موجود حذف یا بازنویسی نمی‌شود.
 
 ## پول، Markup، پرچین و هزینه‌های صریح
 
@@ -362,9 +333,9 @@ Provision کنترل‌شده و Provider Confirmation به‌ترتیب انج�
 `PREPAID_TERM` Checkout و Renewal دستی مستقل دارد. Renewal Auto-charge ندارد و
 نباید با Usage Billing Cloud مخلوط شود.
 
-برای جلوگیری از Markup دوبل، Migration چندارائه‌دهنده Markup قدیمی ParsPack
-را فقط در `ProviderPricingConfig` نگه می‌دارد و
-`ProductPricingConfig` متناظر را با صفر Seed می‌کند. Runtime جمع این دو BPS
+برای جلوگیری از Markup دوبل، Markup قدیمی Provider فقط در
+`ProviderPricingConfig` نگه داشته می‌شود و `ProductPricingConfig` متناظر با
+صفر Seed می‌شود. Runtime جمع این دو BPS
 را محاسبه می‌کند.
 
 ## Conversation و State Machine
@@ -417,15 +388,9 @@ PARCHIN_SELECTED → DELIVERY_CONFIGURED → QUOTED` از سرویس مرکزی 
 
 پس از ساخت، صرف وجود IP کافی نیست: State Provider باید `active`، IP باید
 معتبر و Timestamp مشاهده باید ثبت شده باشد. کنترل Topology بر مبنای Capability
-قفل‌شدهٔ Adapter است:
-
-- آروان `STRICT_OBSERVED` است؛ Network و Security مشاهده‌شده باید دقیقاً با
-  Snapshot قفل‌شده برابر باشند و مقدار `null` یا mismatch شکست است.
-- ParsPack `PROVIDER_MANAGED` است؛ چون API مشاهدهٔ مستقل Network/Security
-  ارائه نمی‌کند، این دو مقدار `null` ذخیره می‌شوند ولی State/IP/Timestamp و
-  Probe سلامت همچنان اجباری‌اند. Snapshotهای Legacy با
-  `provider-default` فقط برای سازگاری خوانده و به همین حالت normalize
-  می‌شوند.
+قفل‌شدهٔ Adapter آروان است: آروان `STRICT_OBSERVED` است و Network و Security
+مشاهده‌شده باید دقیقاً با Snapshot قفل‌شده برابر باشند؛ مقدار `null` یا
+mismatch شکست است.
 
 سپس اتصال TCP محدود SSH یا RDP Audit می‌شود. برای Password، اشتراک فقط پس از
 Credential رمزنگاری‌شدهٔ یک‌بارمصرف فعال می‌شود؛ برای `SSH_KEY` تحویل یک
@@ -467,7 +432,7 @@ Wallet/Ledger updateها را Rollback می‌کند.
 `providerSelectionSnapshot` همان درخواست تأییدشده را می‌خواند و هیچ fallbackای
 به Plan یا Catalog فعلی ندارد. Provider/API/Region/Plan/Image/
 Network/Security/Access ناقص یا ناسازگار پیش از هر Create به Manual Review
-می‌رود. Adapter Worker همان `CloudProviderAdapter` چندارائه‌دهنده است؛
+می‌رود. Adapter Worker همان `CloudProviderAdapter` آروان است؛
 Mutation Gate پیش‌فرض بسته است و فقط در Dispatch واقعی بررسی می‌شود.
 پس از Timeout، Create دوباره ارسال نمی‌شود. ابتدا Task/Resource ID و سپس نام
 `abrchin-{orderPublicId}-{attempt}` Reconcile می‌شود. نبودن در یک List response
@@ -486,7 +451,7 @@ API Key، Token، Password، SSH Key و Init Script از Payloadهای Log Redac
 Migration `20260730160000_multi_provider_routing` افزایشی است:
 
 - Enumها، ستون‌های nullable/defaultدار، Indexها و جدول‌های جدید را اضافه می‌کند؛
-- Catalog ParsPack موجود را بدون حدس Region به هویت نسخه‌دار Backfill می‌کند؛
+- Catalog موجود را بدون حدس Region به هویت نسخه‌دار Backfill می‌کند؛
 - Order، Ledger، Transaction و Snapshot پرداخت‌شده را حذف یا Reprice نمی‌کند؛
 - ستون‌های Legacy قیمت و Plan را برای rollback کد نگه می‌دارد؛
 - Unique قدیمی Quote revision را به Index تبدیل می‌کند تا Quote جدید در همان
@@ -537,7 +502,7 @@ Forward-only است:
 
 Integration Test این Migration روی PostgreSQL واقعی، Graphهای چند Quote،
 Graph ناقص، Paid State ناسازگار، ثبات مالی/Provider، رقابت Transition،
-Health آروان و ParsPack، Retry هم‌زمان، جلوگیری از Create تکراری و رسیدن به
+Health آروان، Retry هم‌زمان، جلوگیری از Create تکراری و رسیدن به
 Manual Review پس از سه تلاش را پوشش می‌دهد. اجرای دوم `prisma migrate deploy`
 فقط no-op بودن سازوکار Deployment Prisma را ثابت می‌کند؛ ادعای اجرای دوبارهٔ
 SQL یک Migration ثبت‌شده نیست.
@@ -557,3 +522,14 @@ Migration `20260730234500_terminal_order_recovery` سومین اصلاح Forward
 - تست PostgreSQL وضعیت مالی را قبل و بعد مقداربه‌مقدار مقایسه و Rollback
   Runtime Refund، Conflictهای Idempotency و مسیر خروج Manual Review را روی
   دیتابیس واقعی اجرا می‌کند.
+
+مهاجرت ۲۰۲۶-۰۸-۲۲ پلتفرم را به یک Provider محدود می‌کند و Forward-only است:
+
+- ردیف‌های زیرساختی Provider حذف‌شده — Catalog، Asset، Region State، Sync Run،
+  Plan، `ProviderRegionConfig`، Pricing، RateCard، موجودی ازپیش‌ساخته،
+  `CloudInstance` و `InfrastructureOrder` — پاک می‌شوند؛
+- ردیف‌های تاریخیِ صرفاً ارجاع‌دهنده مثل ServiceOrder، Quote و Incident با
+  `provider = NULL` حفظ می‌شوند؛ مبلغ، Ledger، `paidAt` و Snapshot مالی آن‌ها
+  تغییر نمی‌کند؛
+- سپس Enumهای Provider بدون آن مقدار بازسازی می‌شوند تا دیتابیس دیگر نتواند
+  Resource Provider حذف‌شده را نمایش دهد. Rollback دیتابیس ندارد.

@@ -908,7 +908,6 @@ export function StorefrontAssortmentPanel({
             >
               <option value="ALL">همه Providerها</option>
               <option value="ARVAN">Arvan</option>
-              <option value="PARSPACK">ParsPack</option>
             </select>
             <button
               type="button"

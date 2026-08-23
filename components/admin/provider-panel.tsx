@@ -79,8 +79,8 @@ export function ProviderPanel({
   syncRuns,
   dailyStats,
 }: {
-  provider: "ARVAN" | "PARSPACK";
-  providerLabel: "Arvan" | "ParsPack";
+  provider: "ARVAN";
+  providerLabel: "Arvan";
   title: string;
   initial: {
     status: string;
@@ -111,7 +111,7 @@ export function ProviderPanel({
   };
   catalogItems: Array<{
     id: string;
-    provider: "ARVAN" | "PARSPACK";
+    provider: "ARVAN";
     apiVersion: string;
     productKind: "CLOUD_SERVER" | "READY_INSTANT_SERVER";
     source:
@@ -143,7 +143,7 @@ export function ProviderPanel({
   }>;
   syncRuns: Array<{
     id: string;
-    provider: "ARVAN" | "PARSPACK";
+    provider: "ARVAN";
     apiVersion: string;
     status: string;
     catalogVersion: string;

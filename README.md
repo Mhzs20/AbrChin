@@ -97,8 +97,8 @@ Runbook فعال‌سازی مرحله‌ای و تست Founder در `docs/launc
   تغییر نمی‌کند؛ سفارش‌های Launch با Fulfillment دستی Admin ساخته و تحویل می‌شوند.
 - قیمت فروش و تمدید از `price_monthly` کاتالوگ Provider و Markup سراسری Admin
   با محاسبه BigInt/Basis Points ساخته می‌شود؛ ورود دستی قیمت Source of Truth نیست.
-- `/cloud-servers` فقط SKUهای منتشرشده و قابل‌خرید Admin از منابع آروان و
-  پارس‌پک را نمایش می‌دهد؛ نام Provider در تجربه مشتری افشا نمی‌شود.
+- `/cloud-servers` فقط SKUهای منتشرشده و قابل‌خرید Admin از منابع آروان را
+  نمایش می‌دهد؛ نام Provider در تجربه مشتری افشا نمی‌شود.
 - تمدید خودکار وجود ندارد؛ هر تمدید Quote قفل‌شده، تأیید صریح و Snapshot
   مالی مستقل دارد.
 - مجوز فونت در `public/assets/fonts/OFL.txt` قرار دارد.

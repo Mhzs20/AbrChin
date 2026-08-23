@@ -10,7 +10,7 @@ import { isSafePaymentCallbackBaseUrl, toSafeConnectionFailure } from "@/lib/adm
 import { prisma } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { checkArvanAuthenticatedConnection } from "@/lib/infrastructure/arvan/connection-check";
-import { createCloudProviderAdapter, isCloudProviderConfigured } from "@/lib/infrastructure/provider-factory";
+import { isCloudProviderConfigured } from "@/lib/infrastructure/provider-factory";
 import { ensureGatewayConfigsSeeded } from "@/lib/payments/gateway-config";
 import { createProviderFor, hasServerCredentials } from "@/lib/payments/provider-factory";
 
@@ -36,24 +36,18 @@ export type ServiceConnectionView = {
 
 const serviceLabels: Record<ServiceConnectionName, string> = {
   ARVAN: "آروان‌کلاد",
-  PARSPACK: "پارس‌پک",
   KAVENEGAR: "کاوه‌نگار (OTP)",
   PAYMENT_GATEWAY: "درگاه پرداخت پیش‌فرض",
 };
 
-function providerCapabilities(provider: InfrastructureProvider): Capability[] {
-  const env = getEnv();
-  const priceVerified =
-    provider === InfrastructureProvider.ARVAN ||
-    (env.parspackPriceCurrency === "IRR" &&
-      ["RIAL", "TOMAN"].includes(env.parspackPriceAmountUnit));
+function providerCapabilities(): Capability[] {
   return [
     { key: "catalog", label: "Catalog", status: "VERIFIED", note: "خواندنی و دارای قرارداد Adapter" },
     {
       key: "price",
       label: "Price",
-      status: priceVerified ? "VERIFIED" : "UNVERIFIED",
-      note: priceVerified ? "قرارداد مبلغ معتبر است" : "قرارداد واحد مبلغ تأیید نشده است",
+      status: "VERIFIED",
+      note: "قرارداد مبلغ معتبر است",
     },
     { key: "balance", label: "Balance", status: "UNVERIFIED", note: "API رسمی قابل اتکا تأیید نشده است؛ بررسی دستی لازم است" },
     {
@@ -118,11 +112,7 @@ async function derivedConnection(service: ServiceConnectionName) {
   const env = getEnv();
   if (service === ServiceConnectionName.ARVAN) {
     const configured = isCloudProviderConfigured(InfrastructureProvider.ARVAN);
-    return { configured, capabilities: providerCapabilities(InfrastructureProvider.ARVAN) };
-  }
-  if (service === ServiceConnectionName.PARSPACK) {
-    const configured = isCloudProviderConfigured(InfrastructureProvider.PARSPACK);
-    return { configured, capabilities: providerCapabilities(InfrastructureProvider.PARSPACK) };
+    return { configured, capabilities: providerCapabilities() };
   }
   if (service === ServiceConnectionName.KAVENEGAR) {
     const configured =
@@ -181,35 +171,19 @@ export async function runServiceConnectionCheck(service: ServiceConnectionName) 
   let errorCode: string | null = null;
 
   if (derived.configured) {
-    if (service === ServiceConnectionName.ARVAN || service === ServiceConnectionName.PARSPACK) {
+    if (service === ServiceConnectionName.ARVAN) {
       try {
-        const provider = service === ServiceConnectionName.ARVAN
-          ? InfrastructureProvider.ARVAN
-          : InfrastructureProvider.PARSPACK;
-        if (provider === InfrastructureProvider.ARVAN) {
-          const env = getEnv();
-          const result = await checkArvanAuthenticatedConnection({
-            apiKey: env.arvanApiKey,
-            baseUrl: env.arvanApiBaseUrl,
-            timeoutMs: env.arvanTimeoutMs,
-          });
-          status = result.ok
-            ? ServiceConnectionCheckStatus.HEALTHY
-            : ServiceConnectionCheckStatus.ERROR;
-          message = result.message;
-          errorCode = result.ok ? null : result.code;
-        } else {
-          const adapter = createCloudProviderAdapter(provider, "v1");
-          const regions = await adapter.syncRegions();
-          if (regions.length === 0) {
-            status = ServiceConnectionCheckStatus.ERROR;
-            message = "هیچ Region قابل استفاده‌ای دریافت نشد.";
-            errorCode = "contract_mismatch";
-          } else {
-            status = ServiceConnectionCheckStatus.HEALTHY;
-            message = "اتصال خواندنی با موفقیت بررسی شد.";
-          }
-        }
+        const env = getEnv();
+        const result = await checkArvanAuthenticatedConnection({
+          apiKey: env.arvanApiKey,
+          baseUrl: env.arvanApiBaseUrl,
+          timeoutMs: env.arvanTimeoutMs,
+        });
+        status = result.ok
+          ? ServiceConnectionCheckStatus.HEALTHY
+          : ServiceConnectionCheckStatus.ERROR;
+        message = result.message;
+        errorCode = result.ok ? null : result.code;
       } catch (error) {
         const safe = toSafeConnectionFailure(error);
         status = ServiceConnectionCheckStatus.ERROR;

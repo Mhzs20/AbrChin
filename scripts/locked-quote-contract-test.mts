@@ -27,28 +27,35 @@ import { WalletError } from "../lib/wallet/errors.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const prisma = databaseUrl ? new PrismaClient() : null;
-const previousParsPackPublicSale = process.env.PARSPACK_PUBLIC_SALE_ENABLED;
-const previousParsPackMutations = process.env.PARSPACK_MUTATIONS_ENABLED;
-process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
-process.env.PARSPACK_MUTATIONS_ENABLED = "true";
+const previousArvanPublicSale = process.env.ARVAN_PUBLIC_SALE_ENABLED;
+const previousArvanReadySale = process.env.ARVAN_READY_PUBLIC_SALE_ENABLED;
+const previousArvanMutations = process.env.ARVAN_MUTATIONS_ENABLED;
+process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
+process.env.ARVAN_READY_PUBLIC_SALE_ENABLED = "true";
+process.env.ARVAN_MUTATIONS_ENABLED = "true";
 
 after(async () => {
-  if (previousParsPackPublicSale === undefined) {
-    delete process.env.PARSPACK_PUBLIC_SALE_ENABLED;
+  if (previousArvanPublicSale === undefined) {
+    delete process.env.ARVAN_PUBLIC_SALE_ENABLED;
   } else {
-    process.env.PARSPACK_PUBLIC_SALE_ENABLED = previousParsPackPublicSale;
+    process.env.ARVAN_PUBLIC_SALE_ENABLED = previousArvanPublicSale;
   }
-  if (previousParsPackMutations === undefined) {
-    delete process.env.PARSPACK_MUTATIONS_ENABLED;
+  if (previousArvanReadySale === undefined) {
+    delete process.env.ARVAN_READY_PUBLIC_SALE_ENABLED;
   } else {
-    process.env.PARSPACK_MUTATIONS_ENABLED = previousParsPackMutations;
+    process.env.ARVAN_READY_PUBLIC_SALE_ENABLED = previousArvanReadySale;
+  }
+  if (previousArvanMutations === undefined) {
+    delete process.env.ARVAN_MUTATIONS_ENABLED;
+  } else {
+    process.env.ARVAN_MUTATIONS_ENABLED = previousArvanMutations;
   }
   if (prisma) await prisma.$disconnect();
 });
 
-function createParsPackPricingAdapter(monthlyPriceIrr = 1_200_000n) {
+function createArvanPricingAdapter(monthlyPriceIrr = 1_200_000n) {
   return new FakeCloudProviderAdapter({
-    provider: InfrastructureProvider.PARSPACK,
+    provider: InfrastructureProvider.ARVAN,
     plansByRegion: {
       tehran11: [
         {
@@ -90,7 +97,7 @@ function createParsPackPricingAdapter(monthlyPriceIrr = 1_200_000n) {
 
 function createUnavailableAdapter() {
   return new FakeCloudProviderAdapter({
-    provider: InfrastructureProvider.PARSPACK,
+    provider: InfrastructureProvider.ARVAN,
     plansByRegion: { tehran11: [] },
     imagesByRegion: { tehran11: [] },
   });
@@ -138,15 +145,15 @@ async function seedDevPlan() {
   if (!prisma) return null;
   const syncedAt = new Date();
   await prisma.providerCatalogState.upsert({
-    where: { provider: "PARSPACK" },
+    where: { provider: "ARVAN" },
     update: {
       lastCatalogSync: syncedAt,
       lastSyncStatus: "SUCCEEDED",
       freshnessSlaSeconds: 900,
     },
     create: {
-      id: "parspack-v1",
-      provider: "PARSPACK",
+      id: "arvan-v1",
+      provider: "ARVAN",
       apiVersion: "v1",
       enabled: true,
       lastCatalogSync: syncedAt,
@@ -154,10 +161,28 @@ async function seedDevPlan() {
       freshnessSlaSeconds: 900,
     },
   });
+  await prisma.providerRegionConfig.upsert({
+    where: {
+      provider_apiVersion_regionCode: {
+        provider: "ARVAN",
+        apiVersion: "v1",
+        regionCode: "tehran11",
+      },
+    },
+    update: { saleEnabled: true, syncEnabled: true },
+    create: {
+      provider: "ARVAN",
+      apiVersion: "v1",
+      regionCode: "tehran11",
+      displayName: "تهران ۱۱، ایران",
+      saleEnabled: true,
+      syncEnabled: true,
+    },
+  });
   const catalogItem = await prisma.providerCatalogItem.upsert({
     where: {
       provider_apiVersion_regionCode_externalPlanId: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         apiVersion: "v1",
         regionCode: "tehran11",
         externalPlanId: "irLinuxVPS4",
@@ -175,13 +200,13 @@ async function seedDevPlan() {
       lastSyncedAt: syncedAt,
     },
     create: {
-      provider: "PARSPACK",
+      provider: "ARVAN",
       apiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       externalPlanId: "irLinuxVPS4",
-      externalKey: "parspack:v1:tehran11:irLinuxVPS4",
+      externalKey: "arvan:v1:tehran11:irLinuxVPS4",
       sizeName: "Development",
       compatibleImageCodes: ["ubuntu24-cloudinit-qcow2"],
       vcpu: 2,
@@ -203,7 +228,7 @@ async function seedDevPlan() {
     },
   });
   await prisma.providerPricingConfig.upsert({
-    where: { provider: "PARSPACK" },
+    where: { provider: "ARVAN" },
     update: {
       apiVersion: "v1",
       enabled: true,
@@ -211,8 +236,8 @@ async function seedDevPlan() {
       sourceMoneyUnit: "TOMAN",
     },
     create: {
-      id: "parspack",
-      provider: "PARSPACK",
+      id: "arvan",
+      provider: "ARVAN",
       apiVersion: "v1",
       enabled: true,
       markupBasisPoints: 2500,
@@ -222,15 +247,15 @@ async function seedDevPlan() {
   await prisma.productPricingConfig.upsert({
     where: {
       provider_apiVersion_productKind: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         apiVersion: "v1",
         productKind: "READY_INSTANT_SERVER",
       },
     },
     update: { enabled: true, markupBasisPoints: 0 },
     create: {
-      id: "locked-quote-parspack-ready",
-      provider: "PARSPACK",
+      id: "locked-quote-arvan-ready",
+      provider: "ARVAN",
       apiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       enabled: true,
@@ -268,7 +293,7 @@ async function seedDevPlan() {
   return prisma.infrastructurePlan.upsert({
     where: { code: "DEV_STARTER" },
     update: {
-      provider: "PARSPACK",
+      provider: "ARVAN",
       providerApiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       deliveryMode: "MANAGED",
@@ -286,7 +311,7 @@ async function seedDevPlan() {
     create: {
       code: "DEV_STARTER",
       title: "شروع توسعه",
-      provider: "PARSPACK",
+      provider: "ARVAN",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       imageCode: "ubuntu24-cloudinit-qcow2",
@@ -344,7 +369,7 @@ async function createLockedQuoteFixture(mobile: string, opts?: {
       productFlowRevision: 1,
       selectedParchinLevel: "PARCHIN_START",
       deliveryConfiguration: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         providerApiVersion: "v1",
         productKind: "READY_INSTANT_SERVER",
         region: "tehran11",
@@ -380,7 +405,7 @@ async function createLockedQuoteFixture(mobile: string, opts?: {
       finalPriceRialSnapshot: pricedPlan.pricing.finalPriceRial,
       currencySnapshot: "IRR",
       providerPriceCheckedAt: createdAt,
-      provider: "PARSPACK",
+      provider: "ARVAN",
       providerApiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       providerRegion: "tehran11",
@@ -419,13 +444,13 @@ test("locked quote survives provider/markup/tax/coupon commercial changes within
     data: { providerMonthlyPriceIrr: 9_999_000n },
   });
   await prisma.providerPricingConfig.update({
-    where: { provider: "PARSPACK" },
+    where: { provider: "ARVAN" },
     data: { markupBasisPoints: 9_000 },
   });
   await prisma.productPricingConfig.update({
     where: {
       provider_apiVersion_productKind: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         apiVersion: "v1",
         productKind: "READY_INSTANT_SERVER",
       },
@@ -446,13 +471,13 @@ test("locked quote survives provider/markup/tax/coupon commercial changes within
   });
 
   const order = await createServiceOrderFromQuote(user.id, quote.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
   assert.equal(order.amount, lockedAmount);
   assert.equal(order.quoteExpiresAt?.getTime(), quote.expiresAt.getTime());
 
   const paid = await payOrderWithWallet(user.id, order.id, {
-    providerAdapter: createParsPackPricingAdapter(9_999_000n),
+    providerAdapter: createArvanPricingAdapter(9_999_000n),
   });
   assert.equal(paid.order.status, ServiceOrderStatus.PAID);
   const ledger = await prisma.walletLedgerEntry.findFirstOrThrow({
@@ -483,7 +508,7 @@ test("wallet top-up within TTL keeps the same quote and does not extend expiresA
   });
 
   const order = await createServiceOrderFromQuote(user.id, quote.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
   const expiresBefore = (await prisma.recommendationQuote.findUniqueOrThrow({
     where: { id: quote.id },
@@ -501,7 +526,7 @@ test("wallet top-up within TTL keeps the same quote and does not extend expiresA
   assert.equal(expiresAfter.getTime(), expiresAt.getTime());
 
   const paid = await payOrderWithWallet(user.id, order.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
   assert.equal(paid.order.status, ServiceOrderStatus.PAID);
   assert.equal(paid.order.amount, lockedAmount);
@@ -525,7 +550,7 @@ test("payment at expiresAt+1ms fails and does not debit", async (t) => {
       createLockedQuoteFixture(mobile, { createdAt, expiresAt }).then(
         ({ user, quote }) =>
           createServiceOrderFromQuote(user.id, quote.id, {
-            providerAdapter: createParsPackPricingAdapter(),
+            providerAdapter: createArvanPricingAdapter(),
           }),
       ),
     (error: unknown) =>
@@ -553,7 +578,7 @@ test("expired pending order is not debitable and expiration is idempotent", asyn
   await cleanupMobile(mobile);
   const { user, quote, lockedAmount } = await createLockedQuoteFixture(mobile);
   const order = await createServiceOrderFromQuote(user.id, quote.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
   const past = new Date(Date.now() - 1_000);
   await prisma.recommendationQuote.update({
@@ -575,7 +600,7 @@ test("expired pending order is not debitable and expiration is idempotent", asyn
   await assert.rejects(
     () =>
       payOrderWithWallet(user.id, order.id, {
-        providerAdapter: createParsPackPricingAdapter(),
+        providerAdapter: createArvanPricingAdapter(),
       }),
     (error: unknown) =>
       error instanceof WalletError && error.code === "quote_expired",
@@ -611,13 +636,13 @@ test("retry payment after success does not double-debit", async (t) => {
   await cleanupMobile(mobile);
   const { user, quote, lockedAmount } = await createLockedQuoteFixture(mobile);
   const order = await createServiceOrderFromQuote(user.id, quote.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
   const first = await payOrderWithWallet(user.id, order.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
   const second = await payOrderWithWallet(user.id, order.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
   assert.equal(first.order.status, ServiceOrderStatus.PAID);
   assert.equal(second.order.status, ServiceOrderStatus.PAID);
@@ -644,7 +669,7 @@ test("provider unavailable before debit leaves wallet untouched", async (t) => {
   await cleanupMobile(mobile);
   const { user, quote } = await createLockedQuoteFixture(mobile);
   const order = await createServiceOrderFromQuote(user.id, quote.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
   const walletBefore = await prisma.wallet.findUniqueOrThrow({
     where: { userId: user.id },
@@ -680,7 +705,7 @@ test("provider price changed with healthy availability pays locked customer pric
   await cleanupMobile(mobile);
   const { user, quote, lockedAmount } = await createLockedQuoteFixture(mobile);
   const order = await createServiceOrderFromQuote(user.id, quote.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
 
   await prisma.providerCatalogItem.update({
@@ -689,7 +714,7 @@ test("provider price changed with healthy availability pays locked customer pric
   });
 
   const paid = await payOrderWithWallet(user.id, order.id, {
-    providerAdapter: createParsPackPricingAdapter(2_400_000n),
+    providerAdapter: createArvanPricingAdapter(2_400_000n),
   });
   assert.equal(paid.order.status, ServiceOrderStatus.PAID);
   const debit = await prisma.walletLedgerEntry.findFirstOrThrow({
@@ -710,7 +735,7 @@ test("expiration sweep releases payable state without deleting history", async (
   await cleanupMobile(mobile);
   const { user, quote, lockedAmount } = await createLockedQuoteFixture(mobile);
   const order = await createServiceOrderFromQuote(user.id, quote.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
   const past = new Date(Date.now() - 5_000);
   await prisma.recommendationQuote.update({
@@ -739,7 +764,7 @@ test("expiration sweep releases payable state without deleting history", async (
   await assert.rejects(
     () =>
       payOrderWithWallet(user.id, order.id, {
-        providerAdapter: createParsPackPricingAdapter(),
+        providerAdapter: createArvanPricingAdapter(),
       }),
     (error: unknown) =>
       error instanceof WalletError &&

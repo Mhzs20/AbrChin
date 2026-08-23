@@ -24,7 +24,6 @@ function baseInput(marginBps: number): FinanceConfigurationInput {
   return {
     providers: [
       { provider: "ARVAN", targetGrossMarginBps: marginBps, enabled: true },
-      { provider: "PARSPACK", targetGrossMarginBps: marginBps, enabled: true },
     ],
     productMarkups: [
       {
@@ -34,7 +33,7 @@ function baseInput(marginBps: number): FinanceConfigurationInput {
         enabled: true,
       },
       {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         productKind: "READY_INSTANT_SERVER",
         markupBasisPoints: 0,
         enabled: true,
@@ -254,30 +253,6 @@ test("legacy markup repair converts exactly 23333 and preserves custom rows", as
   }
   // Fresh migrate already ran the repair; replay its UPDATE against
   // controlled rows to prove the exact-match semantics.
-  await db.providerPricingConfig.upsert({
-    where: { provider: "ARVAN" },
-    update: { markupBasisPoints: 23_333 },
-    create: {
-      id: "arvan-v1",
-      provider: "ARVAN",
-      apiVersion: "v1",
-      sourceMoneyUnit: "IRR",
-      markupBasisPoints: 23_333,
-      enabled: true,
-    },
-  });
-  await db.providerPricingConfig.upsert({
-    where: { provider: "PARSPACK" },
-    update: { markupBasisPoints: 25_000 },
-    create: {
-      id: "parspack-v1",
-      provider: "PARSPACK",
-      apiVersion: "v1",
-      markupBasisPoints: 25_000,
-      enabled: true,
-    },
-  });
-
   const migration = await readFile(
     "prisma/migrations/20260806200000_commercial_pricing_v3/migration.sql",
     "utf8",
@@ -287,24 +262,48 @@ test("legacy markup repair converts exactly 23333 and preserves custom rows", as
     .map((statement) => statement.trim())
     .find((statement) => statement.startsWith("UPDATE \"ProviderPricingConfig\""));
   assert.ok(updateStatement, "repair UPDATE must exist in the migration");
-  await db.$executeRawUnsafe(updateStatement);
 
-  const arvan = await db.providerPricingConfig.findUnique({
+  // A custom markup is never rewritten by the repair.
+  await db.providerPricingConfig.upsert({
     where: { provider: "ARVAN" },
+    update: { markupBasisPoints: 25_000 },
+    create: {
+      id: "arvan-v1",
+      provider: "ARVAN",
+      apiVersion: "v1",
+      sourceMoneyUnit: "IRR",
+      markupBasisPoints: 25_000,
+      enabled: true,
+    },
   });
-  const parspack = await db.providerPricingConfig.findUnique({
-    where: { provider: "PARSPACK" },
+  await db.$executeRawUnsafe(updateStatement);
+  assert.equal(
+    (
+      await db.providerPricingConfig.findUnique({ where: { provider: "ARVAN" } })
+    )?.markupBasisPoints,
+    25_000, // custom value untouched
+  );
+
+  // Only the exact legacy auto value is repaired.
+  await db.providerPricingConfig.update({
+    where: { provider: "ARVAN" },
+    data: { markupBasisPoints: 23_333 },
   });
-  assert.equal(arvan?.markupBasisPoints, 4_286); // legacy auto value repaired
-  assert.equal(parspack?.markupBasisPoints, 25_000); // custom value untouched
+  await db.$executeRawUnsafe(updateStatement);
+  assert.equal(
+    (
+      await db.providerPricingConfig.findUnique({ where: { provider: "ARVAN" } })
+    )?.markupBasisPoints,
+    4_286, // legacy auto value repaired
+  );
 
   // New rows default to the 30%-margin markup.
-  await db.providerPricingConfig.delete({ where: { provider: "PARSPACK" } });
+  await db.providerPricingConfig.delete({ where: { provider: "ARVAN" } });
   await db.$executeRawUnsafe(
-    `INSERT INTO "ProviderPricingConfig" ("id", "provider", "apiVersion", "enabled", "updatedAt") VALUES ('parspack-v1', 'PARSPACK', 'v1', false, NOW())`,
+    `INSERT INTO "ProviderPricingConfig" ("id", "provider", "apiVersion", "enabled", "updatedAt") VALUES ('arvan-v1', 'ARVAN', 'v1', false, NOW())`,
   );
   const fresh = await db.providerPricingConfig.findUnique({
-    where: { provider: "PARSPACK" },
+    where: { provider: "ARVAN" },
   });
   assert.equal(fresh?.markupBasisPoints, 4_286);
 });

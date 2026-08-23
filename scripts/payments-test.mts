@@ -291,7 +291,7 @@ test("server plans are loaded from database", async (t) => {
     create: {
       code: "DEV_STARTER",
       title: "شروع توسعه",
-      provider: "PARSPACK",
+      provider: "ARVAN",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       imageCode: "ubuntu24-cloudinit-qcow2",
@@ -573,7 +573,7 @@ test("order pay refund flow with ledger references", async (t) => {
     create: {
       code: "DEV_STARTER",
       title: "شروع توسعه",
-      provider: "PARSPACK",
+      provider: "ARVAN",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       imageCode: "ubuntu24-cloudinit-qcow2",

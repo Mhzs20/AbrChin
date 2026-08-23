@@ -48,10 +48,7 @@ function parseCandidate(raw: unknown): FinanceConfigurationInput {
   return {
     providers: providers.map((row) => {
       const item = row as Record<string, unknown>;
-      if (
-        item.provider !== InfrastructureProvider.ARVAN &&
-        item.provider !== InfrastructureProvider.PARSPACK
-      ) {
+      if (item.provider !== InfrastructureProvider.ARVAN) {
         throw new Error("invalid_candidate");
       }
       return {
@@ -63,8 +60,7 @@ function parseCandidate(raw: unknown): FinanceConfigurationInput {
     productMarkups: productMarkups.map((row) => {
       const item = row as Record<string, unknown>;
       if (
-        (item.provider !== InfrastructureProvider.ARVAN &&
-          item.provider !== InfrastructureProvider.PARSPACK) ||
+        item.provider !== InfrastructureProvider.ARVAN ||
         !Object.values(InfrastructureProductKind).includes(
           item.productKind as InfrastructureProductKind,
         )
@@ -120,10 +116,7 @@ function parseSimulator(raw: unknown): FinanceSimulatorRequest | null {
   if (!/^\d+$/.test(cost) || BigInt(cost) <= 0n) return null;
   const term = Number(value.termMonths);
   if (term !== 1 && term !== 3 && term !== 6 && term !== 12) return null;
-  if (
-    value.provider !== InfrastructureProvider.ARVAN &&
-    value.provider !== InfrastructureProvider.PARSPACK
-  ) {
+  if (value.provider !== InfrastructureProvider.ARVAN) {
     return null;
   }
   if (

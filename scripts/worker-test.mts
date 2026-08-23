@@ -48,7 +48,7 @@ async function seedQueuedJob() {
     create: {
       code: "DEV_STARTER",
       title: "شروع توسعه",
-      provider: "PARSPACK",
+      provider: "ARVAN",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       imageCode: "ubuntu24-cloudinit-qcow2",

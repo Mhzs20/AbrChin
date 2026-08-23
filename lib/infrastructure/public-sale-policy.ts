@@ -8,7 +8,7 @@ import { getEnv } from "@/lib/env";
 import { WalletError } from "@/lib/wallet/errors";
 
 type SaleRoute = {
-  provider: InfrastructureProvider | "ARVAN" | "PARSPACK";
+  provider: InfrastructureProvider | "ARVAN";
   offerSource:
     | InfrastructureOfferSource
     | "API_CATALOG"
@@ -41,11 +41,6 @@ export function getPublicSaleDecision(route: SaleRoute): PublicSaleDecision {
   if (route.offerSource === InfrastructureOfferSource.MANUAL_ADMIN) {
     return route.productKind === InfrastructureProductKind.READY_INSTANT_SERVER &&
       env.manualReadyPublicSaleEnabled
-      ? { allowed: true, code: "sale_enabled" }
-      : { allowed: false, code: "provider_sale_disabled" };
-  }
-  if (route.provider === InfrastructureProvider.PARSPACK) {
-    return env.parspackPublicSaleEnabled
       ? { allowed: true, code: "sale_enabled" }
       : { allowed: false, code: "provider_sale_disabled" };
   }

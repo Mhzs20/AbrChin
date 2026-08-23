@@ -7,54 +7,26 @@ import type { CloudProviderAdapter } from "@/lib/infrastructure/cloud-provider-a
 import { InfrastructureError } from "@/lib/infrastructure/errors";
 import { FakeCloudProviderAdapter } from "@/lib/infrastructure/fake-cloud-provider-adapter";
 import { MockInfrastructureProvider } from "@/lib/infrastructure/mock-provider";
-import { ParsPackProvider } from "@/lib/infrastructure/parspack/client";
-import { ParsPackV1Adapter } from "@/lib/infrastructure/parspack/v1-adapter";
 import type { InfrastructureProviderAdapter } from "@/lib/infrastructure/types";
 
-export function getInfrastructureProviderMode(): "mock" | "parspack" {
-  const mode = getEnv().infrastructureProviderMode;
-  if (mode === "parspack") return "parspack";
+/**
+ * ArvanCloud is the platform's only infrastructure provider. The legacy
+ * multi-provider indirection is gone: the mock adapter is the sole
+ * non-production alternative and it is refused in production.
+ */
+export function getInfrastructureProviderMode(): "mock" {
   return "mock";
 }
 
 export function createInfrastructureProvider(): InfrastructureProviderAdapter {
   const env = getEnv();
-  const mode = getInfrastructureProviderMode();
-
-  if (mode === "parspack") {
-    if (!env.parspackEnabled || !env.parspackApiToken) {
-      throw new InfrastructureError("provider_disabled", "ParsPack provider is not configured");
-    }
-    if (env.isProduction && mode !== "parspack") {
-      throw new InfrastructureError("provider_disabled", "Mock provider is not allowed in production");
-    }
-    return createParsPackProviderClient();
-  }
-
   if (env.isProduction) {
-    throw new InfrastructureError("provider_disabled", "Mock provider is not allowed in production");
-  }
-
-  return new MockInfrastructureProvider();
-}
-
-export function createParsPackProviderClient(): ParsPackProvider {
-  const env = getEnv();
-  if (!env.parspackEnabled || !env.parspackApiToken) {
     throw new InfrastructureError(
       "provider_disabled",
-      "ParsPack provider is not configured",
+      "Mock provider is not allowed in production",
     );
   }
-  return new ParsPackProvider({
-    managementBaseUrl: env.parspackApiBaseUrl,
-    publicBaseUrl: env.parspackPublicApiBaseUrl,
-    token: env.parspackApiToken,
-    timeoutMs: env.parspackTimeoutMs,
-    priceCurrencyCode: env.parspackPriceCurrency,
-    priceAmountUnit: env.parspackPriceAmountUnit,
-    mutationsEnabled: env.parspackMutationsEnabled,
-  });
+  return new MockInfrastructureProvider();
 }
 
 export function createCloudProviderAdapter(
@@ -97,9 +69,6 @@ export function createCloudProviderAdapter(
       logger: (entry) => console.info(JSON.stringify(entry)),
     });
   }
-  if (provider === InfrastructureProvider.PARSPACK) {
-    return new ParsPackV1Adapter(createParsPackProviderClient());
-  }
   throw new InfrastructureError(
     "provider_disabled",
     "Provider is not supported",
@@ -109,39 +78,24 @@ export function createCloudProviderAdapter(
 export function isCloudProviderConfigured(
   provider: InfrastructureProvider,
 ): boolean {
+  if (provider !== InfrastructureProvider.ARVAN) return false;
   const env = getEnv();
-  if (provider === InfrastructureProvider.ARVAN) {
-    try {
-      return (
-        env.arvanEnabled &&
-        Boolean(env.arvanApiKey) &&
-        env.arvanApiVersion === "v1"
-      );
-    } catch {
-      return false;
-    }
-  }
-  if (provider === InfrastructureProvider.PARSPACK) {
+  try {
     return (
-      env.parspackEnabled &&
-      Boolean(env.parspackApiToken) &&
-      env.parspackApiVersion === "v1"
+      env.arvanEnabled &&
+      Boolean(env.arvanApiKey) &&
+      env.arvanApiVersion === "v1"
     );
+  } catch {
+    return false;
   }
-  return false;
 }
 
 export function isProviderConfigured(): boolean {
-  const env = getEnv();
-  const mode = getInfrastructureProviderMode();
-  if (mode === "parspack") {
-    return env.parspackEnabled && Boolean(env.parspackApiToken);
-  }
-  return !env.isProduction;
+  return !getEnv().isProduction;
 }
 
 export function providerDisplayName(provider: InfrastructureProvider): string {
-  if (provider === InfrastructureProvider.PARSPACK) return "پارس‌پک";
   if (provider === InfrastructureProvider.ARVAN) return "آروان‌کلاد";
   return provider;
 }

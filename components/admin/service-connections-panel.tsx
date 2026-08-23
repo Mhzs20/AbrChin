@@ -12,7 +12,7 @@ type Capability = {
 };
 
 type Connection = {
-  service: "ARVAN" | "PARSPACK" | "KAVENEGAR" | "PAYMENT_GATEWAY";
+  service: "ARVAN" | "KAVENEGAR" | "PAYMENT_GATEWAY";
   label: string;
   configured: boolean;
   status: "HEALTHY" | "UNCONFIGURED" | "UNVERIFIED" | "ERROR";

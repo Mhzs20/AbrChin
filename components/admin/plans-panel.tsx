@@ -183,7 +183,6 @@ function sourceLabel(source: string | null) {
 
 function providerLabel(provider: string) {
   if (provider === "ARVAN") return "Arvan";
-  if (provider === "PARSPACK") return "ParsPack";
   return provider;
 }
 
@@ -605,7 +604,7 @@ export function AdminPlansPanel({
   return (
     <>
       <p style={{ marginTop: 0, color: "var(--product-muted)" }}>
-        اینجا SKU فروش ساخته می‌شود: از کاتالوگ Arvan/ParsPack انتخاب → Markup →
+        اینجا SKU فروش ساخته می‌شود: از کاتالوگ Arvan انتخاب → Markup →
         Draft → Published. تا Published نشود مشتری نمی‌بیند. چینش فروشگاهی فقط
         ترتیب نمایش همان SKUهای منتشرشده را تنظیم می‌کند.
       </p>
@@ -679,7 +678,6 @@ export function AdminPlansPanel({
           >
             <option value="ALL">همه</option>
             <option value="ARVAN">Arvan</option>
-            <option value="PARSPACK">ParsPack</option>
           </select>
         </label>
       </div>
@@ -972,7 +970,7 @@ export function AdminPlansPanel({
         <details className="admin-advanced-stats">
           <summary>پیشرفته · Override Markup این SKU</summary>
           <p className="pricing-field-hint" style={{ marginTop: 8 }}>
-            سود پیش‌فرض Arvan/ParsPack و محصول را در{" "}
+            سود پیش‌فرض Arvan و محصول را در{" "}
             <a href="/admin/finance#finance-markup">مرکز مالی</a> تنظیم کن. فقط اگر
             این SKU باید از آن پیش‌فرض جدا باشد، اینجا درصد جایگزین محصول را بگذار.
           </p>

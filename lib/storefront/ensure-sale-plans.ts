@@ -251,10 +251,7 @@ export async function ensurePublishedPlanForCatalogItem(
 async function ensureRegionsForCatalogItems(items: ProviderCatalogItem[]) {
   const seen = new Set<string>();
   for (const item of items) {
-    if (
-      item.provider !== InfrastructureProvider.ARVAN &&
-      item.provider !== InfrastructureProvider.PARSPACK
-    ) {
+    if (item.provider !== InfrastructureProvider.ARVAN) {
       continue;
     }
     const key = `${item.provider}:${item.apiVersion}:${item.regionCode}`;
@@ -304,7 +301,7 @@ export async function ensureStorefrontSaleReady() {
       prisma.productPricingConfig.findMany(),
       prisma.providerCatalogItem.findMany({
         where: {
-          provider: { in: ["ARVAN", "PARSPACK"] },
+          provider: "ARVAN",
           source: "API_CATALOG",
           active: true,
           available: true,
@@ -339,7 +336,7 @@ export async function ensureStorefrontSaleReady() {
   // Open every known region for sale — Founder wants listed inventory sellable.
   await prisma.providerRegionConfig.updateMany({
     where: {
-      provider: { in: ["ARVAN", "PARSPACK"] },
+      provider: "ARVAN",
       saleEnabled: false,
     },
     data: { saleEnabled: true },

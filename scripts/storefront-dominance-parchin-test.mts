@@ -388,7 +388,7 @@ test("storefront CTA opens the dedicated public configurator before login", asyn
   assert.match(catalog, /جزئیات خدمات/);
   assert.match(catalog, /ParchinDetailsDialog/);
   assert.doesNotMatch(catalog, /providerName/);
-  assert.doesNotMatch(catalog, /\bARVAN\b|\bPARSPACK\b/);
+  assert.doesNotMatch(catalog, /\bARVAN\b/);
 
   const button = await readFile(
     "components/ready-server-quote-button.tsx",

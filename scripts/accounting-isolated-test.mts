@@ -16,8 +16,6 @@ await withIsolatedPostgres("accounting", async (databaseUrl) => {
         ABRCHIN_ISOLATED_TEST: "1",
         ARVAN_ENABLED: "false",
         ARVAN_MUTATIONS_ENABLED: "false",
-        PARSPACK_ENABLED: "false",
-        PARSPACK_MUTATIONS_ENABLED: "false",
       },
       maxBuffer: 20 * 1024 * 1024,
     },

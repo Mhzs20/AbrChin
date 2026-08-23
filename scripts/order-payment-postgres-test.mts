@@ -69,8 +69,9 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
     publicSaleEnabled: process.env.PUBLIC_SALE_ENABLED,
     defaultGateway: process.env.PAYMENT_BOOTSTRAP_DEFAULT_PROVIDER,
     callbackBase: process.env.PAYMENT_CALLBACK_BASE_URL,
-    publicSale: process.env.PARSPACK_PUBLIC_SALE_ENABLED,
-    mutations: process.env.PARSPACK_MUTATIONS_ENABLED,
+    publicSale: process.env.ARVAN_PUBLIC_SALE_ENABLED,
+    readySale: process.env.ARVAN_READY_PUBLIC_SALE_ENABLED,
+    mutations: process.env.ARVAN_MUTATIONS_ENABLED,
     credentialEncryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY,
   };
 
@@ -78,8 +79,9 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
   process.env.PUBLIC_SALE_ENABLED = "true";
   process.env.PAYMENT_BOOTSTRAP_DEFAULT_PROVIDER = "mock";
   process.env.PAYMENT_CALLBACK_BASE_URL = "http://localhost:3010";
-  process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
-  process.env.PARSPACK_MUTATIONS_ENABLED = "true";
+  process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
+  process.env.ARVAN_READY_PUBLIC_SALE_ENABLED = "true";
+  process.env.ARVAN_MUTATIONS_ENABLED = "true";
   if (!process.env.CREDENTIAL_ENCRYPTION_KEY) {
     process.env.CREDENTIAL_ENCRYPTION_KEY = randomBytes(32).toString("base64");
   }
@@ -105,13 +107,13 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
   try {
     const catalog = await prisma.providerCatalogItem.create({
       data: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         apiVersion: "v1",
         productKind: "READY_INSTANT_SERVER",
         regionCode: `payment-${suffix}`,
         sizeCode: "callback-vps",
         externalPlanId: "callback-vps",
-        externalKey: `parspack:v1:payment-${suffix}:callback-vps`,
+        externalKey: `arvan:v1:payment-${suffix}:callback-vps`,
         sizeName: "Callback test VPS",
         compatibleImageCodes: ["ubuntu-callback"],
         vcpu: 2,
@@ -134,7 +136,7 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
     });
     catalogItemId = catalog.id;
     await prisma.providerCatalogState.upsert({
-      where: { provider: "PARSPACK" },
+      where: { provider: "ARVAN" },
       update: {
         enabled: true,
         lastCatalogSync: now,
@@ -142,16 +144,34 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
         freshnessSlaSeconds: 900,
       },
       create: {
-        id: "parspack",
-        provider: "PARSPACK",
+        id: "arvan",
+        provider: "ARVAN",
         enabled: true,
         lastCatalogSync: now,
         lastSyncStatus: "SUCCEEDED",
         freshnessSlaSeconds: 900,
       },
     });
+    await prisma.providerRegionConfig.upsert({
+      where: {
+        provider_apiVersion_regionCode: {
+          provider: "ARVAN",
+          apiVersion: "v1",
+          regionCode: catalog.regionCode,
+        },
+      },
+      update: { saleEnabled: true, syncEnabled: true },
+      create: {
+        provider: "ARVAN",
+        apiVersion: "v1",
+        regionCode: catalog.regionCode,
+        displayName: `Payment callback ${suffix}`,
+        saleEnabled: true,
+        syncEnabled: true,
+      },
+    });
     await prisma.providerPricingConfig.upsert({
-      where: { provider: "PARSPACK" },
+      where: { provider: "ARVAN" },
       update: {
         apiVersion: "v1",
         enabled: true,
@@ -159,8 +179,8 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
         sourceMoneyUnit: "RIAL",
       },
       create: {
-        id: "parspack",
-        provider: "PARSPACK",
+        id: "arvan",
+        provider: "ARVAN",
         apiVersion: "v1",
         enabled: true,
         markupBasisPoints: 0,
@@ -170,15 +190,15 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
     await prisma.productPricingConfig.upsert({
       where: {
         provider_apiVersion_productKind: {
-          provider: "PARSPACK",
+          provider: "ARVAN",
           apiVersion: "v1",
           productKind: "READY_INSTANT_SERVER",
         },
       },
       update: { enabled: true, markupBasisPoints: 0 },
       create: {
-        id: "payment-callback-parspack-ready",
-        provider: "PARSPACK",
+        id: "payment-callback-arvan-ready",
+        provider: "ARVAN",
         apiVersion: "v1",
         productKind: "READY_INSTANT_SERVER",
         enabled: true,
@@ -189,7 +209,7 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
       data: {
         code: planCode,
         title: "Payment callback test",
-        provider: "PARSPACK",
+        provider: "ARVAN",
         providerApiVersion: "v1",
         productKind: "READY_INSTANT_SERVER",
         regionCode: catalog.regionCode,
@@ -230,7 +250,7 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
         planCode: plan.code,
         planSnapshot: toPlanSnapshot(pricedPlan, { createdAt: now, expiresAt: validUntil }),
         quoteExpiresAt: validUntil,
-        provider: "PARSPACK",
+        provider: "ARVAN",
         providerApiVersion: "v1",
         productKind: "READY_INSTANT_SERVER",
         parchinLevel: pricedPlan.pricing.parchinLevel,
@@ -876,8 +896,9 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
     }
     process.env.PAYMENT_BOOTSTRAP_DEFAULT_PROVIDER = previous.defaultGateway;
     process.env.PAYMENT_CALLBACK_BASE_URL = previous.callbackBase;
-    process.env.PARSPACK_PUBLIC_SALE_ENABLED = previous.publicSale;
-    process.env.PARSPACK_MUTATIONS_ENABLED = previous.mutations;
+    process.env.ARVAN_PUBLIC_SALE_ENABLED = previous.publicSale;
+    process.env.ARVAN_READY_PUBLIC_SALE_ENABLED = previous.readySale;
+    process.env.ARVAN_MUTATIONS_ENABLED = previous.mutations;
     if (previous.credentialEncryptionKey === undefined) {
       delete process.env.CREDENTIAL_ENCRYPTION_KEY;
     } else {

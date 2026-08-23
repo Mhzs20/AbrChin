@@ -531,17 +531,10 @@ export function parseLockedProvisioningSelection(input: {
   const explicitTopologyMode =
     string(snapshot.topologyVerificationMode) ??
     string(delivery.topologyVerificationMode);
-  const expectedTopologyMode =
-    input.provider === InfrastructureProvider.ARVAN
-      ? "STRICT_OBSERVED"
-      : "PROVIDER_MANAGED";
-  const topologyVerificationMode =
-    explicitTopologyMode ??
-    (input.provider === InfrastructureProvider.PARSPACK &&
-    externalNetworkId === "provider-default" &&
-    externalSecurityId === "provider-default"
-      ? "PROVIDER_MANAGED"
-      : null);
+  // ArvanCloud is the only provider and it always verifies the observed
+  // network/security topology against the locked selection.
+  const expectedTopologyMode = "STRICT_OBSERVED";
+  const topologyVerificationMode = explicitTopologyMode;
   const accessMethod = string(delivery.accessMethod);
   if (
     provider !== input.provider ||
@@ -587,14 +580,8 @@ export function parseLockedProvisioningSelection(input: {
     region,
     externalPlanId,
     externalImageId,
-    externalNetworkId:
-      topologyVerificationMode === "PROVIDER_MANAGED"
-        ? null
-        : externalNetworkId,
-    externalSecurityId:
-      topologyVerificationMode === "PROVIDER_MANAGED"
-        ? null
-        : externalSecurityId,
+    externalNetworkId,
+    externalSecurityId,
     topologyVerificationMode,
     accessMethod: accessMethod as CreateServerInput["accessMethod"],
     sshKeyName,

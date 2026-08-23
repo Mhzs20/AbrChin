@@ -13,27 +13,18 @@ import {
   rejectCrossOrigin,
 } from "@/lib/http";
 import { safeProviderSyncCode } from "@/lib/infrastructure/catalog-sync-observability";
-import {
-  createCloudProviderAdapter,
-  createParsPackProviderClient,
-} from "@/lib/infrastructure/provider-factory";
+import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
 import {
   listProviderRegionConfigs,
   normalizeProviderRegionCode,
   normalizeProviderRegionDisplayName,
   syncAllProviderRegionsFromProviders,
   syncArvanRegionsFromProvider,
-  syncParsPackRegionsFromProvider,
 } from "@/lib/infrastructure/provider-region-config";
 import { readRequestMeta } from "@/lib/session";
 import { IdempotencyConflictError } from "@/lib/idempotency";
 
 export const dynamic = "force-dynamic";
-
-function parseProvider(value: unknown): InfrastructureProvider {
-  if (value === "PARSPACK") return InfrastructureProvider.PARSPACK;
-  return InfrastructureProvider.ARVAN;
-}
 
 function serializeRegions(
   regions: Awaited<ReturnType<typeof listProviderRegionConfigs>>,
@@ -50,22 +41,6 @@ async function validateProviderRegion(
   provider: InfrastructureProvider,
   regionCode: string,
 ) {
-  if (provider === InfrastructureProvider.PARSPACK) {
-    // ParsPack region contract is validated by public /regions presence.
-    try {
-      const regions = await createParsPackProviderClient().listRegions();
-      const match = regions.some(
-        (region) => region.code.toLowerCase() === regionCode.toLowerCase(),
-      );
-      if (!match) {
-        return { ok: false as const, code: "provider_region_not_found" };
-      }
-      return { ok: true as const, code: "provider_region_valid" };
-    } catch (error) {
-      return { ok: false as const, code: safeProviderSyncCode(error) };
-    }
-  }
-
   const adapter = createCloudProviderAdapter(provider, "v1", {
     regionCodes: [regionCode],
   });
@@ -106,20 +81,13 @@ export async function GET() {
         error instanceof Error ? error.message : "provider_region_discovery_failed";
       console.error("[admin/provider-regions/discover]", discoveryError);
     }
-    const [arvanRegions, parsPackRegions] = await Promise.all([
-      listProviderRegionConfigs({
-        provider: InfrastructureProvider.ARVAN,
-        apiVersion: "v1",
-        purpose: "ALL",
-      }),
-      listProviderRegionConfigs({
-        provider: InfrastructureProvider.PARSPACK,
-        apiVersion: "v1",
-        purpose: "ALL",
-      }),
-    ]);
+    const arvanRegions = await listProviderRegionConfigs({
+      provider: InfrastructureProvider.ARVAN,
+      apiVersion: "v1",
+      purpose: "ALL",
+    });
     return jsonOk({
-      regions: serializeRegions([...arvanRegions, ...parsPackRegions]),
+      regions: serializeRegions(arvanRegions),
       discovery,
       discoveryError,
     });
@@ -146,16 +114,14 @@ export async function POST(request: Request) {
 
     if (body.action === "discover_from_provider") {
       const meta = await readRequestMeta(request);
-      const provider = parseProvider(body.provider);
+      const provider = InfrastructureProvider.ARVAN;
       try {
         const discovery =
-          provider === InfrastructureProvider.PARSPACK
-            ? await syncParsPackRegionsFromProvider({ actorUserId: admin.id })
-            : body.provider == null || body.provider === "ALL"
-              ? await syncAllProviderRegionsFromProviders({
-                  actorUserId: admin.id,
-                })
-              : await syncArvanRegionsFromProvider({ actorUserId: admin.id });
+          body.provider == null || body.provider === "ALL"
+            ? await syncAllProviderRegionsFromProviders({
+                actorUserId: admin.id,
+              })
+            : await syncArvanRegionsFromProvider({ actorUserId: admin.id });
         await writeAuditLog({
           actorUserId: admin.id,
           action: AuditActions.PROVIDER_REGION_DISCOVER,
@@ -194,7 +160,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const provider = parseProvider(body.provider);
+    const provider = InfrastructureProvider.ARVAN;
     const regionCode = normalizeProviderRegionCode(String(body.regionCode ?? ""));
     const displayName = normalizeProviderRegionDisplayName(
       String(body.displayName ?? ""),
@@ -309,11 +275,7 @@ export async function PATCH(request: Request) {
     const id = typeof body.id === "string" ? body.id.trim() : "";
     if (!id) return jsonError("Region معتبر نیست.", 400);
     const before = await prisma.providerRegionConfig.findUnique({ where: { id } });
-    if (
-      !before ||
-      (before.provider !== InfrastructureProvider.ARVAN &&
-        before.provider !== InfrastructureProvider.PARSPACK)
-    ) {
+    if (!before || before.provider !== InfrastructureProvider.ARVAN) {
       return jsonError("Region پیدا نشد.", 404);
     }
     const wantsEnabled = body.syncEnabled === true || body.saleEnabled === true;

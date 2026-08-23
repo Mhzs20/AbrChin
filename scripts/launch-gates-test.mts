@@ -13,7 +13,6 @@ import { getPublicSaleDecision } from "../lib/infrastructure/public-sale-policy.
 const root = new URL("../", import.meta.url);
 const saleKeys = [
   "PUBLIC_SALE_ENABLED",
-  "PARSPACK_PUBLIC_SALE_ENABLED",
   "ARVAN_PUBLIC_SALE_ENABLED",
   "ARVAN_READY_PUBLIC_SALE_ENABLED",
   "ARVAN_CLOUD_PUBLIC_SALE_ENABLED",
@@ -44,15 +43,15 @@ function withSaleEnvironment(
   }
 }
 
-const parsPackRoute = {
-  provider: InfrastructureProvider.PARSPACK,
+const arvanRoute = {
+  provider: InfrastructureProvider.ARVAN,
   offerSource: InfrastructureOfferSource.API_CATALOG,
   productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
 };
 
 test("public sale and published provider routes are open by default", () => {
   withSaleEnvironment({}, () => {
-    assert.deepEqual(getPublicSaleDecision(parsPackRoute), {
+    assert.deepEqual(getPublicSaleDecision(arvanRoute), {
       allowed: true,
       code: "sale_enabled",
     });
@@ -62,18 +61,18 @@ test("public sale and published provider routes are open by default", () => {
 test("an explicit emergency master closure still wins over a provider flag", () => {
   withSaleEnvironment({
     PUBLIC_SALE_ENABLED: "false",
-    PARSPACK_PUBLIC_SALE_ENABLED: "true",
+    ARVAN_PUBLIC_SALE_ENABLED: "true",
   }, () => {
-    assert.equal(getPublicSaleDecision(parsPackRoute).allowed, false);
+    assert.equal(getPublicSaleDecision(arvanRoute).allowed, false);
   });
 });
 
 test("the launch-wide gate cannot bypass a disabled provider gate", () => {
   withSaleEnvironment({
     PUBLIC_SALE_ENABLED: "true",
-    PARSPACK_PUBLIC_SALE_ENABLED: "false",
+    ARVAN_PUBLIC_SALE_ENABLED: "false",
   }, () => {
-    assert.deepEqual(getPublicSaleDecision(parsPackRoute), {
+    assert.deepEqual(getPublicSaleDecision(arvanRoute), {
       allowed: false,
       code: "provider_sale_disabled",
     });
@@ -84,10 +83,10 @@ test("public sale requires both the launch-wide and provider gates", () => {
   withSaleEnvironment(
     {
       PUBLIC_SALE_ENABLED: "true",
-      PARSPACK_PUBLIC_SALE_ENABLED: "true",
+      ARVAN_PUBLIC_SALE_ENABLED: "true",
     },
     () => {
-      assert.deepEqual(getPublicSaleDecision(parsPackRoute), {
+      assert.deepEqual(getPublicSaleDecision(arvanRoute), {
         allowed: true,
         code: "sale_enabled",
       });
@@ -103,16 +102,12 @@ test("deployment templates keep sale open and provider mutations closed", async 
   ]);
   const saleKeys = [
     "PUBLIC_SALE_ENABLED",
-    "PARSPACK_PUBLIC_SALE_ENABLED",
     "ARVAN_PUBLIC_SALE_ENABLED",
     "ARVAN_READY_PUBLIC_SALE_ENABLED",
     "ARVAN_CLOUD_PUBLIC_SALE_ENABLED",
     "MANUAL_READY_PUBLIC_SALE_ENABLED",
   ];
-  const mutationKeys = [
-    "PARSPACK_MUTATIONS_ENABLED",
-    "ARVAN_MUTATIONS_ENABLED",
-  ];
+  const mutationKeys = ["ARVAN_MUTATIONS_ENABLED"];
   for (const key of saleKeys) {
     assert.match(development, new RegExp(`^${key}=true$`, "m"));
     assert.match(production, new RegExp(`^${key}=true$`, "m"));
@@ -202,18 +197,10 @@ test("GET surfaces remain read-only and expired quote refresh stays POST-only", 
 });
 
 test("provider lifecycle mutations fail before the first network request", async () => {
-  const [arvan, parsPack] = await Promise.all([
-    source("lib/infrastructure/arvan/v1-adapter.ts"),
-    source("lib/infrastructure/parspack/client.ts"),
-  ]);
+  const arvan = await source("lib/infrastructure/arvan/v1-adapter.ts");
   const arvanRequest = arvan.slice(arvan.indexOf("private async request("));
-  const parsPackRequest = parsPack.slice(parsPack.indexOf("private async request<T>("));
   assert.ok(
     arvanRequest.indexOf('method !== "GET" && !this.mutationsEnabled') <
       arvanRequest.indexOf("this.fetchImpl("),
-  );
-  assert.ok(
-    parsPackRequest.indexOf('method !== "GET" && !this.mutationsEnabled') <
-      parsPackRequest.indexOf("this.fetchImpl("),
   );
 });

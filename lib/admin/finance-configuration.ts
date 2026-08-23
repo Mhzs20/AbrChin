@@ -39,10 +39,7 @@ import {
 import { catalogItemBasePriceRial } from "@/lib/pricing/plan-pricing";
 import { filterDominatedPlans } from "@/lib/storefront/dominance";
 
-const PROVIDERS = [
-  InfrastructureProvider.ARVAN,
-  InfrastructureProvider.PARSPACK,
-] as const;
+const PROVIDERS = [InfrastructureProvider.ARVAN] as const;
 
 const COMPASS_SERVICE_CODES = [
   "SITE_MIGRATION",

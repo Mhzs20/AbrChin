@@ -488,10 +488,7 @@ export async function executePayOrderWithWalletTx(
           order.recommendationQuote?.externalNetworkId ?? null,
         externalSecurityId:
           order.recommendationQuote?.externalSecurityId ?? null,
-        topologyVerificationMode:
-          plan.provider === InfrastructureProvider.PARSPACK
-            ? "PROVIDER_MANAGED"
-            : "STRICT_OBSERVED",
+        topologyVerificationMode: "STRICT_OBSERVED",
         deliveryConfiguration:
           order.recommendationQuote?.deliveryConfigurationSnapshot ??
           null,

@@ -34,15 +34,15 @@ async function ensurePricing() {
   const syncedAt = new Date();
 
   await prisma.providerCatalogState.upsert({
-    where: { provider: "PARSPACK" },
+    where: { provider: "ARVAN" },
     update: {
       lastCatalogSync: syncedAt,
       lastSyncStatus: "SUCCEEDED",
       freshnessSlaSeconds: 900,
     },
     create: {
-      id: "parspack-v1",
-      provider: "PARSPACK",
+      id: "arvan-v1",
+      provider: "ARVAN",
       apiVersion: "v1",
       enabled: true,
       lastCatalogSync: syncedAt,
@@ -51,10 +51,29 @@ async function ensurePricing() {
     },
   });
 
+  await prisma.providerRegionConfig.upsert({
+    where: {
+      provider_apiVersion_regionCode: {
+        provider: "ARVAN",
+        apiVersion: "v1",
+        regionCode: "tehran11",
+      },
+    },
+    update: { saleEnabled: true, syncEnabled: true },
+    create: {
+      provider: "ARVAN",
+      apiVersion: "v1",
+      regionCode: "tehran11",
+      displayName: "تهران ۱۱، ایران",
+      saleEnabled: true,
+      syncEnabled: true,
+    },
+  });
+
   const catalogItem = await prisma.providerCatalogItem.upsert({
     where: {
       provider_apiVersion_regionCode_externalPlanId: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         apiVersion: "v1",
         regionCode: "tehran11",
         externalPlanId: "irLinuxVPS4",
@@ -76,13 +95,13 @@ async function ensurePricing() {
       status: "ACTIVE",
     },
     create: {
-      provider: "PARSPACK",
+      provider: "ARVAN",
       apiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       externalPlanId: "irLinuxVPS4",
-      externalKey: "parspack:v1:tehran11:irLinuxVPS4",
+      externalKey: "arvan:v1:tehran11:irLinuxVPS4",
       sizeName: "Development",
       compatibleImageCodes: ["ubuntu24-cloudinit-qcow2"],
       vcpu: 2,
@@ -107,7 +126,7 @@ async function ensurePricing() {
   const catalogPlus = await prisma.providerCatalogItem.upsert({
     where: {
       provider_apiVersion_regionCode_externalPlanId: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         apiVersion: "v1",
         regionCode: "tehran11",
         externalPlanId: "irLinuxVPS8",
@@ -129,13 +148,13 @@ async function ensurePricing() {
       status: "ACTIVE",
     },
     create: {
-      provider: "PARSPACK",
+      provider: "ARVAN",
       apiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS8",
       externalPlanId: "irLinuxVPS8",
-      externalKey: "parspack:v1:tehran11:irLinuxVPS8",
+      externalKey: "arvan:v1:tehran11:irLinuxVPS8",
       sizeName: "Development Plus",
       compatibleImageCodes: ["ubuntu24-cloudinit-qcow2"],
       vcpu: 4,
@@ -158,7 +177,7 @@ async function ensurePricing() {
   });
 
   await prisma.providerPricingConfig.upsert({
-    where: { provider: "PARSPACK" },
+    where: { provider: "ARVAN" },
     update: {
       apiVersion: "v1",
       enabled: true,
@@ -166,8 +185,8 @@ async function ensurePricing() {
       sourceMoneyUnit: "TOMAN",
     },
     create: {
-      id: "parspack",
-      provider: "PARSPACK",
+      id: "arvan",
+      provider: "ARVAN",
       apiVersion: "v1",
       enabled: true,
       markupBasisPoints: 2500,
@@ -177,15 +196,15 @@ async function ensurePricing() {
   await prisma.productPricingConfig.upsert({
     where: {
       provider_apiVersion_productKind: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         apiVersion: "v1",
         productKind: "READY_INSTANT_SERVER",
       },
     },
     update: { enabled: true, markupBasisPoints: 0 },
     create: {
-      id: "phase5-parspack-ready",
-      provider: "PARSPACK",
+      id: "phase5-arvan-ready",
+      provider: "ARVAN",
       apiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       enabled: true,
@@ -224,7 +243,7 @@ async function ensurePricing() {
   const starter = await prisma.infrastructurePlan.upsert({
     where: { code: "DEV_STARTER" },
     update: {
-      provider: "PARSPACK",
+      provider: "ARVAN",
       providerApiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       deliveryMode: DeliveryMode.MANAGED,
@@ -249,7 +268,7 @@ async function ensurePricing() {
     create: {
       code: "DEV_STARTER",
       title: "شروع توسعه",
-      provider: "PARSPACK",
+      provider: "ARVAN",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       imageCode: "ubuntu24-cloudinit-qcow2",
@@ -277,7 +296,7 @@ async function ensurePricing() {
   const plus = await prisma.infrastructurePlan.upsert({
     where: { code: "DEV_STARTER_PLUS" },
     update: {
-      provider: "PARSPACK",
+      provider: "ARVAN",
       providerApiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       deliveryMode: DeliveryMode.MANAGED,
@@ -302,7 +321,7 @@ async function ensurePricing() {
     create: {
       code: "DEV_STARTER_PLUS",
       title: "توسعه پیشرفته",
-      provider: "PARSPACK",
+      provider: "ARVAN",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS8",
       imageCode: "ubuntu24-cloudinit-qcow2",
@@ -353,7 +372,7 @@ async function ensurePricing() {
   await prisma.providerCatalogAsset.upsert({
     where: {
       provider_apiVersion_regionCode_kind_externalId: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         apiVersion: "v1",
         regionCode: "tehran11",
         kind: "IMAGE",
@@ -377,7 +396,7 @@ async function ensurePricing() {
       payloadHash: "phase5-ubuntu24",
     },
     create: {
-      provider: "PARSPACK",
+      provider: "ARVAN",
       apiVersion: "v1",
       regionCode: "tehran11",
       kind: "IMAGE",
@@ -426,7 +445,7 @@ async function createQuoteForUser(
       productFlowRevision: 1,
       selectedParchinLevel: "PARCHIN_START",
       deliveryConfiguration: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         providerApiVersion: "v1",
         productKind: "READY_INSTANT_SERVER",
         region: "tehran11",
@@ -467,7 +486,7 @@ async function createQuoteForUser(
       finalPriceRialSnapshot: pricedPlan.pricing.finalPriceRial,
       currencySnapshot: "IRR",
       providerPriceCheckedAt: opts.createdAt,
-      provider: "PARSPACK",
+      provider: "ARVAN",
       providerApiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       providerRegion: "tehran11",
@@ -484,7 +503,7 @@ async function createQuoteForUser(
       quotedAt: opts.createdAt,
       expiresAt: opts.expiresAt,
       deliveryConfigurationSnapshot: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         region: "tehran11",
         regionLabel: "تهران",
         operatingSystem: "Ubuntu 24.04 LTS",
@@ -521,7 +540,7 @@ async function createActivePrepaidService(
       planCode: "DEV_STARTER",
       paidAt,
       productFlowState: "ACTIVE",
-      provider: "PARSPACK",
+      provider: "ARVAN",
       providerApiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       parchinLevel: "PARCHIN_START",
@@ -533,7 +552,7 @@ async function createActivePrepaidService(
       serviceOrderId: order.id,
       userId,
       planId,
-      provider: "PARSPACK",
+      provider: "ARVAN",
       providerApiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       parchinLevel: "PARCHIN_START",
@@ -549,7 +568,7 @@ async function createActivePrepaidService(
     data: {
       infrastructureOrderId: infra.id,
       userId,
-      provider: "PARSPACK",
+      provider: "ARVAN",
       providerApiVersion: "v1",
       providerInstanceId: `phase5-shot-${Date.now()}`,
       name: "abrchin-phase5-active",
@@ -589,7 +608,7 @@ async function createActivePrepaidService(
 }
 
 async function main() {
-  process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
+  process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
 
   const user = await prisma.user.upsert({
     where: { mobile: MOBILE },

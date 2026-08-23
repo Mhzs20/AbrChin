@@ -15,9 +15,6 @@ await withTemporaryPostgres("upgrade", async (databaseUrl) => {
     ARVAN_MUTATIONS_ENABLED: "false",
     ARVAN_PUBLIC_SALE_ENABLED: "false",
     ARVAN_CLOUD_PUBLIC_SALE_ENABLED: "false",
-    PARSPACK_ENABLED: "false",
-    PARSPACK_MUTATIONS_ENABLED: "false",
-    PARSPACK_PUBLIC_SALE_ENABLED: "false",
     // Alert recipients must be fixture-controlled; a host ADMIN_MOBILES
     // secret would add an extra SMS outbox row and break dedup counts.
     ADMIN_MOBILES: "",

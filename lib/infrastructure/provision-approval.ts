@@ -71,11 +71,7 @@ function provisioningMode(input: {
   if (input.offerSource === InfrastructureOfferSource.MANUAL_ADMIN) {
     return "MANUAL_FULFILLMENT";
   }
-  const env = getEnv();
-  const mutationsEnabled =
-    input.provider === InfrastructureProvider.ARVAN
-      ? env.arvanMutationsEnabled
-      : env.parspackMutationsEnabled;
+  const mutationsEnabled = getEnv().arvanMutationsEnabled;
   return isCloudProviderConfigured(input.provider) && mutationsEnabled
     ? "AUTOMATED_PROVIDER"
     : "MANUAL_FULFILLMENT";

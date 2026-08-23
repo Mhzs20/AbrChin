@@ -27,11 +27,11 @@ const quickLinks = [
   {
     href: "/admin/infrastructure/plans",
     title: "SKUهای قابل‌فروش",
-    description: "انتخاب از کاتالوگ آروان/پارس‌پک و انتشار",
+    description: "انتخاب از کاتالوگ آروان و انتشار",
   },
   {
     href: "/admin/infrastructure/providers",
-    title: "منابع Arvan / ParsPack",
+    title: "منابع Arvan",
     description: "اتصال، Sync و کاتالوگ خام",
   },
   {
@@ -119,30 +119,14 @@ export default async function AdminSettingsPage() {
       tone: isCloudProviderConfigured("ARVAN") ? "success" : "warning",
     },
     {
-      label: "پارس‌پک",
-      status: isCloudProviderConfigured("PARSPACK") ? "فعال" : "تنظیم نشده",
-      tone: isCloudProviderConfigured("PARSPACK") ? "success" : "warning",
-    },
-    {
       label: "فروش آروان Cloud",
       status: env.arvanCloudPublicSaleEnabled ? "باز" : "بسته",
       tone: env.arvanCloudPublicSaleEnabled ? "success" : "warning",
     },
     {
-      label: "فروش پارس‌پک",
-      status: env.parspackPublicSaleEnabled ? "باز" : "بسته",
-      tone: env.parspackPublicSaleEnabled ? "success" : "warning",
-    },
-    {
-      label: "Mutation آروان / پارس‌پک",
-      status:
-        env.arvanMutationsEnabled || env.parspackMutationsEnabled
-          ? "فعال"
-          : "خاموش (Fulfillment دستی)",
-      tone:
-        env.arvanMutationsEnabled || env.parspackMutationsEnabled
-          ? "warning"
-          : "info",
+      label: "Mutation آروان",
+      status: env.arvanMutationsEnabled ? "فعال" : "خاموش (Fulfillment دستی)",
+      tone: env.arvanMutationsEnabled ? "warning" : "info",
     },
   ];
 

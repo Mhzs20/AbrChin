@@ -271,9 +271,7 @@ async function loadPricingContext() {
     commerce,
     parchinRows,
     arvanFreshness,
-    parsPackFreshness,
     arvanRegions,
-    parsPackRegions,
     publishedPlans,
     profitCurve,
   ] = await Promise.all([
@@ -282,14 +280,8 @@ async function loadPricingContext() {
       prisma.commercePricingConfig.findUnique({ where: { id: "default" } }),
       prisma.parchinPricingConfig.findMany({ where: { active: true } }),
       getCatalogFreshness("ARVAN").catch(() => null),
-      getCatalogFreshness("PARSPACK").catch(() => null),
       listProviderRegionConfigs({
         provider: "ARVAN",
-        apiVersion: "v1",
-        purpose: "ALL",
-      }).catch(() => []),
-      listProviderRegionConfigs({
-        provider: "PARSPACK",
         apiVersion: "v1",
         purpose: "ALL",
       }).catch(() => []),
@@ -318,10 +310,9 @@ async function loadPricingContext() {
     ]);
   const freshnessByProvider = {
     ARVAN: arvanFreshness,
-    PARSPACK: parsPackFreshness,
   } as const;
   const regionSale = new Map<string, boolean>();
-  for (const region of [...arvanRegions, ...parsPackRegions]) {
+  for (const region of arvanRegions) {
     regionSale.set(
       `${region.provider}:${region.regionCode}`,
       region.saleEnabled,
@@ -368,7 +359,6 @@ function buildOfferForItem(
 
   const published = context.publishedByCatalogItemId.get(item.id);
   const regionSaleEnabled =
-    item.provider !== "ARVAN" ||
     context.regionSale.get(`${item.provider}:${item.regionCode}`) === true;
 
   const providerPricing = context.providers.find(
@@ -631,39 +621,21 @@ export async function resolveStorefrontTierOffers(
     .filter((item): item is ProviderCatalogItem => item != null);
 
   // Full catalog pool for the tier — public listing is not capped to a curated 3/24.
-  const [arvanPool, parsPackPool] = await Promise.all([
-    prisma.providerCatalogItem.findMany({
-      where: {
-        provider: "ARVAN",
-        source: "API_CATALOG",
-        active: true,
-        available: true,
-        status: "ACTIVE",
-        OR: [
-          { providerHourlyPriceIrr: { gt: 0n } },
-          { providerMonthlyPriceIrr: { gt: 0n } },
-        ],
-      },
-      orderBy: [{ vcpu: "asc" }, { ramMb: "asc" }, { diskGb: "asc" }],
-      take: 5000,
-    }),
-    prisma.providerCatalogItem.findMany({
-      where: {
-        provider: "PARSPACK",
-        source: "API_CATALOG",
-        active: true,
-        available: true,
-        status: "ACTIVE",
-        OR: [
-          { providerHourlyPriceIrr: { gt: 0n } },
-          { providerMonthlyPriceIrr: { gt: 0n } },
-        ],
-      },
-      orderBy: [{ vcpu: "asc" }, { ramMb: "asc" }, { diskGb: "asc" }],
-      take: 5000,
-    }),
-  ]);
-  const fillPool = [...arvanPool, ...parsPackPool];
+  const fillPool = await prisma.providerCatalogItem.findMany({
+    where: {
+      provider: "ARVAN",
+      source: "API_CATALOG",
+      active: true,
+      available: true,
+      status: "ACTIVE",
+      OR: [
+        { providerHourlyPriceIrr: { gt: 0n } },
+        { providerMonthlyPriceIrr: { gt: 0n } },
+      ],
+    },
+    orderBy: [{ vcpu: "asc" }, { ramMb: "asc" }, { diskGb: "asc" }],
+    take: 5000,
+  });
 
   const byId = new Map<string, ProviderCatalogItem>();
   for (const item of [...slotItems, ...fillPool]) {
@@ -761,9 +733,8 @@ export async function listPublicStorefrontTiers(): Promise<{
     showMonthlyPrice: true,
     ...DEFAULT_STOREFRONT_CAPACITY_RULES,
   };
-  const [arvanFreshness, parsPackFreshness, resolved] = await Promise.all([
+  const [arvanFreshness, resolved] = await Promise.all([
     getCatalogFreshness("ARVAN").catch(() => null),
-    getCatalogFreshness("PARSPACK").catch(() => null),
     Promise.all(
       STOREFRONT_TIERS.map(async (tier) => {
         const result = await resolveStorefrontTierOffers(tier);
@@ -780,14 +751,11 @@ export async function listPublicStorefrontTiers(): Promise<{
       }),
     ),
   ]);
-  const freshStates = [arvanFreshness, parsPackFreshness].filter(Boolean);
   const allFresh =
-    freshStates.length > 0 &&
-    freshStates.every((state) => isStorefrontDisplayFresh(state!.lastSync));
+    arvanFreshness != null && isStorefrontDisplayFresh(arvanFreshness.lastSync);
   const checkedAt =
     resolved.flatMap((tier) => tier.offers)[0]?.checkedAt ??
     arvanFreshness?.lastSync?.toISOString() ??
-    parsPackFreshness?.lastSync?.toISOString() ??
     null;
   return {
     live: allFresh,
@@ -833,7 +801,7 @@ export async function replaceStorefrontTierSlots(input: {
   const items = await prisma.providerCatalogItem.findMany({
     where: {
       id: { in: catalogIds },
-      provider: { in: ["ARVAN", "PARSPACK"] },
+      provider: "ARVAN",
       productKind: { in: ["CLOUD_SERVER", "READY_INSTANT_SERVER"] },
       source: "API_CATALOG",
       active: true,
@@ -961,21 +929,12 @@ export async function listStorefrontCatalogCandidates() {
       { providerMonthlyPriceIrr: { gt: 0n } },
     ],
   };
-  // Load each provider separately so a large Arvan catalog cannot starve
-  // ParsPack (or the reverse) under a shared take limit.
-  const [arvanItems, parsPackItems] = await Promise.all([
-    prisma.providerCatalogItem.findMany({
-      where: { ...candidateWhere, provider: "ARVAN" },
-      orderBy: [{ regionCode: "asc" }, { vcpu: "asc" }, { ramMb: "asc" }],
-      take: 5000,
-    }),
-    prisma.providerCatalogItem.findMany({
-      where: { ...candidateWhere, provider: "PARSPACK" },
-      orderBy: [{ regionCode: "asc" }, { vcpu: "asc" }, { ramMb: "asc" }],
-      take: 5000,
-    }),
-  ]);
-  return [...arvanItems, ...parsPackItems].map((item) => ({
+  const arvanItems = await prisma.providerCatalogItem.findMany({
+    where: { ...candidateWhere, provider: "ARVAN" },
+    orderBy: [{ regionCode: "asc" }, { vcpu: "asc" }, { ramMb: "asc" }],
+    take: 5000,
+  });
+  return arvanItems.map((item) => ({
     id: item.id,
     provider: item.provider,
     regionCode: item.regionCode,

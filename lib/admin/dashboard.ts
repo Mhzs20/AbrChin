@@ -92,9 +92,6 @@ export async function getSystemStatuses() {
     prisma.providerPricingConfig.findMany(),
     prisma.serviceConnectionCheck.findMany(),
   ]);
-  const catalog = catalogStates.find((item) => item.provider === "PARSPACK");
-  const pricing = pricingConfigs.find((item) => item.provider === "PARSPACK");
-
   const arvanCatalog = catalogStates.find((item) => item.provider === "ARVAN");
   const arvanPricing = pricingConfigs.find((item) => item.provider === "ARVAN");
   const persistedConnection = (
@@ -115,10 +112,6 @@ export async function getSystemStatuses() {
         : check?.message ?? "بررسی اتصال اجرا نشده است",
     };
   };
-  const parspackConnection = persistedConnection(
-    ServiceConnectionName.PARSPACK,
-    isCloudProviderConfigured("PARSPACK"),
-  );
   const arvanConnection = persistedConnection(
     ServiceConnectionName.ARVAN,
     isCloudProviderConfigured("ARVAN"),
@@ -179,14 +172,6 @@ export async function getSystemStatuses() {
       operationalAlerts: getOperationalAlertConfigurationStatus(),
     },
     postgres: { configured: Boolean(process.env.DATABASE_URL) },
-    parspack: {
-      ...providerState(
-        catalog,
-        pricing,
-        parspackConnection.status,
-        parspackConnection.message,
-      ),
-    },
     arvan: providerState(
       arvanCatalog,
       arvanPricing,
@@ -222,7 +207,7 @@ export async function getProviderCatalogAdminView() {
         { regionCode: "asc" },
         { sizeCode: "asc" },
       ],
-      // Full provider catalogs for Founder review (Arvan + ParsPack).
+      // Full provider catalog for Founder review (Arvan).
       take: 5000,
     }),
     prisma.providerPricingConfig.findMany(),
@@ -430,14 +415,6 @@ export async function getAdminOperationsCenter() {
         href: "/admin/connections",
       },
       {
-        key: "parspack",
-        label: "ParsPack",
-        group: "sale" as const,
-        status: system.parspack.status,
-        message: system.parspack.message,
-        href: "/admin/connections",
-      },
-      {
         key: "otp",
         label: "ورود OTP (کاوه‌نگار)",
         group: "sale" as const,
@@ -467,7 +444,7 @@ export async function getAdminOperationsCenter() {
                 ?.oldestOutstandingPeriod?.periodEnd ?? "نامشخص"}`,
         href: "/admin",
       },
-      ...["ARVAN", "PARSPACK"].map((provider) => {
+      ...["ARVAN"].map((provider) => {
         const contract = currentBillingContracts.get(
           `${provider}:v1:CLOUD_SERVER`,
         );
@@ -476,7 +453,7 @@ export async function getAdminOperationsCenter() {
         );
         return {
           key: `billing-contract-${provider.toLowerCase()}`,
-          label: `${provider === "ARVAN" ? "Arvan" : "ParsPack"} Billing Contract`,
+          label: "Arvan Billing Contract",
           group: "advanced" as const,
           status:
             contract?.status === "VERIFIED" && blockingReasons.length === 0

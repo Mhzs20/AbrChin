@@ -40,7 +40,7 @@ const RENEWABLE_STATUSES: SubscriptionStatus[] = [
 
 async function revalidateRenewalSelection(subscription: {
   plan: {
-    provider: "ARVAN" | "PARSPACK";
+    provider: "ARVAN";
     providerApiVersion: string;
     productKind: "CLOUD_SERVER" | "READY_INSTANT_SERVER";
     regionCode: string;

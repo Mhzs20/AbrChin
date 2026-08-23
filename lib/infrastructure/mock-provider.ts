@@ -36,7 +36,7 @@ const MOCK_CATALOG: ProviderCatalog = {
 type MockRecord = ProviderInstance & { pollCount: number };
 
 export class MockInfrastructureProvider implements InfrastructureProviderAdapter {
-  readonly provider = InfrastructureProvider.PARSPACK;
+  readonly provider = InfrastructureProvider.ARVAN;
   private static instances = new Map<string, MockRecord>();
 
   async checkConnection(): Promise<ProviderHealth> {

@@ -246,7 +246,7 @@ test("upgrade UX replaces vague request and wires wallet CTAs", async () => {
     /price rise alone must not increase charge/i,
   );
   // Upgrade targets are AbrChin published plans; provider resize API is
-  // optional — ParsPack is manual-only, Arvan may API-resize when enabled.
+  // optional — Arvan may API-resize when enabled, otherwise manual.
   assert.match(service, /providerResizeCapability/);
   assert.match(service, /apiResizeSupported:\s*false/);
   assert.match(service, /manualFulfillmentRequired:\s*true/);

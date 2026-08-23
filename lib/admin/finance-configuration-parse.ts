@@ -38,10 +38,7 @@ export function parseFinanceConfigurationBody(
   return {
     providers: providers.map((row) => {
       const item = row as Record<string, unknown>;
-      if (
-        item.provider !== InfrastructureProvider.ARVAN &&
-        item.provider !== InfrastructureProvider.PARSPACK
-      ) {
+      if (item.provider !== InfrastructureProvider.ARVAN) {
         throw new Error("invalid_configuration_body");
       }
       const margin = Number(item.targetGrossMarginBps);
@@ -57,8 +54,7 @@ export function parseFinanceConfigurationBody(
     productMarkups: productMarkups.map((row) => {
       const item = row as Record<string, unknown>;
       if (
-        (item.provider !== InfrastructureProvider.ARVAN &&
-          item.provider !== InfrastructureProvider.PARSPACK) ||
+        item.provider !== InfrastructureProvider.ARVAN ||
         !Object.values(InfrastructureProductKind).includes(
           item.productKind as InfrastructureProductKind,
         ) ||

@@ -15,10 +15,7 @@ import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 export const dynamic = "force-dynamic";
 
 function parseProvider(value: unknown): InfrastructureProvider | null {
-  return value === InfrastructureProvider.ARVAN ||
-    value === InfrastructureProvider.PARSPACK
-    ? value
-    : null;
+  return value === InfrastructureProvider.ARVAN ? value : null;
 }
 
 async function publicState(provider: InfrastructureProvider) {
@@ -77,12 +74,7 @@ export async function POST(request: Request) {
     if (!provider) return jsonError("Provider معتبر نیست.", 400);
 
     if (!isCloudProviderConfigured(provider)) {
-      return jsonError(
-        provider === InfrastructureProvider.ARVAN
-          ? "آروان‌کلاد تنظیم نشده است."
-          : "پارس‌پک تنظیم نشده است.",
-        400,
-      );
+      return jsonError("آروان‌کلاد تنظیم نشده است.", 400);
     }
     const promise = refreshMultiProviderCatalog(provider);
     const [result] = await settleProviderCatalogSyncTasks(

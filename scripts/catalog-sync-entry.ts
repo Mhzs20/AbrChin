@@ -13,30 +13,14 @@ type CatalogSyncResult = Awaited<
 >;
 
 function selectedProviders(value: string | undefined): InfrastructureProvider[] {
-  if (value === "parspack") return [InfrastructureProvider.PARSPACK];
-  if (value === "arvan") return [InfrastructureProvider.ARVAN];
-  if (value === "all") {
-    return [
-      InfrastructureProvider.PARSPACK,
-      InfrastructureProvider.ARVAN,
-    ];
+  if (value === "arvan" || value === "all") {
+    return [InfrastructureProvider.ARVAN];
   }
   throw new Error("invalid_catalog_sync_provider");
 }
 
-function assertProviderConfiguration(provider: InfrastructureProvider): void {
+function assertProviderConfiguration(): void {
   const env = getEnv();
-  if (provider === InfrastructureProvider.PARSPACK) {
-    if (
-      !env.parspackEnabled ||
-      !env.parspackApiToken ||
-      env.parspackApiVersion !== "v1" ||
-      !/\/api\/public\/v1\/?$/i.test(env.parspackPublicApiBaseUrl)
-    ) {
-      throw new Error("provider_configuration_invalid");
-    }
-    return;
-  }
   if (
     !env.arvanEnabled ||
     !env.arvanApiKey ||
@@ -87,7 +71,7 @@ function safeSuccessOutput(
 async function syncProvider(provider: InfrastructureProvider): Promise<boolean> {
   const startedAt = new Date();
   try {
-    assertProviderConfiguration(provider);
+    assertProviderConfiguration();
     const result = await refreshMultiProviderCatalog(provider);
     const output = safeSuccessOutput(result, startedAt, new Date());
     console.log(JSON.stringify(output));
@@ -131,7 +115,7 @@ async function main() {
         status: ProviderSyncStatus.FAILED,
         safeError: {
           code: "invalid_catalog_sync_provider",
-          message: "Provider must be parspack, arvan, or all.",
+          message: "Provider must be arvan or all.",
         },
       }),
     );
