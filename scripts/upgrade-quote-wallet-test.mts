@@ -248,7 +248,10 @@ test("upgrade UX replaces vague request and wires wallet CTAs", async () => {
   // Upgrade targets are AbrChin published plans; provider resize API is
   // optional — Arvan may API-resize when enabled, otherwise manual.
   assert.match(service, /providerResizeCapability/);
-  assert.match(service, /apiResizeSupported:\s*false/);
-  assert.match(service, /manualFulfillmentRequired:\s*true/);
+  assert.match(service, /apiResizeSupported:\s*true/);
+  assert.match(
+    service,
+    /manualFulfillmentRequired:\s*!mutationsEnabledFor\(provider\)/,
+  );
   assert.match(service, /Do not fabricate provider capability/);
 });
