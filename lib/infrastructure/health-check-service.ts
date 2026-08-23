@@ -140,10 +140,7 @@ export function resolveTopologyVerificationMode(input: {
   const explicit =
     selection.topologyVerificationMode ??
     delivery.topologyVerificationMode;
-  const expected =
-    input.provider === InfrastructureProvider.PARSPACK
-      ? "PROVIDER_MANAGED"
-      : "STRICT_OBSERVED";
+  const expected = "STRICT_OBSERVED";
   if (explicit != null && explicit !== expected) {
     throw new Error("provider_topology_mode_conflict");
   }

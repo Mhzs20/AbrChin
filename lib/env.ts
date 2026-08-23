@@ -15,24 +15,6 @@ function readBool(name: string, fallback: boolean): boolean {
 
 export function getEnv() {
   const isProduction = process.env.NODE_ENV === "production";
-  const parspackConfiguredBase = (
-    process.env.PARSPACK_API_BASE_URL ?? ""
-  ).trim();
-  const parspackLegacyPublicBase = (
-    process.env.PARSPACK_PUBLIC_API_BASE_URL ?? ""
-  ).trim();
-  const parspackManagementBase = (
-    process.env.PARSPACK_MANAGEMENT_API_BASE_URL ??
-    (parspackConfiguredBase &&
-    !parspackConfiguredBase.includes("/public/")
-      ? parspackConfiguredBase
-      : "https://my.parspack.com/cserver/api/v1")
-  ).trim();
-  const parspackCatalogBase =
-    parspackConfiguredBase.includes("/public/")
-      ? parspackConfiguredBase
-      : parspackLegacyPublicBase ||
-        "https://my.parspack.com/cserver/api/public/v1";
   return {
     databaseUrl: process.env.DATABASE_URL ?? "",
     sessionSecret: process.env.SESSION_SECRET ?? "",
@@ -67,26 +49,6 @@ export function getEnv() {
     // provider/source gates and freshness/availability checks still prevent an
     // invalid offer from being sold, without coupling checkout to mutations.
     publicSaleEnabled: readBool("PUBLIC_SALE_ENABLED", true),
-    parspackEnabled: readBool("PARSPACK_ENABLED", false),
-    parspackPublicSaleEnabled: readBool(
-      "PARSPACK_PUBLIC_SALE_ENABLED",
-      true,
-    ),
-    parspackMutationsEnabled: readBool(
-      "PARSPACK_MUTATIONS_ENABLED",
-      false,
-    ),
-    parspackApiBaseUrl: parspackManagementBase,
-    parspackPublicApiBaseUrl: parspackCatalogBase,
-    parspackApiToken: process.env.PARSPACK_API_TOKEN ?? "",
-    parspackTimeoutMs: readInt("PARSPACK_TIMEOUT_MS", 15_000),
-    parspackPriceCurrency: (process.env.PARSPACK_PRICE_CURRENCY ?? "").trim().toUpperCase(),
-    parspackPriceAmountUnit: (process.env.PARSPACK_PRICE_AMOUNT_UNIT ?? "")
-      .trim()
-      .toUpperCase(),
-    parspackApiVersion: (process.env.PARSPACK_API_VERSION ?? "v1")
-      .trim()
-      .toLowerCase(),
     arvanEnabled: readBool("ARVAN_ENABLED", false),
     arvanApiKey: process.env.ARVAN_API_KEY ?? "",
     arvanApiBaseUrl:
@@ -172,16 +134,6 @@ export function validateProviderEnvironment() {
     // Optional bootstrap only. Runtime region control lives in the database;
     // when supplied, the CSV is still strictly validated before startup.
     parseArvanRegionCodes(env.arvanRegionCodesCsv);
-  }
-  if (env.parspackApiVersion !== "v1") {
-    throw new Error("PARSPACK_API_VERSION must be v1");
-  }
-  if (
-    env.parspackEnabled &&
-    (!env.parspackApiToken ||
-      !/\/api\/public\/v1\/?$/i.test(env.parspackPublicApiBaseUrl))
-  ) {
-    throw new Error("ParsPack v1 provider configuration is invalid");
   }
   return env;
 }

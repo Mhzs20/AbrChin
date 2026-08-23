@@ -307,7 +307,6 @@ enum RenewalQuoteStatus {
 }
 
 enum InfrastructureProvider {
-  PARSPACK
   ARVAN
 }
 
@@ -388,7 +387,6 @@ enum InfrastructurePlanPublicationStatus {
 
 enum ServiceConnectionName {
   ARVAN
-  PARSPACK
   KAVENEGAR
   PAYMENT_GATEWAY
 }
@@ -2275,7 +2273,7 @@ model ProviderRegionConfig {
 }
 
 model ProviderPricingConfig {
-  id                String                 @id @default("parspack")
+  id                String                 @id @default("arvan")
   provider          InfrastructureProvider @unique
   apiVersion        String                 @default("v1")
   enabled           Boolean                @default(false)

@@ -32,7 +32,6 @@ function sleep(ms: number) {
 
 async function runCycle() {
   const tasks: ProviderCatalogSyncTask[] = [
-    InfrastructureProvider.PARSPACK,
     InfrastructureProvider.ARVAN,
   ].flatMap((provider) =>
     isCloudProviderConfigured(provider)

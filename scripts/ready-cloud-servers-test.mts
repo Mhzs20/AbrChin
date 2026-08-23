@@ -11,7 +11,7 @@ import { buildCatalogItems } from "../lib/infrastructure/catalog-service.ts";
 
 test("ready-server codes are deterministic per Region and Size", () => {
   const first = readyServerPlanCode("tehran11", "irLinuxVPS4");
-  assert.equal(first, "READY_PARSPACK_TEHRAN11_IRLINUXVPS4");
+  assert.equal(first, "READY_SERVER_TEHRAN11_IRLINUXVPS4");
   assert.equal(first, readyServerPlanCode("tehran11", "irLinuxVPS4"));
   assert.notEqual(first, readyServerPlanCode("tehran3", "irLinuxVPS4"));
   assert.equal(isReadyServerPlanCode(first), true);
@@ -86,7 +86,7 @@ test("provider catalog sync never creates, publishes, or purchases a server SKU"
   assert.doesNotMatch(catalog, /publicationStatus:\s*[\s\S]{0,60}PUBLISHED/);
 });
 
-test("ready catalog supports ParsPack, Arvan fixed offers, and manual Admin delivery", async () => {
+test("ready catalog supports Arvan fixed offers and manual Admin delivery", async () => {
   const [routing, plans, payment, delivery] = await Promise.all([
     readFile("lib/infrastructure/provider-routing.ts", "utf8"),
     readFile("lib/orders/plans.ts", "utf8"),
@@ -94,7 +94,6 @@ test("ready catalog supports ParsPack, Arvan fixed offers, and manual Admin deli
     readFile("lib/infrastructure/manual-ready-delivery.ts", "utf8"),
   ]);
   assert.match(routing, /READY_INSTANT_SERVER/);
-  assert.match(routing, /InfrastructureProvider\.PARSPACK/);
   assert.match(routing, /InfrastructureProvider\.ARVAN/);
   assert.match(plans, /offerSource === "MANUAL_ADMIN"/);
   assert.match(payment, /manualAvailableUnits: \{ decrement: 1 \}/);

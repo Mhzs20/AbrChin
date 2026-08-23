@@ -40,11 +40,9 @@ function refundIdempotencyKey(orderId: string) {
   return `order_cancel_refund_${orderId}`;
 }
 
-function mutationsEnabledFor(provider: "ARVAN" | "PARSPACK") {
+function mutationsEnabledFor(_provider: "ARVAN") {
   const env = getEnv();
-  return provider === "ARVAN"
-    ? env.arvanMutationsEnabled === true
-    : env.parspackMutationsEnabled === true;
+  return env.arvanMutationsEnabled === true;
 }
 
 async function loadCancelContext(instanceId: string, userId: string) {

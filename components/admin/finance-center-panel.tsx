@@ -26,7 +26,7 @@ import {
   markupBpsToGrossMarginBps,
 } from "@/lib/pricing/commercial-engine";
 
-type ProviderCode = "ARVAN" | "PARSPACK";
+type ProviderCode = "ARVAN";
 type ProductKindCode = "CLOUD_SERVER" | "READY_INSTANT_SERVER";
 type ParchinLevelCode = "PARCHIN_START" | "PARCHIN_ACTIVE" | "PARCHIN_STABLE";
 
@@ -206,10 +206,6 @@ const serviceLabels: Record<string, string> = {
   ARCHITECTURE_LIGHT: "همراهی معماری سبک",
 };
 
-function providerLabel(provider: ProviderCode) {
-  return provider === "PARSPACK" ? "ParsPack" : "Arvan";
-}
-
 function productKindLabel(kind: ProductKindCode) {
   return kind === "CLOUD_SERVER" ? "سرور ابری" : "سرور آماده";
 }
@@ -287,7 +283,7 @@ export function FinanceCenterPanel({
     initialConfiguration.productMarkups
       .filter(
         (item): item is typeof item & { provider: ProviderCode } =>
-          item.provider === "ARVAN" || item.provider === "PARSPACK",
+          item.provider === "ARVAN",
       )
       .map((item) => ({
         provider: item.provider,
@@ -511,14 +507,13 @@ export function FinanceCenterPanel({
 
   const overview = useMemo(() => {
     const arvan = providers.find((item) => item.provider === "ARVAN");
-    const parspack = providers.find((item) => item.provider === "PARSPACK");
     const parchinStart = parchin.find(
       (item) => item.level === "PARCHIN_START",
     );
     const activeCoupons = initialCoupons.filter(
       (coupon) => coupon.active,
     ).length;
-    return { arvan, parspack, parchinStart, activeCoupons };
+    return { arvan, parchinStart, activeCoupons };
   }, [initialCoupons, parchin, providers]);
 
   function equivalentMarkupPercent(marginPercent: string): string | null {
@@ -686,7 +681,7 @@ export function FinanceCenterPanel({
       configuration.productMarkups
         .filter(
           (item): item is typeof item & { provider: ProviderCode } =>
-            item.provider === "ARVAN" || item.provider === "PARSPACK",
+            item.provider === "ARVAN",
         )
         .map((item) => ({
           provider: item.provider,
@@ -732,9 +727,7 @@ export function FinanceCenterPanel({
         enabled: item.enabled,
       })),
       productMarkups: configuration.productMarkups
-        .filter(
-          (item) => item.provider === "ARVAN" || item.provider === "PARSPACK",
-        )
+        .filter((item) => item.provider === "ARVAN")
         .map((item) => ({
           provider: item.provider,
           productKind: item.productKind,
@@ -814,7 +807,6 @@ export function FinanceCenterPanel({
             }
           >
             <option value="ARVAN">Arvan</option>
-            <option value="PARSPACK">ParsPack</option>
           </select>
         </label>
         <label className="pricing-field">
@@ -875,10 +867,7 @@ export function FinanceCenterPanel({
             <div className="finance-sim-line finance-sim-line--cost">
               <div className="finance-sim-line-label">
                 <span>قیمت خرید Provider</span>
-                <small>
-                  {simTerm.toLocaleString("fa-IR")} ماه ×{" "}
-                  {providerLabel(simProvider)}
-                </small>
+                <small>{simTerm.toLocaleString("fa-IR")} ماه × Arvan</small>
               </div>
               <strong>
                 {formatTomanFromRialString(breakdown.providerCostRial)}
@@ -887,7 +876,7 @@ export function FinanceCenterPanel({
             <div className="finance-sim-line finance-sim-line--sale">
               <div className="finance-sim-line-label">
                 <span>سود Markup منبع</span>
-                <small>Markup {providerLabel(simProvider)}</small>
+                <small>Markup Arvan</small>
               </div>
               <strong>
                 {formatTomanFromRialString(breakdown.providerMarkupRial)}
@@ -979,8 +968,8 @@ export function FinanceCenterPanel({
             (!preview.simulation.providerEnabled ||
               !preview.simulation.productEnabled) ? (
               <p className="pricing-save-err">
-                توجه: Markup {providerLabel(simProvider)} یا نوع محصول غیرفعال
-                است؛ فروش واقعی این ترکیب قیمت نمی‌گیرد.
+                توجه: Markup Arvan یا نوع محصول غیرفعال است؛ فروش واقعی این
+                ترکیب قیمت نمی‌گیرد.
               </p>
             ) : null}
           </div>
@@ -1002,13 +991,6 @@ export function FinanceCenterPanel({
             {overview.arvan ? `${overview.arvan.marginPercent}٪` : "—"}
           </strong>
           <small>{overview.arvan?.enabled ? "فعال" : "خاموش"}</small>
-        </div>
-        <div className="finance-overview-chip" role="listitem">
-          <span>حاشیه سود ParsPack</span>
-          <strong className="money-tone--sale">
-            {overview.parspack ? `${overview.parspack.marginPercent}٪` : "—"}
-          </strong>
-          <small>{overview.parspack?.enabled ? "فعال" : "خاموش"}</small>
         </div>
         <div className="finance-overview-chip" role="listitem">
           <span>مالیات VAT</span>
@@ -1208,7 +1190,7 @@ export function FinanceCenterPanel({
                             className="provider-code-badge"
                             data-code={item.provider}
                           >
-                            {providerLabel(item.provider)}
+                            Arvan
                           </span>
                           <StatusBadge
                             label={item.enabled ? "فعال" : "خاموش"}
@@ -1310,7 +1292,7 @@ export function FinanceCenterPanel({
                             className="provider-code-badge"
                             data-code={config.provider}
                           >
-                            {providerLabel(config.provider)}
+                            Arvan
                           </span>
                           <strong>{productKindLabel(config.productKind)}</strong>
                         </header>

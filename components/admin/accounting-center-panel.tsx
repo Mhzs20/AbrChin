@@ -573,7 +573,6 @@ export function AccountingCenterPanel() {
           >
             <option value="">همه Providerها</option>
             <option value="ARVAN">Arvan</option>
-            <option value="PARSPACK">ParsPack</option>
           </select>
           <select
             value={productKind}

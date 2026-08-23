@@ -2,7 +2,6 @@ import { InfrastructureProvider } from "@prisma/client";
 
 const PROVIDER_SOURCE_UNITS = {
   [InfrastructureProvider.ARVAN]: ["IRR", "RIAL"],
-  [InfrastructureProvider.PARSPACK]: ["IRR", "RIAL", "TOMAN"],
 } as const;
 
 function parseNonNegativeInteger(value: unknown): bigint {
@@ -31,11 +30,7 @@ export function normalizeProviderMoney(
   const allowed = PROVIDER_SOURCE_UNITS[provider] as readonly string[];
   if (!allowed.includes(unit)) throw new Error("unsupported_provider_money_unit");
 
-  const amount = parseNonNegativeInteger(rawAmount);
-  if (provider === InfrastructureProvider.PARSPACK && unit === "TOMAN") {
-    return amount * 10n;
-  }
-  return amount;
+  return parseNonNegativeInteger(rawAmount);
 }
 
 export function irrToDisplayToman(amountIrr: bigint): {

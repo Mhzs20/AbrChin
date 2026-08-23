@@ -53,7 +53,7 @@ test("the fail-safe is a generic Persian category, never the raw code", () => {
 test("numbering reads existing names and never collides across providers", () => {
   const existing = [
     "تهران ۱، ایران", // Arvan
-    "تهران ۲، ایران", // ParsPack
+    "تهران ۲، ایران",
     "تهران ۴، ایران",
     "فرانکفورت، آلمان", // unnumbered = 1
   ];
@@ -117,10 +117,5 @@ test("discovery never persists the provider's label as a display name", async ()
     source,
     /displayName:\s*region\.displayName/,
     "Arvan sync must not store the fetch-level (provider) label",
-  );
-  assert.doesNotMatch(
-    source,
-    /region\.name\?\.trim\(\)\s*\|\|/,
-    "ParsPack sync must not prefer the provider's region name",
   );
 });

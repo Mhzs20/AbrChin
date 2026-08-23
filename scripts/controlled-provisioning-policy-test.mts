@@ -53,7 +53,7 @@ test("manual fulfillment persists encrypted credentials but cannot deliver the s
 
 test("a timeout is reconciled before any later create retry", async () => {
   const adapter = new FakeCloudProviderAdapter({
-    provider: "PARSPACK",
+    provider: "ARVAN",
     createBehavior: "timeout_after_accept",
   });
   const create = {

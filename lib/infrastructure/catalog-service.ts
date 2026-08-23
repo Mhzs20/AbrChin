@@ -14,13 +14,8 @@ import {
   providerAmountToRial,
   PROVIDER_PRICE_SCALE,
 } from "@/lib/pricing/provider-pricing";
-import {
-  refreshMultiProviderCatalog,
-  syncMultiProviderCatalog,
-} from "@/lib/infrastructure/multi-provider-catalog-service";
+import { refreshMultiProviderCatalog } from "@/lib/infrastructure/multi-provider-catalog-service";
 import { catalogExternalKey } from "@/lib/infrastructure/provider-routing";
-import type { ParsPackProvider } from "@/lib/infrastructure/parspack/client";
-import { ParsPackV1Adapter } from "@/lib/infrastructure/parspack/v1-adapter";
 
 export const UNSCOPED_REGION_CODE = "__unscoped__";
 
@@ -133,14 +128,14 @@ export function buildCatalogItems(
         .update(JSON.stringify(rawPayload))
         .digest("hex");
       const externalKey = catalogExternalKey({
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         apiVersion: "v1",
         region: regionCode,
         externalPlanId: size.code,
       });
 
       return {
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         apiVersion: "v1",
         productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
         regionCode,
@@ -169,7 +164,7 @@ export function buildCatalogItems(
           status === ProviderCatalogStatus.ACTIVE ? null : syncedAt,
         rawPayload: rawPayload as Prisma.InputJsonValue,
         payloadHash,
-        catalogVersion: `parspack:v1:${syncedAt.toISOString()}`,
+        catalogVersion: `arvan:v1:${syncedAt.toISOString()}`,
       };
     });
   });
@@ -183,14 +178,14 @@ export async function persistProviderCatalog(
   const items = buildCatalogItems(catalog, syncedAt);
   const contract = normalizeProviderPriceContract(catalog.priceContract);
   await tx.providerPricingConfig.upsert({
-    where: { provider: InfrastructureProvider.PARSPACK },
+    where: { provider: InfrastructureProvider.ARVAN },
     update: {
       apiVersion: "v1",
       sourceMoneyUnit: contract?.amountUnit ?? null,
     },
     create: {
-      id: "parspack",
-      provider: InfrastructureProvider.PARSPACK,
+      id: "arvan",
+      provider: InfrastructureProvider.ARVAN,
       apiVersion: "v1",
       sourceMoneyUnit: contract?.amountUnit ?? null,
       markupBasisPoints: DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
@@ -200,14 +195,14 @@ export async function persistProviderCatalog(
   await tx.productPricingConfig.upsert({
     where: {
       provider_apiVersion_productKind: {
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         apiVersion: "v1",
         productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
       },
     },
     update: {},
     create: {
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       apiVersion: "v1",
       productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
       markupBasisPoints: 0,
@@ -217,7 +212,7 @@ export async function persistProviderCatalog(
 
   await tx.providerCatalogItem.updateMany({
     where: {
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       available: true,
     },
     data: {
@@ -272,11 +267,11 @@ export async function persistProviderCatalog(
 
   const [catalogItemCount, pricedItemCount, unavailableItemCount] = await Promise.all([
     tx.providerCatalogItem.count({
-      where: { provider: InfrastructureProvider.PARSPACK, active: true },
+      where: { provider: InfrastructureProvider.ARVAN, active: true },
     }),
     tx.providerCatalogItem.count({
       where: {
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         active: true,
         priceMonthlyAmount: { gt: 0n },
         currencyCode: contract?.currencyCode ?? "__unconfirmed__",
@@ -285,7 +280,7 @@ export async function persistProviderCatalog(
     }),
     tx.providerCatalogItem.count({
       where: {
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         OR: [{ active: false }, { available: false }],
       },
     }),
@@ -302,25 +297,7 @@ export async function persistProviderCatalog(
   };
 }
 
-/**
- * Compatibility entry point for existing PostgreSQL contract tests and older
- * callers. Persistence is delegated to the same production adapter service.
- */
-export async function syncParsPackCatalog(
-  provider: ParsPackProvider,
-  now = new Date(),
-) {
-  if (provider.provider !== InfrastructureProvider.PARSPACK) {
-    throw new Error("provider_route_mismatch");
-  }
-  const result = await syncMultiProviderCatalog(
-    new ParsPackV1Adapter(provider),
-    now,
-  );
-  return { ...result, readyPlanCount: 0 };
-}
-
 export async function refreshProviderCatalogForPricing(now = new Date()) {
   void now;
-  return refreshMultiProviderCatalog(InfrastructureProvider.PARSPACK);
+  return refreshMultiProviderCatalog(InfrastructureProvider.ARVAN);
 }

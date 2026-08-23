@@ -53,8 +53,8 @@ async function main() {
     }),
     prisma.providerCatalogState.create({
       data: {
-        id: "phase0-parspack-v1",
-        provider: "PARSPACK",
+        id: "phase0-arvan-v1",
+        provider: "ARVAN",
         apiVersion: "v1",
         enabled: true,
         lastCatalogSync: now,
@@ -80,16 +80,27 @@ async function main() {
     }),
   ]);
 
+  await prisma.providerRegionConfig.create({
+    data: {
+      provider: "ARVAN",
+      apiVersion: "v1",
+      regionCode: "tehran11",
+      displayName: "تهران ۱۱، ایران",
+      saleEnabled: true,
+      syncEnabled: true,
+    },
+  });
+
   const catalogItem = await prisma.providerCatalogItem.create({
     data: {
-      provider: "PARSPACK",
+      provider: "ARVAN",
       apiVersion: "v1",
       productKind: "CLOUD_SERVER",
       source: "API_CATALOG",
       regionCode: "tehran11",
       sizeCode: "phase0-cloud-2-4",
       externalPlanId: "phase0-cloud-2-4",
-      externalKey: "phase0:parspack:cloud-2-4",
+      externalKey: "phase0:arvan:cloud-2-4",
       sizeName: "ابرچین نو",
       compatibleImageCodes: ["ubuntu24-cloudinit-qcow2"],
       vcpu: 2,
@@ -116,7 +127,7 @@ async function main() {
       code: "PHASE0_CLOUD_NO",
       title: "چینش نو",
       description: "چینش نمونه برای اثبات توقف امن فروش عمومی",
-      provider: "PARSPACK",
+      provider: "ARVAN",
       providerApiVersion: "v1",
       productKind: "CLOUD_SERVER",
       regionCode: "tehran11",
@@ -205,7 +216,7 @@ async function main() {
       finalPriceRialSnapshot: 1_500_000n,
       currencySnapshot: "IRR",
       providerPriceCheckedAt: now,
-      provider: "PARSPACK",
+      provider: "ARVAN",
       providerApiVersion: "v1",
       productKind: "CLOUD_SERVER",
       providerRegion: "tehran11",
@@ -233,7 +244,7 @@ async function main() {
       providerPayloadHash: "phase0-browser-catalog-item",
       expiresAt,
       deliveryConfigurationSnapshot: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         region: "tehran11",
         regionLabel: "تهران",
         operatingSystem: "Ubuntu 24.04 LTS",
@@ -300,7 +311,7 @@ async function main() {
         finalPriceRialSnapshot: 1_500_000n,
         currencySnapshot: "IRR",
         providerPriceCheckedAt: now,
-        provider: "PARSPACK",
+        provider: "ARVAN",
         providerApiVersion: "v1",
         productKind: "CLOUD_SERVER",
         providerRegion: "tehran11",
@@ -328,7 +339,7 @@ async function main() {
         providerPayloadHash: "phase0-browser-catalog-item",
         expiresAt,
         deliveryConfigurationSnapshot: {
-          provider: "PARSPACK",
+          provider: "ARVAN",
           region: "tehran11",
           regionLabel: "تهران",
           operatingSystem: "Ubuntu 24.04 LTS",

@@ -80,10 +80,7 @@ export class FakeCloudProviderAdapter implements CloudProviderAdapter {
   constructor(fixtures: FakeCloudProviderFixtures = {}) {
     this.provider = fixtures.provider ?? InfrastructureProvider.ARVAN;
     this.apiVersion = fixtures.apiVersion ?? "v1";
-    this.topologyVerificationMode =
-      this.provider === InfrastructureProvider.PARSPACK
-        ? "PROVIDER_MANAGED"
-        : "STRICT_OBSERVED";
+    this.topologyVerificationMode = "STRICT_OBSERVED";
     this.fixtures = fixtures;
   }
 

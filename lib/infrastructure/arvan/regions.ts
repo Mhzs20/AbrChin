@@ -8,7 +8,7 @@ const MAX_REGION_CODE_LENGTH = 64;
  * datacenter codenames (سیمین، فروغ، بامداد، شهریار، قیصر، گوته) — must never
  * reach the customer, so every entry here is a real city plus a stable number.
  *
- * Tehran numbering shares one sequence with the ParsPack datacenters
+ * Tehran numbering shares one sequence with the curated ready-server locations
  * (تهران ۲ / ۳ / ۱۱ in lib/cloud-servers/catalog.ts), so no two datacenters
  * ever carry the same customer name: Arvan holds ۱ / ۴ / ۵.
  *

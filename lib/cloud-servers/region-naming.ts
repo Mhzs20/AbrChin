@@ -140,8 +140,8 @@ export function usedCityNumbers(
 
 /**
  * Deterministic next name for a brand-new region of a city. Pure — pass in
- * every display name already stored (across providers, so آروان and پارس‌پک
- * can never both mint «تهران ۶»).
+ * every display name already stored, so two regions can never both mint
+ * «تهران ۶».
  */
 export function nextRegionDisplayName(
   inferred: InferredRegionCity & { preferredNumber?: number | null },

@@ -158,11 +158,9 @@ function resourceShapeFromPlan(plan: {
   };
 }
 
-function mutationsEnabledFor(provider: "ARVAN" | "PARSPACK") {
+function mutationsEnabledFor(_provider: "ARVAN") {
   const env = getEnv();
-  return provider === "ARVAN"
-    ? env.arvanMutationsEnabled === true
-    : env.parspackMutationsEnabled === true;
+  return env.arvanMutationsEnabled === true;
 }
 
 /**
@@ -172,17 +170,9 @@ function mutationsEnabledFor(provider: "ARVAN" | "PARSPACK") {
  * same provider/region that Admin can fulfill — not a live provider catalog
  * probe. Arvan exposes a real resize API (`flavor_id` server action) when
  * ARVAN_MUTATIONS_ENABLED; otherwise Admin fulfills manually after the same
- * two gates. ParsPack has no resize API (adapter returns unsupported) and is
- * always manual-fulfillment. Do not fabricate provider capability beyond this.
+ * two gates. Do not fabricate provider capability beyond this.
  */
-export function providerResizeCapability(provider: "ARVAN" | "PARSPACK") {
-  if (provider === "PARSPACK") {
-    return {
-      apiResizeSupported: false,
-      manualFulfillmentRequired: true,
-      mutationsEnabled: mutationsEnabledFor(provider),
-    };
-  }
+export function providerResizeCapability(provider: "ARVAN") {
   return {
     apiResizeSupported: true,
     manualFulfillmentRequired: !mutationsEnabledFor(provider),

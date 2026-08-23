@@ -64,7 +64,7 @@ const primaryNav: NavItem[] = [
 const saleNav: NavItem[] = [
   {
     href: "/admin/infrastructure/providers",
-    label: "منابع آروان و پارس‌پک",
+    label: "منابع آروان",
     icon: Building2,
   },
   { href: "/admin/connections", label: "اتصال سرویس‌ها", icon: Building2 },

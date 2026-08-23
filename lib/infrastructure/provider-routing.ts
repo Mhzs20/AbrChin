@@ -7,7 +7,6 @@ import { InfrastructureError } from "@/lib/infrastructure/errors";
 
 export const API_CATALOG_VERSIONS = {
   [InfrastructureProvider.ARVAN]: "v1",
-  [InfrastructureProvider.PARSPACK]: "v1",
 } as const;
 
 export type LockedProviderRoute = {
@@ -23,16 +22,8 @@ export function resolveProviderRoute(
   const resolvedProvider =
     productKind === InfrastructureProductKind.CLOUD_SERVER
       ? InfrastructureProvider.ARVAN
-      : provider ?? InfrastructureProvider.PARSPACK;
-  if (
-    (productKind === InfrastructureProductKind.CLOUD_SERVER &&
-      resolvedProvider !== InfrastructureProvider.ARVAN) ||
-    (productKind === InfrastructureProductKind.READY_INSTANT_SERVER &&
-      ![
-        InfrastructureProvider.PARSPACK,
-        InfrastructureProvider.ARVAN,
-      ].includes(resolvedProvider))
-  ) {
+      : provider ?? InfrastructureProvider.ARVAN;
+  if (resolvedProvider !== InfrastructureProvider.ARVAN) {
     throw new InfrastructureError(
       "provider_route_mismatch",
       "Provider is not allowed for this product kind",

@@ -145,14 +145,14 @@ function fakeTransaction() {
   const plans = [
     {
       id: "plan-exact",
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       imageCode: "ubuntu24-cloudinit-qcow2",
     },
     {
       id: "plan-do-not-guess",
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       regionCode: "other-region",
       sizeCode: "irLinuxVPS4",
       imageCode: "ubuntu24-cloudinit-qcow2",
@@ -171,8 +171,8 @@ function fakeTransaction() {
     providerPricingConfig: {
       async upsert() {
         return {
-          id: "parspack",
-          provider: InfrastructureProvider.PARSPACK,
+          id: "arvan",
+          provider: InfrastructureProvider.ARVAN,
           markupBasisPoints: 2500,
           updatedAt: syncedAt,
           updatedById: null,
@@ -182,8 +182,8 @@ function fakeTransaction() {
     productPricingConfig: {
       async upsert() {
         return {
-          id: "parspack-ready",
-          provider: InfrastructureProvider.PARSPACK,
+          id: "arvan-ready",
+          provider: InfrastructureProvider.ARVAN,
           apiVersion: "v1",
           productKind: "READY_INSTANT_SERVER",
           markupBasisPoints: 0,
@@ -334,7 +334,7 @@ test("price and availability revalidation compare immutable snapshots", () => {
     null,
   );
   const plan = {
-    provider: "PARSPACK",
+    provider: "ARVAN",
     regionCode: "tehran11",
     sizeCode: "irLinuxVPS4",
     imageCode: "ubuntu24-cloudinit-qcow2",
@@ -342,7 +342,7 @@ test("price and availability revalidation compare immutable snapshots", () => {
     parchinIncluded: true,
   } as const;
   const configurationSnapshot = {
-    provider: "PARSPACK",
+    provider: "ARVAN",
     catalogItemId: current.catalogItemId,
     regionCode: "tehran11",
     sizeCode: "irLinuxVPS4",
@@ -376,7 +376,7 @@ test("customer quote response excludes provider and base price", () => {
     reasons: ["fit"],
     planSnapshot: {
       title: "Cloud",
-      provider: "PARSPACK",
+      provider: "ARVAN",
       providerBasePriceRialSnapshot: "5000000",
       deliveryMode: "RAW",
       vcpu: 2,
@@ -399,7 +399,7 @@ test("customer quote response excludes provider and base price", () => {
     ],
   });
   const serialized = JSON.stringify(publicQuote);
-  assert.doesNotMatch(serialized, /PARSPACK|providerBasePrice/i);
+  assert.doesNotMatch(serialized, /ARVAN|providerBasePrice/i);
   assert.doesNotMatch(serialized, /PROVIDER_INFRASTRUCTURE|INFRASTRUCTURE_MARKUP/);
   assert.equal(publicQuote.amountRial, "6250000");
   assert.equal(
@@ -422,7 +422,7 @@ test("quote snapshot is complete and expires exactly after sixty minutes", () =>
       code: "CLOUD_1",
       title: "Cloud",
       description: null,
-      provider: "PARSPACK",
+      provider: "ARVAN",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       imageCode: "ubuntu24-cloudinit-qcow2",
@@ -462,7 +462,7 @@ test("quote snapshot is complete and expires exactly after sixty minutes", () =>
       code: "CLOUD_1",
       title: "Cloud",
       description: null,
-      provider: "PARSPACK",
+      provider: "ARVAN",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       imageCode: "ubuntu24-cloudinit-qcow2",

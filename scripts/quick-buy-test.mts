@@ -45,7 +45,6 @@ test("customer recommendation UI does not reveal infrastructure providers", asyn
   const quickBuy = await readFile("components/ready-cloud-catalog.tsx", "utf8");
   const customerSurface = `${conversation}\n${quickBuy}`;
 
-  assert.doesNotMatch(customerSurface, /پارس.?پک/);
   assert.doesNotMatch(customerSurface, /ابر آروان/);
   assert.doesNotMatch(customerSurface, /providerLabel/);
   assert.doesNotMatch(quickBuy, /providerBasePrice|basePrice/);

@@ -63,15 +63,7 @@ test("production catalog sync commands use a compiled runtime bundle", () => {
   assert.equal(schedulerBundle.includes("runProvisioningWorkerCycle"), false);
   assert.match(
     packageJson,
-    /"sync:catalog:parspack": "node dist\/catalog-sync\/catalog-sync\.js parspack"/,
-  );
-  assert.match(
-    packageJson,
     /"sync:catalog:arvan": "node dist\/catalog-sync\/catalog-sync\.js arvan"/,
-  );
-  assert.match(
-    packageJson,
-    /"integration:parspack": "npm run sync:catalog:parspack"/,
   );
   assert.match(dockerfile, /\/app\/dist\/catalog-sync \.\/dist\/catalog-sync/);
   assert.match(
@@ -106,14 +98,14 @@ test("production accounting backfill uses compiled runtime artifact", () => {
 
 test("compiled catalog sync fails safely before network access when unconfigured", async () => {
   await new Promise<void>((resolvePromise, reject) => {
-    const child = spawn("node", [catalogSyncBundle, "parspack"], {
+    const child = spawn("node", [catalogSyncBundle, "arvan"], {
       env: {
         ...process.env,
         NODE_ENV: "production",
         DATABASE_URL:
           "postgresql://runtime:runtime@127.0.0.1:1/runtime",
-        PARSPACK_ENABLED: "false",
-        PARSPACK_API_TOKEN: "",
+        ARVAN_ENABLED: "false",
+        ARVAN_API_KEY: "",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -138,14 +130,14 @@ test("compiled catalog sync fails safely before network access when unconfigured
         const output = JSON.parse(jsonLine) as Record<string, unknown>;
         assert.equal(output.readOnly, true);
         assert.equal(output.ok, false);
-        assert.equal(output.provider, "PARSPACK");
+        assert.equal(output.provider, "ARVAN");
         assert.equal(output.status, "FAILED");
         assert.deepEqual(output.safeError, {
           code: "provider_disabled",
           message:
             "ارائه‌دهنده در محیط Server به‌طور کامل تنظیم نشده است.",
         });
-        assert.equal(stderr.includes("PARSPACK_API_TOKEN"), false);
+        assert.equal(stderr.includes("ARVAN_API_KEY"), false);
         resolvePromise();
       } catch (error) {
         reject(error);

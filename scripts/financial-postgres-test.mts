@@ -27,9 +27,6 @@ for (const command of commands) {
         ARVAN_MUTATIONS_ENABLED: "false",
         ARVAN_PUBLIC_SALE_ENABLED: "false",
         ARVAN_CLOUD_PUBLIC_SALE_ENABLED: "false",
-        PARSPACK_ENABLED: "false",
-        PARSPACK_MUTATIONS_ENABLED: "false",
-        PARSPACK_PUBLIC_SALE_ENABLED: "false",
       };
     console.log(`[financial-postgres] ${command}`);
     const { stdout, stderr } = await execFileAsync(

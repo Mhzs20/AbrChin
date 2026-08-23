@@ -171,7 +171,7 @@ export default async function AdminDashboardPage() {
         >
           <li>
             Sync منابع{" "}
-            <Link href="/admin/infrastructure/providers">Arvan / ParsPack</Link>
+            <Link href="/admin/infrastructure/providers">Arvan</Link>
           </li>
           <li>
             انتشار SKU در{" "}

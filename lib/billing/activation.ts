@@ -47,7 +47,7 @@ type QuoteForEstimate = {
   plan: {
     id: string;
     billingModel: "PAYG_WALLET" | "PREPAID_TERM";
-    provider: "ARVAN" | "PARSPACK";
+    provider: "ARVAN";
   };
 };
 
@@ -563,10 +563,7 @@ export async function approveActivation(input: {
               quote.externalImageId ?? activation.plan.imageCode,
             externalNetworkId: quote.externalNetworkId,
             externalSecurityId: quote.externalSecurityId,
-            topologyVerificationMode:
-              activation.plan.provider === "PARSPACK"
-                ? "PROVIDER_MANAGED"
-                : "STRICT_OBSERVED",
+            topologyVerificationMode: "STRICT_OBSERVED",
             deliveryConfiguration:
               quote.deliveryConfigurationSnapshot,
             parchinLevel: activation.serviceOrder.parchinLevel,

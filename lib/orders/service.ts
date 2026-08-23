@@ -62,7 +62,7 @@ const PURCHASABLE_QUOTE_STATUSES: RecommendationQuoteStatus[] = [
  * commercial risk for the locked order amount while the quote/order TTL holds.
  */
 async function lockAndRevalidateLegacyOrderAvailability(plan: {
-  provider: "ARVAN" | "PARSPACK";
+  provider: "ARVAN";
   providerApiVersion: string;
   productKind: "CLOUD_SERVER" | "READY_INSTANT_SERVER";
   regionCode: string;

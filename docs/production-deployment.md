@@ -32,7 +32,7 @@ BACKUP_BEFORE_DEPLOY=1|0             # default: 1
 هر فرمان Compose Production باید `--env-file "$ENV_FILE"` داشته باشد
 (پیش‌فرض: `.env` — همان فایل واقعی هاست Production؛ ممکن است
 `ENV_FILE=.env` باشد). `ops/deploy.sh` هرگز فایل env را با Bash `source`
-نمی‌کند — dotenv ممکن است شامل مقادیری مثل `PARSPACK_API_TOKEN=Bearer …`
+نمی‌کند — dotenv ممکن است شامل مقادیری مثل `ARVAN_API_KEY=Apikey …`
 باشد که برای Compose معتبرند ولی برای Shell نیستند. متغیرهای کنترل Deploy
 باید صریحاً export شوند (`APP_DIR`, `ENV_FILE`, `COMPOSE_FILE`,
 `ABRCHIN_IMAGE`, `DEPLOY_IMAGE_SOURCE`, `BACKUP_BEFORE_DEPLOY`).
@@ -155,8 +155,6 @@ Launch: Sale باز، Mutation خاموش (Fulfillment دستی Admin):
 
 ```text
 PUBLIC_SALE_ENABLED=true
-PARSPACK_PUBLIC_SALE_ENABLED=true
-PARSPACK_MUTATIONS_ENABLED=false
 ARVAN_PUBLIC_SALE_ENABLED=true
 ARVAN_READY_PUBLIC_SALE_ENABLED=true
 ARVAN_CLOUD_PUBLIC_SALE_ENABLED=true
@@ -220,9 +218,6 @@ curl -fsS http://127.0.0.1:3010/api/readiness
 
 ```bash
 docker compose --env-file .env -f compose.production.yaml \
-  exec -T web npm run sync:catalog:parspack
-
-docker compose --env-file .env -f compose.production.yaml \
   exec -T web npm run sync:catalog:arvan
 ```
 
@@ -235,8 +230,7 @@ docker compose --env-file .env -f compose.production.yaml \
 - `ZIBAL_MERCHANT` یا `ZARINPAL_MERCHANT_ID`
 - `PAYMENT_CALLBACK_BASE_URL`
 - `ADMIN_MOBILES` — allowlist source of truth for admin access (see `docs/auth-and-sms.md`)
-- `ARVAN_API_KEY` و/یا `PARSPACK_API_TOKEN`
-- `PARSPACK_PRICE_CURRENCY`, `PARSPACK_PRICE_AMOUNT_UNIT`
+- `ARVAN_API_KEY`
 - `BILLING_WORKER_INTERVAL_MS`
 - `ABRCHIN_IMAGE`
 - `TRUSTED_PROXY_HOPS` — set to the known reverse-proxy hop count (typically `1`)

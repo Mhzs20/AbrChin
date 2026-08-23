@@ -59,7 +59,7 @@ test("operational alert uses a separate safe Kavenegar template", async () => {
       const body = new URLSearchParams(String(init?.body ?? ""));
       assert.equal(body.get("receptor"), MOBILE);
       assert.equal(body.get("template"), "abrchinops");
-      assert.equal(body.get("token"), "PARSPACK");
+      assert.equal(body.get("token"), "ARVAN");
       assert.equal(body.get("token2"), "provider_auth_failed");
       assert.equal(body.get("token3"), "CRITICAL");
       assert.equal(String(init?.body).includes(API_KEY), false);
@@ -68,7 +68,7 @@ test("operational alert uses a separate safe Kavenegar template", async () => {
   });
   await provider.sendOperationalAlert({
     mobile: MOBILE,
-    provider: "PARSPACK",
+    provider: "ARVAN",
     safeCode: "provider_auth_failed",
     severity: "CRITICAL",
   });

@@ -276,7 +276,7 @@ async function markInvoiceForReview(
     walletId: string;
     cloudInstanceId: string;
     infrastructureOrderId: string;
-    provider: "ARVAN" | "PARSPACK";
+    provider: "ARVAN";
     cadence: BillingCadence;
     periodStart: Date;
     periodEnd: Date;

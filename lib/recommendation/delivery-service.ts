@@ -56,28 +56,17 @@ function asSources(value: Prisma.JsonValue): AnswerSources {
 }
 
 async function requireFreshSaleCatalogs() {
-  const [arvan, parspack] = await Promise.all([
-    getCatalogFreshness(InfrastructureProvider.ARVAN),
-    getCatalogFreshness(InfrastructureProvider.PARSPACK),
-  ]);
-  if (!arvan.fresh) {
-    await requestCatalogSync(InfrastructureProvider.ARVAN).catch(() => undefined);
-  }
-  if (!parspack.fresh) {
-    await requestCatalogSync(InfrastructureProvider.PARSPACK).catch(
-      () => undefined,
+  const arvan = await getCatalogFreshness(InfrastructureProvider.ARVAN);
+  if (arvan.fresh) return;
+  await requestCatalogSync(InfrastructureProvider.ARVAN).catch(() => undefined);
+  // Soft freshness: block only when the provider catalog is stale AND no
+  // published sale plans exist yet. Staleness alone must not blank Compass.
+  const published = await listActivePlans().catch(() => []);
+  if (published.length === 0) {
+    throw new WalletError(
+      "quote_unavailable",
+      "کاتالوگ در حال به‌روزرسانی است؛ کمی بعد دوباره تلاش کن.",
     );
-  }
-  // Soft freshness: block only when every provider catalog is stale AND no
-  // published sale plans exist yet. Partial freshness must not blank Compass.
-  if (!arvan.fresh && !parspack.fresh) {
-    const published = await listActivePlans().catch(() => []);
-    if (published.length === 0) {
-      throw new WalletError(
-        "quote_unavailable",
-        "کاتالوگ در حال به‌روزرسانی است؛ کمی بعد دوباره تلاش کن.",
-      );
-    }
   }
 }
 
@@ -160,12 +149,7 @@ export async function getConversationDeliveryOptions(input: {
     imageCodes.length > 0
       ? await prisma.providerCatalogAsset.findMany({
           where: {
-            provider: {
-              in: [
-                InfrastructureProvider.ARVAN,
-                InfrastructureProvider.PARSPACK,
-              ],
-            },
+            provider: InfrastructureProvider.ARVAN,
             apiVersion: "v1",
             kind: "IMAGE",
             externalId: { in: imageCodes },
@@ -290,11 +274,7 @@ export async function configureConversationDelivery(input: {
   const plan = (await listActivePlans(input.parchinLevel)).find(
     (candidate) => candidate.id === input.planId,
   );
-  if (
-    !plan ||
-    (plan.provider !== InfrastructureProvider.ARVAN &&
-      plan.provider !== InfrastructureProvider.PARSPACK)
-  ) {
+  if (!plan || plan.provider !== InfrastructureProvider.ARVAN) {
     throw new WalletError(
       "quote_unavailable",
       "این چینش دیگر قابل فروش نیست.",

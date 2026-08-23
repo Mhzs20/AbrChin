@@ -23,8 +23,8 @@ function offer(overrides: Partial<ProviderOffer>): ProviderOffer {
   return {
     id: "offer-1",
     planId: "plan-1",
-    provider: "PARSPACK",
-    providerLabel: "پارس‌پک",
+    provider: "ARVAN",
+    providerLabel: "ابر آروان",
     regionCode: "ir-thr-1",
     countryCode: "IR",
     deliveryModes: ["RAW"],
@@ -125,10 +125,10 @@ test("a cheap but unreliable offer does not automatically beat a healthy offer",
   );
 });
 
-test("provider comparison keeps working when one provider is temporarily down", async () => {
+test("provider comparison keeps working when one offer source is temporarily down", async () => {
   const sources: ProviderOfferSource[] = [
     {
-      provider: "PARSPACK",
+      provider: "ARVAN",
       async fetchOffers() {
         throw new Error("private provider timeout");
       },
@@ -152,7 +152,7 @@ test("provider comparison keeps working when one provider is temporarily down", 
   assert.deepEqual(
     result.providers.map((provider) => [provider.provider, provider.ok, provider.offerCount]),
     [
-      ["PARSPACK", false, 0],
+      ["ARVAN", false, 0],
       ["ARVAN", true, 1],
     ],
   );

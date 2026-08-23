@@ -29,7 +29,7 @@ export function derivePlatformReadinessStatus(
 
 async function getProviderBillingContractHealth() {
   const providers = await Promise.all(
-    (["ARVAN", "PARSPACK"] as const).map(async (provider) => {
+    (["ARVAN"] as const).map(async (provider) => {
       const contract = await getEffectiveProviderBillingContract({
         provider,
         providerApiVersion: "v1",

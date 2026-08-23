@@ -81,7 +81,7 @@ test("regions page renders from stored configs, discovery only on empty bootstra
   );
   assert.match(
     page,
-    /if \(arvanRegions\.length \+ parsPackRegions\.length === 0\) \{[\s\S]*?syncAllProviderRegionsFromProviders/,
+    /if \(arvanRegions\.length === 0\) \{[\s\S]*?syncAllProviderRegionsFromProviders/,
     "live discovery must be gated on an empty table",
   );
 });

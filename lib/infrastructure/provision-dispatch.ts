@@ -37,15 +37,12 @@ function resultRecord(value: Prisma.JsonValue) {
 }
 
 function automationEnabled(input: {
-  provider: "ARVAN" | "PARSPACK";
+  provider: "ARVAN";
   offerSource: InfrastructureOfferSource;
 }) {
   if (input.offerSource !== InfrastructureOfferSource.API_CATALOG) return false;
   if (!isCloudProviderConfigured(input.provider)) return false;
-  const env = getEnv();
-  return input.provider === "ARVAN"
-    ? env.arvanMutationsEnabled
-    : env.parspackMutationsEnabled;
+  return getEnv().arvanMutationsEnabled;
 }
 
 async function loadApprovedOrderTx(tx: Prisma.TransactionClient, infrastructureOrderId: string) {

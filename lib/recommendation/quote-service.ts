@@ -229,7 +229,7 @@ async function requireRegionSaleEnabled(input: {
 /**
  * Launch catalog purchases are fulfilled manually by Admin after payment.
  * Customer checkout therefore locks the published SKU + chosen OS from the
- * stored Arvan/ParsPack catalog and must not depend on live provider topology,
+ * stored Arvan catalog and must not depend on live provider topology,
  * mutation access, or a second availability probe.
  */
 async function lockAdminFulfilledCatalogPlan(
@@ -1390,11 +1390,10 @@ export async function createRecommendationQuotes(params: {
   ) {
     throw new Error("conversation_requirements_not_confirmed");
   }
-  // Recommendation always draws from live AbrChin catalog (Arvan + ParsPack).
-  await Promise.allSettled([
-    requireFreshCatalog(InfrastructureProvider.ARVAN),
-    requireFreshCatalog(InfrastructureProvider.PARSPACK),
-  ]);
+  // Recommendation always draws from the live AbrChin catalog (Arvan).
+  await requireFreshCatalog(InfrastructureProvider.ARVAN).catch(
+    () => undefined,
+  );
   const lockedConfiguration = parseLockedDeliveryConfiguration(
     existingSession.deliveryConfiguration,
   );

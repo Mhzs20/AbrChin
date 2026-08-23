@@ -43,6 +43,5 @@ test("SKU markup migration is additive and avoids financial data", async () => {
 
   assert.match(migration, /ADD COLUMN IF NOT EXISTS "skuMarkupBasisPoints" INTEGER/);
   assert.match(migration, /UPDATE "InfrastructurePlan"/);
-  assert.match(migration, /READY_PARSPACK_/);
   assert.doesNotMatch(migration, /Wallet|Ledger|Payment|DELETE|DROP/i);
 });

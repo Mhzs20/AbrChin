@@ -21,14 +21,17 @@ const databaseUrl = process.env.DATABASE_URL;
 const prisma = databaseUrl ? new PrismaClient() : null;
 const previousMode = process.env.INFRASTRUCTURE_PROVIDER_MODE;
 const previousNodeEnv = process.env.NODE_ENV;
-const previousParsPackPublicSale =
-  process.env.PARSPACK_PUBLIC_SALE_ENABLED;
-const previousParsPackMutations =
-  process.env.PARSPACK_MUTATIONS_ENABLED;
+const previousArvanPublicSale =
+  process.env.ARVAN_PUBLIC_SALE_ENABLED;
+const previousArvanReadySale =
+  process.env.ARVAN_READY_PUBLIC_SALE_ENABLED;
+const previousArvanMutations =
+  process.env.ARVAN_MUTATIONS_ENABLED;
 const previousManualReadySale =
   process.env.MANUAL_READY_PUBLIC_SALE_ENABLED;
-process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
-process.env.PARSPACK_MUTATIONS_ENABLED = "true";
+process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
+process.env.ARVAN_READY_PUBLIC_SALE_ENABLED = "true";
+process.env.ARVAN_MUTATIONS_ENABLED = "true";
 process.env.MANUAL_READY_PUBLIC_SALE_ENABLED = "true";
 
 /** Keep ADMIN_MOBILES allowlist in sync with fixture admins (source of truth). */
@@ -42,9 +45,9 @@ function allowTestAdmin(mobile: string) {
   }
 }
 
-function createParsPackPricingAdapter() {
+function createArvanPricingAdapter() {
   return new FakeCloudProviderAdapter({
-    provider: InfrastructureProvider.PARSPACK,
+    provider: InfrastructureProvider.ARVAN,
     plansByRegion: {
       tehran11: [
         {
@@ -81,21 +84,52 @@ function createParsPackPricingAdapter() {
         },
       ],
     },
+    networksByRegion: {
+      tehran11: [
+        {
+          externalId: "network-1",
+          region: "tehran11",
+          name: "Default",
+          isDefault: true,
+          available: true,
+          rawUpdatedAt: null,
+          rawPayload: {},
+        },
+      ],
+    },
+    securityByRegion: {
+      tehran11: [
+        {
+          externalId: "security-1",
+          region: "tehran11",
+          name: "Default",
+          isDefault: true,
+          available: true,
+          rawUpdatedAt: null,
+          rawPayload: {},
+        },
+      ],
+    },
   });
 }
 
 after(async () => {
   process.env.INFRASTRUCTURE_PROVIDER_MODE = previousMode;
   process.env.NODE_ENV = previousNodeEnv;
-  if (previousParsPackPublicSale === undefined) {
-    delete process.env.PARSPACK_PUBLIC_SALE_ENABLED;
+  if (previousArvanPublicSale === undefined) {
+    delete process.env.ARVAN_PUBLIC_SALE_ENABLED;
   } else {
-    process.env.PARSPACK_PUBLIC_SALE_ENABLED = previousParsPackPublicSale;
+    process.env.ARVAN_PUBLIC_SALE_ENABLED = previousArvanPublicSale;
   }
-  if (previousParsPackMutations === undefined) {
-    delete process.env.PARSPACK_MUTATIONS_ENABLED;
+  if (previousArvanReadySale === undefined) {
+    delete process.env.ARVAN_READY_PUBLIC_SALE_ENABLED;
   } else {
-    process.env.PARSPACK_MUTATIONS_ENABLED = previousParsPackMutations;
+    process.env.ARVAN_READY_PUBLIC_SALE_ENABLED = previousArvanReadySale;
+  }
+  if (previousArvanMutations === undefined) {
+    delete process.env.ARVAN_MUTATIONS_ENABLED;
+  } else {
+    process.env.ARVAN_MUTATIONS_ENABLED = previousArvanMutations;
   }
   if (previousManualReadySale === undefined) {
     delete process.env.MANUAL_READY_PUBLIC_SALE_ENABLED;
@@ -128,15 +162,15 @@ async function seedDevPlan() {
   // API_CATALOG plans (pay-order freshness gate). Seed the provider state
   // the way a real recent sync would.
   await prisma.providerCatalogState.upsert({
-    where: { provider: "PARSPACK" },
+    where: { provider: "ARVAN" },
     update: {
       lastCatalogSync: syncedAt,
       lastSyncStatus: "SUCCEEDED",
       freshnessSlaSeconds: 900,
     },
     create: {
-      id: "parspack-v1",
-      provider: "PARSPACK",
+      id: "arvan-v1",
+      provider: "ARVAN",
       apiVersion: "v1",
       enabled: true,
       lastCatalogSync: syncedAt,
@@ -144,10 +178,28 @@ async function seedDevPlan() {
       freshnessSlaSeconds: 900,
     },
   });
+  await prisma.providerRegionConfig.upsert({
+    where: {
+      provider_apiVersion_regionCode: {
+        provider: "ARVAN",
+        apiVersion: "v1",
+        regionCode: "tehran11",
+      },
+    },
+    update: { saleEnabled: true, syncEnabled: true },
+    create: {
+      provider: "ARVAN",
+      apiVersion: "v1",
+      regionCode: "tehran11",
+      displayName: "تهران ۱۱، ایران",
+      saleEnabled: true,
+      syncEnabled: true,
+    },
+  });
   const catalogItem = await prisma.providerCatalogItem.upsert({
     where: {
       provider_apiVersion_regionCode_externalPlanId: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         apiVersion: "v1",
         regionCode: "tehran11",
         externalPlanId: "irLinuxVPS4",
@@ -164,13 +216,13 @@ async function seedDevPlan() {
       lastSyncedAt: syncedAt,
     },
     create: {
-      provider: "PARSPACK",
+      provider: "ARVAN",
       apiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       externalPlanId: "irLinuxVPS4",
-      externalKey: "parspack:v1:tehran11:irLinuxVPS4",
+      externalKey: "arvan:v1:tehran11:irLinuxVPS4",
       sizeName: "Development",
       compatibleImageCodes: ["ubuntu24-cloudinit-qcow2"],
       vcpu: 2,
@@ -192,7 +244,7 @@ async function seedDevPlan() {
     },
   });
   await prisma.providerPricingConfig.upsert({
-    where: { provider: "PARSPACK" },
+    where: { provider: "ARVAN" },
     update: {
       apiVersion: "v1",
       enabled: true,
@@ -200,8 +252,8 @@ async function seedDevPlan() {
       sourceMoneyUnit: "TOMAN",
     },
     create: {
-      id: "parspack",
-      provider: "PARSPACK",
+      id: "arvan",
+      provider: "ARVAN",
       apiVersion: "v1",
       enabled: true,
       markupBasisPoints: 2500,
@@ -211,15 +263,15 @@ async function seedDevPlan() {
   await prisma.productPricingConfig.upsert({
     where: {
       provider_apiVersion_productKind: {
-        provider: "PARSPACK",
+        provider: "ARVAN",
         apiVersion: "v1",
         productKind: "READY_INSTANT_SERVER",
       },
     },
     update: { enabled: true, markupBasisPoints: 0 },
     create: {
-      id: "infrastructure-test-parspack-ready",
-      provider: "PARSPACK",
+      id: "infrastructure-test-arvan-ready",
+      provider: "ARVAN",
       apiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       enabled: true,
@@ -240,7 +292,7 @@ async function seedDevPlan() {
   return prisma.infrastructurePlan.upsert({
     where: { code: "DEV_STARTER" },
     update: {
-      provider: "PARSPACK",
+      provider: "ARVAN",
       providerApiVersion: "v1",
       productKind: "READY_INSTANT_SERVER",
       deliveryMode: "MANAGED",
@@ -257,7 +309,7 @@ async function seedDevPlan() {
     create: {
       code: "DEV_STARTER",
       title: "شروع توسعه",
-      provider: "PARSPACK",
+      provider: "ARVAN",
       regionCode: "tehran11",
       sizeCode: "irLinuxVPS4",
       imageCode: "ubuntu24-cloudinit-qcow2",
@@ -482,7 +534,7 @@ test("payOrderWithWallet rolls back all writes on injected failure after debit",
     () =>
       payOrderWithWallet(user.id, order.id, {
         testInjectFailureAfterDebit: true,
-        providerAdapter: createParsPackPricingAdapter(),
+        providerAdapter: createArvanPricingAdapter(),
       }),
     /Injected failure/,
   );
@@ -515,7 +567,7 @@ test("payment is atomic and creates infrastructure order without cloud instance"
   const { user, order } = await createPaidOrderFixture(mobile);
 
   const result = await payOrderWithWallet(user.id, order.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
   assert.equal(result.order.status, ServiceOrderStatus.PAID);
   assert.equal(result.infrastructureOrder?.status, InfrastructureOrderStatus.WAITING_ADMIN_FUNDING);
@@ -762,7 +814,7 @@ test("payment uses the locked order quote when the plan price changes", async (t
   });
 
   await payOrderWithWallet(user.id, order.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
   const ledger = await prisma.walletLedgerEntry.findFirstOrThrow({
     where: { referenceId: order.id, direction: "DEBIT" },
@@ -790,7 +842,7 @@ test("payment rejects an expired quote without debiting the wallet", async (t) =
   await assert.rejects(
     () =>
       payOrderWithWallet(user.id, order.id, {
-        providerAdapter: createParsPackPricingAdapter(),
+        providerAdapter: createArvanPricingAdapter(),
       }),
     /اعتبار قیمت/,
   );
@@ -885,7 +937,7 @@ test("refund keeps original ledger immutable and creates reverse entry", async (
 
   const { user, order } = await createPaidOrderFixture(mobile);
   await payOrderWithWallet(user.id, order.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
   const debit = await prisma.walletLedgerEntry.findFirstOrThrow({
     where: { referenceId: order.id, direction: "DEBIT" },
@@ -946,7 +998,7 @@ test("retry is blocked for NEEDS_RECONCILIATION until reconcile", async (t) => {
 
   const { user, order } = await createPaidOrderFixture(mobile);
   await payOrderWithWallet(user.id, order.id, {
-    providerAdapter: createParsPackPricingAdapter(),
+    providerAdapter: createArvanPricingAdapter(),
   });
   const infra = await prisma.infrastructureOrder.findUniqueOrThrow({ where: { serviceOrderId: order.id } });
   const admin = await prisma.user.create({ data: { mobile: adminMobile, role: "ADMIN" } });

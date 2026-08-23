@@ -9,7 +9,7 @@
 
 - فقط روی `main` کار کن؛ هر زیر‌فاز Commit و Push مستقل دارد.
 - Secret، Payment/Refund واقعی، Provider Mutation واقعی و Deploy ممنوع است.
-- آروان و پارس‌پک Providerهای اصلی‌اند؛ Inventory ابرچین اختیاری است.
+- آروان تنها Provider اصلی است؛ Inventory ابرچین اختیاری است.
 - `CLOUD_SERVER` برابر `PAYG_WALLET` است.
 - Gateway فقط `WalletTopUp/PaymentAttempt` را شارژ می‌کند.
 - Callback/Wallet Credit هیچ Provision یا Resource Change اجرا نمی‌کند.

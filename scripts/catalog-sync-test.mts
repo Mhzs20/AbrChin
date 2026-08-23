@@ -20,257 +20,8 @@ import {
   persistProviderCatalogRegion,
   providerCatalogStatus,
 } from "../lib/infrastructure/multi-provider-catalog-service.ts";
-import { ParsPackProvider } from "../lib/infrastructure/parspack/client.ts";
-import { parseParsPackSizes } from "../lib/infrastructure/parspack/mapper.ts";
-import {
-  PARSPACK_UNSCOPED_REGION_CODE,
-  ParsPackV1Adapter,
-} from "../lib/infrastructure/parspack/v1-adapter.ts";
 import { getPublicSaleDecision } from "../lib/infrastructure/public-sale-policy.ts";
 import { revalidateLockedSelection } from "../lib/infrastructure/selection-revalidation.ts";
-
-function parsPackFetch(calls: Array<{ url: string; method: string }>): typeof fetch {
-  return async (input, init) => {
-    const url = String(input);
-    calls.push({ url, method: init?.method ?? "GET" });
-    if (url.includes("/regions?")) {
-      return Response.json({
-        regions: [
-          {
-            slug: "tehran11",
-            name: "Tehran",
-            available: true,
-            sizes: ["priced", "missing-price", "unavailable"],
-          },
-        ],
-      });
-    }
-    if (url.includes("/sizes?")) {
-      return Response.json({
-        sizes: [
-          {
-            slug: "priced",
-            description: "Priced",
-            regions: ["tehran11"],
-            available: true,
-            vcpus: 2,
-            memory: 4096,
-            disk: 50,
-            price_hourly: "0.42",
-            price_monthly: "500000",
-          },
-          {
-            slug: "missing-price",
-            description: "Missing price",
-            regions: ["tehran11"],
-            available: true,
-            vcpus: 1,
-            memory: 1024,
-            disk: 25,
-          },
-          {
-            slug: "unavailable",
-            description: "Unavailable",
-            regions: ["tehran11"],
-            available: false,
-            vcpus: 1,
-            memory: 1024,
-            disk: 25,
-            price_monthly: "250000",
-          },
-          {
-            slug: "unscoped",
-            description: "Provider omitted region",
-            available: true,
-            vcpus: 1,
-            memory: 1024,
-            disk: 25,
-            price_monthly: "250000",
-          },
-        ],
-      });
-    }
-    if (url.includes("/images?")) {
-      return Response.json({
-        images: [
-          {
-            slug: "ubuntu24",
-            name: "Ubuntu 24",
-            regions: ["tehran11"],
-            min_disk_size: 20,
-            status: "available",
-          },
-        ],
-      });
-    }
-    return Response.json({ message: "not found" }, { status: 404 });
-  };
-}
-
-test("ParsPack adapter normalizes exact prices, availability, and unscoped plans with GET only", async () => {
-  const calls: Array<{ url: string; method: string }> = [];
-  const adapter = new ParsPackV1Adapter(
-    new ParsPackProvider({
-      managementBaseUrl: "https://my.parspack.com/cserver/api/v1",
-      publicBaseUrl: "https://my.parspack.com/cserver/api/public/v1",
-      token: "test-only-token",
-      timeoutMs: 1_000,
-      priceCurrencyCode: "IRR",
-      priceAmountUnit: "TOMAN",
-      mutationsEnabled: false,
-      fetchImpl: parsPackFetch(calls),
-    }),
-  );
-
-  const regions = await adapter.syncRegions();
-  const plans = await adapter.syncPlans("tehran11");
-  const unscoped = await adapter.syncPlans(PARSPACK_UNSCOPED_REGION_CODE);
-
-  assert.equal(calls.length, 3);
-  assert.equal(calls.every((call) => call.method === "GET"), true);
-  assert.deepEqual(
-    regions.map((region) => region.code),
-    ["tehran11", PARSPACK_UNSCOPED_REGION_CODE],
-  );
-  assert.equal(plans.some((plan) => plan.externalPlanId === "unscoped"), false);
-  assert.equal(unscoped[0]?.externalPlanId, "unscoped");
-  assert.equal(unscoped[0]?.available, true);
-
-  const priced = plans.find((plan) => plan.externalPlanId === "priced");
-  assert.ok(priced);
-  assert.equal(priced.priceHourlyAmount, 420_000n);
-  assert.equal(priced.priceMonthlyAmount, 500_000_000_000n);
-  assert.equal(priced.priceScale, 6);
-  assert.equal(priced.currencyCode, "IRR");
-  assert.equal(priced.amountUnit, "TOMAN");
-  assert.equal(priced.priceHourlyIrr, 5n);
-  assert.equal(priced.priceMonthlyIrr, 5_000_000n);
-  assert.equal(
-    providerCatalogStatus(
-      priced,
-      InfrastructureProductKind.READY_INSTANT_SERVER,
-    ),
-    ProviderCatalogStatus.ACTIVE,
-  );
-
-  const missing = plans.find(
-    (plan) => plan.externalPlanId === "missing-price",
-  );
-  assert.ok(missing);
-  assert.equal(missing.available, true);
-  assert.equal(
-    providerCatalogStatus(
-      missing,
-      InfrastructureProductKind.READY_INSTANT_SERVER,
-    ),
-    ProviderCatalogStatus.INVALID_PRICE,
-  );
-
-  const unavailable = plans.find(
-    (plan) => plan.externalPlanId === "unavailable",
-  );
-  assert.ok(unavailable);
-  assert.equal(
-    providerCatalogStatus(
-      unavailable,
-      InfrastructureProductKind.READY_INSTANT_SERVER,
-    ),
-    ProviderCatalogStatus.UNAVAILABLE,
-  );
-});
-
-test("ParsPack rejects malformed catalog identity and pagination before persistence", async () => {
-  assert.equal(
-    parseParsPackSizes({
-      sizes: [
-        {
-          slug: "unsafe-number",
-          price_monthly: 0.42,
-        },
-      ],
-    })[0]?.priceMonthly,
-    "0.42",
-  );
-  assert.equal(
-    parseParsPackSizes({
-      sizes: [
-        {
-          slug: "unsafe-number",
-          price_monthly: 1.000_001,
-        },
-      ],
-    })[0]?.priceMonthly,
-    "1.000001",
-  );
-  assert.equal(
-    parseParsPackSizes({
-      sizes: [
-        {
-          slug: "unsafe-number",
-          price_monthly: 9_007_199_254_740_992,
-        },
-      ],
-    })[0]?.priceMonthly,
-    undefined,
-  );
-  assert.equal(
-    parseParsPackSizes({
-      sizes: [
-        {
-          slug: "unsafe-decimal",
-          price_monthly: 10_000_000_000.000_001,
-        },
-      ],
-    })[0]?.priceMonthly,
-    undefined,
-  );
-  const malformedIdentity = new ParsPackProvider({
-    managementBaseUrl: "https://my.parspack.com/cserver/api/v1",
-    publicBaseUrl: "https://my.parspack.com/cserver/api/public/v1",
-    token: "test-only-token",
-    timeoutMs: 1_000,
-    fetchImpl: async (input) => {
-      const url = String(input);
-      if (url.includes("/regions?")) {
-        return Response.json({ regions: [{ name: "Missing code" }] });
-      }
-      if (url.includes("/sizes?")) return Response.json({ sizes: [] });
-      return Response.json({ images: [] });
-    },
-  });
-  await assert.rejects(
-    () => malformedIdentity.syncCatalog(),
-    (error: unknown) =>
-      error instanceof Error &&
-      "code" in error &&
-      error.code === "provider_invalid_response",
-  );
-
-  const malformedPagination = new ParsPackProvider({
-    managementBaseUrl: "https://my.parspack.com/cserver/api/v1",
-    publicBaseUrl: "https://my.parspack.com/cserver/api/public/v1",
-    token: "test-only-token",
-    timeoutMs: 1_000,
-    fetchImpl: async (input) => {
-      const url = String(input);
-      if (url.includes("/regions?")) {
-        return Response.json({
-          regions: [{ slug: "tehran11", name: "Tehran" }],
-          links: { pages: { next: "not-a-page-link" } },
-        });
-      }
-      if (url.includes("/sizes?")) return Response.json({ sizes: [] });
-      return Response.json({ images: [] });
-    },
-  });
-  await assert.rejects(
-    () => malformedPagination.syncCatalog(),
-    (error: unknown) =>
-      error instanceof Error &&
-      "code" in error &&
-      error.code === "provider_invalid_response",
-  );
-});
 
 test("catalog classification never fabricates missing Cloud prices or malformed resources", () => {
   const base: ProviderPlan = {
@@ -527,7 +278,7 @@ test("shared persistence upserts idempotently and never creates a storefront SKU
   const syncedAt = new Date("2026-08-04T10:00:00.000Z");
   const image: ProviderImage = {
     externalId: "ubuntu24",
-    region: "tehran11",
+    region: "ir-thr-ba1",
     name: "Ubuntu 24",
     operatingSystem: "Ubuntu",
     minDiskGb: 20,
@@ -540,20 +291,20 @@ test("shared persistence upserts idempotently and never creates a storefront SKU
   };
   const input = {
     adapter: {
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       apiVersion: "v1",
     } as CloudProviderAdapter,
     productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
     region: {
-      code: "tehran11",
+      code: "ir-thr-ba1",
       name: "Tehran",
       available: true,
-      rawPayload: { code: "tehran11" },
+      rawPayload: { code: "ir-thr-ba1" },
     },
     plans: [
       {
         externalPlanId: "priced",
-        region: "tehran11",
+        region: "ir-thr-ba1",
         name: "Priced",
         vcpu: 2,
         ramMb: 4096,
@@ -576,7 +327,7 @@ test("shared persistence upserts idempotently and never creates a storefront SKU
     networks: [],
     securities: [],
     syncedAt,
-    catalogVersion: "parspack:v1:2026-08-04T10:00:00.000Z",
+    catalogVersion: "arvan:v1:2026-08-04T10:00:00.000Z",
   };
 
   await persistProviderCatalogRegion(fake.tx as never, input);
@@ -596,8 +347,6 @@ test("shared persistence upserts idempotently and never creates a storefront SKU
 
 test("catalog stays visible during an explicit sale closure and mutations stay closed", async () => {
   const names = [
-    "PARSPACK_PUBLIC_SALE_ENABLED",
-    "PARSPACK_MUTATIONS_ENABLED",
     "ARVAN_PUBLIC_SALE_ENABLED",
     "ARVAN_CLOUD_PUBLIC_SALE_ENABLED",
     "ARVAN_MUTATIONS_ENABLED",
@@ -661,10 +410,6 @@ test("catalog stays visible during an explicit sale closure and mutations stay c
       quoteService,
       /requireFreshCatalog\(InfrastructureProvider\.ARVAN\)/,
     );
-    assert.match(
-      quoteService,
-      /requireFreshCatalog\(InfrastructureProvider\.PARSPACK\)/,
-    );
     assert.match(quoteService, /isRegionEnabledForSale/);
     assert.match(
       quoteService,
@@ -688,8 +433,6 @@ test("catalog stays visible during an explicit sale closure and mutations stay c
       /recommendationQuote\.amountRial !== order\.amount/,
     );
     for (const expected of [
-      "PARSPACK_PUBLIC_SALE_ENABLED=true",
-      "PARSPACK_MUTATIONS_ENABLED=false",
       "ARVAN_PUBLIC_SALE_ENABLED=true",
       "ARVAN_MUTATIONS_ENABLED=false",
     ]) {
@@ -743,14 +486,12 @@ test("cloud-servers uses curated چینش assortment and publishes sale for show
   assert.match(assortment, /SKU_UNPUBLISHED/);
   assert.match(assortment, /ensureStorefrontSaleReady/);
   assert.match(assortment, /autoSuggestEnabled: false/);
-  // ParsPack catalog is READY_INSTANT_SERVER; Arvan cloud is CLOUD_SERVER.
+  // Arvan sells both ready servers and cloud servers.
   assert.match(
     assortment,
     /productKind:\s*\{\s*in:\s*\[\s*"CLOUD_SERVER"\s*,\s*"READY_INSTANT_SERVER"\s*\]\s*\}/,
   );
-  assert.match(assortment, /PARSPACK/);
   assert.match(assortment, /provider: "ARVAN"/);
-  assert.match(assortment, /provider: "PARSPACK"/);
   assert.match(autoSuggest, /buildSuggestedStorefrontAssortment/);
   assert.match(autoSuggest, /maybeAutoApplyStorefrontAssortment/);
   assert.match(
@@ -781,8 +522,8 @@ test("cloud-servers uses curated چینش assortment and publishes sale for show
   assert.match(catalogUi, /لوکیشن ایران/);
   assert.match(catalogUi, /ساخت و تحویل کنترل‌شده توسط تیم ابرچین/);
   assert.doesNotMatch(catalogUi, /قیمت پایه تأمین‌کننده/);
-  assert.doesNotMatch(catalogUi, /آروان|پارس[\u200c ]?پک/);
-  assert.doesNotMatch(catalogUi, /\bAV\b|\bPP\b/);
+  assert.doesNotMatch(catalogUi, /آروان/);
+  assert.doesNotMatch(catalogUi, /\bAV\b/);
   assert.match(scheduler, /checkStorefrontLowStockAlerts/);
   assert.match(scheduler, /maybeAutoApplyStorefrontAssortment/);
   assert.match(scheduler, /processOperationalAlertOutbox/);

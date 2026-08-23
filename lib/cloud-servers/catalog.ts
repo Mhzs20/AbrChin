@@ -1,7 +1,7 @@
 import { arvanRegionPresentation } from "@/lib/infrastructure/arvan/regions";
 import { customerImageLabelFromCode } from "@/lib/infrastructure/image-identity";
 
-export const READY_SERVER_PLAN_PREFIX = "READY_PARSPACK_";
+export const READY_SERVER_PLAN_PREFIX = "READY_SERVER_";
 
 const regionPresentation: Record<
   string,

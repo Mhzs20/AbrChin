@@ -13,7 +13,7 @@ import { getAdminPageAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 
 export const metadata: Metadata = {
-  title: "منابع Arvan / ParsPack | پنل مدیریت | ابرچین",
+  title: "منابع Arvan | پنل مدیریت | ابرچین",
   robots: { index: false, follow: false },
 };
 
@@ -62,7 +62,7 @@ export default async function AdminProvidersPage() {
     <>
       <LegacyProvidersHashRedirect />
       <PageHeader
-        title="منابع Arvan / ParsPack"
+        title="منابع Arvan"
         description="فقط اتصال و Sync کاتالوگ. تعیین Markup، پرچین، مالیات و کد تخفیف فقط در مرکز مالی است."
         actions={
           <>
@@ -101,21 +101,6 @@ export default async function AdminProvidersPage() {
         syncRuns={syncRuns}
         dailyStats={
           todayByProvider.ARVAN ?? { syncRunsToday: 0, plansSyncedToday: 0 }
-        }
-      />
-      <ProviderPanel
-        provider="PARSPACK"
-        providerLabel="ParsPack"
-        title="ParsPack — سرور آماده"
-        initial={{
-          ...system.parspack,
-          status: system.parspack.status,
-          configured: system.parspack.status !== "unconfigured",
-        }}
-        catalogItems={catalogItems}
-        syncRuns={syncRuns}
-        dailyStats={
-          todayByProvider.PARSPACK ?? { syncRunsToday: 0, plansSyncedToday: 0 }
         }
       />
     </>

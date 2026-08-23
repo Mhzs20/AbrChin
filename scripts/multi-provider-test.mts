@@ -78,7 +78,7 @@ test("product kinds have one immutable server-side provider route", () => {
   assert.equal(
     resolveProviderRoute(InfrastructureProductKind.READY_INSTANT_SERVER)
       .provider,
-    InfrastructureProvider.PARSPACK,
+    InfrastructureProvider.ARVAN,
   );
   assert.equal(
     resolveProviderRoute(
@@ -90,8 +90,8 @@ test("product kinds have one immutable server-side provider route", () => {
   assert.throws(() =>
     assertProviderRoute({
       productKind: InfrastructureProductKind.CLOUD_SERVER,
-      provider: InfrastructureProvider.PARSPACK,
-      apiVersion: "v1",
+      provider: InfrastructureProvider.ARVAN,
+      apiVersion: "v3",
     }),
   );
   assert.doesNotThrow(() =>
@@ -115,13 +115,13 @@ test("worker catalog task results retain provider metadata and only log safe cod
         promise: Promise.resolve({ ok: true }),
       },
       {
-        provider: InfrastructureProvider.PARSPACK,
+        provider: InfrastructureProvider.ARVAN,
         apiVersion: "v1",
         operation: "catalog_sync",
         promise: Promise.reject(
           Object.assign(
             new ProviderCatalogSyncError({
-              provider: InfrastructureProvider.PARSPACK,
+              provider: InfrastructureProvider.ARVAN,
               apiVersion: "v1",
               operation: "catalog_sync",
               code: "provider_auth_failed",
@@ -147,7 +147,7 @@ test("worker catalog task results retain provider metadata and only log safe cod
     },
     {
       event: "provider_catalog_sync",
-      provider: InfrastructureProvider.PARSPACK,
+      provider: InfrastructureProvider.ARVAN,
       apiVersion: "v1",
       operation: "catalog_sync",
       syncStatus: "FAILED",
@@ -188,8 +188,8 @@ test("provider and API version remain locked in quote and paid-order snapshots",
   assert.equal(
     isProviderLockedSnapshot({
       productKind: InfrastructureProductKind.CLOUD_SERVER,
-      provider: InfrastructureProvider.PARSPACK,
-      providerApiVersion: "v1",
+      provider: InfrastructureProvider.ARVAN,
+      providerApiVersion: "v3",
     }),
     false,
   );
@@ -224,6 +224,15 @@ test("Arvan ready/cloud and manual inventory sale gates are independent", () => 
         productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
       }),
       { allowed: false, code: "provider_sale_disabled" },
+    );
+    assert.throws(
+      () =>
+        assertPublicSaleEnabled({
+          provider: InfrastructureProvider.ARVAN,
+          offerSource: "API_CATALOG",
+          productKind: InfrastructureProductKind.CLOUD_SERVER,
+        }),
+      /فروش عمومی این راهکار.*مبلغی برداشت نشد/,
     );
 
     process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
@@ -270,65 +279,13 @@ test("Arvan ready/cloud and manual inventory sale gates are independent", () => 
   }
 });
 
-test("ParsPack public sale can be closed explicitly and is independent from connectivity", () => {
-  const previousPublicSale = process.env.PUBLIC_SALE_ENABLED;
-  const previousSale = process.env.PARSPACK_PUBLIC_SALE_ENABLED;
-  const previousMutations = process.env.PARSPACK_MUTATIONS_ENABLED;
-  const previousEnabled = process.env.PARSPACK_ENABLED;
-  try {
-    process.env.PUBLIC_SALE_ENABLED = "true";
-    process.env.PARSPACK_PUBLIC_SALE_ENABLED = "false";
-    delete process.env.PARSPACK_MUTATIONS_ENABLED;
-    process.env.PARSPACK_ENABLED = "true";
-    assert.deepEqual(
-      getPublicSaleDecision({
-        provider: InfrastructureProvider.PARSPACK,
-        offerSource: "API_CATALOG",
-      }),
-      { allowed: false, code: "provider_sale_disabled" },
-    );
-    assert.throws(
-      () =>
-        assertPublicSaleEnabled({
-          provider: InfrastructureProvider.PARSPACK,
-          offerSource: "API_CATALOG",
-        }),
-      /فروش عمومی این راهکار.*مبلغی برداشت نشد/,
-    );
-
-    process.env.PARSPACK_PUBLIC_SALE_ENABLED = "true";
-    process.env.PARSPACK_MUTATIONS_ENABLED = "false";
-    process.env.PARSPACK_ENABLED = "false";
-    assert.deepEqual(
-      getPublicSaleDecision({
-        provider: InfrastructureProvider.PARSPACK,
-        offerSource: "API_CATALOG",
-      }),
-      { allowed: true, code: "sale_enabled" },
-    );
-  } finally {
-    if (previousPublicSale === undefined) delete process.env.PUBLIC_SALE_ENABLED;
-    else process.env.PUBLIC_SALE_ENABLED = previousPublicSale;
-    if (previousSale === undefined) {
-      delete process.env.PARSPACK_PUBLIC_SALE_ENABLED;
-    } else {
-      process.env.PARSPACK_PUBLIC_SALE_ENABLED = previousSale;
-    }
-    if (previousEnabled === undefined) delete process.env.PARSPACK_ENABLED;
-    else process.env.PARSPACK_ENABLED = previousEnabled;
-    if (previousMutations === undefined) delete process.env.PARSPACK_MUTATIONS_ENABLED;
-    else process.env.PARSPACK_MUTATIONS_ENABLED = previousMutations;
-  }
-});
-
 test("provider money normalization is explicit, BigInt-only and exact", () => {
   assert.equal(
     normalizeProviderMoney(InfrastructureProvider.ARVAN, "5000000", "IRR"),
     5_000_000n,
   );
-  assert.equal(
-    normalizeProviderMoney(InfrastructureProvider.PARSPACK, "500000", "TOMAN"),
-    5_000_000n,
+  assert.throws(() =>
+    normalizeProviderMoney(InfrastructureProvider.ARVAN, "500000", "TOMAN"),
   );
   assert.throws(() =>
     normalizeProviderMoney(InfrastructureProvider.ARVAN, "10.5", "IRR"),
@@ -614,7 +571,6 @@ test("Arvan Env regions are optional bootstrap but invalid CSV still fails close
     "ARVAN_API_BASE_URL",
     "ARVAN_API_VERSION",
     "ARVAN_REGION_CODES",
-    "PARSPACK_ENABLED",
   ] as const;
   const previous = Object.fromEntries(
     names.map((name) => [name, process.env[name]]),
@@ -625,7 +581,6 @@ test("Arvan Env regions are optional bootstrap but invalid CSV still fails close
     process.env.ARVAN_API_BASE_URL =
       "https://napi.arvancloud.ir/ecc/v1";
     process.env.ARVAN_API_VERSION = "v1";
-    process.env.PARSPACK_ENABLED = "false";
     process.env.ARVAN_REGION_CODES = "";
     assert.equal(validateProviderEnvironment().arvanRegionCodesCsv, "");
     process.env.ARVAN_REGION_CODES = "ir-thr-si1,unsafe/path";
@@ -863,7 +818,7 @@ test("editing an answer invalidates only dependent quotes and preserves the conv
   assert.doesNotMatch(source, /recommendationSession\.delete(?:Many)?\(/);
 });
 
-test("customer catalog routes enforce Arvan cloud and ParsPack ready products", async () => {
+test("customer catalog routes enforce Arvan cloud and ready products", async () => {
   const source = await readFile(
     new URL("../lib/orders/plans.ts", import.meta.url),
     "utf8",
@@ -874,7 +829,7 @@ test("customer catalog routes enforce Arvan cloud and ParsPack ready products", 
   );
   assert.match(
     source,
-    /provider: "PARSPACK",[\s\S]*productKind: "READY_INSTANT_SERVER"/,
+    /provider: "ARVAN",[\s\S]*productKind: "READY_INSTANT_SERVER"/,
   );
 });
 

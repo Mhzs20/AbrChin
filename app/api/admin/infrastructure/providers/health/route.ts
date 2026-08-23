@@ -21,10 +21,7 @@ export async function POST(request: Request) {
       provider?: unknown;
     };
     const provider =
-      body.provider === InfrastructureProvider.ARVAN ||
-      body.provider === InfrastructureProvider.PARSPACK
-        ? body.provider
-        : null;
+      body.provider === InfrastructureProvider.ARVAN ? body.provider : null;
     if (!provider) return jsonError("Provider معتبر نیست.", 400);
 
     const configured = isCloudProviderConfigured(provider);
@@ -34,9 +31,7 @@ export async function POST(request: Request) {
     const providerRequestId: string | null = null;
     if (configured) {
       const connection = await runServiceConnectionCheck(
-        provider === InfrastructureProvider.ARVAN
-          ? ServiceConnectionName.ARVAN
-          : ServiceConnectionName.PARSPACK,
+        ServiceConnectionName.ARVAN,
       );
       ok = connection.status === "HEALTHY";
       message = connection.message;

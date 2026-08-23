@@ -367,10 +367,6 @@ test("review migrations prevent double markup and preserve ambiguous legacy stat
     "prisma/migrations/20260730223000_provider_review_recovery_v2/migration.sql",
   );
   assert.match(
-    multi,
-    /'legacy-parspack-ready', 'PARSPACK', 'v1', 'READY_INSTANT_SERVER',\s*0,\s*"enabled"/,
-  );
-  assert.match(
     hardening,
     /WHEN "productFlowState" = 'QUOTED' THEN 'RECOMMENDED'/,
   );

@@ -15,7 +15,6 @@ import {
   selectReadyServerImage,
 } from "@/lib/cloud-servers/catalog";
 import { prisma } from "@/lib/db";
-import { getEnv } from "@/lib/env";
 import { listParchinLevelLabels } from "@/lib/parchin/labels";
 import {
   getCatalogFreshness,
@@ -42,10 +41,7 @@ import {
   resolveProviderMarkupForPlan,
 } from "@/lib/pricing/profit-curve-apply";
 import { loadProfitCurveConfiguration } from "@/lib/pricing/profit-curve-store";
-import {
-  calculateFinalPriceRial,
-  decimalToScaledInteger,
-} from "@/lib/pricing/provider-pricing";
+import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
 import { serializeQuoteLineItems } from "@/lib/pricing/quote-line-items";
 import {
   classifyStorefrontCapacityTier,
@@ -486,21 +482,15 @@ export async function getActivePlanById(
 export async function listActivePlans(
   requestedParchinLevel?: ParchinLevel,
 ): Promise<PricedInfrastructurePlan[]> {
-  const [arvanRegions, parspackRegions, configs] = await Promise.all([
+  const [arvanRegions, configs] = await Promise.all([
     listProviderRegionConfigs({
       provider: "ARVAN",
-      apiVersion: "v1",
-      purpose: "SALE",
-    }),
-    listProviderRegionConfigs({
-      provider: "PARSPACK",
       apiVersion: "v1",
       purpose: "SALE",
     }),
     pricingConfigs(),
   ]);
   const arvanRegionCodes = arvanRegions.map((region) => region.regionCode);
-  const parspackRegionCodes = parspackRegions.map((region) => region.regionCode);
   const plans = await prisma.infrastructurePlan.findMany({
     where: {
       active: true,
@@ -510,18 +500,9 @@ export async function listActivePlans(
       parchinIncluded: true,
       providerApiVersion: "v1",
       offerSource: "API_CATALOG",
-      OR: [
-        {
-          provider: "ARVAN",
-          productKind: "CLOUD_SERVER",
-          regionCode: { in: arvanRegionCodes },
-        },
-        {
-          provider: "PARSPACK",
-          productKind: "READY_INSTANT_SERVER",
-          regionCode: { in: parspackRegionCodes },
-        },
-      ],
+      provider: "ARVAN",
+      productKind: "CLOUD_SERVER",
+      regionCode: { in: arvanRegionCodes },
     },
     include: { catalogItem: true },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
@@ -630,10 +611,9 @@ export async function listPublicPlanOffers() {
 
 export async function listLiveReadyServerOffers() {
   try {
-    const [plans, parsPackResult, arvanResult, arvanRegions, parchinLabels] =
+    const [plans, arvanResult, arvanRegions, parchinLabels] =
       await Promise.all([
         listReadyServerPlans(),
-        getCatalogFreshness("PARSPACK").catch(() => null),
         getCatalogFreshness("ARVAN").catch(() => null),
         listProviderRegionConfigs({
           provider: "ARVAN",
@@ -655,12 +635,11 @@ export async function listLiveReadyServerOffers() {
     const offers = plans.flatMap((plan) => {
       const manual = plan.offerSource === "MANUAL_ADMIN";
       const preprovisioned = plan.offerSource === "PREPROVISIONED_INVENTORY";
-      const freshness = plan.provider === "PARSPACK" ? parsPackResult : arvanResult;
       const inventoryCount = inventoryCounts.get(plan.id) ?? 0;
       const manualUnits = plan.catalogItem.manualAvailableUnits ?? 0;
       const apiCatalog = !manual && !preprovisioned;
       const catalogFresh = apiCatalog
-        ? freshness?.fresh === true
+        ? arvanResult?.fresh === true
         : true;
       const access = resolveCatalogOfferAccess({
         catalogFresh,
@@ -670,9 +649,7 @@ export async function listLiveReadyServerOffers() {
           productKind: plan.productKind,
           offerSource: plan.offerSource,
         }),
-        regionSaleEnabled:
-          plan.provider !== "ARVAN" ||
-          arvanRegionSale.get(plan.regionCode) === true,
+        regionSaleEnabled: arvanRegionSale.get(plan.regionCode) === true,
       });
       if (!access.visible) return [];
       const capacityAvailable = manual
@@ -700,8 +677,7 @@ export async function listLiveReadyServerOffers() {
             : access.purchaseState,
       }];
     });
-    const freshStates = [parsPackResult, arvanResult].filter(Boolean);
-    const allFresh = freshStates.length > 0 && freshStates.every((state) => state!.fresh);
+    const allFresh = arvanResult?.fresh === true;
     return {
       live: allFresh,
       degraded: !allFresh,
@@ -811,28 +787,20 @@ export async function listLiveCloudServerOffers() {
   try {
     const [
       arvanFreshness,
-      parsPackFreshness,
       arvanRegions,
-      parsPackRegions,
       catalogItems,
       publishedPlanRows,
       configs,
     ] = await Promise.all([
       getCatalogFreshness("ARVAN").catch(() => null),
-      getCatalogFreshness("PARSPACK").catch(() => null),
       listProviderRegionConfigs({
         provider: "ARVAN",
         apiVersion: "v1",
         purpose: "ALL",
       }).catch(() => []),
-      listProviderRegionConfigs({
-        provider: "PARSPACK",
-        apiVersion: "v1",
-        purpose: "ALL",
-      }).catch(() => []),
       prisma.providerCatalogItem.findMany({
         where: {
-          provider: { in: ["ARVAN", "PARSPACK"] },
+          provider: "ARVAN",
           productKind: "CLOUD_SERVER",
           source: "API_CATALOG",
           active: true,
@@ -850,7 +818,7 @@ export async function listLiveCloudServerOffers() {
       }),
       prisma.infrastructurePlan.findMany({
         where: {
-          provider: { in: ["ARVAN", "PARSPACK"] },
+          provider: "ARVAN",
           providerApiVersion: "v1",
           productKind: "CLOUD_SERVER",
           offerSource: "API_CATALOG",
@@ -874,7 +842,7 @@ export async function listLiveCloudServerOffers() {
 
     const regionDisplay = new Map<string, string>();
     const regionSale = new Map<string, boolean>();
-    for (const region of [...arvanRegions, ...parsPackRegions]) {
+    for (const region of arvanRegions) {
       regionDisplay.set(
         `${region.provider}:${region.regionCode}`,
         region.displayName,
@@ -890,7 +858,6 @@ export async function listLiveCloudServerOffers() {
     );
     const freshnessByProvider = {
       ARVAN: arvanFreshness,
-      PARSPACK: parsPackFreshness,
     } as const;
 
     const offers = catalogItems.flatMap((item) => {
@@ -902,7 +869,6 @@ export async function listLiveCloudServerOffers() {
         regionDisplay.get(`${item.provider}:${item.regionCode}`) ??
         readyServerLocation(item.regionCode).label;
       const regionSaleEnabled =
-        item.provider !== "ARVAN" ||
         regionSale.get(`${item.provider}:${item.regionCode}`) === true;
 
       if (published) {
@@ -982,14 +948,10 @@ export async function listLiveCloudServerOffers() {
       ];
     });
 
-    const freshStates = [arvanFreshness, parsPackFreshness].filter(Boolean);
-    const allFresh =
-      freshStates.length > 0 &&
-      freshStates.every((state) => state!.fresh);
+    const allFresh = arvanFreshness?.fresh === true;
     const checkedAt =
       offers[0]?.checkedAt ??
       arvanFreshness?.lastSync?.toISOString() ??
-      parsPackFreshness?.lastSync?.toISOString() ??
       null;
     return {
       live: allFresh,
@@ -1024,102 +986,6 @@ export async function listAllPlans(): Promise<AdminInfrastructurePlan[]> {
           pricing: null,
         };
   });
-}
-
-/** Development/test seed only — never called in production bootstrap. */
-export async function seedDevelopmentPlans() {
-  if (getEnv().isProduction) return;
-
-  const syncedAt = new Date();
-  const catalogItem = await prisma.providerCatalogItem.upsert({
-    where: {
-      provider_apiVersion_regionCode_externalPlanId: {
-        provider: "PARSPACK",
-        apiVersion: "v1",
-        regionCode: "tehran11",
-        externalPlanId: "irLinuxVPS4",
-      },
-    },
-    update: {},
-    create: {
-      provider: "PARSPACK",
-      apiVersion: "v1",
-      productKind: "READY_INSTANT_SERVER",
-      regionCode: "tehran11",
-      sizeCode: "irLinuxVPS4",
-      externalPlanId: "irLinuxVPS4",
-      externalKey: "parspack:v1:tehran11:irLinuxVPS4",
-      sizeName: "Development Linux VPS",
-      compatibleImageCodes: ["ubuntu24-cloudinit-qcow2"],
-      vcpu: 2,
-      ramMb: 4096,
-      diskGb: 50,
-      available: true,
-      status: "ACTIVE",
-      priceMonthlyAmount: decimalToScaledInteger("120000"),
-      priceScale: 6,
-      currencyCode: "IRR",
-      amountUnit: "TOMAN",
-      providerMonthlyPriceIrr: 1_200_000n,
-      lastSyncedAt: syncedAt,
-      lastSeenAt: syncedAt,
-      rawPayload: {},
-      payloadHash: "development-seed",
-      catalogVersion: syncedAt.toISOString(),
-    },
-  });
-  await prisma.providerPricingConfig.upsert({
-    where: { provider: "PARSPACK" },
-    update: {},
-    create: {
-      id: "parspack",
-      provider: "PARSPACK",
-      markupBasisPoints: 2500,
-    },
-  });
-
-  const plans = [
-    {
-      code: "DEV_STARTER",
-      title: "شروع توسعه",
-      description: "پلن آزمایشی فقط برای Development",
-      deliveryMode: "MANAGED" as const,
-      sortOrder: 1,
-    },
-    {
-      code: "DEV_GROWTH",
-      title: "رشد توسعه",
-      description: "پلن آزمایشی فقط برای Development",
-      deliveryMode: "MANAGED" as const,
-      sortOrder: 2,
-    },
-  ];
-
-  for (const plan of plans) {
-    await prisma.infrastructurePlan.upsert({
-      where: { code: plan.code },
-      update: {},
-      create: {
-        ...plan,
-        provider: "PARSPACK",
-        regionCode: catalogItem.regionCode,
-        sizeCode: catalogItem.sizeCode,
-        imageCode: "ubuntu24-cloudinit-qcow2",
-        vcpu: catalogItem.vcpu,
-        ramGb: 4,
-        storageGb: catalogItem.diskGb,
-        salePriceRial: 1_500_000n,
-        renewalPriceRial: 1_500_000n,
-        estimatedProviderCostRial: 1_200_000n,
-        catalogItemId: catalogItem.id,
-        catalogMappingStatus: "MAPPED",
-        catalogMappedAt: syncedAt,
-        parchinIncluded: true,
-        publicationStatus: "PUBLISHED",
-        active: true,
-      },
-    });
-  }
 }
 
 /** @deprecated Use getActivePlanByCode from database */
