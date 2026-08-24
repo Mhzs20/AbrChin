@@ -186,6 +186,8 @@ export async function POST(request: Request) {
         ])
       : [null, null];
 
+    const curve = simulation?.curve ?? null;
+
     return jsonOk({
       guardrails: {
         level: guardrail,
@@ -200,6 +202,20 @@ export async function POST(request: Request) {
         ? {
             providerEnabled: simulation.providerEnabled,
             productEnabled: simulation.productEnabled,
+            // Which control actually produced the provider markup for this
+            // simulation. When the profit curve is enabled it fully replaces
+            // the flat provider margin, so the UI must not claim otherwise.
+            markupSource: curve ? "profit_curve" : "provider_config",
+            curve: curve
+              ? {
+                  bandId: curve.bandId,
+                  bandIndex: curve.bandIndex,
+                  targetGrossMarginBps: curve.targetGrossMarginBps,
+                  effectiveGrossMarginBps: curve.effectiveGrossMarginBps,
+                  effectiveMarkupBps: curve.effectiveMarkupBps,
+                  transition: curve.transition,
+                }
+              : null,
             breakdown: {
               providerCostRial:
                 simulation.breakdown.providerCostRial.toString(),
