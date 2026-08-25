@@ -20,9 +20,20 @@
 
 ## Execution Model
 
-- برنامه Launch V2 فقط روی **`codex/abrchin-ux-flow-v2`** اجرا می‌شود.
-- Push مستقیم، Commit مستقیم یا Merge روی **`main`** ممنوع است.
-- یک Draft PR از Branch برنامه به `main` نگهداری کن و PR تکراری نساز.
+Founder rule (2026-08-25) for current verified publication, including the
+MessageGo V2 cross-repository program:
+
+- Work from latest `origin/main`.
+- Publish verified work directly to `origin/main`.
+- Do not create unnecessary branches, worktrees, pull requests, GitHub
+  Actions, CI/CD workflows, or automatic deployment workflows.
+- Production deployment still requires explicit Founder authorization.
+
+The historical Launch V2 instruction that required `codex/abrchin-ux-flow-v2`
+and forbade direct `main` publication is superseded for this execution policy
+only. Locked Phase 1 product rules in `docs/phase-1-product-contract.md` are
+unchanged.
+
 - Phaseها به‌ترتیب ۰ تا ۹ اجرا می‌شوند. Phase بعدی فقط پس از رفع P0/P1 و
   ثبت شواهد Phase جاری آغاز می‌شود.
 - GitHub Actions، CI/CD workflow یا Deploy خودکار ایجاد یا اجرا نکن.
@@ -101,12 +112,12 @@
 پس از هر Phase این موارد را در اسناد Launch و گزارش ثبت کن:
 
 - چه چیزی پیاده‌سازی شد
-- Starting/Ending Commit و Commit SHA روی Branch برنامه
+- Starting/Ending Commit و Commit SHA روی `origin/main`
 - فرمان و نتیجه دقیق تست‌های حیاتی، تعداد Skip و Browser evidence
 - Risk واقعی باقی‌مانده
 - Founder دقیقاً چگونه همان Feature را تست کند
 - Deploy انجام شده یا نشده
-- لینک Draft PR و اقدام دقیق Phase بعدی
+- SHA منتشرشده روی `origin/main` و اقدام دقیق کار بعدی
 
 ## Cursor Cloud specific instructions
 
