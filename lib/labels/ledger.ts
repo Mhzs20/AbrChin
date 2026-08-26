@@ -10,6 +10,9 @@ export const ledgerTypeLabel: Record<LedgerType, string> = {
   BILLING_ADJUSTMENT: "تعدیل صورتحساب مصرف",
   REFUND: "بازگشت وجه",
   ADMIN_ADJUSTMENT: "تعدیل مدیر",
+  MESSAGEGO_RESERVE_HOLD: "رزرو اعتبار هوش مصنوعی",
+  MESSAGEGO_SETTLEMENT: "تسویه مصرف هوش مصنوعی",
+  MESSAGEGO_HOLD_RELEASE: "آزادسازی رزرو هوش مصنوعی",
 };
 
 export const ledgerDirectionLabel: Record<LedgerDirection, string> = {

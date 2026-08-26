@@ -15,6 +15,8 @@
     "test:smoke": "node scripts/smoke-test.mjs",
     "test:auth": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/auth-unit-test.mts scripts/auth-integration-test.mts scripts/kavenegar-sms-test.mts scripts/release-blocker-security-test.mts scripts/customer-journey-ux-test.mts scripts/money-typography-test.mts scripts/customer-identity-email-test.mts scripts/production-compose-email-env-test.mts",
     "test:wallet": "node --experimental-strip-types --test scripts/wallet-test.mts",
+    "test:messagego-v2-settlement": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/messagego-v2-settlement-unit-test.mts",
+    "test:messagego-v2-settlement-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/run-isolated-postgres-tests.mts scripts/messagego-v2-settlement-postgres-test.mts",
     "test:subscription": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/subscription-test.mts",
     "test:wallet-recovery": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/wallet-payment-recovery-postgres-test.mts",
     "test:billing-worker": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/billing-worker-postgres-test.mts",

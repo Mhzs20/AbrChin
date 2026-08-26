@@ -2,6 +2,8 @@ import "server-only";
 
 import { getEnv } from "@/lib/env";
 
+export { isMessageGoConfigured } from "@/lib/messagego/config";
+
 export type MessageGoTaskClass =
   | "fast"
   | "standard"
@@ -53,21 +55,6 @@ const conversationScopes = [
   "conversation:write",
   "conversation:realtime",
 ] as const;
-
-function configuredValue(value: string) {
-  return value.trim().length > 0;
-}
-
-export function isMessageGoConfigured() {
-  const env = getEnv();
-  return (
-    configuredValue(env.messageGoBaseUrl) &&
-    configuredValue(env.messageGoClientId) &&
-    configuredValue(env.messageGoClientSecret) &&
-    configuredValue(env.messageGoTenantId) &&
-    configuredValue(env.messageGoWorkspaceId)
-  );
-}
 
 function messageGoConfig(): MessageGoConfig {
   const env = getEnv();

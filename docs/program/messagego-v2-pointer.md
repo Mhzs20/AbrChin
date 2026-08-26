@@ -8,6 +8,10 @@ Canonical approved V2 scope and agentic program controller live in
 - Runbook: `docs/program/messagego-v2-agent-runbook.md`
 - Commands: `make v2-next-work`, `make v2-program-status`, `make v2-program-check`
 
-This repository keeps only the minimum AbrChin-side pointer and, later, a
-digest pin of the canonical V2 settlement contract. Resume from MessageGo
-repository state. Do not treat this file as a second V2 scope.
+This repository keeps only the minimum AbrChin-side pointer and a digest pin of
+the canonical V2 settlement contract. Resume from MessageGo repository state.
+Do not treat this file as a second V2 scope.
+
+AbrChin-side WP07 evidence:
+`docs/program/v2-wp07-wallet-authority-evidence.md`
+

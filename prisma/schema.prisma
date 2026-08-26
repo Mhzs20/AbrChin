@@ -41,6 +41,9 @@ enum LedgerType {
   BILLING_ADJUSTMENT
   REFUND
   ADMIN_ADJUSTMENT
+  MESSAGEGO_RESERVE_HOLD
+  MESSAGEGO_SETTLEMENT
+  MESSAGEGO_HOLD_RELEASE
 }
 
 enum LedgerStatus {
@@ -48,6 +51,35 @@ enum LedgerStatus {
   COMPLETED
   REVERSED
   FAILED
+}
+
+enum MessageGoReservationStatus {
+  RESERVED
+  SETTLED
+  RELEASED
+  UNCERTAIN
+  RECONCILED
+}
+
+enum MessageGoSettlementOpKind {
+  RESERVE
+  SETTLE
+  RELEASE
+  RECONCILE
+}
+
+enum MessageGoConnectionOwnership {
+  PLATFORM_MANAGED
+  ACCOUNT_BYOK
+  PROJECT_BYOK
+}
+
+enum MessageGoCustomerConnectionStatus {
+  UNCONFIGURED
+  HANDOFF_REQUIRED
+  CONNECTED
+  CONTROL_PLANE_UNAVAILABLE
+  HANDOFF_FAILED
 }
 
 enum TopUpStatus {
@@ -696,6 +728,9 @@ model User {
   assignedParchinTasks        ParchinTask[]                       @relation("ParchinTaskAssignee")
   completedParchinTasks       ParchinTask[]                       @relation("ParchinTaskCompleter")
   createdParchinReports       ParchinReport[]                     @relation("ParchinReportCreator")
+  messageGoReservations       MessageGoAuthorityReservation[]     @relation("MessageGoReservationAccount")
+  messageGoSettlementOps      MessageGoSettlementOperation[]      @relation("MessageGoSettlementAccount")
+  messageGoConnections        MessageGoCustomerConnection[]
 }
 
 model OtpChallenge {
@@ -764,10 +799,11 @@ model Wallet {
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ledgerEntries      WalletLedgerEntry[]
-  topUps             WalletTopUp[]
-  billingInvoices    BillingInvoice[]
-  billingAdjustments BillingAdjustment[]
+  ledgerEntries           WalletLedgerEntry[]
+  topUps                  WalletTopUp[]
+  billingInvoices         BillingInvoice[]
+  billingAdjustments      BillingAdjustment[]
+  messageGoReservations   MessageGoAuthorityReservation[]
 }
 
 model WalletLedgerEntry {
@@ -2886,4 +2922,91 @@ model SupportRequestMessage {
 
   @@index([requestId, createdAt])
   @@index([authorUserId])
+}
+
+/// AbrChin-authoritative MessageGo V2 reservation. This is not a second wallet.
+model MessageGoAuthorityReservation {
+  id                   String                     @id @default(cuid())
+  accountId            String
+  walletId             String
+  productId            String
+  workspaceId          String
+  runId                String
+  usageReservationId   String                     @unique
+  callerServiceId      String
+  holdAmountRial       BigInt
+  remainingHoldRial    BigInt
+  settledAmountRial    BigInt                     @default(0)
+  status               MessageGoReservationStatus
+  pricingFingerprint   String
+  pricingVersion       String
+  reserveOperationId   String                     @unique
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  account              User                       @relation("MessageGoReservationAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  wallet               Wallet                     @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  operations           MessageGoSettlementOperation[]
+  events               MessageGoReservationEvent[]
+
+  @@index([accountId, createdAt])
+  @@index([walletId])
+  @@index([productId, workspaceId])
+  @@index([runId])
+  @@index([status, createdAt])
+}
+
+model MessageGoSettlementOperation {
+  id              String                    @id @default(cuid())
+  operationId     String                    @unique
+  kind            MessageGoSettlementOpKind
+  bodyFingerprint String
+  reservationId   String?
+  accountId       String
+  outcomeJson     Json
+  errorCode       String?
+  createdAt       DateTime                  @default(now())
+  reservation     MessageGoAuthorityReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  account         User                      @relation("MessageGoSettlementAccount", fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([reservationId])
+  @@index([accountId, createdAt])
+  @@index([kind, createdAt])
+}
+
+model MessageGoReservationEvent {
+  id            String                       @id @default(cuid())
+  reservationId String
+  kind          String
+  operationId   String
+  payloadJson   Json
+  createdAt     DateTime                     @default(now())
+  reservation   MessageGoAuthorityReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([reservationId, createdAt])
+  @@index([operationId])
+}
+
+/// Non-secret customer/commercial MessageGo connection metadata.
+/// Raw AI provider credentials are never stored here.
+model MessageGoCustomerConnection {
+  id            String                            @id @default(cuid())
+  userId        String
+  productId     String
+  workspaceId   String
+  alias         String
+  ownershipMode MessageGoConnectionOwnership
+  /// Stable family alias, never a raw provider model id.
+  familyAlias   String?
+  status        MessageGoCustomerConnectionStatus
+  /// Opaque MessageGo secret_ref only. Never returned by ordinary APIs.
+  secretRef     String?
+  lastHandoffAt DateTime?
+  lastErrorCode String?
+  createdAt     DateTime                          @default(now())
+  updatedAt     DateTime                          @updatedAt
+  user          User                              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId, workspaceId, alias])
+  @@index([userId, createdAt])
+  @@index([status])
 }
