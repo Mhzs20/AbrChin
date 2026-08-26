@@ -4,7 +4,7 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
-import { isMessageGoConfigured } from "@/lib/messagego/config";
+import { getControlPlanePort } from "@/lib/messagego/customer/control-plane";
 import {
   getProviderSecretHandoffPort,
   HandoffError,
@@ -60,6 +60,7 @@ export type CustomerAiSurface = {
     available: boolean;
     configured: boolean;
     fail_closed: boolean;
+    reason: string;
     execution_owner: "messagego";
     wallet_owner: "abrchin";
     inference_proxy: false;
@@ -83,7 +84,7 @@ const statusLabel: Record<MessageGoReservationStatus, string> = {
 };
 
 export async function getCustomerAiSurface(userId: string): Promise<CustomerAiSurface> {
-  const configured = isMessageGoConfigured();
+  const probe = await getControlPlanePort().probe();
   const [wallet, connections, reservations] = await Promise.all([
     prisma.wallet.findUnique({ where: { userId } }),
     prisma.messageGoCustomerConnection.findMany({
@@ -107,9 +108,10 @@ export async function getCustomerAiSurface(userId: string): Promise<CustomerAiSu
   const available = wallet?.availableBalance ?? 0n;
   return {
     control_plane: {
-      available: configured,
-      configured,
-      fail_closed: !configured,
+      available: probe.available,
+      configured: probe.configured,
+      fail_closed: probe.fail_closed,
+      reason: probe.reason,
       execution_owner: "messagego",
       wallet_owner: "abrchin",
       inference_proxy: false,
@@ -167,7 +169,8 @@ export async function handoffCustomerProviderCredential(input: {
     throw new HandoffError("invalid_ownership", "حالت مالکیت اتصال نامعتبر است.");
   }
 
-  if (!isMessageGoConfigured()) {
+  const probe = await getControlPlanePort().probe();
+  if (!probe.available) {
     const saved = await prisma.messageGoCustomerConnection.upsert({
       where: {
         userId_productId_workspaceId_alias: {

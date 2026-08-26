@@ -21,7 +21,9 @@ AbrChin-side WP08 evidence:
 Cross-repository completion handoff:
 `docs/program/v2-wp07-wp08-completion-handoff.md`
 
-MessageGo mutable program-state was reconciled on
-`01d62d76a3604ba118f0fad8270aba05fbf53e7a`. Next READY package is `V2-WP09`.
-Production deployment and WP10 remain denied.
+AbrChin-side WP09 evidence pointer:
+`docs/program/v2-wp09-integration-evidence.md`
+
+WP09 implementation is local/offline integration, security, and reliability
+evidence. Production deployment and WP10 remain denied.
 

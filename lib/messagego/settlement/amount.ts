@@ -88,12 +88,6 @@ export function walletAmountString(value: bigint): string {
 }
 
 export function assertNoJsonNumberMoney(value: unknown, path = "$"): void {
-  if (typeof value === "number") {
-    throw new SettlementError(
-      "json_number_money",
-      `JSON number money is forbidden at ${path}`,
-    );
-  }
   if (Array.isArray(value)) {
     value.forEach((item, index) => assertNoJsonNumberMoney(item, `${path}[${index}]`));
     return;

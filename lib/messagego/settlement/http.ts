@@ -1,5 +1,6 @@
-import { jsonError, jsonOk } from "@/lib/http";
 import {
+  SETTLEMENT_CONTRACT_ID,
+  SETTLEMENT_CONTRACT_VERSION,
   assertNoJsonNumberMoney,
   isSettlementError,
   SettlementError,
@@ -12,6 +13,22 @@ import {
 } from "@/lib/messagego/settlement/authority";
 import { authenticateSettlementRequest } from "@/lib/messagego/settlement/service-auth";
 import type { SettlementOutcomeClass } from "@/lib/messagego/settlement/types";
+
+function jsonOk<T>(data: T) {
+  return Response.json(data, {
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+function jsonError(message: string, status: number, extra?: Record<string, unknown>) {
+  return Response.json(
+    { error: message, ...extra },
+    {
+      status,
+      headers: { "Cache-Control": "no-store" },
+    },
+  );
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -43,6 +60,20 @@ export async function handleSettlementHttp(request: Request) {
     }
     assertNoJsonNumberMoney(body);
     const payload = asRecord(body);
+    const contractId = readString(payload.contract_id).trim();
+    const contractVersion = readString(payload.contract_version).trim();
+    if (contractId && contractId !== SETTLEMENT_CONTRACT_ID) {
+      throw new SettlementError(
+        "invalid_request",
+        "settlement contract_id is not MESSAGEGO-V2-ABRCHIN-SETTLEMENT",
+      );
+    }
+    if (contractVersion && contractVersion !== SETTLEMENT_CONTRACT_VERSION) {
+      throw new SettlementError(
+        "invalid_request",
+        "settlement contract_version is not 2.0.0",
+      );
+    }
     const operation = readString(payload.operation).trim().toLowerCase();
     const callerServiceId = readString(payload.caller_service_id).trim() || auth.callerServiceId;
     if (callerServiceId !== auth.callerServiceId) {

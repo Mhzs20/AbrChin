@@ -51,7 +51,10 @@ test("wallet amounts are lossless integer rial strings", () => {
     SettlementError,
   );
   assert.doesNotThrow(() =>
-    assertNoJsonNumberMoney({ customer_billable_amount: "200" }),
+    assertNoJsonNumberMoney({
+      customer_billable_amount: "200",
+      provider_usage: { input_text_tokens: 10, output_text_tokens: 4 },
+    }),
   );
 });
 

@@ -19,6 +19,8 @@
     "test:messagego-v2-settlement-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/run-isolated-postgres-tests.mts scripts/messagego-v2-settlement-postgres-test.mts",
     "test:messagego-v2-customer-ux": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/messagego-v2-customer-ux-test.mts",
     "test:messagego-v2-customer-ux-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/run-isolated-postgres-tests.mts scripts/messagego-v2-customer-ux-postgres-test.mts",
+    "test:messagego-v2-integration": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/messagego-v2-wp09-integration-test.mts",
+    "test:messagego-v2-integration-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/run-isolated-postgres-tests.mts scripts/messagego-v2-wp09-integration-postgres-test.mts",
     "test:subscription": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/subscription-test.mts",
     "test:wallet-recovery": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/wallet-payment-recovery-postgres-test.mts",
     "test:billing-worker": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/billing-worker-postgres-test.mts",
