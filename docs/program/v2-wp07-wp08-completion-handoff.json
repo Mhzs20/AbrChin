@@ -31,8 +31,9 @@
   "raw_provider_secret_retained_or_readable": false,
   "production_impact": "NONE",
   "provider_traffic": "NONE",
-  "messagego_program_state_reconciled": false,
-  "messagego_state_still_required": true,
+  "messagego_program_state_reconciled": true,
+  "messagego_state_still_required": false,
+  "messagego_reconcile_sha": "01d62d76a3604ba118f0fad8270aba05fbf53e7a",
   "next_eligible_package": "V2-WP09",
   "do_not_execute": [
     "production_deployment",

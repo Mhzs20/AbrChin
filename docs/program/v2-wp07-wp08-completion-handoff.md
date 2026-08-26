@@ -1,7 +1,8 @@
 # V2-WP07 / V2-WP08 crash-safe completion handoff
 
-This file is for a MessageGo agent to resume mutable program-state
-reconciliation. It does not modify `MESSAGEGO-V2-CONTROL-PLANE@2.0.0`.
+This file records AbrChin WP07/WP08 publication and MessageGo mutable
+program-state reconciliation. It does not modify
+`MESSAGEGO-V2-CONTROL-PLANE@2.0.0`.
 
 ## Published AbrChin SHAs
 
@@ -53,14 +54,30 @@ npm run test:messagego-v2-customer-ux-postgres
 
 Result on `56701c8d594a4e728da3fc306062239ca191723d`: 4 unit tests pass; 1 isolated PostgreSQL test pass.
 
-## MessageGo state still required
+## MessageGo program-state reconciliation
 
-MessageGo `docs/program/messagego-v2-program-state.json` still records
-`V2-WP07 = BLOCKED_BY_REPO_ACCESS` until a MessageGo-writable agent reconciles:
+Reconciled on MessageGo `origin/main`:
 
-- add `V2-WP07` and `V2-WP08` to `completed_packages`
-- store derived statuses (WP07/WP08 COMPLETE, WP09 READY, WP10 BLOCKED)
-- set `current_package` to `V2-WP09`
-- keep production and provider traffic DENIED
+- SHA: `01d62d76a3604ba118f0fad8270aba05fbf53e7a`
+- `V2-WP07` = `COMPLETE`
+- `V2-WP08` = `COMPLETE`
+- `current_package` = `V2-WP09`
+- `V2-WP09` = `READY`
+- `V2-WP10` = `BLOCKED`
+- production = `DENIED`
+- provider_traffic = `DENIED`
 
-Do not edit the approved V2 scope to record this progress.
+MessageGo evidence: `docs/program/v2-wp07-wp08-abrchin-completion-reconcile.md`
+
+Exact MessageGo validation on that HEAD:
+
+```bash
+make v2-program-check
+make v2-program-status
+make v2-next-work
+make v2-scope-check
+```
+
+Result: PASS. Next = `V2-WP09`. Approved scope unchanged.
+
+Do not execute production deployment or WP10 production authorization.
