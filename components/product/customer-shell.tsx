@@ -9,6 +9,7 @@ import {
   Receipt,
   Server,
   ShoppingBag,
+  Sparkles,
   User,
   Wallet,
 } from "lucide-react";
@@ -38,6 +39,7 @@ const mainNav: NavItem[] = [
 
 const secondaryNav: NavItem[] = [
   { href: "/account/parchin", label: "پرچین‌های من", icon: HeartHandshake },
+  { href: "/account/ai", label: "هوش مصنوعی", icon: Sparkles },
   { href: "/account/support", label: "درخواست پشتیبانی", icon: CircleHelp },
   { href: "/account/transactions", label: "تراکنش‌ها", icon: Receipt },
   { href: "/account/profile", label: "پروفایل", icon: User },

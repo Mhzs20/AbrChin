@@ -15,3 +15,6 @@ Do not treat this file as a second V2 scope.
 AbrChin-side WP07 evidence:
 `docs/program/v2-wp07-wallet-authority-evidence.md`
 
+AbrChin-side WP08 evidence:
+`docs/program/v2-wp08-customer-ux-evidence.md`
+
