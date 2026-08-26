@@ -18,3 +18,6 @@ AbrChin-side WP07 evidence:
 AbrChin-side WP08 evidence:
 `docs/program/v2-wp08-customer-ux-evidence.md`
 
+Cross-repository completion handoff:
+`docs/program/v2-wp07-wp08-completion-handoff.md`
+
