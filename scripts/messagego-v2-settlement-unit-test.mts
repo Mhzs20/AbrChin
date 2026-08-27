@@ -71,7 +71,7 @@ test("identical semantic bodies share a fingerprint and conflicts do not", () =>
   );
 });
 
-test("settlement HTTP auth is fail-closed for production, browsers, and missing credentials", () => {
+test("settlement HTTP auth is fail-closed for production, browsers, and missing credentials", async () => {
   const previous = {
     NODE_ENV: process.env.NODE_ENV,
     cred: process.env.MESSAGEGO_SETTLEMENT_SERVICE_CREDENTIAL,
@@ -79,7 +79,7 @@ test("settlement HTTP auth is fail-closed for production, browsers, and missing 
   try {
     process.env.NODE_ENV = "production";
     process.env.MESSAGEGO_SETTLEMENT_SERVICE_CREDENTIAL = "x".repeat(32);
-    assert.throws(
+    await assert.rejects(
       () =>
         authenticateSettlementRequest(
           new Request("http://127.0.0.1/internal", {
@@ -96,7 +96,7 @@ test("settlement HTTP auth is fail-closed for production, browsers, and missing 
 
     process.env.NODE_ENV = "test";
     delete process.env.MESSAGEGO_SETTLEMENT_SERVICE_CREDENTIAL;
-    assert.throws(
+    await assert.rejects(
       () =>
         authenticateSettlementRequest(
           new Request("http://127.0.0.1/internal", { method: "POST" }),
@@ -107,7 +107,7 @@ test("settlement HTTP auth is fail-closed for production, browsers, and missing 
     );
 
     process.env.MESSAGEGO_SETTLEMENT_SERVICE_CREDENTIAL = "local-test-credential-32chars++";
-    assert.throws(
+    await assert.rejects(
       () =>
         authenticateSettlementRequest(
           new Request("http://127.0.0.1/internal", {

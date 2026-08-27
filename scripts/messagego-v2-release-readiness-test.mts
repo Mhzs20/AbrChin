@@ -6,17 +6,22 @@ import test from "node:test";
 const PHASE1_HASH = "9bb2311d7dc7a01d87b31c664ec65c1cb346efaa";
 const SETTLEMENT_DIGEST = "b943e627a5486fd4ae6ae5e062cc7b220ccb945808cebb4757ef42262f882f33";
 
-test("WP10 release readiness keeps production settlement denied", () => {
+test("WP10 release readiness keeps production settlement denied by default", () => {
   const auth = readFileSync("lib/messagego/settlement/service-auth.ts", "utf8");
   assert.match(auth, /production_denied/);
   assert.match(auth, /MessageGo V2 settlement runtime is denied in production/);
   assert.match(auth, /browser_forbidden/);
   assert.match(auth, /settlementRuntimeAllowed/);
-  assert.match(auth, /if \(env\.isProduction\) return false/);
+  assert.match(auth, /messageGoV2SettlementEnabled/);
+  assert.match(
+    auth,
+    /if \(env\.isProduction && !env\.messageGoV2SettlementEnabled\) return false/,
+  );
 
   const compose = readFileSync("compose.production.yaml", "utf8");
   assert.equal(compose.includes("MESSAGEGO_SETTLEMENT_SERVICE_CREDENTIAL"), false);
   assert.match(compose, /NODE_ENV:\s*production/);
+  assert.match(compose, /MESSAGEGO_V2_SETTLEMENT_ENABLED:\s*"false"|MESSAGEGO_V2_SETTLEMENT_ENABLED: \$\{MESSAGEGO_V2_SETTLEMENT_ENABLED:-false\}/);
 
   const pointer = readFileSync("docs/program/messagego-v2-pointer.md", "utf8");
   assert.match(pointer, /WP10/);

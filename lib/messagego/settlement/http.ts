@@ -51,10 +51,11 @@ export async function handleSettlementHttp(request: Request) {
     return jsonError("Method not allowed", 405, { code: "method_not_allowed" });
   }
   try {
-    const auth = authenticateSettlementRequest(request);
+    const raw = Buffer.from(await request.arrayBuffer());
+    const auth = await authenticateSettlementRequest(request, raw);
     let body: unknown;
     try {
-      body = await request.json();
+      body = JSON.parse(raw.toString("utf8"));
     } catch {
       throw new SettlementError("invalid_request", "JSON body is required");
     }

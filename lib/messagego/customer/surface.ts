@@ -4,6 +4,7 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
+import { getEnv } from "@/lib/env";
 import { getControlPlanePort } from "@/lib/messagego/customer/control-plane";
 import {
   getProviderSecretHandoffPort,
@@ -84,6 +85,28 @@ const statusLabel: Record<MessageGoReservationStatus, string> = {
 };
 
 export async function getCustomerAiSurface(userId: string): Promise<CustomerAiSurface> {
+  const env = getEnv();
+  if (env.isProduction && !env.messageGoV2CustomerUxEnabled) {
+    return {
+      control_plane: {
+        available: false,
+        configured: false,
+        fail_closed: true,
+        reason: "unconfigured",
+        execution_owner: "messagego",
+        wallet_owner: "abrchin",
+        inference_proxy: false,
+      },
+      wallet: {
+        available_balance_rial: "0",
+        available_balance_toman_fa: formatTomanFa(0n),
+        reserved_ai_rial: "0",
+        reserved_ai_toman_fa: formatTomanFa(0n),
+      },
+      connections: [],
+      reservations: [],
+    };
+  }
   const probe = await getControlPlanePort().probe();
   const [wallet, connections, reservations] = await Promise.all([
     prisma.wallet.findUnique({ where: { userId } }),
@@ -167,6 +190,14 @@ export async function handoffCustomerProviderCredential(input: {
     ownershipMode !== "PLATFORM_MANAGED"
   ) {
     throw new HandoffError("invalid_ownership", "حالت مالکیت اتصال نامعتبر است.");
+  }
+
+  const env = getEnv();
+  if (env.isProduction && !env.messageGoV2CustomerUxEnabled) {
+    throw new HandoffError(
+      "handoff_unavailable",
+      "One-time provider secret handoff to MessageGo is not configured; fail closed",
+    );
   }
 
   const probe = await getControlPlanePort().probe();

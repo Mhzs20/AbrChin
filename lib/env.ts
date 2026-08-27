@@ -48,6 +48,25 @@ export function getEnv() {
     messageGoSettlementServiceCredential: (
       process.env.MESSAGEGO_SETTLEMENT_SERVICE_CREDENTIAL ?? ""
     ).trim(),
+    messageGoV2SettlementEnabled: readBool("MESSAGEGO_V2_SETTLEMENT_ENABLED", false),
+    messageGoV2CustomerUxEnabled: readBool("MESSAGEGO_V2_CUSTOMER_UX_ENABLED", false),
+    messageGoV2SecretHandoffEnabled: readBool("MESSAGEGO_V2_SECRET_HANDOFF_ENABLED", false),
+    messageGoV2S2SKeyringFile: (process.env.MESSAGEGO_V2_S2S_KEYRING_FILE ?? "").trim(),
+    messageGoV2S2SSigningKeyringFile: (
+      process.env.MESSAGEGO_V2_S2S_SIGNING_KEYRING_FILE ?? ""
+    ).trim(),
+    messageGoV2S2SSigningServiceId: (
+      process.env.MESSAGEGO_V2_S2S_SIGNING_SERVICE_ID ?? "abrchin"
+    ).trim(),
+    messageGoV2S2SAllowedServiceIds: (process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
+    messageGoV2S2SMaxClockSkewSeconds: readInt("MESSAGEGO_V2_S2S_MAX_CLOCK_SKEW_SECONDS", 300),
+    messageGoV2MessageGoBaseUrl: (process.env.MESSAGEGO_V2_MESSAGEGO_BASE_URL ?? "").trim(),
+    messageGoV2HandoffPath: (
+      process.env.MESSAGEGO_V2_HANDOFF_PATH ?? "/internal/v2/handoff"
+    ).trim(),
     // Founder policy (2026-08-10): public sale stays open by default. The
     // provider/source gates and freshness/availability checks still prevent an
     // invalid offer from being sold, without coupling checkout to mutations.

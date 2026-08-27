@@ -21,6 +21,8 @@
     "test:messagego-v2-customer-ux-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/run-isolated-postgres-tests.mts scripts/messagego-v2-customer-ux-postgres-test.mts",
     "test:messagego-v2-integration": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/messagego-v2-wp09-integration-test.mts",
     "test:messagego-v2-integration-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/run-isolated-postgres-tests.mts scripts/messagego-v2-wp09-integration-postgres-test.mts",
+    "test:messagego-v2-preprod": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/messagego-v2-preprod-hmac-test.mts",
+    "test:messagego-v2-preprod-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/run-real-postgres-tests.mts scripts/messagego-v2-preprod-postgres-test.mts",
     "test:messagego-v2-release-readiness-guards": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test --test-concurrency=1 scripts/messagego-v2-release-readiness-test.mts",
     "test:messagego-v2-release-readiness": "npm run test:messagego-v2-release-readiness-guards && npm run test:messagego-v2-settlement && npm run test:messagego-v2-settlement-postgres && npm run test:messagego-v2-customer-ux && npm run test:messagego-v2-customer-ux-postgres && npm run test:messagego-v2-integration && npm run test:messagego-v2-integration-postgres && npm run test:wallet",
     "test:subscription": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/subscription-test.mts",

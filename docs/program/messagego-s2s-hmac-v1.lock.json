@@ -1,0 +1,7 @@
+{
+  "contract_id": "MESSAGEGO-S2S-HMAC-V1",
+  "version": "1.0.0",
+  "json_sha256": "bf20696a20ab028733d53153c94f45447e4c23f25b871afe73287e5f15e11c07",
+  "canonical_repository": "Mhzs20/MessageGo",
+  "canonical_path": "contracts/integrations/messagego-s2s-hmac-v1.json"
+}
