@@ -25,5 +25,18 @@ AbrChin-side WP09 evidence pointer:
 `docs/program/v2-wp09-integration-evidence.md`
 
 WP09 implementation is local/offline integration, security, and reliability
-evidence. Production deployment and WP10 remain denied.
+evidence.
+
+## Production and WP10
+
+V2-WP10 is COMPLETE for release/handoff package execution on MessageGo.
+This is **not** production authorization. Production remains denied.
+`PRODUCTION = DENIED`. `PROVIDER_TRAFFIC = DENIED`.
+`wp10_production_authorization` remains false.
+
+Do not deploy MessageGo or AbrChin, mutate production, apply the V2 Prisma
+migration to production, or send live provider traffic.
+
+Canonical handoff: MessageGo `docs/program/v2-wp10-release-handoff.md`
+AbrChin pointer: `docs/program/v2-wp10-release-handoff-pointer.md`
 
