@@ -2,6 +2,18 @@
 
 این فایل قواعد دائمی کار روی Repository ابرچین است و برای همه Agentها در کل Repository اعمال می‌شود.
 
+## MessageGo product identity
+
+- Product = MessageGo. Customer language = MessageGo / MessageGo AI. Never MessageGo V2.
+- Product version = 1.0.0. Public API generation = v1.
+- Existing AbrChin Wallet remains the only wallet authority. Do not create a
+  separate V1 wallet or a second financial subsystem.
+- Version-neutral fail-closed gates remain: `MESSAGEGO_SETTLEMENT_ENABLED`,
+  `MESSAGEGO_CUSTOMER_AI_ENABLED`, `MESSAGEGO_SECRET_HANDOFF_ENABLED`.
+- Historical `MESSAGEGO_V2_*` names are rejected. Do not restore dual-name aliases.
+- Do not deploy, apply production migrations, or send live provider traffic
+  without explicit Founder authorization.
+
 ## Product Source of Truth
 
 قبل از هر تغییر محصولی، فایل **docs/phase-1-product-contract.md** را کامل بخوان.

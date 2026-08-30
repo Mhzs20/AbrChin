@@ -13,7 +13,28 @@ function readBool(name: string, fallback: boolean): boolean {
   return raw === "1" || raw.toLowerCase() === "true" || raw.toLowerCase() === "yes";
 }
 
+function rejectDeprecatedMessageGoEnv() {
+  const renamed: Array<[string, string]> = [
+    ["MESSAGEGO_V2_SETTLEMENT_ENABLED", "MESSAGEGO_SETTLEMENT_ENABLED"],
+    ["MESSAGEGO_V2_CUSTOMER_UX_ENABLED", "MESSAGEGO_CUSTOMER_AI_ENABLED"],
+    ["MESSAGEGO_V2_SECRET_HANDOFF_ENABLED", "MESSAGEGO_SECRET_HANDOFF_ENABLED"],
+    ["MESSAGEGO_V2_S2S_KEYRING_FILE", "MESSAGEGO_S2S_KEYRING_FILE"],
+    ["MESSAGEGO_V2_S2S_SIGNING_KEYRING_FILE", "MESSAGEGO_S2S_SIGNING_KEYRING_FILE"],
+    ["MESSAGEGO_V2_S2S_SIGNING_SERVICE_ID", "MESSAGEGO_S2S_SIGNING_SERVICE_ID"],
+    ["MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS", "MESSAGEGO_S2S_ALLOWED_SERVICE_IDS"],
+    ["MESSAGEGO_V2_S2S_MAX_CLOCK_SKEW_SECONDS", "MESSAGEGO_S2S_MAX_CLOCK_SKEW_SECONDS"],
+    ["MESSAGEGO_V2_MESSAGEGO_BASE_URL", "MESSAGEGO_HANDOFF_BASE_URL"],
+    ["MESSAGEGO_V2_HANDOFF_PATH", "MESSAGEGO_HANDOFF_PATH"],
+  ];
+  for (const [legacy, canonical] of renamed) {
+    if ((process.env[legacy] ?? "").trim() !== "") {
+      throw new Error(`${legacy} is not accepted; use ${canonical}`);
+    }
+  }
+}
+
 export function getEnv() {
+  rejectDeprecatedMessageGoEnv();
   const isProduction = process.env.NODE_ENV === "production";
   return {
     databaseUrl: process.env.DATABASE_URL ?? "",
@@ -48,24 +69,24 @@ export function getEnv() {
     messageGoSettlementServiceCredential: (
       process.env.MESSAGEGO_SETTLEMENT_SERVICE_CREDENTIAL ?? ""
     ).trim(),
-    messageGoV2SettlementEnabled: readBool("MESSAGEGO_V2_SETTLEMENT_ENABLED", false),
-    messageGoV2CustomerUxEnabled: readBool("MESSAGEGO_V2_CUSTOMER_UX_ENABLED", false),
-    messageGoV2SecretHandoffEnabled: readBool("MESSAGEGO_V2_SECRET_HANDOFF_ENABLED", false),
-    messageGoV2S2SKeyringFile: (process.env.MESSAGEGO_V2_S2S_KEYRING_FILE ?? "").trim(),
-    messageGoV2S2SSigningKeyringFile: (
-      process.env.MESSAGEGO_V2_S2S_SIGNING_KEYRING_FILE ?? ""
+    messageGoSettlementEnabled: readBool("MESSAGEGO_SETTLEMENT_ENABLED", false),
+    messageGoCustomerAiEnabled: readBool("MESSAGEGO_CUSTOMER_AI_ENABLED", false),
+    messageGoSecretHandoffEnabled: readBool("MESSAGEGO_SECRET_HANDOFF_ENABLED", false),
+    messageGoS2SKeyringFile: (process.env.MESSAGEGO_S2S_KEYRING_FILE ?? "").trim(),
+    messageGoS2SSigningKeyringFile: (
+      process.env.MESSAGEGO_S2S_SIGNING_KEYRING_FILE ?? ""
     ).trim(),
-    messageGoV2S2SSigningServiceId: (
-      process.env.MESSAGEGO_V2_S2S_SIGNING_SERVICE_ID ?? "abrchin"
+    messageGoS2SSigningServiceId: (
+      process.env.MESSAGEGO_S2S_SIGNING_SERVICE_ID ?? "abrchin"
     ).trim(),
-    messageGoV2S2SAllowedServiceIds: (process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS ?? "")
+    messageGoS2SAllowedServiceIds: (process.env.MESSAGEGO_S2S_ALLOWED_SERVICE_IDS ?? "")
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean),
-    messageGoV2S2SMaxClockSkewSeconds: readInt("MESSAGEGO_V2_S2S_MAX_CLOCK_SKEW_SECONDS", 300),
-    messageGoV2MessageGoBaseUrl: (process.env.MESSAGEGO_V2_MESSAGEGO_BASE_URL ?? "").trim(),
-    messageGoV2HandoffPath: (
-      process.env.MESSAGEGO_V2_HANDOFF_PATH ?? "/internal/v2/handoff"
+    messageGoS2SMaxClockSkewSeconds: readInt("MESSAGEGO_S2S_MAX_CLOCK_SKEW_SECONDS", 300),
+    messageGoHandoffBaseUrl: (process.env.MESSAGEGO_HANDOFF_BASE_URL ?? "").trim(),
+    messageGoHandoffPath: (
+      process.env.MESSAGEGO_HANDOFF_PATH ?? "/internal/v2/handoff"
     ).trim(),
     // Founder policy (2026-08-10): public sale stays open by default. The
     // provider/source gates and freshness/availability checks still prevent an

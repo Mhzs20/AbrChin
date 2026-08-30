@@ -82,12 +82,12 @@ test("Phase 1 contract hash is unchanged", () => {
   assert.equal(hashed.stdout.trim(), PHASE1_HASH);
 });
 
-test("production compose declares default-off V2 gates and no bearer settlement secret", () => {
+test("production compose declares default-off MessageGo AI gates and no bearer settlement secret", () => {
   const compose = readFileSync("compose.production.yaml", "utf8");
   assert.equal(compose.includes("MESSAGEGO_SETTLEMENT_SERVICE_CREDENTIAL"), false);
-  assert.match(compose, /MESSAGEGO_V2_SETTLEMENT_ENABLED: \$\{MESSAGEGO_V2_SETTLEMENT_ENABLED:-false\}/);
-  assert.match(compose, /MESSAGEGO_V2_CUSTOMER_UX_ENABLED: \$\{MESSAGEGO_V2_CUSTOMER_UX_ENABLED:-false\}/);
-  assert.match(compose, /MESSAGEGO_V2_SECRET_HANDOFF_ENABLED: \$\{MESSAGEGO_V2_SECRET_HANDOFF_ENABLED:-false\}/);
+  assert.match(compose, /MESSAGEGO_SETTLEMENT_ENABLED: \$\{MESSAGEGO_SETTLEMENT_ENABLED:-false\}/);
+  assert.match(compose, /MESSAGEGO_CUSTOMER_AI_ENABLED: \$\{MESSAGEGO_CUSTOMER_AI_ENABLED:-false\}/);
+  assert.match(compose, /MESSAGEGO_SECRET_HANDOFF_ENABLED: \$\{MESSAGEGO_SECRET_HANDOFF_ENABLED:-false\}/);
 });
 
 test("empty HMAC keyring is rejected", () => {
@@ -122,9 +122,9 @@ test("HMAC settlement auth fail-closed matrix does not require postgres", async 
 
   const previous = {
     NODE_ENV: process.env.NODE_ENV,
-    enabled: process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED,
-    keyring: process.env.MESSAGEGO_V2_S2S_KEYRING_FILE,
-    allowed: process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS,
+    enabled: process.env.MESSAGEGO_SETTLEMENT_ENABLED,
+    keyring: process.env.MESSAGEGO_S2S_KEYRING_FILE,
+    allowed: process.env.MESSAGEGO_S2S_ALLOWED_SERVICE_IDS,
   };
 
   const signBody = Buffer.from(`{"operation":"reserve"}`);
@@ -154,15 +154,15 @@ test("HMAC settlement auth fail-closed matrix does not require postgres", async 
 
   try {
     process.env.NODE_ENV = "production";
-    delete process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED;
-    process.env.MESSAGEGO_V2_S2S_KEYRING_FILE = keyringPath;
+    delete process.env.MESSAGEGO_SETTLEMENT_ENABLED;
+    process.env.MESSAGEGO_S2S_KEYRING_FILE = keyringPath;
     await assert.rejects(
       () => authenticateSettlementRequest(requestFrom(signedHeaders()), signBody),
       (error: unknown) => error instanceof SettlementError && error.code === "production_denied",
     );
 
-    process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED = "true";
-    delete process.env.MESSAGEGO_V2_S2S_KEYRING_FILE;
+    process.env.MESSAGEGO_SETTLEMENT_ENABLED = "true";
+    delete process.env.MESSAGEGO_S2S_KEYRING_FILE;
     const hmacHeaders = signedHeaders();
     await assert.rejects(
       () => authenticateSettlementRequest(requestFrom(hmacHeaders), signBody),
@@ -170,8 +170,8 @@ test("HMAC settlement auth fail-closed matrix does not require postgres", async 
         error instanceof SettlementError && error.code === "settlement_runtime_unavailable",
     );
 
-    process.env.MESSAGEGO_V2_S2S_KEYRING_FILE = keyringPath;
-    process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS = "messagego-runtime";
+    process.env.MESSAGEGO_S2S_KEYRING_FILE = keyringPath;
+    process.env.MESSAGEGO_S2S_ALLOWED_SERVICE_IDS = "messagego-runtime";
     await assert.rejects(
       () =>
         authenticateSettlementRequest(
@@ -226,12 +226,12 @@ test("HMAC settlement auth fail-closed matrix does not require postgres", async 
     void secret;
   } finally {
     process.env.NODE_ENV = previous.NODE_ENV;
-    if (previous.enabled === undefined) delete process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED;
-    else process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED = previous.enabled;
-    if (previous.keyring === undefined) delete process.env.MESSAGEGO_V2_S2S_KEYRING_FILE;
-    else process.env.MESSAGEGO_V2_S2S_KEYRING_FILE = previous.keyring;
-    if (previous.allowed === undefined) delete process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS;
-    else process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS = previous.allowed;
+    if (previous.enabled === undefined) delete process.env.MESSAGEGO_SETTLEMENT_ENABLED;
+    else process.env.MESSAGEGO_SETTLEMENT_ENABLED = previous.enabled;
+    if (previous.keyring === undefined) delete process.env.MESSAGEGO_S2S_KEYRING_FILE;
+    else process.env.MESSAGEGO_S2S_KEYRING_FILE = previous.keyring;
+    if (previous.allowed === undefined) delete process.env.MESSAGEGO_S2S_ALLOWED_SERVICE_IDS;
+    else process.env.MESSAGEGO_S2S_ALLOWED_SERVICE_IDS = previous.allowed;
     rmSync(dir, { recursive: true, force: true });
   }
 });

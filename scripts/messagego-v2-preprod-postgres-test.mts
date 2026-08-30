@@ -60,11 +60,11 @@ test("concurrent replay claims accept exactly one nonce", async () => {
 test("production settlement remains denied when the PREPROD gate is off", async () => {
   const previous = {
     NODE_ENV: process.env.NODE_ENV,
-    enabled: process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED,
+    enabled: process.env.MESSAGEGO_SETTLEMENT_ENABLED,
   };
   try {
     process.env.NODE_ENV = "production";
-    delete process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED;
+    delete process.env.MESSAGEGO_SETTLEMENT_ENABLED;
     await assert.rejects(
       () =>
         authenticateSettlementRequest(
@@ -81,8 +81,8 @@ test("production settlement remains denied when the PREPROD gate is off", async 
     );
   } finally {
     process.env.NODE_ENV = previous.NODE_ENV;
-    if (previous.enabled === undefined) delete process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED;
-    else process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED = previous.enabled;
+    if (previous.enabled === undefined) delete process.env.MESSAGEGO_SETTLEMENT_ENABLED;
+    else process.env.MESSAGEGO_SETTLEMENT_ENABLED = previous.enabled;
   }
 });
 
@@ -90,14 +90,14 @@ test("HMAC signed reserve/settle mutates AbrChin wallet once; replay and tamper 
   const keyring = writeVerifyKeyring();
   const previous = {
     NODE_ENV: process.env.NODE_ENV,
-    enabled: process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED,
-    keyring: process.env.MESSAGEGO_V2_S2S_KEYRING_FILE,
-    allowed: process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS,
+    enabled: process.env.MESSAGEGO_SETTLEMENT_ENABLED,
+    keyring: process.env.MESSAGEGO_S2S_KEYRING_FILE,
+    allowed: process.env.MESSAGEGO_S2S_ALLOWED_SERVICE_IDS,
   };
   process.env.NODE_ENV = "test";
-  process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED = "true";
-  process.env.MESSAGEGO_V2_S2S_KEYRING_FILE = keyring.path;
-  process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS = "messagego-runtime";
+  process.env.MESSAGEGO_SETTLEMENT_ENABLED = "true";
+  process.env.MESSAGEGO_S2S_KEYRING_FILE = keyring.path;
+  process.env.MESSAGEGO_S2S_ALLOWED_SERVICE_IDS = "messagego-runtime";
 
   const mobile = `09${randomBytes(5).toString("hex").slice(0, 9)}`;
   const user = await prisma.user.create({
@@ -250,12 +250,12 @@ test("HMAC signed reserve/settle mutates AbrChin wallet once; replay and tamper 
     assert.equal(afterIdempotent.availableBalance, 800n);
   } finally {
     process.env.NODE_ENV = previous.NODE_ENV;
-    if (previous.enabled === undefined) delete process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED;
-    else process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED = previous.enabled;
-    if (previous.keyring === undefined) delete process.env.MESSAGEGO_V2_S2S_KEYRING_FILE;
-    else process.env.MESSAGEGO_V2_S2S_KEYRING_FILE = previous.keyring;
-    if (previous.allowed === undefined) delete process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS;
-    else process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS = previous.allowed;
+    if (previous.enabled === undefined) delete process.env.MESSAGEGO_SETTLEMENT_ENABLED;
+    else process.env.MESSAGEGO_SETTLEMENT_ENABLED = previous.enabled;
+    if (previous.keyring === undefined) delete process.env.MESSAGEGO_S2S_KEYRING_FILE;
+    else process.env.MESSAGEGO_S2S_KEYRING_FILE = previous.keyring;
+    if (previous.allowed === undefined) delete process.env.MESSAGEGO_S2S_ALLOWED_SERVICE_IDS;
+    else process.env.MESSAGEGO_S2S_ALLOWED_SERVICE_IDS = previous.allowed;
   }
 });
 
@@ -263,14 +263,14 @@ test("production + settlement enabled + valid HMAC is technically available on r
   const keyring = writeVerifyKeyring();
   const previous = {
     NODE_ENV: process.env.NODE_ENV,
-    enabled: process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED,
-    keyring: process.env.MESSAGEGO_V2_S2S_KEYRING_FILE,
-    allowed: process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS,
+    enabled: process.env.MESSAGEGO_SETTLEMENT_ENABLED,
+    keyring: process.env.MESSAGEGO_S2S_KEYRING_FILE,
+    allowed: process.env.MESSAGEGO_S2S_ALLOWED_SERVICE_IDS,
   };
   process.env.NODE_ENV = "production";
-  process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED = "true";
-  process.env.MESSAGEGO_V2_S2S_KEYRING_FILE = keyring.path;
-  process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS = "messagego-runtime";
+  process.env.MESSAGEGO_SETTLEMENT_ENABLED = "true";
+  process.env.MESSAGEGO_S2S_KEYRING_FILE = keyring.path;
+  process.env.MESSAGEGO_S2S_ALLOWED_SERVICE_IDS = "messagego-runtime";
   try {
     const body = Buffer.from("{}");
     const headers = new Headers({ "content-type": "application/json" });
@@ -293,12 +293,12 @@ test("production + settlement enabled + valid HMAC is technically available on r
     assert.equal(caller.callerServiceId, "messagego-runtime");
   } finally {
     process.env.NODE_ENV = previous.NODE_ENV;
-    if (previous.enabled === undefined) delete process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED;
-    else process.env.MESSAGEGO_V2_SETTLEMENT_ENABLED = previous.enabled;
-    if (previous.keyring === undefined) delete process.env.MESSAGEGO_V2_S2S_KEYRING_FILE;
-    else process.env.MESSAGEGO_V2_S2S_KEYRING_FILE = previous.keyring;
-    if (previous.allowed === undefined) delete process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS;
-    else process.env.MESSAGEGO_V2_S2S_ALLOWED_SERVICE_IDS = previous.allowed;
+    if (previous.enabled === undefined) delete process.env.MESSAGEGO_SETTLEMENT_ENABLED;
+    else process.env.MESSAGEGO_SETTLEMENT_ENABLED = previous.enabled;
+    if (previous.keyring === undefined) delete process.env.MESSAGEGO_S2S_KEYRING_FILE;
+    else process.env.MESSAGEGO_S2S_KEYRING_FILE = previous.keyring;
+    if (previous.allowed === undefined) delete process.env.MESSAGEGO_S2S_ALLOWED_SERVICE_IDS;
+    else process.env.MESSAGEGO_S2S_ALLOWED_SERVICE_IDS = previous.allowed;
   }
 });
 

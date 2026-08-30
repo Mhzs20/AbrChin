@@ -30,7 +30,7 @@ function hasHmacHeaders(request: Request) {
 
 function hmacConfigured() {
   const env = getEnv();
-  return env.messageGoV2S2SKeyringFile.length > 0;
+  return env.messageGoS2SKeyringFile.length > 0;
 }
 
 export async function authenticateSettlementRequest(
@@ -44,10 +44,10 @@ export async function authenticateSettlementRequest(
       "Settlement is private server-to-server and is not callable by a browser",
     );
   }
-  if (env.isProduction && !env.messageGoV2SettlementEnabled) {
+  if (env.isProduction && !env.messageGoSettlementEnabled) {
     throw new SettlementError(
       "production_denied",
-      "MessageGo V2 settlement runtime is denied in production",
+      "MessageGo settlement runtime is denied in production",
     );
   }
 
@@ -59,7 +59,7 @@ export async function authenticateSettlementRequest(
       );
     }
     try {
-      const ring = loadKeyringFile(env.messageGoV2S2SKeyringFile);
+      const ring = loadKeyringFile(env.messageGoS2SKeyringFile);
       const url = new URL(request.url);
       const parsed = parseHeaders(
         request.headers,
@@ -74,11 +74,11 @@ export async function authenticateSettlementRequest(
       ) {
         throw new S2SError("unauthenticated", "contract identity");
       }
-      const allowed = env.messageGoV2S2SAllowedServiceIds;
+      const allowed = env.messageGoS2SAllowedServiceIds;
       if (allowed.length > 0 && !allowed.includes(parsed.fields.serviceId)) {
         throw new S2SError("unauthenticated", "service_id");
       }
-      const skew = boundSkewSeconds(env.messageGoV2S2SMaxClockSkewSeconds);
+      const skew = boundSkewSeconds(env.messageGoS2SMaxClockSkewSeconds);
       const now = Math.floor(Date.now() / 1000);
       if (Math.abs(now - parsed.fields.timestampUnix) > skew) {
         throw new S2SError("clock_skew", "s2s timestamp outside allowed skew");
@@ -114,10 +114,10 @@ export async function authenticateSettlementRequest(
     }
   }
 
-  if (env.isProduction && env.messageGoV2SettlementEnabled) {
+  if (env.isProduction && env.messageGoSettlementEnabled) {
     throw new SettlementError(
       "unauthenticated",
-      "HMAC S2S authentication is required when V2 settlement is enabled in production",
+      "HMAC S2S authentication is required when MessageGo settlement is enabled in production",
     );
   }
 
@@ -142,8 +142,8 @@ export async function authenticateSettlementRequest(
 
 export function settlementRuntimeAllowed() {
   const env = getEnv();
-  if (env.isProduction && !env.messageGoV2SettlementEnabled) return false;
-  if (env.isProduction && env.messageGoV2SettlementEnabled) {
+  if (env.isProduction && !env.messageGoSettlementEnabled) return false;
+  if (env.isProduction && env.messageGoSettlementEnabled) {
     return hmacConfigured();
   }
   return env.messageGoSettlementServiceCredential.length >= 32 || hmacConfigured();

@@ -2924,7 +2924,7 @@ model SupportRequestMessage {
   @@index([authorUserId])
 }
 
-/// AbrChin-authoritative MessageGo V2 reservation. This is not a second wallet.
+/// AbrChin-authoritative MessageGo reservation. This is not a second wallet.
 model MessageGoAuthorityReservation {
   id                   String                     @id @default(cuid())
   accountId            String

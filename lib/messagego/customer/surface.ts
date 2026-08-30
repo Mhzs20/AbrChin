@@ -86,7 +86,7 @@ const statusLabel: Record<MessageGoReservationStatus, string> = {
 
 export async function getCustomerAiSurface(userId: string): Promise<CustomerAiSurface> {
   const env = getEnv();
-  if (env.isProduction && !env.messageGoV2CustomerUxEnabled) {
+  if (env.isProduction && !env.messageGoCustomerAiEnabled) {
     return {
       control_plane: {
         available: false,
@@ -193,7 +193,7 @@ export async function handoffCustomerProviderCredential(input: {
   }
 
   const env = getEnv();
-  if (env.isProduction && !env.messageGoV2CustomerUxEnabled) {
+  if (env.isProduction && !env.messageGoCustomerAiEnabled) {
     throw new HandoffError(
       "handoff_unavailable",
       "One-time provider secret handoff to MessageGo is not configured; fail closed",

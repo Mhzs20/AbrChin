@@ -18,7 +18,7 @@ import {
 } from "../lib/messagego/settlement/authority.ts";
 
 if (!process.env.DATABASE_URL || process.env.ABRCHIN_ISOLATED_TEST !== "1") {
-  throw new Error("MessageGo V2 settlement tests require isolated PostgreSQL");
+  throw new Error("MessageGo settlement tests require isolated PostgreSQL");
 }
 
 after(async () => {

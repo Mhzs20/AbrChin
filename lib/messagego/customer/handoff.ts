@@ -79,20 +79,20 @@ export class HmacSecretHandoffPort implements ProviderSecretHandoffPort {
 
   async handoff(input: ProviderSecretHandoffRequest): Promise<ProviderSecretHandoffResult> {
     const env = getEnv();
-    if (!env.messageGoV2SecretHandoffEnabled) {
+    if (!env.messageGoSecretHandoffEnabled) {
       throw new HandoffError(
         "handoff_unavailable",
         "One-time provider secret handoff to MessageGo is not configured; fail closed",
       );
     }
-    const base = env.messageGoV2MessageGoBaseUrl.replace(/\/$/, "");
+    const base = env.messageGoHandoffBaseUrl.replace(/\/$/, "");
     if (!base) {
       throw new HandoffError("handoff_unavailable", "MessageGo handoff base URL is not configured");
     }
     if (env.isProduction && !base.startsWith("https://")) {
       throw new HandoffError("handoff_unavailable", "MessageGo handoff URL must be HTTPS in production");
     }
-    if (!env.messageGoV2S2SSigningKeyringFile) {
+    if (!env.messageGoS2SSigningKeyringFile) {
       throw new HandoffError("handoff_unavailable", "AbrChin→MessageGo signing keyring is not configured");
     }
     const plaintext = input.plaintext.trim();
@@ -112,14 +112,14 @@ export class HmacSecretHandoffPort implements ProviderSecretHandoffPort {
     const { loadKeyringFile, signRequest, DIRECTION_ABRCHIN_TO_MESSAGEGO } = await import(
       "@/lib/messagego/s2s/hmac"
     );
-    const ring = loadKeyringFile(env.messageGoV2S2SSigningKeyringFile);
+    const ring = loadKeyringFile(env.messageGoS2SSigningKeyringFile);
     const headers = new Headers({ "content-type": "application/json" });
-    const path = env.messageGoV2HandoffPath || "/internal/v2/handoff";
+    const path = env.messageGoHandoffPath || "/internal/v2/handoff";
     signRequest(
       headers,
       ring,
       DIRECTION_ABRCHIN_TO_MESSAGEGO,
-      env.messageGoV2S2SSigningServiceId,
+      env.messageGoS2SSigningServiceId,
       "POST",
       path,
       "",
@@ -164,10 +164,10 @@ let testMemoryPort: MemorySecretHandoffPort | null = null;
 
 export function getProviderSecretHandoffPort(): ProviderSecretHandoffPort {
   const env = getEnv();
-  if (env.isProduction && !env.messageGoV2SecretHandoffEnabled) {
+  if (env.isProduction && !env.messageGoSecretHandoffEnabled) {
     return new FailClosedSecretHandoffPort();
   }
-  if (env.messageGoV2SecretHandoffEnabled && env.messageGoV2S2SSigningKeyringFile) {
+  if (env.messageGoSecretHandoffEnabled && env.messageGoS2SSigningKeyringFile) {
     return new HmacSecretHandoffPort();
   }
   if (
