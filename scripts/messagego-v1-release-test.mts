@@ -22,8 +22,38 @@ test("MessageGo 1.0.0 production config names are canonical and default-off", ()
   assert.match(compose, /MESSAGEGO_CUSTOMER_AI_ENABLED: \$\{MESSAGEGO_CUSTOMER_AI_ENABLED:-false\}/);
   assert.match(compose, /MESSAGEGO_SECRET_HANDOFF_ENABLED: \$\{MESSAGEGO_SECRET_HANDOFF_ENABLED:-false\}/);
   assert.match(compose, /MESSAGEGO_HANDOFF_PATH: \$\{MESSAGEGO_HANDOFF_PATH:-\/internal\/v2\/handoff\}/);
+  assert.match(
+    compose,
+    /\$\{ABRCHIN_SERVICE_SECRET_ROOT:-\/srv\/abrchin\/secrets\/service\}:\/run\/secrets\/abrchin-service:ro/,
+  );
+  assert.match(
+    compose,
+    /MESSAGEGO_S2S_KEYRING_FILE: \/run\/secrets\/abrchin-service\/messagego-to-abrchin-keyring\.json/,
+  );
+  assert.match(
+    compose,
+    /MESSAGEGO_S2S_SIGNING_KEYRING_FILE: \/run\/secrets\/abrchin-service\/abrchin-to-messagego-keyring\.json/,
+  );
   assert.equal(compose.includes("MESSAGEGO_V2_SETTLEMENT_ENABLED"), false);
   assert.equal(compose.includes("MESSAGEGO_SETTLEMENT_SERVICE_CREDENTIAL"), false);
+  const workerStart = compose.indexOf("\n  worker:\n");
+  assert.ok(workerStart > 0);
+  assert.equal(compose.slice(workerStart).includes("/run/secrets/abrchin-service"), false);
+
+  const example = readFileSync(".env.production.example", "utf8");
+  assert.match(example, /^ABRCHIN_SERVICE_SECRET_ROOT=\/srv\/abrchin\/secrets\/service$/m);
+  assert.match(example, /^MESSAGEGO_SETTLEMENT_ENABLED=false$/m);
+  assert.match(example, /^MESSAGEGO_CUSTOMER_AI_ENABLED=false$/m);
+  assert.match(example, /^MESSAGEGO_SECRET_HANDOFF_ENABLED=false$/m);
+  assert.match(
+    example,
+    /^MESSAGEGO_S2S_KEYRING_FILE=\/run\/secrets\/abrchin-service\/messagego-to-abrchin-keyring\.json$/m,
+  );
+  assert.match(
+    example,
+    /^MESSAGEGO_S2S_SIGNING_KEYRING_FILE=\/run\/secrets\/abrchin-service\/abrchin-to-messagego-keyring\.json$/m,
+  );
+  assert.equal(/secret_hex|secret_b64/.test(example), false);
 
   const auth = readFileSync("lib/messagego/settlement/service-auth.ts", "utf8");
   assert.match(auth, /MessageGo settlement runtime is denied in production/);

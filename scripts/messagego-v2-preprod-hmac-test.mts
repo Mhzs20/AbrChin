@@ -8,6 +8,8 @@ import {
   bodySha256,
   canonicalString,
   compareSignature,
+  DIRECTION_MESSAGEGO_TO_ABRCHIN,
+  loadKeyringFile,
   parseKeyringJSON,
   sign,
   S2S_PROTOCOL,
@@ -88,10 +90,56 @@ test("production compose declares default-off MessageGo AI gates and no bearer s
   assert.match(compose, /MESSAGEGO_SETTLEMENT_ENABLED: \$\{MESSAGEGO_SETTLEMENT_ENABLED:-false\}/);
   assert.match(compose, /MESSAGEGO_CUSTOMER_AI_ENABLED: \$\{MESSAGEGO_CUSTOMER_AI_ENABLED:-false\}/);
   assert.match(compose, /MESSAGEGO_SECRET_HANDOFF_ENABLED: \$\{MESSAGEGO_SECRET_HANDOFF_ENABLED:-false\}/);
+  assert.match(
+    compose,
+    /\$\{ABRCHIN_SERVICE_SECRET_ROOT:-\/srv\/abrchin\/secrets\/service\}:\/run\/secrets\/abrchin-service:ro/,
+  );
+  assert.match(
+    compose,
+    /MESSAGEGO_S2S_KEYRING_FILE: \/run\/secrets\/abrchin-service\/messagego-to-abrchin-keyring\.json/,
+  );
+  assert.match(
+    compose,
+    /MESSAGEGO_S2S_SIGNING_KEYRING_FILE: \/run\/secrets\/abrchin-service\/abrchin-to-messagego-keyring\.json/,
+  );
 });
 
 test("empty HMAC keyring is rejected", () => {
   assert.throws(() => parseKeyringJSON(`{"protocol":"${S2S_PROTOCOL}","keys":[]}`));
+});
+
+test("loadKeyringFile requires an absolute mode-0600 file", async () => {
+  const { mkdtempSync, writeFileSync, chmodSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "abrchin-keyring-"));
+  const path = join(dir, "messagego-to-abrchin-keyring.json");
+  writeFileSync(
+    path,
+    JSON.stringify({
+      protocol: S2S_PROTOCOL,
+      keys: [
+        {
+          key_id: "k_mg_ac_1",
+          secret_hex: "11".repeat(32),
+          direction: DIRECTION_MESSAGEGO_TO_ABRCHIN,
+          status: "active",
+        },
+      ],
+    }),
+    { mode: 0o600 },
+  );
+  chmodSync(path, 0o600);
+  try {
+    const ring = loadKeyringFile(path);
+    assert.equal(ring.protocol, S2S_PROTOCOL);
+    assert.equal(ring.keys.length, 1);
+    assert.throws(() => loadKeyringFile("messagego-to-abrchin-keyring.json"));
+    chmodSync(path, 0o644);
+    assert.throws(() => loadKeyringFile(path));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("HMAC settlement auth fail-closed matrix does not require postgres", async () => {
