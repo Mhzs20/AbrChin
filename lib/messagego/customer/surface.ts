@@ -6,11 +6,10 @@ import {
 import { prisma } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { getControlPlanePort } from "@/lib/messagego/customer/control-plane";
+import { isStableFamilyAlias, type OwnershipMode } from "@/lib/messagego/customer/families";
 import {
   getProviderSecretHandoffPort,
   HandoffError,
-  isStableFamilyAlias,
-  type OwnershipMode,
 } from "@/lib/messagego/customer/handoff";
 import {
   toCustomerConnectionView,

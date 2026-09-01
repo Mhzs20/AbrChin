@@ -27,6 +27,12 @@ function resolveAlias(specifier) {
 }
 
 export function resolve(specifier, context, nextResolve) {
+  if (specifier === "server-only") {
+    return {
+      shortCircuit: true,
+      url: pathToFileURL(pathResolve(root, "scripts/server-only-empty.mjs")).href,
+    };
+  }
   if (specifier.startsWith("@/")) {
     return nextResolve(resolveAlias(specifier));
   }

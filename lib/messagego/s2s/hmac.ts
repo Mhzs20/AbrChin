@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createHash, createHmac, timingSafeEqual, randomBytes } from "node:crypto";
 import { readFileSync, lstatSync } from "node:fs";
 

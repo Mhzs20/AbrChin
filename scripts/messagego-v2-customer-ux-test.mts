@@ -87,6 +87,9 @@ test("customer AI navigation is present without locking a new auth protocol", ()
   assert.match(shell, /href: "\/account\/ai"/);
   const form = readFileSync("components/account/ai-connection-form.tsx", "utf8");
   assert.match(form, /type="password"/);
+  assert.match(form, /from "@\/lib\/messagego\/customer\/families"/);
   assert.equal(form.includes("sk-"), false);
+  assert.equal(form.includes("handoff"), false);
+  assert.equal(form.includes("hmac"), false);
 });
 

@@ -3,7 +3,7 @@ import type {
   MessageGoCustomerConnectionStatus,
 } from "@prisma/client";
 
-import type { OwnershipMode } from "@/lib/messagego/customer/handoff";
+import type { OwnershipMode } from "@/lib/messagego/customer/families";
 
 export type CustomerConnectionView = {
   id: string;

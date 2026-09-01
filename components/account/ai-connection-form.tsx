@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { ErrorState, FormField, SectionCard } from "@/components/product";
-import { STABLE_FAMILY_ALIASES } from "@/lib/messagego/customer/handoff";
-import type { CustomerConnectionView } from "@/lib/messagego/customer/surface";
+import { STABLE_FAMILY_ALIASES } from "@/lib/messagego/customer/families";
+import type { CustomerConnectionView } from "@/lib/messagego/customer/view";
 
 const ownershipLabels: Record<CustomerConnectionView["ownership_mode"], string> = {
   PLATFORM_MANAGED: "مدیریت‌شده توسط پلتفرم",

@@ -1,17 +1,22 @@
+import "server-only";
+
 import { getEnv } from "@/lib/env";
+import {
+  DIRECTION_ABRCHIN_TO_MESSAGEGO,
+  loadKeyringFile,
+  signRequest,
+} from "@/lib/messagego/s2s/hmac";
+import type {
+  OwnershipMode,
+  StableFamilyAlias,
+} from "@/lib/messagego/customer/families";
 
-export const STABLE_FAMILY_ALIASES = [
-  "openai",
-  "openai-compatible",
-  "anthropic",
-  "gemini",
-  "arvan",
-  "future_explicitly_approved",
-] as const;
-
-export type StableFamilyAlias = (typeof STABLE_FAMILY_ALIASES)[number];
-
-export type OwnershipMode = "PLATFORM_MANAGED" | "ACCOUNT_BYOK" | "PROJECT_BYOK";
+export {
+  STABLE_FAMILY_ALIASES,
+  isStableFamilyAlias,
+  type OwnershipMode,
+  type StableFamilyAlias,
+} from "@/lib/messagego/customer/families";
 
 export type ProviderSecretHandoffRequest = {
   accountId: string;
@@ -109,9 +114,6 @@ export class HmacSecretHandoffPort implements ProviderSecretHandoffPort {
       plaintext,
     };
     const body = Buffer.from(JSON.stringify(bodyObject));
-    const { loadKeyringFile, signRequest, DIRECTION_ABRCHIN_TO_MESSAGEGO } = await import(
-      "@/lib/messagego/s2s/hmac"
-    );
     const ring = loadKeyringFile(env.messageGoS2SSigningKeyringFile);
     const headers = new Headers({ "content-type": "application/json" });
     const path = env.messageGoHandoffPath || "/internal/v2/handoff";
@@ -178,8 +180,4 @@ export function getProviderSecretHandoffPort(): ProviderSecretHandoffPort {
     return testMemoryPort;
   }
   return new FailClosedSecretHandoffPort();
-}
-
-export function isStableFamilyAlias(value: string): value is StableFamilyAlias {
-  return (STABLE_FAMILY_ALIASES as readonly string[]).includes(value);
 }
