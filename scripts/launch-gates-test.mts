@@ -158,11 +158,9 @@ test("public purchase entrypoints delegate to gate-checked service boundaries", 
       payTx.indexOf("tx.providerCatalogItem.updateMany"),
     "Transactional checkout must recheck sale before inventory or ledger mutation",
   );
-  assert.ok(
-    payment.indexOf("assertPublicSaleEnabled") <
-      payment.indexOf("prisma.orderPayment.create"),
-    "Gateway payment creation must be denied before payment or external mutation",
-  );
+  assert.match(payment, /direct_order_payment_disabled/);
+  assert.doesNotMatch(payment, /prisma\.orderPayment\.create/);
+  assert.doesNotMatch(payment, /executePayOrderWithWalletTx/);
   assert.match(activation, /assertPublicSaleEnabled/);
 });
 

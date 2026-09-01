@@ -1,7 +1,7 @@
 "use client";
 
 import { LoaderCircle } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 type Order = {
   id: string;
@@ -24,7 +24,6 @@ export function OrdersPanel() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const paymentKeys = useRef(new Map<string, string>());
 
   async function refresh() {
     const response = await fetch("/api/orders", { cache: "no-store" });
@@ -65,41 +64,8 @@ export function OrdersPanel() {
         setError(data.error || "ایجاد سفارش ممکن نشد.");
         return;
       }
-      setMessage(`سفارش «${data.order.title}» ساخته شد.`);
+      setMessage(`سفارش «${data.order.title}» ساخته شد. پرداخت فقط با کیف پول انجام می‌شود.`);
       await refresh();
-    } catch {
-      setError("ارتباط برقرار نشد.");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function pay(orderId: string) {
-    setError("");
-    setMessage("");
-    setBusyId(orderId);
-    try {
-      const idempotencyKey = paymentKeys.current.get(orderId) ?? crypto.randomUUID();
-      paymentKeys.current.set(orderId, idempotencyKey);
-      const response = await fetch(`/api/orders/${orderId}/payment`, {
-        method: "POST",
-        headers: { "Idempotency-Key": idempotencyKey },
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        setError(data.error || "پرداخت ممکن نشد.");
-        return;
-      }
-      if (data.alreadyPaid) {
-        setMessage("پرداخت سفارش قبلاً ثبت شده است.");
-        await refresh();
-        return;
-      }
-      if (!data.redirectUrl) {
-        setError("انتقال امن به درگاه پرداخت ممکن نشد.");
-        return;
-      }
-      window.location.assign(data.redirectUrl);
     } catch {
       setError("ارتباط برقرار نشد.");
     } finally {
@@ -112,7 +78,7 @@ export function OrdersPanel() {
       <section className="account-card">
         <div className="account-card-head">
           <h2>بسته‌های آزمایشی</h2>
-          <p>قیمت‌ها سمت سرور ثابت‌اند و پرداخت با درگاه انجام می‌شود.</p>
+          <p>قیمت‌ها سمت سرور ثابت‌اند و پرداخت سفارش فقط از موجودی کیف پول انجام می‌شود.</p>
         </div>
         <div className="account-actions">
           {PLANS.map((plan) => (
@@ -143,14 +109,9 @@ export function OrdersPanel() {
               <span>{order.amountTomanFa} تومان · {order.status}</span>
               <small>{order.description}</small>
               {order.status === "PENDING_PAYMENT" ? (
-                <button
-                  className="button button-primary button-compact"
-                  type="button"
-                  disabled={busyId === order.id}
-                  onClick={() => pay(order.id)}
-                >
-                  پرداخت و انتقال به درگاه
-                </button>
+                <a className="button button-primary button-compact" href={`/account/order/${order.id}`}>
+                  پرداخت با کیف پول
+                </a>
               ) : null}
             </li>
           ))}

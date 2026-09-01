@@ -24,26 +24,26 @@ test("gateway order payment persists an immutable, additive payment record", asy
   assert.doesNotMatch(migration, /UPDATE "(?:ServiceOrder|Wallet|WalletLedgerEntry)"/);
 });
 
-test("callback settles the server-locked amount once and moves ambiguity to review", async () => {
+test("direct order gateway payment is permanently disabled; legacy callback is read-only", async () => {
   const payment = await readFile("lib/payments/order-payment.ts", "utf8");
 
-  assert.match(payment, /expectedAmountRial:\s*payment\.amount/);
-  assert.match(payment, /verified\.amountRial !== payment\.amount/);
-  assert.match(payment, /prisma\.\$transaction/);
-  assert.match(payment, /status:\s*\{\s*in:\s*\[OrderPaymentStatus\.CREATED, OrderPaymentStatus\.PENDING\]/);
-  assert.match(payment, /idempotencyKey:\s*`order_payment_credit_\$\{payment\.id\}`/);
-  assert.match(payment, /executePayOrderWithWalletTx/);
-  assert.match(payment, /OrderPaymentStatus\.REVIEW/);
-  assert.doesNotMatch(payment, /input\.amount/);
-  assert.doesNotMatch(payment, /createInstance/);
+  assert.match(payment, /direct_order_payment_disabled/);
+  assert.match(payment, /Promise<never>/);
+  assert.doesNotMatch(payment, /prisma\.orderPayment\.create/);
+  assert.doesNotMatch(payment, /executePayOrderWithWalletTx/);
+  assert.doesNotMatch(payment, /verifyPayment/);
+  assert.doesNotMatch(payment, /expectedAmountRial:\s*payment\.amount/);
+  assert.match(payment, /Never verifies a gateway/);
+  assert.match(payment, /prisma\.orderPayment\.findUnique/);
 });
 
 test("public checkout is wallet-only; legacy callback still reaches the order result", async () => {
-  const [checkout, callback, route, walletRoute] = await Promise.all([
+  const [checkout, callback, route, walletRoute, panel] = await Promise.all([
     readFile("components/account/order-checkout-panel.tsx", "utf8"),
     readFile("lib/payments/callback-handler.ts", "utf8"),
     readFile("app/api/orders/[id]/payment/route.ts", "utf8"),
     readFile("app/api/orders/[id]/pay-with-wallet/route.ts", "utf8"),
+    readFile("components/orders-panel.tsx", "utf8"),
   ]);
 
   assert.match(checkout, /Idempotency-Key/);
@@ -57,7 +57,11 @@ test("public checkout is wallet-only; legacy callback still reaches the order re
   assert.match(callback, /finalizeOrderPaymentFromCallback/);
   assert.match(callback, /\/account\/orders\/\$\{result\.order\.id\}/);
   assert.match(route, /createOrderPaymentIntent/);
+  assert.match(route, /direct_order_payment_disabled/);
   assert.doesNotMatch(route, /gateway.*body/i);
+  assert.doesNotMatch(route, /alreadyPaid/);
+  assert.doesNotMatch(panel, /\/api\/orders\/\$\{orderId\}\/payment/);
+  assert.doesNotMatch(panel, /window\.location\.assign\(/);
   // Wallet route reuses the shared audited debit path (idempotent ledger key)
   // and never talks to the gateway or provisions anything.
   assert.match(walletRoute, /payOrderWithWallet/);
@@ -78,4 +82,19 @@ test("successful payment cannot provision, assign inventory, or expose credentia
   assert.doesNotMatch(payment, /assignReservedInventoryTx/);
   assert.doesNotMatch(payment, /transferInventoryCredentialToInstanceTx/);
   assert.doesNotMatch(payment, /to:\s*"PROVISIONING_SUBMITTED"/);
+});
+
+test("direct order payment API never creates a gateway intent", async () => {
+  const { createOrderPaymentIntent } = await import("../lib/payments/order-payment.ts");
+  const { WalletError } = await import("../lib/wallet/errors.ts");
+  await assert.rejects(
+    () =>
+      createOrderPaymentIntent({
+        userId: "user_direct_pay",
+        orderId: "order_direct_pay",
+        idempotencyKey: "direct-order-payment-disabled-key",
+      }),
+    (error: unknown) =>
+      error instanceof WalletError && error.code === "direct_order_payment_disabled",
+  );
 });

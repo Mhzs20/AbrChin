@@ -1,4 +1,4 @@
-import { jsonError, jsonOk, readIdempotencyKey, rejectCrossOrigin } from "@/lib/http";
+import { jsonError, readIdempotencyKey, rejectCrossOrigin } from "@/lib/http";
 import { PaymentError } from "@/lib/payments";
 import { createOrderPaymentIntent } from "@/lib/payments/order-payment";
 import { AuthRequiredError, requireCurrentUser } from "@/lib/session";
@@ -19,21 +19,13 @@ export async function POST(request: Request, { params }: Params) {
     if (!idempotencyKey) {
       return jsonError("شناسه یکتای پرداخت الزامی است.", 400);
     }
-    const result = await createOrderPaymentIntent({
+    await createOrderPaymentIntent({
       userId: user.id,
       orderId: id,
       idempotencyKey,
     });
-    return jsonOk({
-      orderPayment: result.payment
-        ? {
-            id: result.payment.id,
-            status: result.payment.status,
-            expiresAt: result.payment.expiresAt.toISOString(),
-          }
-        : null,
-      redirectUrl: result.redirectUrl,
-      alreadyPaid: result.alreadyPaid,
+    return jsonError("پرداخت مستقیم سفارش غیرفعال است.", 409, {
+      code: "direct_order_payment_disabled",
     });
   } catch (error) {
     if (error instanceof AuthRequiredError) return jsonError("برای ادامه وارد شوید.", 401);
@@ -41,7 +33,8 @@ export async function POST(request: Request, { params }: Params) {
       const status =
         error.code === "not_found"
           ? 404
-          : error.code === "payment_review" ||
+          : error.code === "direct_order_payment_disabled" ||
+              error.code === "payment_review" ||
               error.code === "payment_exists" ||
               error.code === "idempotency_conflict"
             ? 409

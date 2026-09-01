@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -40,6 +40,8 @@ import {
   revealInstanceCredentialForAdmin,
 } from "../lib/security/instance-credentials.ts";
 import { getActivePlanByCode, toPlanSnapshot } from "../lib/orders/plans.ts";
+import { payOrderWithWallet } from "../lib/orders/service.ts";
+import { WalletError } from "../lib/wallet/errors.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const runIsolated = process.env.ABRCHIN_ISOLATED_TEST === "1";
@@ -52,7 +54,7 @@ const prisma =
       })
     : null;
 
-test("one verified gateway callback records one payment, ledger, and waiting order", async (t) => {
+test("wallet debit pays the order once; direct gateway intent and legacy callback cannot mutate it", async (t) => {
   if (!prisma) {
     t.skip("requires ABRCHIN_ISOLATED_TEST=1 and DATABASE_URL");
     return;
@@ -82,6 +84,9 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
   process.env.ARVAN_PUBLIC_SALE_ENABLED = "true";
   process.env.ARVAN_READY_PUBLIC_SALE_ENABLED = "true";
   process.env.ARVAN_MUTATIONS_ENABLED = "true";
+  if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 16) {
+    process.env.SESSION_SECRET = "isolated_postgres_test_secret_2026";
+  }
   if (!process.env.CREDENTIAL_ENCRYPTION_KEY) {
     process.env.CREDENTIAL_ENCRYPTION_KEY = randomBytes(32).toString("base64");
   }
@@ -238,7 +243,11 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
     const user = await prisma.user.create({ data: { mobile: userMobile } });
     userId = user.id;
     await prisma.wallet.create({
-      data: { userId, availableBalance: 0n, status: WalletStatus.ACTIVE },
+      data: {
+        userId,
+        availableBalance: pricedPlan.pricing.finalPriceRial,
+        status: WalletStatus.ACTIVE,
+      },
     });
     const order = await prisma.serviceOrder.create({
       data: {
@@ -260,40 +269,148 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
     orderId = order.id;
 
     const idempotencyKey = `order-payment-callback-${suffix}`.padEnd(24, "x");
-    const intent = await createOrderPaymentIntent({ userId, orderId, idempotencyKey });
-    assert.equal(intent.alreadyPaid, false);
-    assert.ok(intent.redirectUrl);
-    const replayedIntent = await createOrderPaymentIntent({ userId, orderId, idempotencyKey });
-    assert.equal(replayedIntent.payment?.id, intent.payment?.id);
+    await assert.rejects(
+      () => createOrderPaymentIntent({ userId, orderId, idempotencyKey }),
+      (error: unknown) =>
+        error instanceof WalletError &&
+        error.code === "direct_order_payment_disabled",
+    );
+    assert.equal(
+      await prisma.orderPayment.count({ where: { serviceOrderId: orderId } }),
+      0,
+    );
 
-    const mockGatewayUrl = new URL(intent.redirectUrl!);
-    const callbackUrl = new URL(mockGatewayUrl.searchParams.get("callback")!);
-    const token = callbackUrl.searchParams.get("token");
-    const paymentId = callbackUrl.searchParams.get("paymentId");
-    assert.ok(token);
-    assert.equal(paymentId, intent.payment?.id);
-    const persistedIntent = await prisma.orderPayment.findUniqueOrThrow({
-      where: { id: paymentId! },
+    const token = randomBytes(24).toString("hex");
+    const sessionSecret = process.env.SESSION_SECRET!;
+    const legacyPayment = await prisma.orderPayment.create({
+      data: {
+        serviceOrderId: orderId,
+        amount: pricedPlan.pricing.finalPriceRial,
+        gateway: "MOCK",
+        status: "CREATED",
+        callbackTokenHash: createHash("sha256")
+          .update(`${sessionSecret}:${token}`)
+          .digest("hex"),
+        idempotencyKey,
+        expiresAt: new Date(now.getTime() + 30 * 60 * 1_000),
+      },
     });
 
     const first = await finalizeOrderPaymentFromCallback({
       expectedGateway: "MOCK",
-      paymentId: paymentId!,
-      token: token!,
-      authority: persistedIntent.authority,
+      paymentId: legacyPayment.id,
+      token,
+      authority: legacyPayment.authority,
       statusHint: "OK",
     });
+    assert.equal(first.payment.status, "CREATED");
+    assert.equal(first.order.status, ServiceOrderStatus.PENDING_PAYMENT);
+    assert.equal(first.alreadySettled, false);
+    assert.equal(
+      await prisma.infrastructureOrder.count({
+        where: { serviceOrderId: orderId },
+      }),
+      0,
+    );
+    assert.equal(
+      await prisma.walletLedgerEntry.count({
+        where: { referenceType: "order", referenceId: orderId },
+      }),
+      0,
+    );
+
+    const paid = await payOrderWithWallet(userId, orderId, {
+      providerAdapter: new FakeCloudProviderAdapter({
+        provider: "ARVAN",
+        regions: [
+          {
+            code: catalog.regionCode,
+            name: catalog.regionCode,
+            available: true,
+            rawPayload: {},
+          },
+        ],
+        plansByRegion: {
+          [catalog.regionCode]: [
+            {
+              externalPlanId: catalog.externalPlanId,
+              region: catalog.regionCode,
+              name: catalog.sizeName ?? "callback-vps",
+              vcpu: catalog.vcpu,
+              ramMb: catalog.ramMb,
+              diskGb: catalog.diskGb,
+              resourceContractValid: true,
+              available: true,
+              priceHourlyIrr: null,
+              priceMonthlyIrr: catalog.providerMonthlyPriceIrr,
+              sourceMoneyUnit: "RIAL",
+              rawUpdatedAt: now,
+              rawPayload: {},
+            },
+          ],
+        },
+        imagesByRegion: {
+          [catalog.regionCode]: [
+            {
+              externalId: "ubuntu-callback",
+              region: catalog.regionCode,
+              name: "ubuntu-callback",
+              operatingSystem: "linux",
+              minDiskGb: null,
+              minRamMb: null,
+              available: true,
+              sshKeySupported: true,
+              sshPasswordSupported: true,
+              rawUpdatedAt: now,
+              rawPayload: {},
+            },
+          ],
+        },
+        networksByRegion: {
+          [catalog.regionCode]: [
+            {
+              externalId: "default-network",
+              region: catalog.regionCode,
+              name: "default",
+              isDefault: true,
+              available: true,
+              rawUpdatedAt: now,
+              rawPayload: {},
+            },
+          ],
+        },
+        securityByRegion: {
+          [catalog.regionCode]: [
+            {
+              externalId: "default-security",
+              region: catalog.regionCode,
+              name: "default",
+              isDefault: true,
+              available: true,
+              rawUpdatedAt: now,
+              rawPayload: {},
+            },
+          ],
+        },
+      }),
+    });
+    assert.equal(paid.order.status, ServiceOrderStatus.PAID);
     const replay = await finalizeOrderPaymentFromCallback({
       expectedGateway: "MOCK",
-      paymentId: paymentId!,
-      token: token!,
-      authority: persistedIntent.authority,
+      paymentId: legacyPayment.id,
+      token,
+      authority: legacyPayment.authority,
       statusHint: "OK",
     });
-    assert.equal(first.payment.status, "SUCCEEDED");
-    assert.equal(replay.payment.status, "SUCCEEDED");
-    assert.equal(replay.alreadySettled, true);
-    assert.equal(first.order.status, ServiceOrderStatus.PAID);
+    assert.equal(replay.payment.status, "CREATED");
+    assert.equal(
+      (await prisma.orderPayment.findUniqueOrThrow({ where: { id: legacyPayment.id } }))
+        .status,
+      "CREATED",
+    );
+    assert.equal(replay.alreadySettled, false);
+    assert.equal(first.order.status, ServiceOrderStatus.PENDING_PAYMENT);
+    assert.equal(replay.order.status, ServiceOrderStatus.PAID);
     assert.equal(
       await prisma.infrastructureOrder.count({
         where: { serviceOrderId: orderId, status: InfrastructureOrderStatus.WAITING_ADMIN_FUNDING },
@@ -304,9 +421,9 @@ test("one verified gateway callback records one payment, ledger, and waiting ord
     assert.equal(await prisma.cloudInstance.count({ where: { infrastructureOrder: { serviceOrderId: orderId } } }), 0);
     assert.equal(
       await prisma.walletLedgerEntry.count({
-        where: { referenceType: "order_payment", referenceId: paymentId! },
+        where: { referenceType: "order_payment", referenceId: legacyPayment.id },
       }),
-      1,
+      0,
     );
     assert.equal(
       await prisma.walletLedgerEntry.count({
