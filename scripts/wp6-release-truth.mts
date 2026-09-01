@@ -880,6 +880,7 @@ Canonical sanitized receipts:
 - AbrChin \`docs/launch/evidence/wp6/receipt.json\`
 - AbrChin \`docs/launch/evidence/wp6/receipt.md\`
 - Owner checklist (unsigned): AbrChin \`docs/launch/wp6-owner-acceptance-checklist.md\`
+- Cross-repo report: AbrChin \`docs/launch/wp6-cross-repo-release-report.md\`
 
 \`\`\`text
 PRODUCTION DEPLOYMENT = NOT AUTHORIZED

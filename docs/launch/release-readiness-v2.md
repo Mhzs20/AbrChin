@@ -33,7 +33,7 @@ PAYG در Backend برای مسیرهای legacy/internal حفظ می‌شود �
 | --- | --- | --- |
 | Launch V2 Phases 0–9 (historical 2026-08-10) | `HISTORICAL` | Worktree log; see `docs/launch/abrchin-automation-status.md` |
 | WP5 production-candidate | `RECORDED` | `docs/launch/evidence/wp5/receipt.json` |
-| WP6 release-truth gates | `READY_FOR_OWNER_TEST` | `docs/launch/evidence/wp6/receipt.json` — fail=0 skip=0; not owner acceptance
+| WP6 release-truth gates | `READY_FOR_OWNER_TEST` | `docs/launch/evidence/wp6/receipt.json` — fail=0 skip=0; not owner acceptance |
 | Production dependency audit | see WP6 receipt | `npm audit --omit=dev --audit-level=low` |
 | Secret scan | see WP6 receipt | `npm run test:secret-scan` |
 | Production compose validation | see WP6 receipt | `docker compose … config` (file validation; daemon may be down) |
