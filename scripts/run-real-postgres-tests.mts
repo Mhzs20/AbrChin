@@ -99,8 +99,9 @@ async function main() {
       "-c",
       `unix_socket_directories=${dataDir}`,
     ],
-    { stdio: ["ignore", "ignore", "inherit"] },
+    { stdio: "ignore", detached: true },
   );
+  postgres.unref();
   const url = `postgres://${process.env.USER || "ubuntu"}@127.0.0.1:${port}/postgres?sslmode=disable`;
   const env = {
     ...process.env,
@@ -124,12 +125,24 @@ async function main() {
       ...testFiles,
     ], env);
   } finally {
-    postgres.kill("SIGTERM");
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    try {
-      postgres.kill("SIGKILL");
-    } catch {
-      /* already exited */
+    if (postgres.pid) {
+      try {
+        process.kill(-postgres.pid, "SIGTERM");
+      } catch {
+        postgres.kill("SIGTERM");
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    if (postgres.pid) {
+      try {
+        process.kill(-postgres.pid, "SIGKILL");
+      } catch {
+        try {
+          postgres.kill("SIGKILL");
+        } catch {
+          /* already exited */
+        }
+      }
     }
     rmSync(dataDir, { recursive: true, force: true });
   }

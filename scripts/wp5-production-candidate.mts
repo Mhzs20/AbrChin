@@ -223,8 +223,10 @@ function runCommand(
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
       stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
     });
     let output = "";
+    let finished = false;
     const append = (chunk: Buffer) => {
       const text = chunk.toString("utf8");
       output += text;
@@ -232,17 +234,41 @@ function runCommand(
     };
     child.stdout?.on("data", append);
     child.stderr?.on("data", append);
+    const killTree = (signal: NodeJS.Signals) => {
+      if (!child.pid) return;
+      try {
+        process.kill(-child.pid, signal);
+      } catch {
+        try {
+          child.kill(signal);
+        } catch {
+          /* already exited */
+        }
+      }
+    };
+    const finish = (code: number | null) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      killTree("SIGTERM");
+      setTimeout(() => killTree("SIGKILL"), 400);
+      resolveRun({ code: code ?? 1, output });
+    };
     const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      setTimeout(() => child.kill("SIGKILL"), 5_000);
+      killTree("SIGTERM");
+      setTimeout(() => {
+        killTree("SIGKILL");
+        finish(1);
+      }, 5_000);
     }, options.timeoutMs);
     child.on("error", (error) => {
       clearTimeout(timer);
       reject(error);
     });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      resolveRun({ code: code ?? 1, output });
+    child.on("exit", (code) => {
+      finish(code);
     });
   });
 }

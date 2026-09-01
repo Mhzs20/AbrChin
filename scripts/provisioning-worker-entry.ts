@@ -44,7 +44,20 @@ async function sleep(ms: number) {
 }
 
 async function main() {
-  console.log(`[abrchin-worker] provisioning worker started id=${config.workerId}`);
+  const database = (process.env.DATABASE_URL ?? "").replace(/:[^:/@]+@/, ":***@");
+  console.log(
+    `[abrchin-worker] provisioning worker started id=${config.workerId} database=${database || "unset"}`,
+  );
+  try {
+    await touchWorkerHeartbeat({ cycleOk: false, status: "stale" });
+    console.log(`[abrchin-worker] initial heartbeat recorded id=${config.workerId}`);
+  } catch (error) {
+    console.error(
+      "[abrchin-worker] initial heartbeat failed",
+      error instanceof Error ? error.message : "unknown",
+    );
+    throw error;
+  }
   let idleRounds = 0;
   let nextSubscriptionLifecycleAt = 0;
   let nextBillingAt = 0;

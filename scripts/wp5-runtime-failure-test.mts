@@ -34,19 +34,6 @@ process.env.BILLING_WORKER_INTERVAL_MS = "600000";
 
 const children: ChildProcess[] = [];
 
-after(async () => {
-  for (const child of children) {
-    if (child.pid) {
-      try {
-        process.kill(child.pid, "SIGTERM");
-      } catch {
-        /* already exited */
-      }
-    }
-  }
-  await prisma.$disconnect();
-});
-
 function freePort() {
   return new Promise<number>((resolvePort, reject) => {
     const server = createServer();
@@ -67,12 +54,59 @@ function freePort() {
 function spawnTracked(command: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}) {
   const child = spawn(command, args, {
     cwd: process.cwd(),
-    env: { ...process.env, ...extraEnv },
+    env: {
+      ...process.env,
+      DATABASE_URL: process.env.DATABASE_URL,
+      ABRCHIN_ISOLATED_TEST: "1",
+      ...extraEnv,
+    },
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
+  const log: string[] = [];
+  const append = (chunk: Buffer) => {
+    log.push(chunk.toString("utf8"));
+    if (log.join("").length > 32_000) log.splice(0, log.length - 8);
+  };
+  child.stdout?.on("data", append);
+  child.stderr?.on("data", append);
+  (child as ChildProcess & { wp5Log: () => string }).wp5Log = () => log.join("");
   children.push(child);
   return child;
 }
+
+function stopChild(child: ChildProcess) {
+  if (!child.pid) return;
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      /* already exited */
+    }
+  }
+}
+
+function killChild(child: ChildProcess) {
+  if (!child.pid) return;
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      /* already exited */
+    }
+  }
+}
+
+after(async () => {
+  for (const child of children) stopChild(child);
+  await new Promise((resolveWait) => setTimeout(resolveWait, 400));
+  for (const child of children) killChild(child);
+  await prisma.$disconnect();
+});
 
 async function waitFor(
   check: () => Promise<boolean>,
@@ -87,7 +121,7 @@ async function waitFor(
     } catch (error) {
       last = error instanceof Error ? error.message : String(error);
     }
-    await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+    await new Promise((resolveWait) => setTimeout(resolveWait, 200));
   }
   throw new Error(`${label} timed out${last ? `: ${last}` : ""}`);
 }
@@ -101,17 +135,25 @@ test("AbrChin worker restart continues heartbeat without duplicate jobs", async 
       WORKER_ID: "wp5-runtime-worker",
     });
   let worker = startWorker();
-  await waitFor(async () => {
-    const row = await prisma.workerHeartbeat.findUnique({
-      where: { id: "provisioning" },
-    });
-    return Boolean(row?.lastSeenAt);
-  }, 20_000, "worker heartbeat");
+  try {
+    await waitFor(async () => {
+      const row = await prisma.workerHeartbeat.findUnique({
+        where: { id: "provisioning" },
+      });
+      return Boolean(row?.lastSeenAt);
+    }, 20_000, "worker heartbeat");
+  } catch (error) {
+    const dump = (worker as ChildProcess & { wp5Log?: () => string }).wp5Log?.() ?? "";
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}\n${dump.slice(-4000)}`,
+    );
+  }
   const first = await prisma.workerHeartbeat.findUniqueOrThrow({
     where: { id: "provisioning" },
   });
-  worker.kill("SIGTERM");
+  stopChild(worker);
   await waitFor(async () => worker.exitCode !== null || worker.killed, 8_000, "worker stop");
+  killChild(worker);
   worker = startWorker();
   await waitFor(async () => {
     const row = await prisma.workerHeartbeat.findUnique({
@@ -132,11 +174,15 @@ test("AbrChin web restart keeps /api/health", async () => {
   const origin = `http://127.0.0.1:${port}`;
   const startWeb = () =>
     spawnTracked(
-      "npx",
-      ["next", "dev", "-H", "127.0.0.1", "-p", String(port)],
+      process.execPath,
+      [
+        "--import",
+        "./scripts/test-resolve-hook.mjs",
+        "--experimental-strip-types",
+        "scripts/wp5-web-health-sidecar.mts",
+      ],
       {
         PORT: String(port),
-        NEXT_TELEMETRY_DISABLED: "1",
       },
     );
   let web = startWeb();
@@ -145,16 +191,17 @@ test("AbrChin web restart keeps /api/health", async () => {
     if (!response.ok) return false;
     const body = (await response.json()) as { status?: string; service?: string };
     return body.status === "ok" && body.service === "abrchin-web";
-  }, 180_000, "abrchin web health");
-  web.kill("SIGTERM");
-  await waitFor(async () => web.exitCode !== null || web.killed, 10_000, "abrchin web stop");
+  }, 20_000, "abrchin web health");
+  stopChild(web);
+  await waitFor(async () => web.exitCode !== null || web.killed, 8_000, "abrchin web stop");
+  killChild(web);
   web = startWeb();
   await waitFor(async () => {
     const response = await fetch(`${origin}/api/health`);
     if (!response.ok) return false;
-    const body = (await response.json()) as { status?: string };
-    return body.status === "ok";
-  }, 180_000, "abrchin web health after restart");
+    const body = (await response.json()) as { status?: string; service?: string };
+    return body.status === "ok" && body.service === "abrchin-web";
+  }, 20_000, "abrchin web health after restart");
 });
 
 test("PostgreSQL interruption does not double-debit a wallet order", async () => {
