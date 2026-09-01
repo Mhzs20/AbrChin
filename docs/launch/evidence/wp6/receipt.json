@@ -1,0 +1,1357 @@
+{
+  "work_package": "WP6",
+  "product": "MessageGo",
+  "product_version": "1.0.0",
+  "public_api": "/v1",
+  "verdict": "READY_FOR_OWNER_TEST",
+  "owner_acceptance": false,
+  "owner_accepted": false,
+  "production_authorized": false,
+  "provider_traffic_authorized": false,
+  "ready_for_first_production_deployment": false,
+  "abrchin_sha": "0c08c89bb60ae6066133eb73d4303a4abefb2aac",
+  "messagego_sha": "c869a677607567b952d8598f97cf8adeeb3932b3",
+  "started_at": "2026-09-01T22:55:32.337Z",
+  "ended_at": "2026-09-01T23:00:37.405Z",
+  "environment_topology": {
+    "postgres": {
+      "implementation": "postgresql",
+      "version": "postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)",
+      "host": "127.0.0.1:5432",
+      "databases": [
+        "abrchin",
+        "messagego_wp6",
+        "messagego_m6_wp6"
+      ],
+      "listening": true
+    },
+    "redis": {
+      "implementation": "redis-server",
+      "version": "Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=e53ff17674aa6190",
+      "address": "127.0.0.1:6379",
+      "listening": true
+    },
+    "nats": {
+      "implementation": "nats-server",
+      "version": "nats-server: v2.10.7",
+      "url": "nats://127.0.0.1:4222",
+      "jetstream": true,
+      "listening": true
+    },
+    "node": "v22.22.2",
+    "go": "go version go1.25.13 linux/amd64",
+    "docker_daemon": "down",
+    "docker_compose": "Docker Compose version 2.40.3+ds1-0ubuntu1~24.04.1",
+    "abrchin_package_version": "1.0.0",
+    "messagego_product_version": "1.0.0",
+    "abrchin_migrations": [
+      "20260725120000_init_auth",
+      "20260725180000_wallet_ledger_payments",
+      "20260725190000_payment_gateways",
+      "20260726000000_wallet_topup_suggestions",
+      "20260726120000_infrastructure",
+      "20260726140000_hardening_funding_ledger",
+      "20260726180000_production_provisioning",
+      "20260728233000_quick_cloud_checkout",
+      "20260729100000_recommendation_quotes",
+      "20260729110000_secure_instance_credentials",
+      "20260729120000_service_subscriptions",
+      "20260729200000_parspack_catalog_pricing",
+      "20260730160000_multi_provider_routing",
+      "20260730190000_provider_review_hardening",
+      "20260730223000_provider_review_recovery_v2",
+      "20260730234500_terminal_order_recovery",
+      "20260731003000_multi_order_terminal_recovery_v4",
+      "20260731043000_terminal_and_worker_recovery_v5",
+      "20260731120000_terminal_and_dispatch_recovery_v6",
+      "20260731200000_health_dispatch_starvation_recovery_v7",
+      "20260801120000_admin_catalog_resilience",
+      "20260801210000_preprovisioned_inventory_safety",
+      "20260801230000_arvan_sale_inventory_credentials",
+      "20260801235900_final_launch_routing",
+      "20260803100000_service_connection_checks",
+      "20260803113000_sku_markup_and_manual_publication",
+      "20260803130000_order_gateway_payments",
+      "20260803150000_wallet_payg_billing_core",
+      "20260803160000_wallet_payment_recovery",
+      "20260803170000_usage_billing_worker",
+      "20260803180000_wallet_first_activation",
+      "20260803190000_provider_billing_contract_gate",
+      "20260803200000_billing_runtime_safety",
+      "20260804110000_catalog_sync_pricing_fail_closed",
+      "20260804140000_storefront_chinish_assortment",
+      "20260804150000_storefront_auto_suggest",
+      "20260804160000_storefront_capacity_rules",
+      "20260804170000_launch_markup_and_catalog_defaults",
+      "20260804180000_launch_parchin_lifecycle",
+      "20260804190000_launch_term_coupons_lifecycle",
+      "20260804200000_compass_service_prices",
+      "20260806120000_storefront_price_display_flags",
+      "20260806130000_storefront_price_bands_style",
+      "20260806140000_provider_region_discovery",
+      "20260806150000_user_account_status",
+      "20260806200000_commercial_pricing_v3",
+      "20260806210000_storefront_dominance_parchin_v3",
+      "20260807010000_profit_curve_operational_accounting",
+      "20260807020000_operating_expense_draft_idempotency",
+      "20260807130000_rate_limit_bucket_and_payg_repair",
+      "20260807140000_support_requests",
+      "20260807150000_customer_identity_email_verification",
+      "20260808230000_parchin_operational_contract_v2",
+      "20260810220000_parchin_operations_v3",
+      "20260822090000_drop_parspack_provider",
+      "20260826100000_messagego_v2_wallet_authority",
+      "20260827120000_messagego_v2_s2s_replay",
+      "20260901120000_messagego_customer_pricing",
+      "20260901230000_parspack_history_archive"
+    ],
+    "messagego_migrations": [
+      "000001_foundation.sql",
+      "000002_milestone_one.sql",
+      "000003_row_level_isolation.sql",
+      "000004_realtime_blocks.sql",
+      "000005_models_usage_quotas.sql",
+      "000006_ai_runs.sql",
+      "000007_ai_admin.sql",
+      "000008_ai_admin_queries.sql",
+      "000009_provider_usage_reconciliation.sql",
+      "000010_base_routing_profiles.sql",
+      "000011_runtime_routing_and_invocation.sql",
+      "000012_reconciliation_settlement_permissions.sql",
+      "000013_abrchin_billing_authority.sql",
+      "000014_production_provider_budgets.sql",
+      "000015_provider_isolated_routing_profiles.sql",
+      "000016_client_tool_foundation.sql",
+      "000017_versioned_provider_pricing.sql",
+      "000018_tenant_integrations_and_tool_events.sql",
+      "000019_nahira_contract_hardening.sql",
+      "000020_conversation_lifecycle.sql",
+      "000021_rich_content_assets.sql",
+      "000022_memory_tool_recovery.sql",
+      "000023_provider_routing_security.sql",
+      "000024_accounting_attribution.sql",
+      "000025_v2_preprod.sql",
+      "000026_messagego_public_execute.sql",
+      "000027_wp2_billing_idempotency.sql",
+      "000028_wp3_ops_readiness.sql"
+    ],
+    "adapters": {
+      "payment_gateway": "MOCK",
+      "sms": "console",
+      "smtp": "console",
+      "arvan_mutations": false,
+      "provider_traffic": false
+    }
+  },
+  "totals": {
+    "pass": 1782,
+    "fail": 0,
+    "skip": 0,
+    "tests": 1782
+  },
+  "gates": [
+    {
+      "id": "abrchin-install",
+      "repo": "abrchin",
+      "required": true,
+      "command": "node -e require('fs').accessSync('node_modules/next'); require('fs').accessSync('node_modules/@prisma/client'); console.log('install-ok')",
+      "startedAt": "2026-09-01T22:55:32.851Z",
+      "endedAt": "2026-09-01T22:55:32.880Z",
+      "elapsedMs": 29,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-prisma-generate",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npx prisma generate",
+      "startedAt": "2026-09-01T22:55:32.881Z",
+      "endedAt": "2026-09-01T22:55:34.990Z",
+      "elapsedMs": 2109,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-lint",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run lint",
+      "startedAt": "2026-09-01T22:55:34.990Z",
+      "endedAt": "2026-09-01T22:55:49.810Z",
+      "elapsedMs": 14820,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-typecheck",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run typecheck",
+      "startedAt": "2026-09-01T22:55:49.811Z",
+      "endedAt": "2026-09-01T22:55:58.599Z",
+      "elapsedMs": 8788,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-unit-auth",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:auth",
+      "startedAt": "2026-09-01T22:55:58.599Z",
+      "endedAt": "2026-09-01T22:56:00.054Z",
+      "elapsedMs": 1455,
+      "exitCode": 0,
+      "counts": {
+        "pass": 74,
+        "fail": 0,
+        "skip": 0,
+        "tests": 74
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-unit-wallet",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:wallet",
+      "startedAt": "2026-09-01T22:56:00.054Z",
+      "endedAt": "2026-09-01T22:56:00.387Z",
+      "elapsedMs": 333,
+      "exitCode": 0,
+      "counts": {
+        "pass": 6,
+        "fail": 0,
+        "skip": 0,
+        "tests": 6
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-unit-billing-policy",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:billing-policy",
+      "startedAt": "2026-09-01T22:56:00.387Z",
+      "endedAt": "2026-09-01T22:56:00.710Z",
+      "elapsedMs": 323,
+      "exitCode": 0,
+      "counts": {
+        "pass": 11,
+        "fail": 0,
+        "skip": 0,
+        "tests": 11
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-unit-customer-navigation",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:customer-navigation",
+      "startedAt": "2026-09-01T22:56:00.710Z",
+      "endedAt": "2026-09-01T22:56:02.283Z",
+      "elapsedMs": 1573,
+      "exitCode": 0,
+      "counts": {
+        "pass": 35,
+        "fail": 0,
+        "skip": 0,
+        "tests": 35
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-unit-connection-check",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:connection-check",
+      "startedAt": "2026-09-01T22:56:02.283Z",
+      "endedAt": "2026-09-01T22:56:02.622Z",
+      "elapsedMs": 339,
+      "exitCode": 0,
+      "counts": {
+        "pass": 15,
+        "fail": 0,
+        "skip": 0,
+        "tests": 15
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-unit-payments",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:payments",
+      "startedAt": "2026-09-01T22:56:02.622Z",
+      "endedAt": "2026-09-01T22:56:03.138Z",
+      "elapsedMs": 516,
+      "exitCode": 0,
+      "counts": {
+        "pass": 8,
+        "fail": 0,
+        "skip": 0,
+        "tests": 8
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-unit-account-admin",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:account-admin",
+      "startedAt": "2026-09-01T22:56:03.138Z",
+      "endedAt": "2026-09-01T22:56:03.426Z",
+      "elapsedMs": 288,
+      "exitCode": 0,
+      "counts": {
+        "pass": 10,
+        "fail": 0,
+        "skip": 0,
+        "tests": 10
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-unit-providers",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:providers",
+      "startedAt": "2026-09-01T22:56:03.426Z",
+      "endedAt": "2026-09-01T22:56:03.934Z",
+      "elapsedMs": 508,
+      "exitCode": 0,
+      "counts": {
+        "pass": 43,
+        "fail": 0,
+        "skip": 0,
+        "tests": 43
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-profit-curve",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:profit-curve",
+      "startedAt": "2026-09-01T22:56:03.934Z",
+      "endedAt": "2026-09-01T22:56:04.352Z",
+      "elapsedMs": 418,
+      "exitCode": 0,
+      "counts": {
+        "pass": 27,
+        "fail": 0,
+        "skip": 0,
+        "tests": 27
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-accounting",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:accounting",
+      "startedAt": "2026-09-01T22:56:04.352Z",
+      "endedAt": "2026-09-01T22:56:04.750Z",
+      "elapsedMs": 398,
+      "exitCode": 0,
+      "counts": {
+        "pass": 17,
+        "fail": 0,
+        "skip": 0,
+        "tests": 17
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-recommendation",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:recommendation",
+      "startedAt": "2026-09-01T22:56:04.751Z",
+      "endedAt": "2026-09-01T22:56:05.526Z",
+      "elapsedMs": 775,
+      "exitCode": 0,
+      "counts": {
+        "pass": 55,
+        "fail": 0,
+        "skip": 0,
+        "tests": 55
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-launch-gates",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:launch-gates",
+      "startedAt": "2026-09-01T22:56:05.526Z",
+      "endedAt": "2026-09-01T22:56:05.808Z",
+      "elapsedMs": 282,
+      "exitCode": 0,
+      "counts": {
+        "pass": 9,
+        "fail": 0,
+        "skip": 0,
+        "tests": 9
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-phase1-discovery",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:phase1-discovery",
+      "startedAt": "2026-09-01T22:56:05.808Z",
+      "endedAt": "2026-09-01T22:56:06.045Z",
+      "elapsedMs": 237,
+      "exitCode": 0,
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0,
+        "tests": 3
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-phase2-guest-auth",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:phase2-guest-auth",
+      "startedAt": "2026-09-01T22:56:06.045Z",
+      "endedAt": "2026-09-01T22:56:06.275Z",
+      "elapsedMs": 230,
+      "exitCode": 0,
+      "counts": {
+        "pass": 4,
+        "fail": 0,
+        "skip": 0,
+        "tests": 4
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-phase3-contract",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:phase3-contract",
+      "startedAt": "2026-09-01T22:56:06.275Z",
+      "endedAt": "2026-09-01T22:56:06.865Z",
+      "elapsedMs": 590,
+      "exitCode": 0,
+      "counts": {
+        "pass": 16,
+        "fail": 0,
+        "skip": 0,
+        "tests": 16
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-phase4-tracking",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:phase4-tracking",
+      "startedAt": "2026-09-01T22:56:06.865Z",
+      "endedAt": "2026-09-01T22:56:07.076Z",
+      "elapsedMs": 211,
+      "exitCode": 0,
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0,
+        "tests": 3
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-phase5-contract",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:phase5-contract",
+      "startedAt": "2026-09-01T22:56:07.076Z",
+      "endedAt": "2026-09-01T22:56:07.363Z",
+      "elapsedMs": 287,
+      "exitCode": 0,
+      "counts": {
+        "pass": 7,
+        "fail": 0,
+        "skip": 0,
+        "tests": 7
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-phase6-contract",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:phase6-contract",
+      "startedAt": "2026-09-01T22:56:07.363Z",
+      "endedAt": "2026-09-01T22:56:07.821Z",
+      "elapsedMs": 458,
+      "exitCode": 0,
+      "counts": {
+        "pass": 15,
+        "fail": 0,
+        "skip": 0,
+        "tests": 15
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-phase7-parchin",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:phase7-parchin",
+      "startedAt": "2026-09-01T22:56:07.821Z",
+      "endedAt": "2026-09-01T22:56:08.162Z",
+      "elapsedMs": 341,
+      "exitCode": 0,
+      "counts": {
+        "pass": 22,
+        "fail": 0,
+        "skip": 0,
+        "tests": 22
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-phase8-contract",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:phase8-contract",
+      "startedAt": "2026-09-01T22:56:08.162Z",
+      "endedAt": "2026-09-01T22:56:08.602Z",
+      "elapsedMs": 440,
+      "exitCode": 0,
+      "counts": {
+        "pass": 14,
+        "fail": 0,
+        "skip": 0,
+        "tests": 14
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-phase9-readiness",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:phase9-readiness",
+      "startedAt": "2026-09-01T22:56:08.602Z",
+      "endedAt": "2026-09-01T22:56:08.830Z",
+      "elapsedMs": 228,
+      "exitCode": 0,
+      "counts": {
+        "pass": 6,
+        "fail": 0,
+        "skip": 0,
+        "tests": 6
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-legal-content",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:legal-content",
+      "startedAt": "2026-09-01T22:56:08.830Z",
+      "endedAt": "2026-09-01T22:56:09.175Z",
+      "elapsedMs": 345,
+      "exitCode": 0,
+      "counts": {
+        "pass": 6,
+        "fail": 0,
+        "skip": 0,
+        "tests": 6
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-infrastructure",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:infrastructure",
+      "startedAt": "2026-09-01T22:56:09.175Z",
+      "endedAt": "2026-09-01T22:56:13.993Z",
+      "elapsedMs": 4818,
+      "exitCode": 0,
+      "counts": {
+        "pass": 86,
+        "fail": 0,
+        "skip": 0,
+        "tests": 86
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-migration-safety",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:migration-safety",
+      "startedAt": "2026-09-01T22:56:13.993Z",
+      "endedAt": "2026-09-01T22:56:14.193Z",
+      "elapsedMs": 200,
+      "exitCode": 0,
+      "counts": {
+        "pass": 19,
+        "fail": 0,
+        "skip": 0,
+        "tests": 19
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-production-build",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run build",
+      "startedAt": "2026-09-01T22:56:14.193Z",
+      "endedAt": "2026-09-01T22:56:42.751Z",
+      "elapsedMs": 28559,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-worker-runtime",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:worker-runtime",
+      "startedAt": "2026-09-01T22:56:42.752Z",
+      "endedAt": "2026-09-01T22:56:44.920Z",
+      "elapsedMs": 2168,
+      "exitCode": 0,
+      "counts": {
+        "pass": 9,
+        "fail": 0,
+        "skip": 0,
+        "tests": 9
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-panel-role-e2e",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:panel-role-e2e-isolated",
+      "startedAt": "2026-09-01T22:56:44.920Z",
+      "endedAt": "2026-09-01T22:56:59.033Z",
+      "elapsedMs": 14113,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-smoke",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:smoke",
+      "startedAt": "2026-09-01T22:56:59.033Z",
+      "endedAt": "2026-09-01T22:57:00.199Z",
+      "elapsedMs": 1166,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-git-diff-check",
+      "repo": "abrchin",
+      "required": true,
+      "command": "git diff --check",
+      "startedAt": "2026-09-01T22:57:00.199Z",
+      "endedAt": "2026-09-01T22:57:00.205Z",
+      "elapsedMs": 6,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-postgres-migration",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:postgres",
+      "startedAt": "2026-09-01T22:57:00.205Z",
+      "endedAt": "2026-09-01T22:57:22.185Z",
+      "elapsedMs": 21980,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-fresh-migration",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:fresh-migration",
+      "startedAt": "2026-09-01T22:57:22.185Z",
+      "endedAt": "2026-09-01T22:57:24.214Z",
+      "elapsedMs": 2029,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-migration-upgrade",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:migration-upgrade",
+      "startedAt": "2026-09-01T22:57:24.214Z",
+      "endedAt": "2026-09-01T22:57:46.492Z",
+      "elapsedMs": 22278,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-identity-migration",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:identity-migration",
+      "startedAt": "2026-09-01T22:57:46.492Z",
+      "endedAt": "2026-09-01T22:57:51.253Z",
+      "elapsedMs": 4761,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-parspack-history",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:parspack-history",
+      "startedAt": "2026-09-01T22:57:51.253Z",
+      "endedAt": "2026-09-01T22:57:56.376Z",
+      "elapsedMs": 5123,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-settlement-history",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:wp5-settlement-history",
+      "startedAt": "2026-09-01T22:57:56.376Z",
+      "endedAt": "2026-09-01T22:57:59.461Z",
+      "elapsedMs": 3085,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-phase3-postgres",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:wp5-phase3-postgres",
+      "startedAt": "2026-09-01T22:57:59.461Z",
+      "endedAt": "2026-09-01T22:58:03.291Z",
+      "elapsedMs": 3830,
+      "exitCode": 0,
+      "counts": {
+        "pass": 13,
+        "fail": 0,
+        "skip": 0,
+        "tests": 13
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-phase5-postgres",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:wp5-phase5-postgres",
+      "startedAt": "2026-09-01T22:58:03.291Z",
+      "endedAt": "2026-09-01T22:58:07.654Z",
+      "elapsedMs": 4363,
+      "exitCode": 0,
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0,
+        "tests": 3
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-phase6-postgres",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:phase6-postgres",
+      "startedAt": "2026-09-01T22:58:07.654Z",
+      "endedAt": "2026-09-01T22:58:13.327Z",
+      "elapsedMs": 5673,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-phase7-postgres",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:phase7-postgres",
+      "startedAt": "2026-09-01T22:58:13.327Z",
+      "endedAt": "2026-09-01T22:58:18.693Z",
+      "elapsedMs": 5366,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-financial-postgres",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:financial-postgres",
+      "startedAt": "2026-09-01T22:58:18.693Z",
+      "endedAt": "2026-09-01T22:58:40.119Z",
+      "elapsedMs": 21426,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-accounting-postgres",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:accounting-isolated",
+      "startedAt": "2026-09-01T22:58:40.120Z",
+      "endedAt": "2026-09-01T22:58:42.913Z",
+      "elapsedMs": 2793,
+      "exitCode": 0,
+      "counts": {
+        "pass": 7,
+        "fail": 0,
+        "skip": 0,
+        "tests": 7
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-messagego-integration",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:messagego-v2-release-readiness",
+      "startedAt": "2026-09-01T22:58:42.914Z",
+      "endedAt": "2026-09-01T22:59:01.402Z",
+      "elapsedMs": 18488,
+      "exitCode": 0,
+      "counts": {
+        "pass": 4,
+        "fail": 0,
+        "skip": 0,
+        "tests": 4
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-backup-restore",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:ops-wp3",
+      "startedAt": "2026-09-01T22:59:01.403Z",
+      "endedAt": "2026-09-01T22:59:04.134Z",
+      "elapsedMs": 2731,
+      "exitCode": 0,
+      "counts": {
+        "pass": 5,
+        "fail": 0,
+        "skip": 0,
+        "tests": 5
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-secret-scan",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:secret-scan",
+      "startedAt": "2026-09-01T22:59:04.134Z",
+      "endedAt": "2026-09-01T22:59:04.413Z",
+      "elapsedMs": 279,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-npm-audit",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm audit --omit=dev --audit-level=low",
+      "startedAt": "2026-09-01T22:59:04.413Z",
+      "endedAt": "2026-09-01T22:59:04.825Z",
+      "elapsedMs": 412,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "abrchin-compose-validate",
+      "repo": "abrchin",
+      "required": true,
+      "command": "docker compose --env-file /tmp/wp6-abrchin-compose-e99d8209.env -f compose.production.yaml config --quiet",
+      "startedAt": "2026-09-01T22:59:04.825Z",
+      "endedAt": "2026-09-01T22:59:04.913Z",
+      "elapsedMs": 88,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-fmt-check",
+      "repo": "messagego",
+      "required": true,
+      "command": "make fmt-check",
+      "startedAt": "2026-09-01T22:59:04.913Z",
+      "endedAt": "2026-09-01T22:59:05.029Z",
+      "elapsedMs": 116,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-vet",
+      "repo": "messagego",
+      "required": true,
+      "command": "make vet",
+      "startedAt": "2026-09-01T22:59:05.029Z",
+      "endedAt": "2026-09-01T22:59:06.036Z",
+      "elapsedMs": 1007,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-unit",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 ./...",
+      "startedAt": "2026-09-01T22:59:06.036Z",
+      "endedAt": "2026-09-01T22:59:25.350Z",
+      "elapsedMs": 19314,
+      "exitCode": 0,
+      "counts": {
+        "pass": 518,
+        "fail": 0,
+        "skip": 0,
+        "tests": 518
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-race",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -race ./...",
+      "startedAt": "2026-09-01T22:59:25.351Z",
+      "endedAt": "2026-09-01T23:00:00.605Z",
+      "elapsedMs": 35254,
+      "exitCode": 0,
+      "counts": {
+        "pass": 518,
+        "fail": 0,
+        "skip": 0,
+        "tests": 518
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-postgres-integration",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -tags=integration -timeout 10m ./internal/adapters/postgres",
+      "startedAt": "2026-09-01T23:00:00.605Z",
+      "endedAt": "2026-09-01T23:00:01.841Z",
+      "elapsedMs": 1236,
+      "exitCode": 0,
+      "counts": {
+        "pass": 18,
+        "fail": 0,
+        "skip": 0,
+        "tests": 18
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-m6-postgres-integration",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -tags=integration -timeout 10m ./internal/m6bootstrap",
+      "startedAt": "2026-09-01T23:00:01.841Z",
+      "endedAt": "2026-09-01T23:00:02.508Z",
+      "elapsedMs": 667,
+      "exitCode": 0,
+      "counts": {
+        "pass": 55,
+        "fail": 0,
+        "skip": 0,
+        "tests": 55
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-redis-up",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -tags=integration -timeout 60s -run ^TestRedisLimiterIsAtomicAndProductIsolated$ ./internal/adapters/redislimit",
+      "startedAt": "2026-09-01T23:00:02.508Z",
+      "endedAt": "2026-09-01T23:00:02.797Z",
+      "elapsedMs": 289,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-redis-down",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -tags=integration -timeout 30s -run ^TestRedisUnavailableFailsClosed$ ./internal/adapters/redislimit",
+      "startedAt": "2026-09-01T23:00:02.797Z",
+      "endedAt": "2026-09-01T23:00:04.729Z",
+      "elapsedMs": 1932,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-nats-up",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -tags=integration -timeout 60s -run ^TestJetStreamDeduplicatesStableEventID$ ./internal/adapters/natsjs",
+      "startedAt": "2026-09-01T23:00:04.729Z",
+      "endedAt": "2026-09-01T23:00:05.027Z",
+      "elapsedMs": 298,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-nats-down",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -tags=integration -timeout 30s -run ^TestNATSUnavailableFailsClosed$ ./internal/adapters/natsjs",
+      "startedAt": "2026-09-01T23:00:05.027Z",
+      "endedAt": "2026-09-01T23:00:05.281Z",
+      "elapsedMs": 254,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-contracts",
+      "repo": "messagego",
+      "required": true,
+      "command": "make contract-test",
+      "startedAt": "2026-09-01T23:00:05.281Z",
+      "endedAt": "2026-09-01T23:00:06.794Z",
+      "elapsedMs": 1513,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-clients",
+      "repo": "messagego",
+      "required": true,
+      "command": "make client-test",
+      "startedAt": "2026-09-01T23:00:06.794Z",
+      "endedAt": "2026-09-01T23:00:14.327Z",
+      "elapsedMs": 7533,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-release-check",
+      "repo": "messagego",
+      "required": true,
+      "command": "make release-check",
+      "startedAt": "2026-09-01T23:00:14.327Z",
+      "endedAt": "2026-09-01T23:00:31.914Z",
+      "elapsedMs": 17587,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-settlement-contract",
+      "repo": "messagego",
+      "required": true,
+      "command": "make v2-settlement-contract-check",
+      "startedAt": "2026-09-01T23:00:31.914Z",
+      "endedAt": "2026-09-01T23:00:32.027Z",
+      "elapsedMs": 113,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-provider-registry",
+      "repo": "messagego",
+      "required": true,
+      "command": "make v2-provider-registry-check",
+      "startedAt": "2026-09-01T23:00:32.027Z",
+      "endedAt": "2026-09-01T23:00:32.135Z",
+      "elapsedMs": 108,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-policy-selector",
+      "repo": "messagego",
+      "required": true,
+      "command": "make v2-policy-selector-check",
+      "startedAt": "2026-09-01T23:00:32.135Z",
+      "endedAt": "2026-09-01T23:00:32.239Z",
+      "elapsedMs": 104,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-v2-packages",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 ./internal/adapters/v2settlement ./internal/v2billing ./internal/v2integration ./internal/v2providers ./internal/v2s2s ./internal/v2secrets",
+      "startedAt": "2026-09-01T23:00:32.239Z",
+      "endedAt": "2026-09-01T23:00:33.473Z",
+      "elapsedMs": 1234,
+      "exitCode": 0,
+      "counts": {
+        "pass": 86,
+        "fail": 0,
+        "skip": 0,
+        "tests": 86
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-govulncheck",
+      "repo": "messagego",
+      "required": true,
+      "command": "govulncheck ./...",
+      "startedAt": "2026-09-01T23:00:33.473Z",
+      "endedAt": "2026-09-01T23:00:35.080Z",
+      "elapsedMs": 1607,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-compose-validate",
+      "repo": "messagego",
+      "required": true,
+      "command": "docker compose -f deployments/single-server/docker-compose.yml config --quiet",
+      "startedAt": "2026-09-01T23:00:35.080Z",
+      "endedAt": "2026-09-01T23:00:35.171Z",
+      "elapsedMs": 91,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-backup-restore",
+      "repo": "messagego",
+      "required": true,
+      "command": "bash ops/wp3-backup-test.sh",
+      "startedAt": "2026-09-01T23:00:35.171Z",
+      "endedAt": "2026-09-01T23:00:37.405Z",
+      "elapsedMs": 2234,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    }
+  ],
+  "restore_verification": {
+    "messagego_wp3_backup": "pass",
+    "abrchin_ops_wp3_in_infrastructure": "pass",
+    "production_restore": false,
+    "isolated_restore_required": true,
+    "skipped": false
+  },
+  "remaining_warnings": [
+    "Docker daemon was down. Compose validation used `docker compose config` without starting containers.",
+    "Owner acceptance is still unsigned. Production remains unauthorized.",
+    "govulncheck reported 0 called vulnerabilities on toolchain go1.25.13. Uncalled vulnerabilities may still exist in the module require graph."
+  ],
+  "required_skip_means": "NO-GO"
+}
