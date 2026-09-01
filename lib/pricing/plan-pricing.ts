@@ -324,3 +324,35 @@ export function samePlanConfigurationSnapshot(
     (value.parchinLevel == null || value.parchinLevel === current.parchinLevel)
   );
 }
+
+export class PricingUnavailableError extends Error {
+  readonly code = "pricing_unavailable";
+
+  constructor(
+    message = "قیمت این پلن از کاتالوگ تأیید نشده و قابل انتشار یا فروش نیست.",
+  ) {
+    super(message);
+    this.name = "PricingUnavailableError";
+  }
+}
+
+/** Infrastructure sale/renewal/provider cost must be verified; 0 and 1-rial placeholders fail closed. */
+export function isVerifiedSellablePricing(
+  priced: EffectivePlanPricing | null,
+): priced is EffectivePlanPricing {
+  return (
+    priced != null &&
+    priced.finalPriceRial > 1n &&
+    priced.renewalPriceRial > 1n &&
+    priced.providerBasePriceRial > 1n
+  );
+}
+
+export function requireVerifiedSellablePricing(
+  priced: EffectivePlanPricing | null,
+): EffectivePlanPricing {
+  if (!isVerifiedSellablePricing(priced)) {
+    throw new PricingUnavailableError();
+  }
+  return priced;
+}

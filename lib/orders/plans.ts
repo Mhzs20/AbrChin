@@ -25,14 +25,13 @@ import { countAvailableInventoryByPlan } from "@/lib/infrastructure/preprovision
 import { isPublicSaleEnabled } from "@/lib/infrastructure/public-sale-policy";
 import {
   type EffectivePlanPricing,
-  catalogItemBaseHourlyPriceRial,
   catalogItemBasePriceRial,
   compatibleImageCodes,
+  isVerifiedSellablePricing,
   resolveCatalogItemPricing,
   resolvePlanPricing,
 } from "@/lib/pricing/plan-pricing";
 import {
-  DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
   deriveUsageEquivalentPrices,
 } from "@/lib/pricing/commercial-engine";
 import {
@@ -41,7 +40,6 @@ import {
   resolveProviderMarkupForPlan,
 } from "@/lib/pricing/profit-curve-apply";
 import { loadProfitCurveConfiguration } from "@/lib/pricing/profit-curve-store";
-import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
 import { serializeQuoteLineItems } from "@/lib/pricing/quote-line-items";
 import {
   classifyStorefrontCapacityTier,
@@ -381,7 +379,7 @@ export function resolveConfiguredPlanPricing(
     source: markup.source,
   });
 
-  return resolvePlanPricing(plan, manualAdmin ? null : {
+  const priced = resolvePlanPricing(plan, manualAdmin ? null : {
     ...provider!,
     markupBasisPoints: markup.providerMarkupBps,
   }, {
@@ -398,6 +396,7 @@ export function resolveConfiguredPlanPricing(
     infrastructureSaleRialOverride: markup.infrastructureSaleRialOverride,
     commercialEconomicsSnapshot: economics,
   });
+  return isVerifiedSellablePricing(priced) ? priced : null;
 }
 
 export async function getActivePlanByCode(code: string) {
@@ -705,12 +704,9 @@ function catalogItemPublicOffer(input: {
   purchasable: boolean;
   planId?: string;
 }): PublicPlanOffer {
-  // Same engine-derived monthly amount as cards/quotes. Unpriced rows are
-  // never purchasable and fall back to a default-markup display estimate so
-  // raw supplier cost is never exposed.
-  const monthlyPriceRial =
-    input.priced?.finalPriceRial ??
-    catalogItemFallbackDisplayMonthly(input.item);
+  // Unpriced or placeholder rows are never purchasable and must not show a fake sale price.
+  const priced = isVerifiedSellablePricing(input.priced) ? input.priced : null;
+  const monthlyPriceRial = priced ? priced.finalPriceRial : 0n;
   const usage =
     monthlyPriceRial > 0n
       ? deriveUsageEquivalentPrices(monthlyPriceRial)
@@ -760,27 +756,8 @@ function catalogItemPublicOffer(input: {
     checkedAt: input.item.lastSyncedAt.toISOString(),
     available: input.catalogFresh && input.item.available,
     instantDelivery: false,
-    purchasable: input.purchasable && input.priced != null,
+    purchasable: input.purchasable && priced != null,
   };
-}
-
-/** Display-only estimate for unpriced (never purchasable) catalog rows. */
-function catalogItemFallbackDisplayMonthly(item: ProviderCatalogItem): bigint {
-  const monthlyBase = catalogItemBasePriceRial(item);
-  if (monthlyBase != null && monthlyBase > 0n) {
-    return calculateFinalPriceRial(
-      monthlyBase,
-      DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
-    );
-  }
-  const hourlyBase = catalogItemBaseHourlyPriceRial(item);
-  if (hourlyBase != null && hourlyBase > 0n) {
-    return (
-      calculateFinalPriceRial(hourlyBase, DEFAULT_LAUNCH_MARKUP_BASIS_POINTS) *
-      720n
-    );
-  }
-  return 0n;
 }
 
 export async function listLiveCloudServerOffers() {

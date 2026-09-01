@@ -10,8 +10,8 @@
  * - app/ready-servers/quote/[id]/page.tsx — same refresh + wallet GET writes
  * - lib/storefront/assortment-service listPublicStorefrontTiers — removed
  *   ensureStorefrontSaleReady + settings upsert from public GET
- * - lib/recommendation/delivery-service getConversationDeliveryOptions — removed
- *   ensureStorefrontSaleReady from GET
+ * - lib/recommendation/delivery-service configureConversationDelivery — no
+ *   ensureStorefrontSaleReady; customers/guests cannot publish catalog
  * - app/api/account/instances/[id]/renew GET — no longer creates renewal quotes
  * - app/api/wallet* GET — read-only getWalletForUser (empty/zero if absent)
  * - getTopUpSettingsView / getPublicDefaultGatewaySummary — no seed on read

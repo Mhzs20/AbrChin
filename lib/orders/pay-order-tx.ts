@@ -347,6 +347,12 @@ export async function executePayOrderWithWalletTx(
   }
 
   const amountRial = order.amount;
+  if (amountRial <= 1n) {
+    throw new WalletError(
+      "pricing_unavailable",
+      "قیمت این سفارش معتبر نیست؛ مبلغی برداشت نشد.",
+    );
+  }
   const idempotencyKey = `order_pay_${order.id}`;
 
   const existingLedger = await tx.walletLedgerEntry.findUnique({ where: { idempotencyKey } });

@@ -425,13 +425,10 @@ test("catalog stays visible during an explicit sale closure and mutations stay c
     assert.match(payment, /providerRegionConfig\.findFirst/);
     assert.match(payment, /saleEnabled: true/);
     assert.match(payment, /lastSyncStatus === "SUCCEEDED"/);
-    assert.match(paymentIntent, /assertPublicSaleEnabled/);
-    assert.match(paymentIntent, /lastSyncStatus === "SUCCEEDED"/);
-    assert.match(paymentIntent, /order\.quoteExpiresAt/);
-    assert.match(
-      paymentIntent,
-      /recommendationQuote\.amountRial !== order\.amount/,
-    );
+    assert.match(paymentIntent, /direct_order_payment_disabled/);
+    assert.doesNotMatch(paymentIntent, /prisma\.orderPayment\.create/);
+    assert.doesNotMatch(paymentIntent, /executePayOrderWithWalletTx/);
+    assert.doesNotMatch(paymentIntent, /verifyPayment/);
     for (const expected of [
       "ARVAN_PUBLIC_SALE_ENABLED=true",
       "ARVAN_MUTATIONS_ENABLED=false",

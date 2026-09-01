@@ -321,10 +321,11 @@ test("storefront card source uses engine final price and blocks unpriced sale", 
     "lib/storefront/assortment-service.ts",
     "utf8",
   );
-  assert.match(assortment, /input\.priced\?\.finalPriceRial/);
+  assert.match(assortment, /isVerifiedSellablePricing/);
+  assert.match(assortment, /priced\.finalPriceRial/);
   assert.match(
     assortment,
-    /purchasable:\s*input\.purchasable && input\.priced != null && imageCodes\.length > 0/,
+    /purchasable:\s*input\.purchasable && priced != null && imageCodes\.length > 0/,
   );
   assert.match(assortment, /deriveUsageEquivalentPrices/);
   assert.match(assortment, /termMonths: 1/);

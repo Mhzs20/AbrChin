@@ -34,7 +34,6 @@ import type {
   AnswerSources,
   RecommendationAnswers,
 } from "@/lib/recommendation/types";
-import { ensureStorefrontSaleReady } from "@/lib/storefront/ensure-sale-plans";
 import { WalletError } from "@/lib/wallet/errors";
 import {
   generateCustomerServerName,
@@ -262,14 +261,6 @@ export async function configureConversationDelivery(input: {
   const serverName =
     normalizeCustomerServerName(input.serverName) ??
     generateCustomerServerName();
-  try {
-    await ensureStorefrontSaleReady();
-  } catch (error) {
-    console.error(
-      "[compass:ensure-sale]",
-      error instanceof Error ? error.message : "unknown",
-    );
-  }
   await requireFreshSaleCatalogs();
   const plan = (await listActivePlans(input.parchinLevel)).find(
     (candidate) => candidate.id === input.planId,

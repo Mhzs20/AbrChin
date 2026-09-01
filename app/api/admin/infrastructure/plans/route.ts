@@ -20,6 +20,8 @@ import { assertPositiveIntegerToman } from "@/lib/money";
 import { listAllPlans } from "@/lib/orders/plans";
 import {
   compatibleImageCodes,
+  PricingUnavailableError,
+  requireVerifiedSellablePricing,
   resolveCatalogItemPricing,
 } from "@/lib/pricing/plan-pricing";
 import { parseMarkupPercentToBasisPoints } from "@/lib/pricing/provider-pricing";
@@ -148,12 +150,14 @@ export async function POST(request: Request) {
         },
       }),
     ]);
-    const pricing = pricingConfig?.enabled && productPricingConfig?.enabled
-      ? resolveCatalogItemPricing(catalogItem, pricingConfig, {
-          productMarkupBasisPoints:
-            skuMarkupBasisPoints ?? productPricingConfig.markupBasisPoints,
-        })
-      : null;
+    const pricing = requireVerifiedSellablePricing(
+      pricingConfig?.enabled && productPricingConfig?.enabled
+        ? resolveCatalogItemPricing(catalogItem, pricingConfig, {
+            productMarkupBasisPoints:
+              skuMarkupBasisPoints ?? productPricingConfig.markupBasisPoints,
+          })
+        : null,
+    );
 
     const requestFingerprint = createHash("sha256")
       .update(stableJson({ body, catalogItemId: catalogItem.id, imageCode }))
@@ -216,9 +220,9 @@ export async function POST(request: Request) {
               ? null
               : Math.ceil(catalogItem.ramMb / 1024),
           storageGb: catalogItem.diskGb,
-          salePriceRial: pricing?.finalPriceRial ?? 1n,
-          renewalPriceRial: pricing?.finalPriceRial ?? 1n,
-          estimatedProviderCostRial: pricing?.providerBasePriceRial ?? 1n,
+          salePriceRial: pricing.finalPriceRial,
+          renewalPriceRial: pricing.finalPriceRial,
+          estimatedProviderCostRial: pricing.providerBasePriceRial,
           skuMarkupBasisPoints,
           deliveryEstimateMinutes: assertPositiveIntegerToman(
             body.deliveryEstimateMinutes,
@@ -273,6 +277,9 @@ export async function POST(request: Request) {
       return jsonError("شناسه یکتا با درخواست قبلی تعارض دارد.", 409, {
         code: error.code,
       });
+    }
+    if (error instanceof PricingUnavailableError) {
+      return jsonError(error.message, 409, { code: error.code });
     }
     console.error("[admin/plans/post]", error instanceof Error ? error.message : "unknown");
     return jsonError("ایجاد پلن ممکن نیست.", 500);

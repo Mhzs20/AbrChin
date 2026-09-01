@@ -7,7 +7,9 @@ import {
   jsonOk,
   rejectCrossOrigin,
 } from "@/lib/http";
+import { PricingUnavailableError } from "@/lib/pricing/plan-pricing";
 import { readRequestMeta } from "@/lib/session";
+import { WalletError } from "@/lib/wallet/errors";
 import {
   getStorefrontAssortmentAdminView,
   listStorefrontCatalogCandidates,
@@ -427,6 +429,12 @@ export async function PUT(request: Request) {
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);
+    if (error instanceof PricingUnavailableError) {
+      return jsonError(error.message, 409, { code: error.code });
+    }
+    if (error instanceof WalletError && error.code === "forbidden") {
+      return jsonError(error.message, 403, { code: error.code });
+    }
     if (error instanceof Error) {
       if (error.message === "storefront_primary_limit") {
         return jsonError("حداکثر ۲۴ پلن اصلی برای هر چینش مجاز است.", 400);

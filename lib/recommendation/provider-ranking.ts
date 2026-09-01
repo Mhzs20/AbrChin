@@ -28,7 +28,7 @@ function rejectReason(
 ): RejectedProviderOffer["reason"] | null {
   if (!offer.available) return "unavailable";
   if (offer.expiresAt.getTime() <= now.getTime()) return "expired";
-  if (!Number.isFinite(offer.salePriceRial) || offer.salePriceRial <= 0) return "invalid_price";
+  if (!Number.isFinite(offer.salePriceRial) || offer.salePriceRial <= 1) return "invalid_price";
   if (!Number.isFinite(offer.reliabilityScore) || offer.reliabilityScore < 40) {
     return "reliability_below_floor";
   }

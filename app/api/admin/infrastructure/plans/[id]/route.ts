@@ -11,6 +11,8 @@ import { jsonError, jsonOk, rejectCrossOrigin } from "@/lib/http";
 import { assertPositiveIntegerToman } from "@/lib/money";
 import {
   compatibleImageCodes,
+  PricingUnavailableError,
+  requireVerifiedSellablePricing,
   resolveCatalogItemPricing,
 } from "@/lib/pricing/plan-pricing";
 import { parseMarkupPercentToBasisPoints } from "@/lib/pricing/provider-pricing";
@@ -157,8 +159,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     ) {
       return jsonError("اعتبار قیمت برای منبع دستی الزامی است.", 400);
     }
-    if (requestedActive && !pricing) {
-      return jsonError("Catalog Item ناموجود یا فاقد قرارداد قیمت معتبر است.", 400);
+    if (requestedActive) {
+      requireVerifiedSellablePricing(pricing);
     }
     if (
       requestedActive &&
@@ -261,6 +263,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   } catch (error) {
     const adminError = adminApiError(error);
     if (adminError) return jsonError(adminError.message, adminError.status);
+    if (error instanceof PricingUnavailableError) {
+      return jsonError(error.message, 409, { code: error.code });
+    }
     console.error("[admin/plans/patch]", error instanceof Error ? error.message : "unknown");
     return jsonError("به‌روزرسانی پلن ممکن نیست.", 500);
   }

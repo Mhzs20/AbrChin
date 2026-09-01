@@ -1,16 +1,16 @@
 import {
   DeliveryMode,
   InfrastructurePlanPublicationStatus,
-  InfrastructureProvider,
-  ProviderRegionConfigSource,
   type ProviderCatalogItem,
 } from "@prisma/client";
 
-import { readyServerLocation } from "@/lib/cloud-servers/catalog";
 import { selectReadyServerImage } from "@/lib/cloud-servers/catalog";
 import { prisma } from "@/lib/db";
+import { assertAdminActorTx } from "@/lib/admin/command-receipt";
 import {
   compatibleImageCodes,
+  PricingUnavailableError,
+  requireVerifiedSellablePricing,
   resolveCatalogItemPricing,
 } from "@/lib/pricing/plan-pricing";
 import {
@@ -80,20 +80,20 @@ export async function ensurePublishedPlanForCatalogItem(
   const parchin = await prisma.parchinPricingConfig.findFirst({
     where: { level: parchinLevel, active: true },
   });
-  // Stored SKU sale price = full 1-month engine amount (markup + Parchin +
-  // tax) so every surface reading the column matches card and quote.
-  const priced =
-    providerPricing && productPricing
-      ? resolveCatalogItemPricing(item, providerPricing, {
-          productMarkupBasisPoints: productPricing.markupBasisPoints,
-          taxBasisPoints: commerce?.taxBps ?? 1000,
-          parchinLevel,
-          parchinPriceRial: parchin?.priceRial ?? 0n,
-          parchinTitle: parchin?.title,
-          parchinVersion: parchin?.version,
-          termMonths: 1,
-        })
-      : null;
+  if (!providerPricing || !productPricing) {
+    throw new PricingUnavailableError();
+  }
+  const priced = requireVerifiedSellablePricing(
+    resolveCatalogItemPricing(item, providerPricing, {
+      productMarkupBasisPoints: productPricing.markupBasisPoints,
+      taxBasisPoints: commerce?.taxBps ?? 1000,
+      parchinLevel,
+      parchinPriceRial: parchin?.priceRial ?? 0n,
+      parchinTitle: parchin?.title,
+      parchinVersion: parchin?.version,
+      termMonths: 1,
+    }),
+  );
   // One canonical name per plan, derived from region + resources. The old
   // generator numbered by render order and was called with a hardcoded
   // index: 1, so every plan was stored as «ابر ۱ تهران».
@@ -131,7 +131,7 @@ export async function ensurePublishedPlanForCatalogItem(
       existing.billingPolicyVersionId != null ||
       existing.minimumParchinLevel !== parchinLevel ||
       existing.title !== title ||
-      (priced != null && existing.salePriceRial !== priced.finalPriceRial)
+      (priced.finalPriceRial !== existing.salePriceRial)
     ) {
       return prisma.infrastructurePlan.update({
         where: { id: existing.id },
@@ -140,11 +140,9 @@ export async function ensurePublishedPlanForCatalogItem(
           billingModel: "PREPAID_TERM",
           billingPolicyVersionId: null,
           minimumParchinLevel: parchinLevel,
-          salePriceRial: priced?.finalPriceRial ?? existing.salePriceRial,
-          renewalPriceRial:
-            priced?.finalPriceRial ?? existing.renewalPriceRial,
-          estimatedProviderCostRial:
-            priced?.providerBasePriceRial ?? existing.estimatedProviderCostRial,
+          salePriceRial: priced.finalPriceRial,
+          renewalPriceRial: priced.finalPriceRial,
+          estimatedProviderCostRial: priced.providerBasePriceRial,
         },
       });
     }
@@ -166,10 +164,9 @@ export async function ensurePublishedPlanForCatalogItem(
         vcpu: item.vcpu,
         ramGb: item.ramMb == null ? null : Math.ceil(item.ramMb / 1024),
         storageGb: item.diskGb,
-        salePriceRial: priced?.finalPriceRial ?? existing.salePriceRial,
-        renewalPriceRial: priced?.finalPriceRial ?? existing.renewalPriceRial,
-        estimatedProviderCostRial:
-          priced?.providerBasePriceRial ?? existing.estimatedProviderCostRial,
+        salePriceRial: priced.finalPriceRial,
+        renewalPriceRial: priced.finalPriceRial,
+        estimatedProviderCostRial: priced.providerBasePriceRial,
         billingModel: "PREPAID_TERM",
         billingPolicyVersionId: null,
         parchinIncluded: true,
@@ -199,10 +196,9 @@ export async function ensurePublishedPlanForCatalogItem(
         sizeCode: item.sizeCode,
         imageCode,
         title,
-        salePriceRial: priced?.finalPriceRial ?? collision.salePriceRial,
-        renewalPriceRial: priced?.finalPriceRial ?? collision.renewalPriceRial,
-        estimatedProviderCostRial:
-          priced?.providerBasePriceRial ?? collision.estimatedProviderCostRial,
+        salePriceRial: priced.finalPriceRial,
+        renewalPriceRial: priced.finalPriceRial,
+        estimatedProviderCostRial: priced.providerBasePriceRial,
         billingModel: "PREPAID_TERM",
         billingPolicyVersionId: null,
         parchinIncluded: true,
@@ -227,9 +223,9 @@ export async function ensurePublishedPlanForCatalogItem(
       vcpu: item.vcpu,
       ramGb: item.ramMb == null ? null : Math.ceil(item.ramMb / 1024),
       storageGb: item.diskGb,
-      salePriceRial: priced?.finalPriceRial ?? 1n,
-      renewalPriceRial: priced?.finalPriceRial ?? 1n,
-      estimatedProviderCostRial: priced?.providerBasePriceRial ?? 1n,
+      salePriceRial: priced.finalPriceRial,
+      renewalPriceRial: priced.finalPriceRial,
+      estimatedProviderCostRial: priced.providerBasePriceRial,
       deliveryEstimateMinutes: 0,
       parchinIncluded: true,
       minimumParchinLevel: parchinLevel,
@@ -248,126 +244,27 @@ export async function ensurePublishedPlanForCatalogItem(
   });
 }
 
-async function ensureRegionsForCatalogItems(items: ProviderCatalogItem[]) {
-  const seen = new Set<string>();
-  for (const item of items) {
-    if (item.provider !== InfrastructureProvider.ARVAN) {
-      continue;
-    }
-    const key = `${item.provider}:${item.apiVersion}:${item.regionCode}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const location = readyServerLocation(item.regionCode);
-    await prisma.providerRegionConfig.upsert({
-      where: {
-        provider_apiVersion_regionCode: {
-          provider: item.provider,
-          apiVersion: item.apiVersion,
-          regionCode: item.regionCode,
-        },
-      },
-      create: {
-        provider: item.provider,
-        apiVersion: item.apiVersion,
-        regionCode: item.regionCode,
-        displayName: location.label,
-        source: ProviderRegionConfigSource.ADMIN,
-        syncEnabled: true,
-        saleEnabled: true,
-        sortOrder: location.sortOrder,
-      },
-      update: {
-        saleEnabled: true,
-        syncEnabled: true,
-        displayName: location.label,
-      },
-    });
-  }
-}
-
 /**
- * Makes curated storefront slots (and a Compass fallback catalog slice)
- * purchasable: publish mapped SKUs, open region sale, enable pricing configs.
- * Does not open provider Mutation gates.
+ * Admin-only: publish verified-price plans for curated enabled slots.
+ * Does not enable pricing configs, open regions, or publish fallback catalog.
  */
-export async function ensureStorefrontSaleReady() {
-  const [slots, pricingConfigs, productConfigs, fallbackCatalog] =
-    await Promise.all([
-      prisma.storefrontAssortmentSlot.findMany({
-        where: { enabled: true },
-        include: { catalogItem: true },
-      }),
-      prisma.providerPricingConfig.findMany(),
-      prisma.productPricingConfig.findMany(),
-      prisma.providerCatalogItem.findMany({
-        where: {
-          provider: "ARVAN",
-          source: "API_CATALOG",
-          active: true,
-          available: true,
-          status: "ACTIVE",
-          OR: [
-            { providerHourlyPriceIrr: { gt: 0n } },
-            { providerMonthlyPriceIrr: { gt: 0n } },
-          ],
-        },
-        orderBy: [{ provider: "asc" }, { vcpu: "asc" }, { ramMb: "asc" }],
-        take: 5000,
-      }),
-    ]);
-
-  for (const config of pricingConfigs) {
-    if (!config.enabled) {
-      await prisma.providerPricingConfig.update({
-        where: { id: config.id },
-        data: { enabled: true },
-      });
-    }
-  }
-  for (const config of productConfigs) {
-    if (!config.enabled) {
-      await prisma.productPricingConfig.update({
-        where: { id: config.id },
-        data: { enabled: true },
-      });
-    }
-  }
-
-  // Open every known region for sale — Founder wants listed inventory sellable.
-  await prisma.providerRegionConfig.updateMany({
-    where: {
-      provider: "ARVAN",
-      saleEnabled: false,
-    },
-    data: { saleEnabled: true },
+export async function ensureStorefrontSaleReady(input: { actorUserId: string }) {
+  await prisma.$transaction(async (tx) => {
+    await assertAdminActorTx(tx, input.actorUserId);
   });
 
-  // Repair leftover phase plans so wallet-first prepaid checkout is reachable.
-  await prisma.infrastructurePlan.updateMany({
-    where: {
-      offerSource: "API_CATALOG",
-      active: true,
-      publicationStatus: InfrastructurePlanPublicationStatus.PUBLISHED,
-      billingModel: "PAYG_WALLET",
-    },
-    data: {
-      billingModel: "PREPAID_TERM",
-      billingPolicyVersionId: null,
-    },
+  const slots = await prisma.storefrontAssortmentSlot.findMany({
+    where: { enabled: true },
+    include: { catalogItem: true },
   });
 
   const slotItems = slots
     .map((slot) => slot.catalogItem)
     .filter((item): item is ProviderCatalogItem => item != null);
-  // Publish curated slots and a Compass/storefront fallback slice so an empty
-  // or partial assortment cannot leave the site with nothing purchasable.
-  const publishPool = [...slotItems, ...fallbackCatalog];
-
-  await ensureRegionsForCatalogItems(publishPool);
 
   let published = 0;
   const seen = new Set<string>();
-  for (const item of publishPool) {
+  for (const item of slotItems) {
     if (seen.has(item.id)) continue;
     if (!item.active || !item.available || item.status !== "ACTIVE") continue;
     seen.add(item.id);

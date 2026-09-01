@@ -21,6 +21,7 @@ import {
   catalogItemBaseHourlyPriceRial,
   catalogItemBasePriceRial,
   compatibleImageCodes,
+  isVerifiedSellablePricing,
   resolveCatalogItemPricing,
   type EffectivePlanPricing,
 } from "@/lib/pricing/plan-pricing";
@@ -34,6 +35,7 @@ import {
 } from "@/lib/pricing/profit-curve-apply";
 import { loadProfitCurveConfiguration } from "@/lib/pricing/profit-curve-store";
 import { calculateFinalPriceRial } from "@/lib/pricing/provider-pricing";
+import { assertAdminActorTx } from "@/lib/admin/command-receipt";
 import {
   classifyStorefrontCapacityTier,
   DEFAULT_STOREFRONT_CAPACITY_RULES,
@@ -175,8 +177,11 @@ function toPublicOffer(input: {
   // Card price = the exact one-month final amount from the unified engine —
   // identical to the quote/checkout amount for the same plan. Display-only
   // fallback (never purchasable) uses the launch default markup so provider
-  // cost is never leaked raw.
-  const monthlyPriceRial = input.priced?.finalPriceRial ?? fallbackDisplayMonthly(input.item);
+  // cost is never leaked raw. Placeholder 0/1-rial engine amounts are not sellable.
+  const priced = isVerifiedSellablePricing(input.priced) ? input.priced : null;
+  const monthlyPriceRial = priced
+    ? priced.finalPriceRial
+    : fallbackDisplayMonthly(input.item);
   const usage =
     monthlyPriceRial > 0n
       ? deriveUsageEquivalentPrices(monthlyPriceRial)
@@ -241,25 +246,26 @@ function toPublicOffer(input: {
     instantDelivery: true,
     // A card without engine pricing can never be sold: no valid quote exists.
     purchasable:
-      input.purchasable && input.priced != null && imageCodes.length > 0,
+      input.purchasable && priced != null && imageCodes.length > 0,
   };
 }
 
 /** Display-only estimate for unpriced (never purchasable) catalog rows. */
 function fallbackDisplayMonthly(item: ProviderCatalogItem): bigint {
   const monthlyBase = catalogItemBasePriceRial(item);
-  if (monthlyBase != null && monthlyBase > 0n) {
-    return calculateFinalPriceRial(
+  if (monthlyBase != null && monthlyBase > 1n) {
+    const monthly = calculateFinalPriceRial(
       monthlyBase,
       DEFAULT_LAUNCH_MARKUP_BASIS_POINTS,
     );
+    return monthly > 1n ? monthly : 0n;
   }
   const hourlyBase = catalogItemBaseHourlyPriceRial(item);
-  if (hourlyBase != null && hourlyBase > 0n) {
-    return (
+  if (hourlyBase != null && hourlyBase > 1n) {
+    const monthly =
       calculateFinalPriceRial(hourlyBase, DEFAULT_LAUNCH_MARKUP_BASIS_POINTS) *
-      720n
-    );
+      720n;
+    return monthly > 1n ? monthly : 0n;
   }
   return 0n;
 }
@@ -813,6 +819,7 @@ export async function replaceStorefrontTierSlots(input: {
   }
 
   await prisma.$transaction(async (tx) => {
+    await assertAdminActorTx(tx, input.actorUserId);
     await tx.storefrontAssortmentSlot.deleteMany({
       where: { tier: input.tier },
     });
@@ -842,13 +849,8 @@ export async function replaceStorefrontTierSlots(input: {
       },
     });
   });
-  // Admin write path may repair sale readiness; never from customer GET.
-  await ensureStorefrontSaleReady().catch((error) => {
-    console.error(
-      "[storefront:ensure-sale]",
-      error instanceof Error ? error.message : "unknown",
-    );
-  });
+  // Admin write path may publish verified-price slot SKUs; never from customer GET.
+  await ensureStorefrontSaleReady({ actorUserId: input.actorUserId });
 }
 
 export async function getStorefrontAssortmentAdminView(): Promise<
