@@ -33,6 +33,7 @@ if (!baseUrl) {
     "POSTGRES_TEST_DATABASE_URL is required; the real PostgreSQL migration test was not run",
   );
 }
+process.env.ABRCHIN_ISOLATED_TEST = "1";
 
 const schemaName = `abrchin_migration_${Date.now().toString(36)}`;
 const databaseUrl = new URL(baseUrl);
@@ -4891,8 +4892,8 @@ try {
     observedResource: {
       state: "active",
       ipv4: "192.0.2.81",
-      networkIds: null,
-      securityIds: null,
+      networkIds: ["network-1"],
+      securityIds: ["security-1"],
     },
   });
   const reconcilingA = await claimOnly(

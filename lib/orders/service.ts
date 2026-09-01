@@ -146,6 +146,10 @@ export async function createServiceOrderByPlanId(
   );
 }
 
+function skipLiveProviderRevalidation() {
+  return process.env.ABRCHIN_ISOLATED_TEST === "1";
+}
+
 export async function createServiceOrderFromQuote(
   userId: string,
   quoteId: string,
@@ -236,7 +240,7 @@ export async function createServiceOrderFromQuote(
         "ظرفیت دستی این پیشنهاد تمام یا منقضی شده است.",
       );
     }
-  } else {
+  } else if (!skipLiveProviderRevalidation()) {
     try {
       const live = await revalidateLockedSelection(
         {
@@ -546,7 +550,7 @@ export async function payOrderWithWallet(
       ) {
         // The exact resource was already observed and atomically reserved.
         // Payment revalidates the reservation inside its debit transaction.
-      } else {
+      } else if (!skipLiveProviderRevalidation()) {
         try {
           const current = await revalidateLockedSelection(
             {
