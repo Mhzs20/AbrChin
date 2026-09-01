@@ -1,0 +1,804 @@
+{
+  "work_package": "WP5",
+  "product": "MessageGo",
+  "product_version": "1.0.0",
+  "public_api": "/v1",
+  "verdict": "READY_FOR_OWNER_TEST",
+  "owner_acceptance": false,
+  "production_authorized": false,
+  "provider_traffic_authorized": false,
+  "abrchin_sha": "eb159071bcf8268456c139d97dbd81dc17d5ace0",
+  "messagego_sha": "026ab2f47f1b327de33938d55bf7ddcb7886b6ee",
+  "started_at": "2026-09-01T22:09:07.286Z",
+  "ended_at": "2026-09-01T22:11:35.055Z",
+  "environment_topology": {
+    "postgres": {
+      "implementation": "postgresql",
+      "version": "postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)",
+      "host": "127.0.0.1:5432",
+      "database": "abrchin",
+      "listening": true
+    },
+    "redis": {
+      "implementation": "redis-server",
+      "version": "Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=e53ff17674aa6190",
+      "address": "127.0.0.1:6379",
+      "listening": true
+    },
+    "nats": {
+      "implementation": "nats-server",
+      "version": "nats-server: v2.10.7",
+      "url": "nats://127.0.0.1:4222",
+      "jetstream": true,
+      "listening": true
+    },
+    "node": "v22.14.0",
+    "go": "go version go1.22.2 linux/amd64",
+    "abrchin_package_version": "1.0.0",
+    "messagego_product_version": "1.0.0",
+    "docker_daemon": "down",
+    "migrations": [
+      "20260725120000_init_auth",
+      "20260725180000_wallet_ledger_payments",
+      "20260725190000_payment_gateways",
+      "20260726000000_wallet_topup_suggestions",
+      "20260726120000_infrastructure",
+      "20260726140000_hardening_funding_ledger",
+      "20260726180000_production_provisioning",
+      "20260728233000_quick_cloud_checkout",
+      "20260729100000_recommendation_quotes",
+      "20260729110000_secure_instance_credentials",
+      "20260729120000_service_subscriptions",
+      "20260729200000_parspack_catalog_pricing",
+      "20260730160000_multi_provider_routing",
+      "20260730190000_provider_review_hardening",
+      "20260730223000_provider_review_recovery_v2",
+      "20260730234500_terminal_order_recovery",
+      "20260731003000_multi_order_terminal_recovery_v4",
+      "20260731043000_terminal_and_worker_recovery_v5",
+      "20260731120000_terminal_and_dispatch_recovery_v6",
+      "20260731200000_health_dispatch_starvation_recovery_v7",
+      "20260801120000_admin_catalog_resilience",
+      "20260801210000_preprovisioned_inventory_safety",
+      "20260801230000_arvan_sale_inventory_credentials",
+      "20260801235900_final_launch_routing",
+      "20260803100000_service_connection_checks",
+      "20260803113000_sku_markup_and_manual_publication",
+      "20260803130000_order_gateway_payments",
+      "20260803150000_wallet_payg_billing_core",
+      "20260803160000_wallet_payment_recovery",
+      "20260803170000_usage_billing_worker",
+      "20260803180000_wallet_first_activation",
+      "20260803190000_provider_billing_contract_gate",
+      "20260803200000_billing_runtime_safety",
+      "20260804110000_catalog_sync_pricing_fail_closed",
+      "20260804140000_storefront_chinish_assortment",
+      "20260804150000_storefront_auto_suggest",
+      "20260804160000_storefront_capacity_rules",
+      "20260804170000_launch_markup_and_catalog_defaults",
+      "20260804180000_launch_parchin_lifecycle",
+      "20260804190000_launch_term_coupons_lifecycle",
+      "20260804200000_compass_service_prices",
+      "20260806120000_storefront_price_display_flags",
+      "20260806130000_storefront_price_bands_style",
+      "20260806140000_provider_region_discovery",
+      "20260806150000_user_account_status",
+      "20260806200000_commercial_pricing_v3",
+      "20260806210000_storefront_dominance_parchin_v3",
+      "20260807010000_profit_curve_operational_accounting",
+      "20260807020000_operating_expense_draft_idempotency",
+      "20260807130000_rate_limit_bucket_and_payg_repair",
+      "20260807140000_support_requests",
+      "20260807150000_customer_identity_email_verification",
+      "20260808230000_parchin_operational_contract_v2",
+      "20260810220000_parchin_operations_v3",
+      "20260822090000_drop_parspack_provider",
+      "20260826100000_messagego_v2_wallet_authority",
+      "20260827120000_messagego_v2_s2s_replay",
+      "20260901120000_messagego_customer_pricing",
+      "20260901230000_parspack_history_archive"
+    ],
+    "adapters": {
+      "payment_gateway": "MOCK",
+      "sms": "console",
+      "smtp": "console",
+      "arvan_mutations": false,
+      "provider_traffic": false
+    }
+  },
+  "totals": {
+    "pass": 1149,
+    "fail": 0,
+    "skip": 0,
+    "tests": 1149
+  },
+  "gates": [
+    {
+      "id": "wp5-golden-path",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:wp5-golden-path",
+      "covers": [
+        "prepaid_1_month",
+        "prepaid_3_months",
+        "prepaid_6_months",
+        "prepaid_12_months",
+        "admin_publish_priced_arvan_plan",
+        "customer_quote",
+        "quote_price_and_expiry",
+        "wallet_topup_mock_gateway",
+        "idempotent_gateway_callback",
+        "atomic_wallet_debit",
+        "admin_approval_1",
+        "manual_fulfillment",
+        "admin_approval_2",
+        "secure_credential_delivery",
+        "financial_audit_reconcile",
+        "insufficient_wallet",
+        "expired_quote",
+        "missing_price",
+        "one_rial_placeholder",
+        "zero_placeholder",
+        "unpublished_plan",
+        "customer_publication_attempt",
+        "direct_order_payment",
+        "duplicate_gateway_callback",
+        "duplicate_order_submission",
+        "concurrent_wallet_debit",
+        "unknown_provider_usage",
+        "provider_timeout"
+      ],
+      "startedAt": "2026-09-01T22:09:07.366Z",
+      "endedAt": "2026-09-01T22:09:11.961Z",
+      "elapsedMs": 4596,
+      "exitCode": 0,
+      "counts": {
+        "pass": 5,
+        "fail": 0,
+        "skip": 0,
+        "tests": 5
+      },
+      "status": "pass"
+    },
+    {
+      "id": "wp5-runtime",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:wp5-runtime",
+      "covers": [
+        "worker_restart",
+        "abrchin_restart",
+        "postgres_interruption"
+      ],
+      "startedAt": "2026-09-01T22:09:11.962Z",
+      "endedAt": "2026-09-01T22:09:17.192Z",
+      "elapsedMs": 5230,
+      "exitCode": 0,
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0,
+        "tests": 3
+      },
+      "status": "pass"
+    },
+    {
+      "id": "wp5-settlement-history",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:wp5-settlement-history",
+      "covers": [
+        "wallet_settlement_history_upgrade"
+      ],
+      "startedAt": "2026-09-01T22:09:17.192Z",
+      "endedAt": "2026-09-01T22:09:20.486Z",
+      "elapsedMs": 3294,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "fresh-migration",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:fresh-migration",
+      "covers": [
+        "fresh_migration"
+      ],
+      "startedAt": "2026-09-01T22:09:20.486Z",
+      "endedAt": "2026-09-01T22:09:22.638Z",
+      "elapsedMs": 2152,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "migration-upgrade",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:migration-upgrade",
+      "covers": [
+        "upgrade_prior_schema"
+      ],
+      "startedAt": "2026-09-01T22:09:22.638Z",
+      "endedAt": "2026-09-01T22:09:47.519Z",
+      "elapsedMs": 24881,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "parspack-history",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:parspack-history",
+      "covers": [
+        "parspack_history_upgrade"
+      ],
+      "startedAt": "2026-09-01T22:09:47.519Z",
+      "endedAt": "2026-09-01T22:09:52.942Z",
+      "elapsedMs": 5423,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "ops-wp3-backup",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:ops-wp3",
+      "covers": [
+        "backup_restore"
+      ],
+      "startedAt": "2026-09-01T22:09:52.942Z",
+      "endedAt": "2026-09-01T22:09:55.503Z",
+      "elapsedMs": 2561,
+      "exitCode": 0,
+      "counts": {
+        "pass": 5,
+        "fail": 0,
+        "skip": 0,
+        "tests": 5
+      },
+      "status": "pass"
+    },
+    {
+      "id": "sellable-pricing-policy",
+      "repo": "abrchin",
+      "required": true,
+      "command": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/sellable-pricing-policy-test.mts",
+      "covers": [
+        "missing_price",
+        "one_rial_placeholder",
+        "zero_placeholder"
+      ],
+      "startedAt": "2026-09-01T22:09:55.503Z",
+      "endedAt": "2026-09-01T22:09:55.683Z",
+      "elapsedMs": 180,
+      "exitCode": 0,
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0,
+        "tests": 3
+      },
+      "status": "pass"
+    },
+    {
+      "id": "failure-recovery-policy",
+      "repo": "abrchin",
+      "required": true,
+      "command": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/failure-recovery-policy-test.mts",
+      "covers": [
+        "provider_timeout"
+      ],
+      "startedAt": "2026-09-01T22:09:55.683Z",
+      "endedAt": "2026-09-01T22:09:55.862Z",
+      "elapsedMs": 179,
+      "exitCode": 0,
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0,
+        "tests": 3
+      },
+      "status": "pass"
+    },
+    {
+      "id": "wp5-phase3-postgres",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:wp5-phase3-postgres",
+      "covers": [
+        "atomic_wallet_debit",
+        "concurrent_wallet_debit"
+      ],
+      "startedAt": "2026-09-01T22:09:55.862Z",
+      "endedAt": "2026-09-01T22:09:59.758Z",
+      "elapsedMs": 3896,
+      "exitCode": 0,
+      "counts": {
+        "pass": 13,
+        "fail": 0,
+        "skip": 0,
+        "tests": 13
+      },
+      "status": "pass"
+    },
+    {
+      "id": "wp5-phase5-postgres",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:wp5-phase5-postgres",
+      "covers": [
+        "direct_order_payment",
+        "customer_publication_attempt",
+        "secure_credential_delivery"
+      ],
+      "startedAt": "2026-09-01T22:09:59.758Z",
+      "endedAt": "2026-09-01T22:10:04.321Z",
+      "elapsedMs": 4564,
+      "exitCode": 0,
+      "counts": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0,
+        "tests": 3
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-settlement-unit",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:messagego-v2-settlement",
+      "covers": [
+        "unknown_provider_usage"
+      ],
+      "startedAt": "2026-09-01T22:10:04.322Z",
+      "endedAt": "2026-09-01T22:10:04.666Z",
+      "elapsedMs": 344,
+      "exitCode": 0,
+      "counts": {
+        "pass": 7,
+        "fail": 0,
+        "skip": 0,
+        "tests": 7
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-settlement-postgres",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:wp5-settlement-postgres",
+      "covers": [
+        "duplicate_s2s_nonce",
+        "invalid_hmac"
+      ],
+      "startedAt": "2026-09-01T22:10:04.666Z",
+      "endedAt": "2026-09-01T22:10:07.915Z",
+      "elapsedMs": 3249,
+      "exitCode": 0,
+      "counts": {
+        "pass": 7,
+        "fail": 0,
+        "skip": 0,
+        "tests": 7
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-integration-unit",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:messagego-v2-integration",
+      "covers": [
+        "settlement_timeout"
+      ],
+      "startedAt": "2026-09-01T22:10:07.915Z",
+      "endedAt": "2026-09-01T22:10:08.199Z",
+      "elapsedMs": 284,
+      "exitCode": 0,
+      "counts": {
+        "pass": 6,
+        "fail": 0,
+        "skip": 0,
+        "tests": 6
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-integration-postgres",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:wp5-integration-postgres",
+      "covers": [
+        "dispatch_succeeds_settlement_lost"
+      ],
+      "startedAt": "2026-09-01T22:10:08.199Z",
+      "endedAt": "2026-09-01T22:10:11.370Z",
+      "elapsedMs": 3171,
+      "exitCode": 0,
+      "counts": {
+        "pass": 2,
+        "fail": 0,
+        "skip": 0,
+        "tests": 2
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-preprod-hmac",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:messagego-v2-preprod",
+      "covers": [
+        "invalid_hmac",
+        "stale_s2s_timestamp",
+        "duplicate_s2s_nonce"
+      ],
+      "startedAt": "2026-09-01T22:10:11.370Z",
+      "endedAt": "2026-09-01T22:10:11.711Z",
+      "elapsedMs": 341,
+      "exitCode": 0,
+      "counts": {
+        "pass": 7,
+        "fail": 0,
+        "skip": 0,
+        "tests": 7
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-preprod-postgres",
+      "repo": "abrchin",
+      "required": true,
+      "command": "npm run test:messagego-v2-preprod-postgres",
+      "covers": [
+        "invalid_hmac",
+        "duplicate_s2s_nonce"
+      ],
+      "startedAt": "2026-09-01T22:10:11.711Z",
+      "endedAt": "2026-09-01T22:10:14.850Z",
+      "elapsedMs": 3139,
+      "exitCode": 0,
+      "counts": {
+        "pass": 4,
+        "fail": 0,
+        "skip": 0,
+        "tests": 4
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-fmt-check",
+      "repo": "messagego",
+      "required": true,
+      "command": "make fmt-check",
+      "covers": [],
+      "startedAt": "2026-09-01T22:10:14.850Z",
+      "endedAt": "2026-09-01T22:10:14.948Z",
+      "elapsedMs": 98,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-vet",
+      "repo": "messagego",
+      "required": true,
+      "command": "make vet",
+      "covers": [],
+      "startedAt": "2026-09-01T22:10:14.948Z",
+      "endedAt": "2026-09-01T22:10:15.755Z",
+      "elapsedMs": 807,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-unit",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 ./...",
+      "covers": [
+        "invalid_hmac",
+        "duplicate_s2s_nonce",
+        "stale_s2s_timestamp",
+        "readonly_token_ai_execute",
+        "idempotent_ai_retry",
+        "reserve_succeeds_dispatch_fails",
+        "dispatch_succeeds_settlement_lost",
+        "messagego_restart"
+      ],
+      "startedAt": "2026-09-01T22:10:15.755Z",
+      "endedAt": "2026-09-01T22:10:34.349Z",
+      "elapsedMs": 18594,
+      "exitCode": 0,
+      "counts": {
+        "pass": 518,
+        "fail": 0,
+        "skip": 0,
+        "tests": 518
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-race",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -race ./...",
+      "covers": [
+        "idempotent_ai_retry"
+      ],
+      "startedAt": "2026-09-01T22:10:34.350Z",
+      "endedAt": "2026-09-01T22:11:08.922Z",
+      "elapsedMs": 34573,
+      "exitCode": 0,
+      "counts": {
+        "pass": 518,
+        "fail": 0,
+        "skip": 0,
+        "tests": 518
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-wp09-cross",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -tags=wp09cross -timeout 180s ./internal/v2integration",
+      "covers": [
+        "settlement_timeout",
+        "dispatch_succeeds_settlement_lost"
+      ],
+      "startedAt": "2026-09-01T22:11:08.923Z",
+      "endedAt": "2026-09-01T22:11:29.728Z",
+      "elapsedMs": 20805,
+      "exitCode": 0,
+      "counts": {
+        "pass": 17,
+        "fail": 0,
+        "skip": 0,
+        "tests": 17
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-redis-up",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -tags=integration -timeout 60s -run ^TestRedisLimiterIsAtomicAndProductIsolated$ ./internal/adapters/redislimit",
+      "covers": [],
+      "startedAt": "2026-09-01T22:11:29.728Z",
+      "endedAt": "2026-09-01T22:11:29.993Z",
+      "elapsedMs": 265,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-redis-down",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -tags=integration -timeout 30s -run ^TestRedisUnavailableFailsClosed$ ./internal/adapters/redislimit",
+      "covers": [
+        "redis_failure"
+      ],
+      "startedAt": "2026-09-01T22:11:29.993Z",
+      "endedAt": "2026-09-01T22:11:31.934Z",
+      "elapsedMs": 1942,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-nats-up",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -tags=integration -timeout 60s -run ^TestJetStreamDeduplicatesStableEventID$ ./internal/adapters/natsjs",
+      "covers": [],
+      "startedAt": "2026-09-01T22:11:31.935Z",
+      "endedAt": "2026-09-01T22:11:32.164Z",
+      "elapsedMs": 229,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-nats-down",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -tags=integration -timeout 30s -run ^TestNATSUnavailableFailsClosed$ ./internal/adapters/natsjs",
+      "covers": [
+        "nats_failure"
+      ],
+      "startedAt": "2026-09-01T22:11:32.164Z",
+      "endedAt": "2026-09-01T22:11:32.374Z",
+      "elapsedMs": 210,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-hmac-matrix",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -timeout 60s -run ^(TestHMACFailureMatrix|TestDuplicateNonceRejected)$ ./internal/v2s2s",
+      "covers": [
+        "invalid_hmac",
+        "stale_s2s_timestamp",
+        "duplicate_s2s_nonce"
+      ],
+      "startedAt": "2026-09-01T22:11:32.374Z",
+      "endedAt": "2026-09-01T22:11:32.552Z",
+      "elapsedMs": 178,
+      "exitCode": 0,
+      "counts": {
+        "pass": 16,
+        "fail": 0,
+        "skip": 0,
+        "tests": 16
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-dispatch-fail",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -timeout 60s -run ^TestReserveSucceedsDispatchFailsKeepsHold$ ./internal/v2integration",
+      "covers": [
+        "reserve_succeeds_dispatch_fails",
+        "provider_timeout"
+      ],
+      "startedAt": "2026-09-01T22:11:32.552Z",
+      "endedAt": "2026-09-01T22:11:32.751Z",
+      "elapsedMs": 199,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    },
+    {
+      "id": "messagego-api-restart",
+      "repo": "messagego",
+      "required": true,
+      "command": "go test -json -count=1 -timeout 180s -run ^TestAPIProcessRestartKeepsLive$ ./internal/v2runtime",
+      "covers": [
+        "messagego_restart"
+      ],
+      "startedAt": "2026-09-01T22:11:32.751Z",
+      "endedAt": "2026-09-01T22:11:35.054Z",
+      "elapsedMs": 2303,
+      "exitCode": 0,
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "tests": 1
+      },
+      "status": "pass"
+    }
+  ],
+  "required_scenarios": {
+    "prepaid_1_month": "pass",
+    "prepaid_3_months": "pass",
+    "prepaid_6_months": "pass",
+    "prepaid_12_months": "pass",
+    "admin_publish_priced_arvan_plan": "pass",
+    "customer_quote": "pass",
+    "quote_price_and_expiry": "pass",
+    "wallet_topup_mock_gateway": "pass",
+    "idempotent_gateway_callback": "pass",
+    "atomic_wallet_debit": "pass",
+    "admin_approval_1": "pass",
+    "manual_fulfillment": "pass",
+    "admin_approval_2": "pass",
+    "secure_credential_delivery": "pass",
+    "financial_audit_reconcile": "pass",
+    "insufficient_wallet": "pass",
+    "expired_quote": "pass",
+    "missing_price": "pass",
+    "one_rial_placeholder": "pass",
+    "zero_placeholder": "pass",
+    "unpublished_plan": "pass",
+    "customer_publication_attempt": "pass",
+    "direct_order_payment": "pass",
+    "duplicate_gateway_callback": "pass",
+    "duplicate_order_submission": "pass",
+    "concurrent_wallet_debit": "pass",
+    "worker_restart": "pass",
+    "abrchin_restart": "pass",
+    "messagego_restart": "pass",
+    "redis_failure": "pass",
+    "nats_failure": "pass",
+    "postgres_interruption": "pass",
+    "provider_timeout": "pass",
+    "unknown_provider_usage": "pass",
+    "duplicate_s2s_nonce": "pass",
+    "stale_s2s_timestamp": "pass",
+    "invalid_hmac": "pass",
+    "settlement_timeout": "pass",
+    "reserve_succeeds_dispatch_fails": "pass",
+    "dispatch_succeeds_settlement_lost": "pass",
+    "idempotent_ai_retry": "pass",
+    "readonly_token_ai_execute": "pass",
+    "backup_restore": "pass",
+    "fresh_migration": "pass",
+    "upgrade_prior_schema": "pass",
+    "parspack_history_upgrade": "pass",
+    "wallet_settlement_history_upgrade": "pass"
+  },
+  "restore_verification": {
+    "gate": "ops-wp3-backup",
+    "status": "pass",
+    "production_restore": false,
+    "isolated_restore_required": true,
+    "skipped": false
+  },
+  "financial_invariants": {
+    "integer_rial_only": true,
+    "floating_point_money": false,
+    "wallet_credits_minus_debits_equals_balance": "asserted_in_wp5-golden-path",
+    "topup_ledger_once_per_intent": "asserted_in_wp5-golden-path",
+    "order_debit_once": "asserted_in_wp5-golden-path",
+    "settlement_history_net_equals_wallet": "asserted_in_wp5-settlement-history",
+    "secrets_in_receipts": false
+  },
+  "required_skip_means": "NO-GO"
+}
