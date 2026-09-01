@@ -40,6 +40,7 @@ for (const target of targets) {
     outfile,
     alias: {
       "@": root,
+      "server-only": resolve(root, "scripts/server-only-empty.mjs"),
     },
     packages: "external",
     sourcemap: true,

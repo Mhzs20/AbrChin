@@ -36,6 +36,8 @@ test("worker bundle exists after build", () => {
   const source = readFileSync(workerBundle, "utf8");
   assert.equal(source.includes("test-resolve-hook"), false);
   assert.equal(source.includes("@/"), false);
+  assert.equal(source.includes('from "server-only"'), false);
+  assert.equal(source.includes("node_modules/server-only"), false);
 });
 
 test("worker entrypoint references compiled bundle", () => {
@@ -94,6 +96,7 @@ test("production accounting backfill uses compiled runtime artifact", () => {
   assert.doesNotMatch(dockerfile, /COPY[\s\S]*scripts\/test-resolve-hook/);
   assert.match(buildScript, /dist\/accounting\/accounting-backfill\.js/);
   assert.match(buildScript, /scripts\/accounting-backfill\.mts/);
+  assert.match(buildScript, /server-only-empty\.mjs/);
 });
 
 test("compiled catalog sync fails safely before network access when unconfigured", async () => {
