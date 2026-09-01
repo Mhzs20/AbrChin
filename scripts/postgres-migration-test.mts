@@ -6213,8 +6213,10 @@ try {
   );
   const previousSmsProvider = process.env.SMS_PROVIDER;
   const previousNodeEnv = process.env.NODE_ENV;
+  const previousAdminMobiles = process.env.ADMIN_MOBILES;
   process.env.SMS_PROVIDER = "console";
   process.env.NODE_ENV = "development";
+  process.env.ADMIN_MOBILES = "09120000001";
   try {
     for (let occurrence = 0; occurrence < 2; occurrence += 1) {
       await settleProviderCatalogSyncTasks(
@@ -6282,6 +6284,8 @@ try {
     else process.env.SMS_PROVIDER = previousSmsProvider;
     if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = previousNodeEnv;
+    if (previousAdminMobiles === undefined) delete process.env.ADMIN_MOBILES;
+    else process.env.ADMIN_MOBILES = previousAdminMobiles;
   }
 
   const inventoryNow = new Date();

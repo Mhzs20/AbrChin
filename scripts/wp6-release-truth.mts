@@ -21,7 +21,7 @@ const RECEIPT_MD = join(EVIDENCE_DIR, "receipt.md");
 const LAUNCH_MD = join(ROOT, "docs/launch/wp6-release-truth.md");
 const POINTER_MD = join(MESSAGEGO, "docs/program/wp6-release-truth-pointer.md");
 
-process.env.PATH = `${PG_BIN}:/usr/sbin:/home/ubuntu/go/bin:${process.env.PATH ?? ""}`;
+process.env.PATH = `${PG_BIN}:/usr/sbin:/usr/bin:/home/ubuntu/go/bin:${process.env.PATH ?? ""}`;
 process.env.CRX_TEST_REDIS_ADDRESS =
   process.env.CRX_TEST_REDIS_ADDRESS || "127.0.0.1:6379";
 process.env.CRX_TEST_NATS_URL =
@@ -32,6 +32,9 @@ process.env.POSTGRES_TEST_DATABASE_URL =
 process.env.CRX_TEST_DATABASE_URL =
   process.env.CRX_TEST_DATABASE_URL ||
   "postgresql://abrchin:abrchin@127.0.0.1:5432/messagego_wp6";
+const MESSAGEGO_M6_DATABASE_URL =
+  process.env.CRX_M6_TEST_DATABASE_URL ||
+  "postgresql://abrchin:abrchin@127.0.0.1:5432/messagego_m6_wp6";
 process.env.CRX_PROVIDER_TRAFFIC_ENABLED = "false";
 process.env.ARVAN_ENABLED = process.env.ARVAN_ENABLED || "false";
 process.env.ARVAN_MUTATIONS_ENABLED = "false";
@@ -92,6 +95,45 @@ function capture(command: string, args: string[], cwd = ROOT) {
     env: process.env,
   });
   return (result.stdout || result.stderr || "").trim();
+}
+
+function psql(database: string, sql: string) {
+  const result = spawnSync(
+    join(PG_BIN, "psql"),
+    [
+      "-h",
+      "127.0.0.1",
+      "-U",
+      "abrchin",
+      "-d",
+      database,
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      sql,
+    ],
+    {
+      encoding: "utf8",
+      env: { ...process.env, PGPASSWORD: "abrchin" },
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      `psql ${database} failed: ${sanitize(result.stderr || result.stdout || "unknown")}`,
+    );
+  }
+}
+
+function recreateOwnedDatabase(name: string) {
+  if (!/^[a-z0-9_]+$/.test(name)) {
+    throw new Error(`refusing to recreate unexpected database name ${name}`);
+  }
+  psql(
+    "postgres",
+    `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${name}' AND pid <> pg_backend_pid()`,
+  );
+  psql("postgres", `DROP DATABASE IF EXISTS ${name}`);
+  psql("postgres", `CREATE DATABASE ${name} OWNER abrchin`);
 }
 
 function waitPort(host: string, port: number, timeoutMs: number) {
@@ -301,7 +343,7 @@ async function collectTopology() {
       implementation: "postgresql",
       version: capture(join(PG_BIN, "postgres"), ["-V"]) || capture("psql", ["--version"]),
       host: "127.0.0.1:5432",
-      databases: ["abrchin", "messagego_wp6"],
+      databases: ["abrchin", "messagego_wp6", "messagego_m6_wp6"],
       listening: await waitPort("127.0.0.1", 5432, 2_000),
     },
     redis: {
@@ -318,7 +360,7 @@ async function collectTopology() {
       listening: await waitPort("127.0.0.1", 4222, 2_000),
     },
     node: capture("node", ["-v"]),
-    go: capture("go", ["version"]),
+    go: capture("go", ["version"], MESSAGEGO),
     docker_daemon: dockerInfo.status === 0 ? "up" : "down",
     docker_compose: composeVersion,
     abrchin_package_version: "1.0.0",
@@ -425,7 +467,7 @@ function gates(abrchinComposeEnv: string): GateSpec[] {
       timeoutMs: 25 * 60_000,
     },
     abrchinNpm("abrchin-worker-runtime", "test:worker-runtime", 5 * 60_000),
-    abrchinNpm("abrchin-panel-role-e2e", "test:panel-role-e2e", 10 * 60_000),
+    abrchinNpm("abrchin-panel-role-e2e", "test:panel-role-e2e-isolated", 20 * 60_000),
     abrchinNpm("abrchin-smoke", "test:smoke", 5 * 60_000),
     {
       id: "abrchin-git-diff-check",
@@ -447,7 +489,7 @@ function gates(abrchinComposeEnv: string): GateSpec[] {
     abrchinNpm("abrchin-phase6-postgres", "test:phase6-postgres", 15 * 60_000),
     abrchinNpm("abrchin-phase7-postgres", "test:phase7-postgres", 15 * 60_000),
     abrchinNpm("abrchin-financial-postgres", "test:financial-postgres", 15 * 60_000, "command"),
-    abrchinNpm("abrchin-accounting-postgres", "test:accounting-postgres", 15 * 60_000),
+    abrchinNpm("abrchin-accounting-postgres", "test:accounting-isolated", 15 * 60_000),
     abrchinNpm("abrchin-messagego-integration", "test:messagego-v2-release-readiness", 40 * 60_000),
     {
       id: "abrchin-backup-restore",
@@ -507,12 +549,20 @@ function gates(abrchinComposeEnv: string): GateSpec[] {
     goTest("messagego-race", ["-race", "./..."], 40 * 60_000),
     goTest(
       "messagego-postgres-integration",
-      ["-tags=integration", "-timeout", "10m", "./internal/adapters/postgres", "./internal/m6bootstrap"],
+      ["-tags=integration", "-timeout", "10m", "./internal/adapters/postgres"],
       15 * 60_000,
       {
         CRX_TEST_DATABASE_URL:
           process.env.CRX_TEST_DATABASE_URL ||
           "postgresql://abrchin:abrchin@127.0.0.1:5432/messagego_wp6",
+      },
+    ),
+    goTest(
+      "messagego-m6-postgres-integration",
+      ["-tags=integration", "-timeout", "10m", "./internal/m6bootstrap"],
+      10 * 60_000,
+      {
+        CRX_TEST_DATABASE_URL: MESSAGEGO_M6_DATABASE_URL,
       },
     ),
     goTest(
@@ -646,7 +696,10 @@ function gates(abrchinComposeEnv: string): GateSpec[] {
       command: "govulncheck",
       args: ["./..."],
       cwd: MESSAGEGO,
-      timeoutMs: 10 * 60_000,
+      env: {
+        GOTOOLCHAIN: "go1.25.13",
+      },
+      timeoutMs: 15 * 60_000,
     },
     {
       id: "messagego-compose-validate",
@@ -857,6 +910,8 @@ async function main() {
   if (!existsSync(join(PG_BIN, "initdb"))) {
     throw new Error("initdb missing; backup/restore would skip and WP6 is NO-GO");
   }
+  recreateOwnedDatabase("messagego_wp6");
+  recreateOwnedDatabase("messagego_m6_wp6");
   const composeEnv = abrchinComposeEnvFile();
   const results: GateResult[] = [];
   for (const spec of gates(composeEnv)) {

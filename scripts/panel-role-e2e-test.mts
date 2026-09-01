@@ -19,9 +19,10 @@ const baseUrl = `http://127.0.0.1:${port}`;
 
 function assertSafeTestDatabase(url: string) {
   const parsed = new URL(url);
-  const databaseName = parsed.pathname.replace(/^\//, "");
+  const databaseName = parsed.pathname.replace(/^\//, "").split("?")[0];
   const localHost = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
-  if (!localHost || !/test/i.test(databaseName)) {
+  const isolated = process.env.ABRCHIN_ISOLATED_TEST === "1";
+  if (!localHost || (!isolated && !/test/i.test(databaseName))) {
     throw new Error(
       "Panel E2E refuses to mutate a non-local or non-test PostgreSQL database.",
     );

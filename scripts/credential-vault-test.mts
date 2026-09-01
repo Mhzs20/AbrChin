@@ -49,11 +49,16 @@ test("credential reveal is one-time and clears encrypted material", async () => 
   assert.doesNotMatch(customerRoute, /ciphertext|authTag|iv:/);
 });
 
-test("production compose requires the credential encryption key", async () => {
+test("production compose requires the credential encryption key as a file secret", async () => {
   const compose = await readFile("compose.production.yaml", "utf8");
   assert.match(
     compose,
-    /CREDENTIAL_ENCRYPTION_KEY: \$\{CREDENTIAL_ENCRYPTION_KEY:\?CREDENTIAL_ENCRYPTION_KEY must be set\}/,
+    /CREDENTIAL_ENCRYPTION_KEY_FILE: \/run\/secrets\/abrchin-service\/credential-encryption-key/,
+  );
+  assert.match(compose, /ABRCHIN_REQUIRE_FILE_SECRETS: \$\{ABRCHIN_REQUIRE_FILE_SECRETS:-true\}/);
+  assert.doesNotMatch(
+    compose,
+    /CREDENTIAL_ENCRYPTION_KEY: \$\{CREDENTIAL_ENCRYPTION_KEY/,
   );
 });
 
