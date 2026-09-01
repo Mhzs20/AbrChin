@@ -19,7 +19,7 @@ import {
   samePlanConfigurationSnapshot,
 } from "@/lib/pricing/plan-pricing";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
-import { assertPublicSaleEnabled } from "@/lib/infrastructure/public-sale-policy";
+import { assertPublicSaleEnabled, customerErrorForProviderFailure } from "@/lib/infrastructure/public-sale-policy";
 import { InfrastructureError } from "@/lib/infrastructure/errors";
 import {
   resolveProviderSelectionDefaults,
@@ -89,6 +89,10 @@ async function lockAndRevalidateLegacyOrderAvailability(plan: {
             providerApiVersion: plan.providerApiVersion,
             productKind: plan.productKind,
             region: plan.regionCode,
+          }).catch((error) => {
+            const saleBlocked = customerErrorForProviderFailure(error);
+            if (saleBlocked) throw saleBlocked;
+            throw error;
           })
       : null;
   try {
@@ -113,6 +117,8 @@ async function lockAndRevalidateLegacyOrderAvailability(plan: {
     }
   } catch (error) {
     if (error instanceof WalletError) throw error;
+    const saleBlocked = customerErrorForProviderFailure(error);
+    if (saleBlocked) throw saleBlocked;
     if (error instanceof InfrastructureError) {
       throw new WalletError(
         "quote_unavailable",
@@ -265,6 +271,8 @@ export async function createServiceOrderFromQuote(
       void live.monthlyPriceIrr;
     } catch (error) {
       if (error instanceof WalletError) throw error;
+      const saleBlocked = customerErrorForProviderFailure(error);
+      if (saleBlocked) throw saleBlocked;
       if (error instanceof InfrastructureError) {
         throw new WalletError(
           "quote_unavailable",
@@ -575,6 +583,8 @@ export async function payOrderWithWallet(
           void current.monthlyPriceIrr;
         } catch (error) {
           if (error instanceof WalletError) throw error;
+          const saleBlocked = customerErrorForProviderFailure(error);
+          if (saleBlocked) throw saleBlocked;
           if (error instanceof InfrastructureError) {
             throw new WalletError(
               "quote_unavailable",

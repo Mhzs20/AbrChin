@@ -5,6 +5,7 @@ import {
 } from "@prisma/client";
 
 import { getEnv } from "@/lib/env";
+import { InfrastructureError } from "@/lib/infrastructure/errors";
 import { WalletError } from "@/lib/wallet/errors";
 
 type SaleRoute = {
@@ -76,4 +77,22 @@ export function assertPublicSaleEnabled(route: SaleRoute) {
       ? "فروش عمومی موجودی آمادهٔ ابرچین موقتاً غیرفعال است؛ مبلغی برداشت نشد."
       : "فروش عمومی این راهکار موقتاً غیرفعال است؛ مبلغی برداشت نشد.",
   );
+}
+
+export function customerErrorForProviderFailure(error: unknown): WalletError | null {
+  if (
+    error instanceof InfrastructureError &&
+    (error.code === "provider_disabled" ||
+      error.code === "provider_version_disabled")
+  ) {
+    return new WalletError(
+      "provider_sale_disabled",
+      "فروش عمومی این راهکار موقتاً غیرفعال است؛ مبلغی برداشت نشد.",
+    );
+  }
+  return null;
+}
+
+export function rethrowProviderFailureForCustomer(error: unknown): never {
+  throw customerErrorForProviderFailure(error) ?? error;
 }

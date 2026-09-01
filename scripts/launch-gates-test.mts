@@ -8,7 +8,8 @@ import {
   InfrastructureProvider,
 } from "@prisma/client";
 
-import { getPublicSaleDecision } from "../lib/infrastructure/public-sale-policy.ts";
+import { getPublicSaleDecision, customerErrorForProviderFailure } from "../lib/infrastructure/public-sale-policy.ts";
+import { InfrastructureError } from "../lib/infrastructure/errors.ts";
 
 const root = new URL("../", import.meta.url);
 const saleKeys = [
@@ -48,6 +49,16 @@ const arvanRoute = {
   offerSource: InfrastructureOfferSource.API_CATALOG,
   productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
 };
+
+test("disabled provider failures become Persian sale-blocked wallet errors", () => {
+  const mapped = customerErrorForProviderFailure(
+    new InfrastructureError("provider_disabled", "Arvan provider is not configured"),
+  );
+  assert.ok(mapped);
+  assert.equal(mapped.code, "provider_sale_disabled");
+  assert.match(mapped.message, /فروش عمومی/);
+  assert.equal(customerErrorForProviderFailure(new Error("other")), null);
+});
 
 test("public sale and published provider routes are open by default", () => {
   withSaleEnvironment({}, () => {

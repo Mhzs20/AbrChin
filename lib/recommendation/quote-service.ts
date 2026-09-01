@@ -29,6 +29,7 @@ import { isRegionEnabledForSale } from "@/lib/infrastructure/provider-region-con
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import {
   assertPublicSaleEnabled,
+  rethrowProviderFailureForCustomer,
 } from "@/lib/infrastructure/public-sale-policy";
 import { createCloudProviderAdapter } from "@/lib/infrastructure/provider-factory";
 import {
@@ -439,11 +440,18 @@ async function lockAndRevalidatePlan(
         "کلید SSH معتبر انتخاب نشده است.",
       );
     }
-    const adapter = createCloudProviderAdapter(
-      plan.provider,
-      plan.providerApiVersion,
-    );
-    const key = (await adapter.listSshKeys(plan.regionCode)).find(
+    let adapter;
+    try {
+      adapter = createCloudProviderAdapter(
+        plan.provider,
+        plan.providerApiVersion,
+      );
+    } catch (error) {
+      rethrowProviderFailureForCustomer(error);
+    }
+    const key = (await adapter.listSshKeys(plan.regionCode).catch(
+      rethrowProviderFailureForCustomer,
+    )).find(
       (candidate) => candidate.name === keyName,
     );
     if (!key) {
@@ -492,7 +500,7 @@ async function lockAndRevalidatePlan(
         providerApiVersion: plan.providerApiVersion,
         productKind: plan.productKind,
         region: plan.regionCode,
-      });
+      }).catch(rethrowProviderFailureForCustomer);
   const selection = {
     provider: plan.provider,
     providerApiVersion: plan.providerApiVersion,
@@ -514,7 +522,9 @@ async function lockAndRevalidatePlan(
           plan.offerLastVerifiedAt ??
           plan.pricing.providerPriceCheckedAt,
       }
-    : await revalidateLockedSelection(selection);
+    : await revalidateLockedSelection(selection).catch(
+        rethrowProviderFailureForCustomer,
+      );
   if (!current.available) {
     throw new WalletError(
       "inventory_unavailable",
@@ -1480,7 +1490,7 @@ export async function createRecommendationQuotes(params: {
     externalImageId: lockedConfiguration.externalImageId,
     externalNetworkId: lockedConfiguration.externalNetworkId,
     externalSecurityId: lockedConfiguration.externalSecurityId,
-  });
+  }).catch(rethrowProviderFailureForCustomer);
   if (
     current.monthlyPriceIrr !==
       configuredPlan.pricing.providerBasePriceRial ||
