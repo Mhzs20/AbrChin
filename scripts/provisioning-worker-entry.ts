@@ -44,10 +44,7 @@ async function sleep(ms: number) {
 }
 
 async function main() {
-  const database = (process.env.DATABASE_URL ?? "").replace(/:[^:/@]+@/, ":***@");
-  console.log(
-    `[abrchin-worker] provisioning worker started id=${config.workerId} database=${database || "unset"}`,
-  );
+  console.log(`[abrchin-worker] provisioning worker started id=${config.workerId}`);
   try {
     await touchWorkerHeartbeat({ cycleOk: false, status: "stale" });
     console.log(`[abrchin-worker] initial heartbeat recorded id=${config.workerId}`);
