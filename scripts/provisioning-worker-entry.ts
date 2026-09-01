@@ -10,6 +10,7 @@ import {
   settleClosedBillingPeriodsCatchUp,
 } from "@/lib/billing/worker";
 import { enqueueExpiredDunningForSuspensionReview } from "@/lib/billing/dunning";
+import { purgeExpiredS2SReplayNonces } from "@/lib/messagego/s2s/replay";
 
 const config = getWorkerConfig();
 validateProviderEnvironment();
@@ -76,6 +77,7 @@ async function main() {
         await enqueueExpiredDunningForSuspensionReview(billingNow);
         nextBillingAt = Date.now() + BILLING_WORKER_INTERVAL_MS;
       }
+      await purgeExpiredS2SReplayNonces();
       await touchWorkerHeartbeat({ cycleOk: true });
       if (processed || alertsProcessed > 0) {
         idleRounds = 0;

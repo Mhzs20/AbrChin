@@ -180,4 +180,15 @@ test("platform readiness fails closed for database and worker outages", () => {
     derivePlatformReadinessStatus("healthy", "healthy", "healthy", "stale"),
     "degraded",
   );
+  assert.equal(
+    derivePlatformReadinessStatus("healthy", "healthy", "healthy", "disabled"),
+    "operational",
+  );
+  assert.equal(
+    derivePlatformReadinessStatus("healthy", "healthy", "healthy", "healthy", {
+      messageGoS2S: "disabled",
+      catalogProvider: "disabled",
+    }),
+    "operational",
+  );
 });

@@ -185,7 +185,15 @@ curl -fsS -o /dev/null https://abrchin.ir/cloud-servers
 
 ## Backup و Rollback
 
-`ops/backup-postgres.sh` قبل از Migration (از طریق deploy) اجرا می‌شود.
+Encrypted `ops/backup-postgres.sh` قبل از Migration اجرا می‌شود.
+`BACKUP_KEY_FILE` باید یک فایل 0600 با حداقل ۳۲ بایت باشد و `BACKUP_DIR`
+نباید همان `DATA_ROOT` یا داخل آن باشد. Restore خودکار به Production انجام
+نمی‌شود؛ `ops/restore-verify.sh` فقط یک PostgreSQL موقت می‌سازد.
+
+Production deploy فقط readiness با HTTP 200 و `status=operational` را
+می‌پذیرد. `degraded` پذیرفته نیست. شکست public health/readiness، migration،
+worker یا smoke، deploy را با `FAILED at gate:` متوقف می‌کند و `SUCCESS`
+چاپ نمی‌شود.
 Rollback کد از Image قبلی انجام می‌شود؛ Database و Volume Reset نمی‌شوند.
 هرگز:
 

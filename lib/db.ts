@@ -1,4 +1,7 @@
 import { PrismaClient } from "@prisma/client";
+import { loadFileSecrets } from "./secrets/file-secrets.ts";
+
+loadFileSecrets();
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;

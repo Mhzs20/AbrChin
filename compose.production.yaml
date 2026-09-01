@@ -1,8 +1,18 @@
 name: abrchin
 
+x-file-secrets: &file-secrets
+  ABRCHIN_REQUIRE_FILE_SECRETS: ${ABRCHIN_REQUIRE_FILE_SECRETS:-true}
+  ABRCHIN_SECRET_FILE_UID: ${ABRCHIN_SECRET_FILE_UID:-1001}
+  DATABASE_URL_FILE: /run/secrets/abrchin-service/database-url
+  SESSION_SECRET_FILE: /run/secrets/abrchin-service/session-secret
+  CREDENTIAL_ENCRYPTION_KEY_FILE: /run/secrets/abrchin-service/credential-encryption-key
+  KAVENEGAR_API_KEY_FILE: /run/secrets/abrchin-service/kavenegar-api-key
+  ARVAN_API_KEY_FILE: /run/secrets/abrchin-service/arvan-api-key
+  MESSAGEGO_CLIENT_SECRET_FILE: /run/secrets/abrchin-service/messagego-client-secret
+
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16.10-alpine
     container_name: abrchin-db
     restart: unless-stopped
     environment:
@@ -44,12 +54,9 @@ services:
       PORT: "3010"
       # Explicit migration gate lives in ops/deploy.sh. Keep false in steady state.
       ABRCHIN_RUN_MIGRATE_ON_START: ${ABRCHIN_RUN_MIGRATE_ON_START:-false}
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
-      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set}
-      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY must be set}
+      <<: *file-secrets
       TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
       SMS_PROVIDER: ${SMS_PROVIDER:?SMS_PROVIDER must be set}
-      KAVENEGAR_API_KEY: ${KAVENEGAR_API_KEY:-}
       KAVENEGAR_TEMPLATE: ${KAVENEGAR_TEMPLATE:-abrchinlogin}
       KAVENEGAR_ALERT_TEMPLATE: ${KAVENEGAR_ALERT_TEMPLATE:-}
       KAVENEGAR_TIMEOUT_MS: ${KAVENEGAR_TIMEOUT_MS:-8000}
@@ -65,7 +72,6 @@ services:
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
       MESSAGEGO_BASE_URL: ${MESSAGEGO_BASE_URL:-}
       MESSAGEGO_CLIENT_ID: ${MESSAGEGO_CLIENT_ID:-}
-      MESSAGEGO_CLIENT_SECRET: ${MESSAGEGO_CLIENT_SECRET:-}
       MESSAGEGO_TENANT_ID: ${MESSAGEGO_TENANT_ID:-}
       MESSAGEGO_WORKSPACE_ID: ${MESSAGEGO_WORKSPACE_ID:-}
       MESSAGEGO_TIMEOUT_MS: ${MESSAGEGO_TIMEOUT_MS:-15000}
@@ -90,7 +96,6 @@ services:
       EMAIL_VERIFICATION_TTL_SECONDS: ${EMAIL_VERIFICATION_TTL_SECONDS:-600}
       PUBLIC_SALE_ENABLED: ${PUBLIC_SALE_ENABLED:-true}
       ARVAN_ENABLED: ${ARVAN_ENABLED:-false}
-      ARVAN_API_KEY: ${ARVAN_API_KEY:-}
       ARVAN_API_BASE_URL: ${ARVAN_API_BASE_URL:-https://napi.arvancloud.ir/ecc/v1}
       ARVAN_API_VERSION: ${ARVAN_API_VERSION:-v1}
       ARVAN_REGION_CODES: ${ARVAN_REGION_CODES:-}
@@ -146,17 +151,14 @@ services:
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
-      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set}
+      <<: *file-secrets
       SMS_PROVIDER: ${SMS_PROVIDER:?SMS_PROVIDER must be set}
-      KAVENEGAR_API_KEY: ${KAVENEGAR_API_KEY:-}
       KAVENEGAR_TEMPLATE: ${KAVENEGAR_TEMPLATE:-abrchinlogin}
       KAVENEGAR_ALERT_TEMPLATE: ${KAVENEGAR_ALERT_TEMPLATE:-}
       KAVENEGAR_TIMEOUT_MS: ${KAVENEGAR_TIMEOUT_MS:-8000}
       ADMIN_MOBILES: ${ADMIN_MOBILES:-}
       PUBLIC_SALE_ENABLED: ${PUBLIC_SALE_ENABLED:-true}
       ARVAN_ENABLED: ${ARVAN_ENABLED:-false}
-      ARVAN_API_KEY: ${ARVAN_API_KEY:-}
       ARVAN_API_BASE_URL: ${ARVAN_API_BASE_URL:-https://napi.arvancloud.ir/ecc/v1}
       ARVAN_API_VERSION: ${ARVAN_API_VERSION:-v1}
       ARVAN_REGION_CODES: ${ARVAN_REGION_CODES:-}
@@ -174,6 +176,8 @@ services:
       WORKER_STALE_AFTER_MS: ${WORKER_STALE_AFTER_MS:-60000}
       WORKER_ID: ${WORKER_ID:-provisioning-worker}
       BILLING_WORKER_INTERVAL_MS: ${BILLING_WORKER_INTERVAL_MS:-60000}
+    volumes:
+      - ${ABRCHIN_SERVICE_SECRET_ROOT:-/srv/abrchin/secrets/service}:/run/secrets/abrchin-service:ro
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=32m
@@ -186,7 +190,9 @@ services:
     networks:
       - abrchin_internal
     healthcheck:
-      test: ["CMD", "node", "scripts/worker-healthcheck.mjs"]
+      test:
+        - CMD-SHELL
+        - . ./scripts/export-file-secrets.sh && abrchin_export_runtime_secrets && node scripts/worker-healthcheck.mjs
       interval: 30s
       timeout: 10s
       retries: 3
@@ -205,13 +211,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: ["node", "dist/catalog-sync/catalog-sync-scheduler.js"]
+    command: ["./scripts/catalog-sync-entrypoint.sh"]
     environment:
       NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      <<: *file-secrets
       PUBLIC_SALE_ENABLED: ${PUBLIC_SALE_ENABLED:-true}
       ARVAN_ENABLED: ${ARVAN_ENABLED:-false}
-      ARVAN_API_KEY: ${ARVAN_API_KEY:-}
       ARVAN_API_BASE_URL: ${ARVAN_API_BASE_URL:-https://napi.arvancloud.ir/ecc/v1}
       ARVAN_API_VERSION: ${ARVAN_API_VERSION:-v1}
       ARVAN_REGION_CODES: ${ARVAN_REGION_CODES:-}
@@ -223,6 +228,8 @@ services:
       MANUAL_READY_PUBLIC_SALE_ENABLED: ${MANUAL_READY_PUBLIC_SALE_ENABLED:-true}
       ARVAN_MUTATIONS_ENABLED: ${ARVAN_MUTATIONS_ENABLED:-false}
       CATALOG_SYNC_INTERVAL_MS: ${CATALOG_SYNC_INTERVAL_MS:-300000}
+    volumes:
+      - ${ABRCHIN_SERVICE_SECRET_ROOT:-/srv/abrchin/secrets/service}:/run/secrets/abrchin-service:ro
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=32m

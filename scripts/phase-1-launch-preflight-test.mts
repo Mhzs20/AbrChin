@@ -20,8 +20,9 @@ test("production placeholders keep public sale open and provider mutations close
   ]) {
     assert.match(productionEnv, new RegExp(`^${key}$`, "m"));
   }
-  assert.match(productionEnv, /^CREDENTIAL_ENCRYPTION_KEY=$/m);
-  assert.match(productionEnv, /^KAVENEGAR_API_KEY=$/m);
+  assert.match(productionEnv, /^ABRCHIN_REQUIRE_FILE_SECRETS=true$/m);
+  assert.doesNotMatch(productionEnv, /^CREDENTIAL_ENCRYPTION_KEY=/m);
+  assert.doesNotMatch(productionEnv, /^KAVENEGAR_API_KEY=/m);
   assert.match(productionEnv, /^ZIBAL_MERCHANT=$/m);
 });
 

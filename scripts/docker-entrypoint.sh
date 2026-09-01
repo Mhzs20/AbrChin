@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+. ./scripts/export-file-secrets.sh
+abrchin_export_runtime_secrets
+
 # Production deploy uses an explicit migration gate in ops/deploy.sh.
 # Default: skip migrate on normal web start to avoid racing schema mutations.
 # Set ABRCHIN_RUN_MIGRATE_ON_START=true for bootstrap/recovery only.

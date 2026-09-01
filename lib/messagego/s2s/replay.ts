@@ -28,3 +28,10 @@ export async function claimS2SReplay(input: {
     throw error;
   }
 }
+
+export async function purgeExpiredS2SReplayNonces(now = new Date()) {
+  const result = await prisma.messageGoS2SReplayNonce.deleteMany({
+    where: { expiresAt: { lt: now } },
+  });
+  return result.count;
+}

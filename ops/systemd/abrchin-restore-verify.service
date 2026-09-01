@@ -1,0 +1,11 @@
+[Unit]
+Description=AbrChin isolated backup restore verification
+After=abrchin-backup.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/abrchin
+Environment=BACKUP_KEY_FILE=/srv/abrchin/secrets/backup/backup.key
+Environment=RESTORE_RECEIPT=/var/backups/abrchin-postgres/last-restore-receipt.json
+UMask=0077
+ExecStart=/bin/bash -lc 'latest=$(ls -1t /var/backups/abrchin-postgres/abrchin-*.tar.enc | head -n 1); exec /opt/abrchin/ops/restore-verify.sh "$latest"'

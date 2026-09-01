@@ -38,7 +38,7 @@ test("MessageGo 1.0.0 production config names are canonical and default-off", ()
   assert.equal(compose.includes("MESSAGEGO_SETTLEMENT_SERVICE_CREDENTIAL"), false);
   const workerStart = compose.indexOf("\n  worker:\n");
   assert.ok(workerStart > 0);
-  assert.equal(compose.slice(workerStart).includes("/run/secrets/abrchin-service"), false);
+  assert.equal(compose.slice(workerStart).includes("/run/secrets/abrchin-service"), true);
 
   const example = readFileSync(".env.production.example", "utf8");
   assert.match(example, /^ABRCHIN_SERVICE_SECRET_ROOT=\/srv\/abrchin\/secrets\/service$/m);

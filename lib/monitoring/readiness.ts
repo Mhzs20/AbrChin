@@ -1,26 +1,46 @@
+import { existsSync } from "node:fs";
+
 import { prisma } from "@/lib/db";
+import { getEnv } from "@/lib/env";
 import { getBillingCatchUpStatus } from "@/lib/billing/worker";
 import { getEffectiveProviderBillingContract, providerBillingContractBlockingReasons } from "@/lib/billing/provider-contract";
 import { getWorkerHealthStatus } from "@/lib/infrastructure/provisioning-service";
 
-export type ReadinessComponentStatus = "healthy" | "stale" | "down" | "unknown";
+export type ReadinessComponentStatus =
+  | "healthy"
+  | "stale"
+  | "down"
+  | "unknown"
+  | "disabled";
 export type PlatformReadinessStatus = "operational" | "degraded" | "outage";
 
 const DATABASE_TIMEOUT_MS = 2_500;
+
+function isBlocking(status: ReadinessComponentStatus): boolean {
+  return status !== "healthy" && status !== "disabled";
+}
 
 export function derivePlatformReadinessStatus(
   database: ReadinessComponentStatus,
   worker: ReadinessComponentStatus,
   billingCatchUp: ReadinessComponentStatus = "healthy",
   billingContracts: ReadinessComponentStatus = "healthy",
+  extras: {
+    migrations?: ReadinessComponentStatus;
+    messageGoS2S?: ReadinessComponentStatus;
+    catalogProvider?: ReadinessComponentStatus;
+  } = {},
 ): PlatformReadinessStatus {
-  if (database === "down" || worker === "down") return "outage";
+  const migrations = extras.migrations ?? "healthy";
+  const messageGoS2S = extras.messageGoS2S ?? "disabled";
+  const catalogProvider = extras.catalogProvider ?? "disabled";
+  if (database === "down" || worker === "down" || migrations === "down") {
+    return "outage";
+  }
   if (
-    database !== "healthy" ||
-    worker === "stale" ||
-    worker === "unknown" ||
-    billingCatchUp !== "healthy" ||
-    billingContracts !== "healthy"
+    [database, worker, billingCatchUp, billingContracts, migrations, messageGoS2S, catalogProvider].some(
+      isBlocking,
+    )
   ) {
     return "degraded";
   }
@@ -77,12 +97,51 @@ async function checkDatabase(): Promise<ReadinessComponentStatus> {
   }
 }
 
+async function checkMigrations(): Promise<ReadinessComponentStatus> {
+  try {
+    const rows = await prisma.$queryRaw<Array<{ pending: bigint | number }>>`
+      SELECT COUNT(*)::bigint AS pending
+      FROM "_prisma_migrations"
+      WHERE finished_at IS NULL OR rolled_back_at IS NOT NULL
+    `;
+    const pending = Number(rows[0]?.pending ?? 1);
+    return pending === 0 ? "healthy" : "down";
+  } catch {
+    return "down";
+  }
+}
+
+function messageGoS2SStatus(): ReadinessComponentStatus {
+  const env = getEnv();
+  const enabled =
+    env.messageGoSettlementEnabled ||
+    env.messageGoCustomerAiEnabled ||
+    env.messageGoSecretHandoffEnabled;
+  if (!enabled) return "disabled";
+  if (!env.messageGoS2SKeyringFile || !env.messageGoS2SSigningKeyringFile) {
+    return "down";
+  }
+  if (!existsSync(env.messageGoS2SKeyringFile) || !existsSync(env.messageGoS2SSigningKeyringFile)) {
+    return "down";
+  }
+  return "healthy";
+}
+
+function catalogProviderStatus(): ReadinessComponentStatus {
+  const env = getEnv();
+  if (!env.arvanEnabled) return "disabled";
+  if (!env.arvanApiKey) return "down";
+  return "healthy";
+}
+
 export async function getPlatformReadiness() {
+  const env = getEnv();
   const database = await checkDatabase();
   let worker: ReadinessComponentStatus = "unknown";
   let workerLastSeenAt: string | null = null;
   let billingCatchUp: ReadinessComponentStatus = "unknown";
-  let billingContracts: ReadinessComponentStatus = "unknown";
+  let billingContracts: ReadinessComponentStatus = env.arvanEnabled ? "unknown" : "disabled";
+  let migrations: ReadinessComponentStatus = "unknown";
   let billingCatchUpStatus: Awaited<
     ReturnType<typeof getBillingCatchUpStatus>
   > | null = null;
@@ -92,28 +151,42 @@ export async function getPlatformReadiness() {
 
   if (database === "healthy") {
     try {
-      const [workerHealth, catchUp, providerContracts] = await Promise.all([
+      const [workerHealth, catchUp, providerContracts, migrationStatus] = await Promise.all([
         getWorkerHealthStatus(),
         getBillingCatchUpStatus(),
-        getProviderBillingContractHealth(),
+        env.arvanEnabled
+          ? getProviderBillingContractHealth()
+          : Promise.resolve(null),
+        checkMigrations(),
       ]);
       worker = workerHealth.status;
       workerLastSeenAt = workerHealth.lastSeenAt;
       billingCatchUpStatus = catchUp;
-      billingCatchUp =
-        catchUp.status === "CURRENT" ? "healthy" : "stale";
-      billingContractStatus = providerContracts;
-      billingContracts = providerContracts.status;
+      billingCatchUp = catchUp.status === "CURRENT" ? "healthy" : "stale";
+      migrations = migrationStatus;
+      if (env.arvanEnabled && providerContracts) {
+        billingContractStatus = providerContracts;
+        billingContracts = providerContracts.status;
+      } else {
+        billingContracts = "disabled";
+      }
     } catch {
       worker = "unknown";
+      migrations = "unknown";
     }
+  } else {
+    migrations = "down";
   }
+
+  const messageGoS2S = messageGoS2SStatus();
+  const catalogProvider = catalogProviderStatus();
 
   const status = derivePlatformReadinessStatus(
     database,
     worker,
     billingCatchUp,
     billingContracts,
+    { migrations, messageGoS2S, catalogProvider },
   );
   return {
     status,
@@ -125,6 +198,16 @@ export async function getPlatformReadiness() {
       provisioningWorker: worker,
       billingCatchUp,
       billingContracts,
+      migrations,
+      messageGoS2S,
+      catalogProvider,
+    },
+    features: {
+      customerAi: env.messageGoCustomerAiEnabled ? "enabled" : "disabled",
+      settlement: env.messageGoSettlementEnabled ? "enabled" : "disabled",
+      secretHandoff: env.messageGoSecretHandoffEnabled ? "enabled" : "disabled",
+      arvanMutations: env.arvanMutationsEnabled ? "enabled" : "disabled",
+      providerTraffic: "disabled",
     },
     workerLastSeenAt,
     billingCatchUp: billingCatchUpStatus,

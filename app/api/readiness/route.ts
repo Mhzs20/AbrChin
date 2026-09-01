@@ -9,6 +9,7 @@ export async function GET() {
     status: readiness.status,
     severity: readiness.severity,
     components: readiness.components,
+    features: readiness.features,
     workerLastSeenAt: readiness.workerLastSeenAt,
     checkedAt: readiness.checkedAt,
   };

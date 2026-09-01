@@ -408,7 +408,7 @@ test("ledger reverse is idempotent under duplicate requests", async (t) => {
   await db.user.delete({ where: { id: user.id } });
 });
 
-test("production deploy gate keeps one-shot migrate and accepts degraded readiness", async () => {
+test("production deploy gate keeps one-shot migrate and rejects degraded readiness", async () => {
   const { readFile } = await import("node:fs/promises");
   const deploy = await readFile("ops/deploy.sh", "utf8");
   const workerEntrypoint = await readFile("scripts/worker-entrypoint.sh", "utf8");
@@ -418,18 +418,19 @@ test("production deploy gate keeps one-shot migrate and accepts degraded readine
   assert.match(deploy, /--env-file/);
   assert.match(deploy, /compose config --quiet/);
   assert.match(deploy, /backup-postgres\.sh/);
-  assert.match(deploy, /prisma migrate deploy/);
+  assert.match(deploy, /migrate-deploy\.sh/);
   assert.match(deploy, /local_readiness_acceptable/);
-  assert.match(deploy, /status" == "degraded"/);
+  assert.match(deploy, /degraded is not accepted/);
+  assert.doesNotMatch(deploy, /status" == "degraded"/);
+  assert.match(deploy, /FAILED at gate:/);
+  assert.match(deploy, /handle_failure "public_readiness"/);
+  assert.match(deploy, /handle_failure "smoke_test"/);
+  assert.match(deploy, /handle_failure "worker_health"/);
   assert.match(deploy, /MIGRATED=1/);
-  // Migration flag must be set before the one-shot migrate command runs.
   const gateIdx = deploy.indexOf("Explicit migration gate");
   assert.ok(gateIdx > 0);
   const migratedIdx = deploy.indexOf("MIGRATED=1", gateIdx);
-  const migrateCmdIdx = deploy.indexOf(
-    "node ./node_modules/prisma/build/index.js migrate deploy",
-    gateIdx,
-  );
+  const migrateCmdIdx = deploy.indexOf("./scripts/migrate-deploy.sh", gateIdx);
   assert.ok(migratedIdx > gateIdx && migrateCmdIdx > migratedIdx);
   const executable = deploy
     .split("\n")
@@ -463,9 +464,10 @@ test("deploy treats ENV_FILE as dotenv not bash and survives Bearer tokens", asy
   assert.match(deploy, /docker compose --env-file "\$ENV_FILE"/);
   assert.match(deploy, /ENV_FILE is a Docker Compose dotenv/);
 
-  // Backup already uses --env-file only.
+  // Backup may source ops/backup-common.sh, but never the Compose dotenv.
   assert.match(backup, /docker compose --env-file "\$ENV_FILE"/);
-  assert.doesNotMatch(backupExec, /\bsource\b/);
+  assert.match(backup, /backup-common\.sh/);
+  assert.doesNotMatch(backupExec, /source "\$\{?ENV_FILE/);
   assert.doesNotMatch(backupExec, /set -a/);
 
   const dir = await mkdtemp(join(tmpdir(), "abrchin-dotenv-"));

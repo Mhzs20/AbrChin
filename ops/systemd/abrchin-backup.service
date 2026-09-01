@@ -1,0 +1,19 @@
+[Unit]
+Description=AbrChin encrypted PostgreSQL backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/abrchin
+Environment=APP_DIR=/opt/abrchin
+Environment=ENV_FILE=.env
+Environment=COMPOSE_FILE=compose.production.yaml
+Environment=BACKUP_DIR=/var/backups/abrchin-postgres
+Environment=DATA_ROOT=/var/lib/docker/volumes/abrchin_pg_data/_data
+Environment=BACKUP_KEY_FILE=/srv/abrchin/secrets/backup/backup.key
+Environment=KEEP_DAYS=14
+Environment=BACKUP_MODE=docker
+Nice=10
+ExecStart=/opt/abrchin/ops/backup-postgres.sh
+UMask=0077

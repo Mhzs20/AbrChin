@@ -41,12 +41,15 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/worker-entrypoint.sh ./scripts/worker-entrypoint.sh
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/export-file-secrets.sh ./scripts/export-file-secrets.sh
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate-deploy.sh ./scripts/migrate-deploy.sh
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/catalog-sync-entrypoint.sh ./scripts/catalog-sync-entrypoint.sh
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/worker-healthcheck.mjs ./scripts/worker-healthcheck.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/dist/worker ./dist/worker
 COPY --from=builder --chown=nextjs:nodejs /app/dist/catalog-sync ./dist/catalog-sync
 COPY --from=builder --chown=nextjs:nodejs /app/dist/accounting ./dist/accounting
 
-RUN chmod +x ./scripts/docker-entrypoint.sh ./scripts/worker-entrypoint.sh
+RUN chmod +x ./scripts/docker-entrypoint.sh ./scripts/worker-entrypoint.sh ./scripts/migrate-deploy.sh ./scripts/catalog-sync-entrypoint.sh
 
 USER nextjs
 EXPOSE 3010

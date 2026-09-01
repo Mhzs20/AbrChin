@@ -1,4 +1,5 @@
 import { parseArvanRegionCodes } from "./infrastructure/arvan/regions.ts";
+import { loadFileSecrets } from "./secrets/file-secrets.ts";
 
 function readInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -34,6 +35,7 @@ function rejectDeprecatedMessageGoEnv() {
 }
 
 export function getEnv() {
+  loadFileSecrets();
   rejectDeprecatedMessageGoEnv();
   const isProduction = process.env.NODE_ENV === "production";
   return {

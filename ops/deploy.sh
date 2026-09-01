@@ -168,8 +168,10 @@ restore_previous_image() {
 }
 
 handle_failure() {
-  local stage="$1"
-  echo "[deploy] FAILED at stage: ${stage}" >&2
+  local gate="$1"
+  echo "[deploy] FAILED at gate: ${gate}" >&2
+  log "previous_image=${PREVIOUS_IMAGE:-none}"
+  log "previous_git_sha=${PREVIOUS_GIT_SHA:-none}"
   if [[ "$MIGRATED" -eq 0 ]]; then
     log "failure before migration — attempting restore of previous image"
     restore_previous_image || true
@@ -215,7 +217,7 @@ MIGRATED=1
 if ! compose run --rm --no-deps \
   -e ABRCHIN_RUN_MIGRATE_ON_START=false \
   web \
-  node ./node_modules/prisma/build/index.js migrate deploy; then
+  ./scripts/migrate-deploy.sh; then
   handle_failure "migration"
 fi
 log "migration gate passed"
@@ -226,9 +228,7 @@ compose up -d --remove-orphans --wait --wait-timeout 180 \
   web worker catalog-sync || handle_failure "app_up"
 
 # --- 7. Local health/readiness ---
-# /api/readiness returns HTTP 503 for both degraded and outage. Launch may be
-# degraded when provider billing contracts are unverified; that must not block
-# deploy. Outage (DB/worker critical) must fail the gate.
+# Production deploy requires HTTP 200 / status=operational. degraded is not accepted.
 local_readiness_acceptable() {
   local code status
   curl -fsS --max-time 5 "http://127.0.0.1:3010/api/health" >/dev/null || return 1
@@ -239,10 +239,7 @@ local_readiness_acceptable() {
   if [[ "$code" == "200" && "$status" == "operational" ]]; then
     return 0
   fi
-  if [[ "$status" == "degraded" ]]; then
-    log "readiness is degraded (acceptable for launch when non-critical components are stale)"
-    return 0
-  fi
+  log "readiness gate rejected code=${code} status=${status:-unknown} (degraded is not accepted)"
   return 1
 }
 
@@ -255,9 +252,13 @@ for attempt in $(seq 1 40); do
   fi
   sleep 3
 done
-[[ "$local_ok" -eq 1 ]] || handle_failure "local_health"
+[[ "$local_ok" -eq 1 ]] || handle_failure "local_readiness"
 
-# --- 8. Public checks (status only; do not dump bodies) ---
+log "required smoke: local storefront"
+curl -fsS --max-time 15 -o /dev/null "http://127.0.0.1:3010/cloud-servers" \
+  || handle_failure "smoke_test"
+
+# --- 8. Public checks ---
 log "checking public endpoints"
 public_ok=0
 for attempt in $(seq 1 20); do
@@ -269,10 +270,7 @@ for attempt in $(seq 1 20); do
   fi
   sleep 3
 done
-if [[ "$public_ok" -ne 1 ]]; then
-  log "WARNING: public endpoint checks failed (local checks passed). Continuing service verification."
-  log "Founder should verify public DNS/proxy if this persists."
-fi
+[[ "$public_ok" -eq 1 ]] || handle_failure "public_readiness"
 
 # --- 9. Service verification ---
 log "compose service status"
@@ -284,6 +282,9 @@ sync_image="$(docker inspect --format='{{.Config.Image}}' abrchin-catalog-sync)"
 [[ "$web_image" == "$ABRCHIN_IMAGE" ]] || handle_failure "web_image_mismatch"
 [[ "$worker_image" == "$ABRCHIN_IMAGE" ]] || handle_failure "worker_image_mismatch"
 [[ "$sync_image" == "$ABRCHIN_IMAGE" ]] || handle_failure "catalog_sync_image_mismatch"
+
+worker_health="$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' abrchin-worker)"
+[[ "$worker_health" == "healthy" || "$worker_health" == "running" ]] || handle_failure "worker_health"
 
 # --- 10. Success: keep previous image; optional dangling cleanup only ---
 if [[ -n "$PREVIOUS_IMAGE" && "$PREVIOUS_IMAGE" != "$ABRCHIN_IMAGE" ]]; then

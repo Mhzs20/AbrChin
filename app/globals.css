@@ -4388,6 +4388,11 @@ a:focus-visible {
   color: #b23b2e;
 }
 
+.status-pill--disabled {
+  background: #eef2f7;
+  color: var(--muted);
+}
+
 .status-checked-at {
   margin: 0;
   color: var(--muted-2);

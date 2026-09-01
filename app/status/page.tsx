@@ -19,6 +19,7 @@ const labels: Record<ReadinessComponentStatus, string> = {
   stale: "با تأخیر",
   down: "قطع",
   unknown: "نامشخص",
+  disabled: "غیرفعال",
 };
 
 export default async function StatusPage() {
@@ -60,6 +61,24 @@ export default async function StatusPage() {
       description: "نسخه و تأیید قراردادهای Billing ابرچین",
       status: readiness.components.billingContracts,
       icon: CheckCircle2,
+    },
+    {
+      title: "مهاجرت پایگاه‌داده",
+      description: "وضعیت schema اعمال‌شده",
+      status: readiness.components.migrations,
+      icon: Database,
+    },
+    {
+      title: "پیوند MessageGo",
+      description: "پیکربندی S2S وقتی قابلیت فعال است",
+      status: readiness.components.messageGoS2S,
+      icon: Workflow,
+    },
+    {
+      title: "کاتالوگ ارائه‌دهنده",
+      description: "وضعیت Arvan وقتی فروش ارائه‌دهنده فعال است",
+      status: readiness.components.catalogProvider,
+      icon: Activity,
     },
   ];
 
