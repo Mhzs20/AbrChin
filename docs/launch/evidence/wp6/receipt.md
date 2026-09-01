@@ -2,8 +2,8 @@
 
 Tied SHAs:
 
-- AbrChin: `0c08c89bb60ae6066133eb73d4303a4abefb2aac`
-- MessageGo: `c869a677607567b952d8598f97cf8adeeb3932b3`
+- AbrChin: `991f62530301d099a7c7d16a7ca4e51d22307dfb`
+- MessageGo: `c822352d555d9f5c8bef4e52e676c17ea64c258b`
 
 ```text
 verdict = READY_FOR_OWNER_TEST
@@ -16,8 +16,8 @@ PRODUCTION NOT AUTHORIZED
 LIVE PROVIDER TRAFFIC NOT AUTHORIZED
 ```
 
-Started: `2026-09-01T22:55:32.337Z`
-Ended: `2026-09-01T23:00:37.405Z`
+Started: `2026-09-01T23:09:12.231Z`
+Ended: `2026-09-01T23:13:47.512Z`
 
 ## Environment topology
 
@@ -178,7 +178,7 @@ Ended: `2026-09-01T23:00:37.405Z`
 | `abrchin-backup-restore` | `abrchin` | `pass` | 5/0/0 | `npm run test:ops-wp3` |
 | `abrchin-secret-scan` | `abrchin` | `pass` | 1/0/0 | `npm run test:secret-scan` |
 | `abrchin-npm-audit` | `abrchin` | `pass` | 1/0/0 | `npm audit --omit=dev --audit-level=low` |
-| `abrchin-compose-validate` | `abrchin` | `pass` | 1/0/0 | `docker compose --env-file /tmp/wp6-abrchin-compose-e99d8209.env -f compose.production.yaml config --quiet` |
+| `abrchin-compose-validate` | `abrchin` | `pass` | 1/0/0 | `docker compose --env-file /tmp/wp6-abrchin-compose-427ff803.env -f compose.production.yaml config --quiet` |
 | `messagego-fmt-check` | `messagego` | `pass` | 1/0/0 | `make fmt-check` |
 | `messagego-vet` | `messagego` | `pass` | 1/0/0 | `make vet` |
 | `messagego-unit` | `messagego` | `pass` | 518/0/0 | `go test -json -count=1 ./...` |
@@ -218,7 +218,6 @@ Totals: pass=1782 fail=0 skip=0
 
 - Docker daemon was down. Compose validation used `docker compose config` without starting containers.
 - Owner acceptance is still unsigned. Production remains unauthorized.
-- govulncheck reported 0 called vulnerabilities on toolchain go1.25.13. Uncalled vulnerabilities may still exist in the module require graph.
 
 A skipped required test is `NO-GO`. This receipt does not set owner
 acceptance or production authorization.
