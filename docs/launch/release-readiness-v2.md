@@ -1,55 +1,73 @@
-# Release Readiness — Launch V2 ابرچین
+# Release Readiness — ابرچین + MessageGo 1.0.0
 
-**Verdict: `NO-GO` برای Deploy Production تا تکمیل Evidence خارجی**
-Candidate branch: `codex/abrchin-ux-flow-v2`
-Starting SHA: `f95e775f9534b88a805e31a6e0ce8e052522f742`
-Merge/Deploy: **انجام نشده** — Public Sale: **تأیید Founder و پیش‌فرض باز** — Provider mutation: **خاموش**
+**Verdict: `NO-GO` برای Deploy Production تا Owner acceptance، داده حقوقی، Staging/Production evidence و مجوز صریح Founder**
+Publication branch: `origin/main`
+Public Sale: **تأیید Founder و پیش‌فرض باز** — Provider mutation: **خاموش**
+Owner acceptance: `owner_accepted = false`
+`PRODUCTION NOT AUTHORIZED`
+`LIVE PROVIDER TRAFFIC NOT AUTHORIZED`
 
-## حکم داخلی
+Canonical current evidence: `docs/launch/wp6-release-truth.md` and
+`docs/launch/evidence/wp6/receipt.json`. Historical Launch V2 worktree
+receipts remain below as dated artifacts; they are not current SHA, migration
+count, or deploy authorization.
 
-Flow عمومی PREPAID، Wallet/Ledger، Fulfillment دستی دو مرحله‌ای، Credential، lifecycle و Browser UX در محیط محلی ایزوله قابل تکرارند. این نتیجه فقط آمادگی مهندسی محلی را نشان می‌دهد و جای Staging/Production evidence را نمی‌گیرد.
+## Current publication truth
+
+- Product customer language = MessageGo / MessageGo AI. Public API = `/v1`.
+- AbrChin Wallet remains the only wallet authority.
+- Work is published on `origin/main`. Draft PR is not the current process.
+- Prisma migration count in tree: **59** forward-only directories.
+- WP5 local production-candidate Golden Path: recorded separately; it is not
+  production authorization.
+- Legal identity fields in `docs/launch/legal-entity-blocker.md` remain empty.
+
+## حکم داخلی (مهندسی محلی)
+
+Golden Path عمومی Launch، `PREPAID_TERM` با دوره‌های ۱، ۳، ۶ و ۱۲ ماه است.
+PAYG در Backend برای مسیرهای legacy/internal حفظ می‌شود و مسیر فروش عمومی نیست.
+این نتیجه جای Staging/Production evidence، Owner acceptance و مجوز Deploy را
+نمی‌گیرد.
 
 | Gate داخلی | وضعیت | Evidence |
 | --- | --- | --- |
-| Phase 0 — Contract/Sale gates | `PASS` | ۸ launch gate + ۲ preflight + ۶ browser |
-| Phase 1 — Discovery/Ranking | `PASS` | ۳ discovery + ۵۴ recommendation + ۲ browser viewport |
-| Phase 2 — Guest Quote/Auth claim | `PASS` | ۴ contract + ۲ browser viewport |
-| Phase 3 — Wallet/Payment recovery | `PASS` | ۱۲ contract + ۱۳ DB؛ concurrent/rollback |
-| Phase 4 — Order tracking | `PASS` | ۳ contract + ۲ browser viewport |
-| Phase 5 — Manual fulfillment | `PASS` | ۷ contract + ۲ DB full-flow |
-| Phase 6 — Credential/Lifecycle | `PASS` | ۱۵ contract + ۱ DB cancellation full-flow |
-| Phase 7 — Parchin operations v3 | `PASS` | ۱۹ contract + ۲ DB؛ سه سطح، SLA، سهمیه، صف کار، گزارش و فعال‌سازی پس از تحویل |
-| Phase 8 — UI/Mobile/A11y | `PASS` | ۱۴ contract + ۱۴ Chromium route/viewport |
-| Build/Type/Lint | `PASS` | Production Build، TypeScript و ESLint؛ ۰ error |
-| Production dependency audit | `PASS` | `npm audit --omit=dev --audit-level=low`؛ ۰ vulnerability |
-| Secret scan | `PASS` | tracked + untracked candidate files؛ ۰ high-confidence finding |
-
-همه تست‌های DB ثبت‌شده روی PGlite سازگار با PostgreSQL و هر ۵۴ migration اجرا شده‌اند. این مورد عمداً جای Fresh/Upgrade test روی PostgreSQL واقعی Staging محسوب نمی‌شود.
-
-Final local matrix: ۱۴۳ تست قراردادی/واحد + ۱۶ تست DB، همگی Pass و بدون Skip. علاوه بر آن ۲۴ Route/Viewport مرورگر در فازهای ۰، ۱، ۲، ۴ و ۸ Pass شده‌اند؛ آخرین ممیزی Accessibility شامل ۱۲ Route/Viewport بود.
+| Launch V2 Phases 0–9 (historical 2026-08-10) | `HISTORICAL` | Worktree log; see `docs/launch/abrchin-automation-status.md` |
+| WP5 production-candidate | `RECORDED` | `docs/launch/evidence/wp5/receipt.json` |
+| WP6 release-truth gates | `RECORDED` | `docs/launch/evidence/wp6/receipt.json` |
+| Production dependency audit | see WP6 receipt | `npm audit --omit=dev --audit-level=low` |
+| Secret scan | see WP6 receipt | `npm run test:secret-scan` |
+| Production compose validation | see WP6 receipt | `docker compose … config` (file validation; daemon may be down) |
 
 ## Blockerهای خارجی و فرایندی
 
 | Blocker | Owner | Due | Evidence لازم | وضعیت |
 | --- | --- | --- | --- | --- |
-| Commit/Push/Draft PR و review | Engineering / Founder | پیش از Release review | PR URL، SHA و review نتیجه‌دار | `IN_PROGRESS` — Commit محلی آماده است |
+| Owner acceptance | Founder | پیش از Deploy | checklist امضاشده؛ هیچ Agentی `owner_accepted` را ثبت نمی‌کند | `BLOCKED` — checklist آماده و unsigned است |
 | ظرفیت انسانی عملیات و On-call پرچین | Ops/SRE/Support/Security | پیش از Deploy | Owner صف روزانه، برنامه P1 و Staging drill | `BLOCKED` |
-| PostgreSQL واقعی Staging: fresh + upgrade | Engineering/Ops | پیش از Staging purchase | migration log بدون Skip و backup fixture ID | `BLOCKED` |
-| Staging purchase واقعی PREPAID | Founder/Ops/Finance | پیش از Deploy Production | sanitized Golden Path receipt/audit | `BLOCKED` |
+| PostgreSQL واقعی Staging | Engineering/Ops | پیش از Staging purchase | migrate log روی Staging؛ این محیط محلی جایگزین Staging نیست | `BLOCKED` |
+| Staging purchase واقعی PREPAID | Founder/Ops/Finance | پیش از Deploy Production | sanitized Golden Path receipt روی Staging | `BLOCKED` |
 | داده حقوقی و هویتی شرکت | Founder/Legal | پیش از انتشار صفحات حقوقی | `docs/launch/legal-entity-blocker.md`؛ فیلدهای رسمی هنوز خالی‌اند | `BLOCKED` |
-| Production env/OTP/SMTP/Gateway/Provider read-only checks | Ops | پیش از Deploy | readiness و connection-check artifact | `BLOCKED` |
-| Backup/rollback drill و on-call owner | Ops | پیش از Deploy | backup ID، rollback target و drill result | `BLOCKED` |
-| Production smoke با Sale باز و Mutation خاموش | Founder/Ops | پس از Deploy مجاز | health/readiness و route smoke | `BLOCKED` |
+| Production env/OTP/SMTP/Gateway/Provider read-only checks | Ops | پیش از Deploy | readiness و connection-check artifact روی Production | `BLOCKED` |
+| Backup/rollback drill روی Production | Ops | پیش از Deploy | backup ID تولیدی و restore drill غیر از isolated local | `BLOCKED` |
+| Production smoke | Founder/Ops | پس از Deploy مجاز | health/readiness و route smoke روی Production | `BLOCKED` |
 | مجوز Deploy | Founder | پیش از Deploy | تأیید صریح دارای SHA/timestamp | `BLOCKED` |
 
-## Gateهای فعال‌سازی
+## Gateهای فعال‌سازی (قرارداد Launch، نه مجوز Deploy)
 
 - `PUBLIC_SALE_ENABLED=true`
 - تمام provider/source sale gateها `true`
 - تمام provider mutation gateها `false`
+- `MESSAGEGO_SETTLEMENT_ENABLED=false`
+- `MESSAGEGO_CUSTOMER_AI_ENABLED=false`
+- `MESSAGEGO_SECRET_HANDOFF_ENABLED=false`
+- `CRX_PROVIDER_TRAFFIC_ENABLED=false`
 
-فروش عمومی در Deploy و Rollback باز می‌ماند. Sellability هر Offer همچنان به Publish ادمین، source/region/freshness و موجودی معتبر وابسته است. Provider mutation برای Launch دستی باز نمی‌شود.
+فروش عمومی در Deploy و Rollback باز می‌ماند. Sellability هر Offer همچنان به
+Publish ادمین، source/region/freshness و موجودی معتبر وابسته است. Provider
+mutation برای Launch دستی باز نمی‌شود.
 
 ## تصمیم
 
-تا زمان بسته‌شدن تمام blockerهای جدول، حکم Deploy تغییر نمی‌کند: **`NO-GO` برای Production**. این وضعیت مانع Commit، Push، PR و Merge کد آماده نیست و سیاست فروش عمومی نیز طبق دستور Founder باز می‌ماند؛ اما Deploy، پرداخت واقعی و Provider mutation هنوز Evidence و مجوزهای مستقل خود را می‌خواهند.
+تا زمان بسته‌شدن تمام blockerهای جدول و امضای Owner، حکم Deploy تغییر نمی‌کند:
+**`NO-GO` برای Production**. انتشار روی `origin/main` مجوز Deploy، پرداخت واقعی
+یا Provider traffic نیست.

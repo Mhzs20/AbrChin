@@ -82,6 +82,7 @@
     "test:wp5-settlement-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/run-real-postgres-tests.mts scripts/messagego-v2-settlement-postgres-test.mts",
     "test:wp5-integration-postgres": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/run-real-postgres-tests.mts scripts/messagego-v2-wp09-integration-postgres-test.mts",
     "test:wp5": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/wp5-production-candidate.mts",
+    "test:wp6": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types scripts/wp6-release-truth.mts",
     "test:worker-runtime": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/worker-runtime-test.mts",
     "test:readiness": "node --import ./scripts/test-resolve-hook.mjs --experimental-strip-types --test scripts/product-flow-test.mts",
     "test:account-admin": "node --experimental-strip-types --test scripts/account-admin-test.mts scripts/admin-panel-polish-test.mts",

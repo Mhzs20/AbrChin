@@ -1,5 +1,11 @@
 # شواهد Verification برنامه Launch V2
 
+> WP6 overlay: جداول Phase 0–9 زیر شواهد تاریخی ۲۰۲۶-۰۸-۱۰ هستند. شمارش
+> «۵۳/۵۴ migration» و «۱۴۳ تست» دیگر شمارش جاری درخت نیست. Prisma اکنون
+> ۵۹ migration دارد. وضعیت جاری و گیت‌های WP6 در
+> `docs/launch/evidence/wp6/receipt.json` است. `BLOCKED`/`SKIPPED` هرگز Pass
+> نیست و Owner acceptance ثبت نشده است.
+
 ## قواعد ثبت
 
 - نتیجه فقط با Command و Artifact واقعی ثبت می‌شود.
@@ -153,9 +159,9 @@ Assertions دیتابیسی پاس‌شده: دو submit همزمان به یک 
 
 شش Route در desktop/mobile از نظر landmark، یک H1، زبان/جهت، accessible name، label، alt، duplicate ID، tabindex، hidden focusable، اندازه کنترل، focus-visible Skip Link، horizontal overflow و runtime/network/5xx error ممیزی شدند. هر ۱۲ نتیجه Pass است و business counts قبل/بعد برابر است. Screenshotها و JSON assertion در `docs/launch/evidence/phase-8` قرار دارند و contact sheet هر دو viewport به‌صورت بصری بازبینی شد.
 
-## Phase 9
+## Phase 9 (historical 2026-08-10)
 
-### Release readiness
+### Release readiness (dated; not current SHA or migration count)
 
 | دسته | نتیجه نهایی |
 | --- | --- |

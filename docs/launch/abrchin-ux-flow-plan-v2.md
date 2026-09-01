@@ -1,9 +1,9 @@
 # برنامه اجرایی Launch V2 ابرچین
 
-وضعیت سند: `ACTIVE`
+وضعیت سند: `ACTIVE` برای قرارداد فازها؛ انتشار جاری روی `origin/main`
 مالک تصمیم محصول: Founder
-Branch اجرا: `codex/abrchin-ux-flow-v2`
-قاعده انتشار: یک Draft PR به `main`؛ بدون Merge یا Deploy تا تأیید صریح Founder
+Branch اجرا (تاریخی، بازنشسته): worktree Launch V2
+قاعده انتشار جاری: Publish روی `origin/main` بدون Draft PR؛ Deploy فقط با تأیید صریح Founder
 
 ## قواعد ثابت
 

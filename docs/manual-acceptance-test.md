@@ -1,4 +1,20 @@
-# Manual acceptance test — Wallet-first PAYG
+# Manual acceptance test
+
+Launch public Golden Path is `PREPAID_TERM` (1 / 3 / 6 / 12 months) with
+wallet top-up, wallet debit, two Admin approvals, and manual fulfillment.
+PAYG remains backend/legacy and is **not** the public Launch path. Owner
+acceptance lives in `docs/launch/wp6-owner-acceptance-checklist.md` and is
+unsigned.
+
+## Local controlled PREPAID Golden Path
+
+Follow `docs/launch/launch-contract-v2.md` and the WP6 owner checklist.
+Do not treat this file as Owner acceptance.
+
+## Legacy / internal PAYG notes
+
+The steps below remain for Wallet-first PAYG internals. They are not the
+Launch storefront path.
 
 ## Local controlled flow
 

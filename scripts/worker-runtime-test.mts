@@ -68,10 +68,15 @@ test("production catalog sync commands use a compiled runtime bundle", () => {
     /"sync:catalog:arvan": "node dist\/catalog-sync\/catalog-sync\.js arvan"/,
   );
   assert.match(dockerfile, /\/app\/dist\/catalog-sync \.\/dist\/catalog-sync/);
+  const entrypoint = readFileSync(
+    resolve("scripts/catalog-sync-entrypoint.sh"),
+    "utf8",
+  );
   assert.match(
     compose,
-    /catalog-sync:[\s\S]*command: \["node", "dist\/catalog-sync\/catalog-sync-scheduler\.js"\]/,
+    /catalog-sync:[\s\S]*command: \["\.\/scripts\/catalog-sync-entrypoint\.sh"\]/,
   );
+  assert.match(entrypoint, /exec node dist\/catalog-sync\/catalog-sync-scheduler\.js/);
 });
 
 test("production accounting backfill uses compiled runtime artifact", () => {

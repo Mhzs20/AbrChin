@@ -31,8 +31,12 @@ test("release readiness is explicitly NO-GO with owned external evidence gates",
   const release = await source("docs/launch/release-readiness-v2.md");
   assert.match(release, /Verdict: `NO-GO` برای Deploy Production/);
   assert.match(release, /Public Sale: \*\*تأیید Founder و پیش‌فرض باز/);
+  assert.match(release, /origin\/main/);
+  assert.doesNotMatch(release, /PENDING_PHASE_COMMIT/);
+  assert.doesNotMatch(release, /`IN_PROGRESS` — Commit محلی آماده است/);
+  assert.doesNotMatch(release, /codex\/abrchin-ux-flow-v2/);
   for (const blocker of [
-    "Commit/Push/Draft PR",
+    "Owner acceptance",
     "ظرفیت انسانی عملیات",
     "PostgreSQL واقعی Staging",
     "Staging purchase واقعی PREPAID",
@@ -43,7 +47,8 @@ test("release readiness is explicitly NO-GO with owned external evidence gates",
     assert.match(release, new RegExp(blocker));
   }
   assert.match(release, /\| Blocker \| Owner \| Due \| Evidence لازم \| وضعیت \|/);
-  assert.match(release, /`IN_PROGRESS` — Commit محلی آماده است/);
+  assert.match(release, /OWNER_ACCEPTED|owner_accepted/);
+  assert.match(release, /PRODUCTION NOT AUTHORIZED/);
 });
 
 test("production templates keep public sale open and mutations fail closed", async () => {
