@@ -2,37 +2,19 @@ import { HeartHandshake } from "lucide-react";
 import type { Metadata } from "next";
 
 import { SupportSelector } from "@/components/support-selector";
-import { prisma } from "@/lib/db";
-import {
-  DEFAULT_PARCHIN_SERVICE_CONTRACTS,
-  toParchinServiceContract,
-} from "@/lib/parchin/service-contract";
+import { loadPublicParchinCatalog } from "@/lib/parchin/availability";
 
 export const metadata: Metadata = {
   title: "پرچین و سطح همراهی | ابرچین",
   description:
-    "مقایسه خدمات، زمان پاسخ، سهمیه و دامنه دقیق سه سطح پرچین ابرچین.",
+    "وضعیت واقعی سطوح پرچین ابرچین؛ تعهد عملیاتی فقط با قرارداد تأییدشده و شواهد.",
   alternates: { canonical: "/support" },
 };
 
 export const dynamic = "force-dynamic";
 
 export default async function SupportPage() {
-  const rows = await prisma.parchinPricingConfig
-    .findMany({
-      where: { active: true },
-      orderBy: { level: "asc" },
-    })
-    .catch(() => []);
-  const contracts =
-    rows.length > 0
-      ? rows.map((row) => toParchinServiceContract(row))
-      : Object.values(DEFAULT_PARCHIN_SERVICE_CONTRACTS).map((base) => ({
-          ...base,
-          monthlyPriceRial: "0",
-          active: true,
-          effectiveFrom: new Date(0).toISOString(),
-        }));
+  const catalog = await loadPublicParchinCatalog();
 
   return (
     <section className="support-page page-view" aria-labelledby="support-title">
@@ -42,16 +24,19 @@ export default async function SupportPage() {
         </div>
         <h1 id="support-title">پرچین یعنی سرورت بعد از تحویل تنها نمی‌ماند.</h1>
         <p>
-          هر سطح خروجی قابل‌اندازه‌گیری، تناوب مشخص و زمان پاسخ ثبت‌شده دارد.
-          نسخه انتخاب‌شده همراه سفارش قفل می‌شود.
+          سطح همراهی فقط وقتی برای خرید نمایش داده می‌شود که قرارداد تأییدشده و
+          شواهد عملیاتی موجود باشد. قطع پایگاه‌داده یا نبود شواهد به‌معنی فعال
+          بودن با قیمت صفر نیست.
         </p>
       </header>
-      <div className="support-value-strip" aria-label="تعهدهای پرچین">
-        <span>سه سطح پرچین</span>
-        <span>تعهد نسخه‌دار روی سفارش</span>
-        <span>زمان پاسخ مشخص</span>
-      </div>
-      <SupportSelector contracts={contracts} />
+      {catalog.status !== "available" ? (
+        <div className="support-unavailable" role="status">
+          {catalog.reason === "database_failure"
+            ? "وضعیت قراردادهای پرچین الان مشخص نیست؛ پایگاه‌داده در دسترس نبود. هیچ سطح همراهی فعال فرض نشده است."
+            : "سطوح پرچین برای فروش عمومی در انتظار تأیید قرارداد و شواهد عملیاتی هستند. خرید سطح تأییدنشده ممکن نیست."}
+        </div>
+      ) : null}
+      <SupportSelector catalog={catalog} />
     </section>
   );
 }

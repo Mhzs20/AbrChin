@@ -161,3 +161,18 @@ test("Parchin has no global evidence flag and relies on contract-scoped operatio
     }
   }
 });
+
+test("public Parchin sale is fail-closed until per-level operational evidence exists", async () => {
+  const [availability, supportPage, selector, pay] = await Promise.all([
+    source("lib/parchin/availability.ts"),
+    source("app/support/page.tsx"),
+    source("components/support-selector.tsx"),
+    source("lib/orders/pay-order-tx.ts"),
+  ]);
+  assert.match(availability, /database_failure/);
+  assert.match(availability, /operationalEvidenceApprovedAt/);
+  assert.match(supportPage, /loadPublicParchinCatalog/);
+  assert.doesNotMatch(supportPage, /\.catch\(\s*\(\)\s*=>\s*\[\]/);
+  assert.match(selector, /is-unavailable/);
+  assert.match(pay, /isParchinConfigSellable/);
+});

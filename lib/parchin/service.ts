@@ -17,6 +17,7 @@ import {
   toParchinServiceContract,
 } from "@/lib/parchin/service-contract";
 import { WalletError } from "@/lib/wallet/errors";
+import { isParchinConfigSellable } from "@/lib/parchin/sellable";
 
 export async function listCustomerParchinEnrollments(userId: string) {
   return prisma.parchinEnrollment.findMany({
@@ -391,7 +392,7 @@ export async function requestParchinLevelUpgrade(input: {
     const config = await tx.parchinPricingConfig.findFirst({
       where: { level: input.requestedLevel, active: true },
     });
-    if (!config) throw new WalletError("not_found", "سطح پرچین قابل انتخاب نیست.");
+    if (!config || !isParchinConfigSellable(config)) throw new WalletError("not_found", "سطح پرچین قابل انتخاب نیست.");
     const updated = await tx.parchinEnrollment.update({
       where: { id: enrollment.id },
       data: {

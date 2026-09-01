@@ -31,6 +31,7 @@ import {
   releaseInventoryReservationForOrder,
 } from "@/lib/infrastructure/preprovisioned-inventory";
 import { rejectIfQuoteExpired } from "@/lib/orders/quote-expiration";
+import { isParchinConfigSellable } from "@/lib/parchin/sellable";
 import {
   absenceAuditMatchesAttempt,
   assessRefundResourceSafety,
@@ -367,7 +368,8 @@ export async function createServiceOrderFromQuote(
     // replace or reject the locked customer amount during the quote TTL.
     const structuralPricing =
       (manualAdmin || (pricingConfig?.enabled && productPricing?.enabled)) &&
-      parchin?.active
+      parchin &&
+      isParchinConfigSellable(parchin)
         ? resolvePlanPricing(quote.plan, manualAdmin ? null : pricingConfig, {
             productMarkupBasisPoints: manualAdmin
               ? 0

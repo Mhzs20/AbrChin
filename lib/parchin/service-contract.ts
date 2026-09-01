@@ -285,7 +285,7 @@ export function defaultParchinContractForLevel(
         : typeof options.monthlyPriceRial === "bigint"
           ? options.monthlyPriceRial.toString()
           : options.monthlyPriceRial,
-    active: options?.active ?? true,
+    active: options?.active ?? false,
     effectiveFrom,
   };
 }

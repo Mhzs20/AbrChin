@@ -6,6 +6,7 @@ import {
 
 import { selectReadyServerImage } from "@/lib/cloud-servers/catalog";
 import { prisma } from "@/lib/db";
+import { isParchinConfigSellable } from "@/lib/parchin/sellable";
 import { assertAdminActorTx } from "@/lib/admin/command-receipt";
 import {
   compatibleImageCodes,
@@ -80,6 +81,9 @@ export async function ensurePublishedPlanForCatalogItem(
   const parchin = await prisma.parchinPricingConfig.findFirst({
     where: { level: parchinLevel, active: true },
   });
+  if (!isParchinConfigSellable(parchin)) {
+    throw new PricingUnavailableError();
+  }
   if (!providerPricing || !productPricing) {
     throw new PricingUnavailableError();
   }

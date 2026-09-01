@@ -1,6 +1,11 @@
 import type { MetadataRoute } from "next";
 
+import { isLegalLaunchReady } from "@/lib/legal/config";
+
 export default function robots(): MetadataRoute.Robots {
+  const legalDisallow = isLegalLaunchReady()
+    ? []
+    : ["/terms", "/privacy", "/refund-policy", "/service-policy"];
   return {
     rules: {
       userAgent: "*",
@@ -17,6 +22,7 @@ export default function robots(): MetadataRoute.Robots {
         "/cloud-servers/quote",
         "/ready-servers/quote",
         "/account/order",
+        ...legalDisallow,
       ],
     },
     sitemap: "https://abrchin.ir/sitemap.xml",

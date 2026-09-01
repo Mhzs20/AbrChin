@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 
 import { prisma } from "@/lib/db";
 import { getEnv } from "@/lib/env";
+import { isLegalLaunchReady } from "@/lib/legal/config";
 import { getBillingCatchUpStatus } from "@/lib/billing/worker";
 import { getEffectiveProviderBillingContract, providerBillingContractBlockingReasons } from "@/lib/billing/provider-contract";
 import { getWorkerHealthStatus } from "@/lib/infrastructure/provisioning-service";
@@ -207,7 +208,7 @@ export async function getPlatformReadiness() {
       settlement: env.messageGoSettlementEnabled ? "enabled" : "disabled",
       secretHandoff: env.messageGoSecretHandoffEnabled ? "enabled" : "disabled",
       arvanMutations: env.arvanMutationsEnabled ? "enabled" : "disabled",
-      providerTraffic: "disabled",
+      legalEntity: isLegalLaunchReady() ? "ready" : "blocked",
     },
     workerLastSeenAt,
     billingCatchUp: billingCatchUpStatus,

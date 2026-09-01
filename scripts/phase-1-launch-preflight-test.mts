@@ -26,6 +26,23 @@ test("production placeholders keep public sale open and provider mutations close
   assert.match(productionEnv, /^ZIBAL_MERCHANT=$/m);
 });
 
+test("legal identity remains a documented launch blocker with required owner fields", async () => {
+  const [blocker, config, checklist, readiness] = await Promise.all([
+    source("docs/launch/legal-entity-blocker.md"),
+    source("lib/legal/config.ts"),
+    source("docs/phase-1-founder-checklist.md"),
+    source("docs/launch/release-readiness-v2.md"),
+  ]);
+  assert.match(blocker, /companyLegalName/);
+  assert.match(blocker, /nationalId/);
+  assert.match(blocker, /legalRepresentativeName/);
+  assert.match(config, /hello@abrchin\.ir/);
+  assert.match(config, /isLegalLaunchReady/);
+  assert.match(checklist, /داده حقوقی/);
+  assert.match(readiness, /داده حقوقی و هویتی شرکت/);
+  assert.match(readiness, /legal-entity-blocker/);
+});
+
 test("the Founder path documents both Admin gates and never uses the retired delivery shortcut", async () => {
   const [runbook, checklist, payment, orderPayment, manual, delivery] = await Promise.all([
     source("docs/launch-runbook.md"),

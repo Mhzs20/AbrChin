@@ -15,7 +15,8 @@ import {
   selectReadyServerImage,
 } from "@/lib/cloud-servers/catalog";
 import { prisma } from "@/lib/db";
-import { listParchinLevelLabels } from "@/lib/parchin/labels";
+import { listParchinLevelLabels } from "@/lib/parchin/labels-server";
+import { isParchinConfigSellable } from "@/lib/parchin/sellable";
 import {
   getCatalogFreshness,
 } from "@/lib/infrastructure/multi-provider-catalog-service";
@@ -282,7 +283,7 @@ export function toPublicPlanOffer(
 }
 
 export async function pricingConfigs() {
-  const [providers, products, commerce, parchin, profitCurve] =
+  const [providers, products, commerce, parchinRows, profitCurve] =
     await Promise.all([
       prisma.providerPricingConfig.findMany(),
       prisma.productPricingConfig.findMany({ where: { enabled: true } }),
@@ -290,6 +291,7 @@ export async function pricingConfigs() {
       prisma.parchinPricingConfig.findMany({ where: { active: true } }),
       loadProfitCurveConfiguration(),
     ]);
+  const parchin = parchinRows.filter((row) => isParchinConfigSellable(row));
   return { providers, products, commerce, parchin, profitCurve };
 }
 

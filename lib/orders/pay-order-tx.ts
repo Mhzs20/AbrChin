@@ -21,6 +21,7 @@ import {
 } from "@/lib/pricing/plan-pricing";
 import { assertProviderRoute } from "@/lib/infrastructure/provider-routing";
 import { assertPublicSaleEnabled } from "@/lib/infrastructure/public-sale-policy";
+import { isParchinConfigSellable } from "@/lib/parchin/sellable";
 import {
   assertProductFlowOwnerStateTx,
   transitionProductFlowTx,
@@ -232,7 +233,8 @@ export async function executePayOrderWithWalletTx(
       : 1;
   const currentPricing =
     (manualAdmin || (pricingConfig?.enabled && productPricing?.enabled)) &&
-    parchin?.active
+    parchin &&
+    isParchinConfigSellable(parchin)
       ? resolvePlanPricing(plan, manualAdmin ? null : pricingConfig, {
           productMarkupBasisPoints: manualAdmin
             ? 0

@@ -4,6 +4,7 @@ import type {
   StorefrontSlotRole,
 } from "@prisma/client";
 
+import { prisma } from "@/lib/db";
 import {
   readyServerDescription,
   readyServerImageLabel,
@@ -11,7 +12,7 @@ import {
   readyServerTitleRegionSegment,
   selectReadyServerImage,
 } from "@/lib/cloud-servers/catalog";
-import { prisma } from "@/lib/db";
+import { isParchinConfigSellable } from "@/lib/parchin/sellable";
 import { getCatalogFreshness } from "@/lib/infrastructure/multi-provider-catalog-service";
 import { listProviderRegionConfigs } from "@/lib/infrastructure/provider-region-config";
 import { isPublicSaleEnabled } from "@/lib/infrastructure/public-sale-policy";
@@ -329,14 +330,15 @@ async function loadPricingContext() {
       .filter((plan) => plan.catalogItemId)
       .map((plan) => [plan.catalogItemId!, plan]),
   );
+  const sellableParchin = parchinRows.filter((row) => isParchinConfigSellable(row));
   const parchinByLevel = new Map(
-    parchinRows.map((row) => [row.level, row.priceRial]),
+    sellableParchin.map((row) => [row.level, row.priceRial]),
   );
   const parchinTitleByLevel = new Map(
-    parchinRows.map((row) => [row.level, row.title.trim()]),
+    sellableParchin.map((row) => [row.level, row.title.trim()]),
   );
   const parchinContractByLevel = new Map(
-    parchinRows.map((row) => [row.level, toParchinServiceContract(row)]),
+    sellableParchin.map((row) => [row.level, toParchinServiceContract(row)]),
   );
   return {
     providers,

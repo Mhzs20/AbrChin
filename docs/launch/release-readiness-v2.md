@@ -36,7 +36,7 @@ Final local matrix: ۱۴۳ تست قراردادی/واحد + ۱۶ تست DB، �
 | ظرفیت انسانی عملیات و On-call پرچین | Ops/SRE/Support/Security | پیش از Deploy | Owner صف روزانه، برنامه P1 و Staging drill | `BLOCKED` |
 | PostgreSQL واقعی Staging: fresh + upgrade | Engineering/Ops | پیش از Staging purchase | migration log بدون Skip و backup fixture ID | `BLOCKED` |
 | Staging purchase واقعی PREPAID | Founder/Ops/Finance | پیش از Deploy Production | sanitized Golden Path receipt/audit | `BLOCKED` |
-| داده حقوقی و هویتی شرکت | Founder/Legal | پیش از انتشار صفحات حقوقی | تأیید مکتوب و محتوای نهایی | `BLOCKED` |
+| داده حقوقی و هویتی شرکت | Founder/Legal | پیش از انتشار صفحات حقوقی | `docs/launch/legal-entity-blocker.md`؛ فیلدهای رسمی هنوز خالی‌اند | `BLOCKED` |
 | Production env/OTP/SMTP/Gateway/Provider read-only checks | Ops | پیش از Deploy | readiness و connection-check artifact | `BLOCKED` |
 | Backup/rollback drill و on-call owner | Ops | پیش از Deploy | backup ID، rollback target و drill result | `BLOCKED` |
 | Production smoke با Sale باز و Mutation خاموش | Founder/Ops | پس از Deploy مجاز | health/readiness و route smoke | `BLOCKED` |

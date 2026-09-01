@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { ConversationBuilder } from "@/components/conversation-builder";
-import { listParchinLevelLabels } from "@/lib/parchin/labels";
+import { listParchinLevelLabels } from "@/lib/parchin/labels-server";
 import type { ProjectKind } from "@/lib/recommendation/types";
 import { getCurrentUser } from "@/lib/session";
 

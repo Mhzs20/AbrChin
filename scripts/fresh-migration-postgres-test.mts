@@ -34,6 +34,7 @@ await withIsolatedPostgres("fresh", async (databaseUrl) => {
       "20260807010000_profit_curve_operational_accounting",
       "20260807020000_operating_expense_draft_idempotency",
       "20260807150000_customer_identity_email_verification",
+      "20260901230000_parspack_history_archive",
     ]) {
       assert.ok(
         migrations.some((migration) => migration.migration_name === required),
@@ -55,8 +56,20 @@ await withIsolatedPostgres("fresh", async (databaseUrl) => {
           status: "UNVERIFIED",
         },
       }),
-      2,
+      1,
     );
+    assert.equal(
+      await db.providerBillingContractVersion.count({
+        where: { provider: "ARVAN", productKind: "CLOUD_SERVER" },
+      }),
+      1,
+    );
+    const leftoverParsPack = await db.$queryRaw<Array<{ n: bigint }>>`
+      SELECT COUNT(*)::bigint AS n
+      FROM "ProviderBillingContractVersion"
+      WHERE "provider"::text = 'PARSPACK'
+    `;
+    assert.equal(Number(leftoverParsPack[0]?.n ?? 0), 0);
     const contractStatuses = await db.$queryRaw<Array<{ enumlabel: string }>>`
       SELECT enumlabel
       FROM pg_enum

@@ -65,15 +65,15 @@ test("quote pages use Persian product language", async () => {
   }
 });
 
-test("robots disallow private surfaces; sitemap is public-only", async () => {
+test("robots disallow private surfaces; incomplete legal pages stay out of the public sitemap", async () => {
   const robots = await readFile("app/robots.ts", "utf8");
   const sitemap = await readFile("app/sitemap.ts", "utf8");
   assert.match(robots, /\/admin/);
   assert.match(robots, /\/account/);
   assert.match(robots, /\/api/);
   assert.match(robots, /\/login/);
-  assert.match(sitemap, /\/terms/);
-  assert.match(sitemap, /\/privacy/);
+  assert.match(robots, /isLegalLaunchReady/);
+  assert.match(sitemap, /isLegalLaunchReady/);
   assert.doesNotMatch(sitemap, /\/account/);
   assert.doesNotMatch(sitemap, /\/admin/);
   assert.doesNotMatch(sitemap, /\/login/);

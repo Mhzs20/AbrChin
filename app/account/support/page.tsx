@@ -17,6 +17,7 @@ import {
   SUPPORT_STATUS_LABELS,
 } from "@/lib/labels/customer";
 import { listCustomerSupportRequests } from "@/lib/support/service";
+import { PUBLIC_CONTACT_EMAIL } from "@/lib/legal/config";
 
 export const metadata: Metadata = {
   title: "پشتیبانی | حساب من | ابرچین",
@@ -172,11 +173,11 @@ export default async function AccountSupportPage() {
         <ul style={{ margin: 0, paddingRight: 18, display: "grid", gap: 8 }}>
           <li>
             ایمیل:{" "}
-            <a className="product-tech" href="mailto:support@abrchin.ir" dir="ltr">
-              support@abrchin.ir
+            <a className="product-tech" href={`mailto:${PUBLIC_CONTACT_EMAIL}`} dir="ltr">
+              {PUBLIC_CONTACT_EMAIL}
             </a>
           </li>
-          <li>ساعات پاسخ‌گویی: شنبه تا پنج‌شنبه، ۹ تا ۱۸</li>
+          <li>زمان پاسخ عمومی تا اعلام رسمی مالک منتشر نشده است.</li>
         </ul>
       </SectionCard>
 

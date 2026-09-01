@@ -15,6 +15,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { AuthNavLink } from "@/components/auth-nav-link";
+import { PUBLIC_CONTACT_EMAIL } from "@/lib/legal/config";
 
 type NavigationItem = {
   href: string;
@@ -154,7 +155,12 @@ export function SiteShell({ children }: { children: ReactNode }) {
               </Link>
             ))}
           </nav>
-          <span className="site-footer-copy">© ۱۴۰۵ ابرچین</span>
+          <span className="site-footer-copy">
+            © ۱۴۰۵ ابرچین ·{" "}
+            <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`} dir="ltr">
+              {PUBLIC_CONTACT_EMAIL}
+            </a>
+          </span>
         </footer>
 
         <nav className="mobile-navigation" aria-label="منوی موبایل">

@@ -2426,6 +2426,9 @@ model ParchinPricingConfig {
   supportWindow       String?
   firstResponseTarget String?
   active              Boolean      @default(true)
+  /// Set only after an approved contract AND operational evidence exist.
+  /// Null means the tier is not publicly sellable and must not show SLA claims.
+  operationalEvidenceApprovedAt DateTime?
   effectiveFrom       DateTime     @default(now())
   sortOrder           Int          @default(0)
   updatedById         String?
@@ -3036,6 +3039,34 @@ model MessageGoCustomerConnection {
   @@unique([userId, productId, workspaceId, alias])
   @@index([userId, createdAt])
   @@index([status])
+}
+
+/// ParsPack commercial history preserved before enum drop. Never restore into
+/// production automatically; these rows are read-only audit archives.
+model ParsPackArchivedRow {
+  id            String   @id
+  sourceTable   String
+  sourceId      String
+  archivedAt    DateTime @default(now())
+  payload       Json
+  payloadSha256 String
+
+  @@unique([sourceTable, sourceId])
+  @@index([sourceTable])
+}
+
+model ParsPackArchiveReceipt {
+  id                 String   @id
+  createdAt          DateTime @default(now())
+  dropMigrationName  String
+  dropAlreadyApplied Boolean
+  beforeCounts       Json
+  afterArchiveCounts Json
+  beforeChecksum     String
+  afterChecksum      String
+  databaseVersion    String
+  verificationResult String
+  notes              String?
 }
 
 /// Shared S2S HMAC replay protection for inbound MessageGo-signed requests.

@@ -1,6 +1,8 @@
 import type { MetadataRoute } from "next";
 
-const routes = [
+import { isLegalLaunchReady } from "@/lib/legal/config";
+
+const publicRoutes = [
   "",
   "/cloud-servers",
   "/compass",
@@ -9,6 +11,9 @@ const routes = [
   "/about",
   "/help",
   "/status",
+];
+
+const legalRoutes = [
   "/terms",
   "/privacy",
   "/refund-policy",
@@ -16,6 +21,9 @@ const routes = [
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
+  const routes = isLegalLaunchReady()
+    ? [...publicRoutes, ...legalRoutes]
+    : publicRoutes;
   return routes.map((route) => ({
     url: `https://abrchin.ir${route}`,
     lastModified: new Date(),
@@ -27,11 +35,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
           ? 0.9
           : route === "/compass"
             ? 0.8
-            : route === "/terms" ||
-                route === "/privacy" ||
-                route === "/refund-policy" ||
-                route === "/service-policy"
-              ? 0.5
-              : 0.7,
+            : 0.7,
   }));
 }

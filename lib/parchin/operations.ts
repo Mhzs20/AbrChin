@@ -345,6 +345,7 @@ export async function activateParchinEnrollmentTx(
     readParchinServiceSnapshot(input.contractSnapshot) ??
     defaultParchinContractForLevel(input.level, {
       version: 3,
+      active: true,
       effectiveFrom: input.activatedAt,
     });
   const enrollment = await tx.parchinEnrollment.upsert({

@@ -1,0 +1,31 @@
+AbrChin third-party notices
+===========================
+
+This NOTICE lists licenses of bundled fonts and direct production dependencies
+as recorded in their package metadata. It is not a license for the AbrChin
+source code. The owner has not selected a repository SPDX license.
+
+Bundled font
+------------
+Mikhak (public/assets/fonts/Mikhak-DS1-Medium.ttf,
+public/assets/fonts/Mikhak-DS1-Black.ttf)
+Copyright 2022 The Mikhak Project Authors (https://github.com/aminabedi68/Mikhak)
+Licensed under the SIL Open Font License, Version 1.1.
+Full license text: public/assets/fonts/OFL.txt
+
+Direct production npm dependencies (from package.json + package metadata)
+-------------------------------------------------------------------------
+next@16.2.11 — MIT
+react@19.2.7 — MIT
+react-dom@19.2.7 — MIT
+lucide-react@1.25.0 — ISC
+motion@12.42.2 — MIT
+nodemailer@9.0.5 — MIT-0
+@prisma/client@6.19.3 — Apache-2.0
+prisma@6.19.3 (dev/build client generator) — Apache-2.0
+server-only@0.0.1 — MIT
+
+First-party marks and drawings in public/assets/abrchin-logo.svg,
+public/assets/abrchin-symbol.svg, and public/assets/abrchin-system/ are
+AbrChin product assets. They are not third-party packages and have no
+separate published license in this repository.

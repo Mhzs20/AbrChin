@@ -9,10 +9,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-import {
-  DEFAULT_PARCHIN_SERVICE_CONTRACTS,
-  type ParchinServiceContract,
-} from "@/lib/parchin/service-contract";
+import type { PublicParchinCatalog } from "@/lib/parchin/availability";
 import { formatTomanFa } from "@/lib/money";
 
 const LEVEL_ORDER = [
@@ -33,46 +30,35 @@ const LEVEL_ICON = {
   PARCHIN_STABLE: DatabaseBackup,
 } as const;
 
-const LEVEL_HIGHLIGHT_COUNT = {
-  PARCHIN_START: 6,
-  PARCHIN_ACTIVE: 7,
-  PARCHIN_STABLE: 8,
-} as const;
-
 export function SupportSelector({
-  contracts,
+  catalog,
 }: {
-  contracts: ParchinServiceContract[];
+  catalog: PublicParchinCatalog;
 }) {
-  const byLevel = new Map(contracts.map((row) => [row.level, row]));
-  const cards = LEVEL_ORDER.map((level) => {
-    const fallback = DEFAULT_PARCHIN_SERVICE_CONTRACTS[level];
-    const live = byLevel.get(level);
-    return live ?? {
-      ...fallback,
-      monthlyPriceRial: "0",
-      active: true,
-      effectiveFrom: new Date(0).toISOString(),
-    };
-  });
+  const cards = LEVEL_ORDER.map(
+    (level) => catalog.contracts.find((row) => row.level === level) ?? null,
+  ).filter((row) => row !== null);
 
   return (
     <div className="support-workspace support-workspace--tiers">
       <div className="support-contract-grid">
         {cards.map((contract) => {
           const Icon = LEVEL_ICON[contract.level];
-          const highlights = contract.includedServices.slice(
-            -LEVEL_HIGHLIGHT_COUNT[contract.level],
-          );
+          const highlights = contract.includedServices.slice(-6);
           return (
             <article
               key={contract.level}
               className={`support-contract-card support-contract-card--${contract.level.toLowerCase()}${
-                contract.level === "PARCHIN_ACTIVE" ? " is-recommended" : ""
-              }`}
+                contract.sellable && contract.level === "PARCHIN_ACTIVE"
+                  ? " is-recommended"
+                  : ""
+              }${contract.sellable ? "" : " is-unavailable"}`}
             >
-              {contract.level === "PARCHIN_ACTIVE" ? (
+              {contract.sellable && contract.level === "PARCHIN_ACTIVE" ? (
                 <span className="support-recommended">انتخاب متعادل</span>
+              ) : null}
+              {!contract.sellable ? (
+                <span className="support-unavailable-badge">غیرفعال / در انتظار شواهد</span>
               ) : null}
               <header>
                 <span className="support-contract-icon">
@@ -89,13 +75,13 @@ export function SupportSelector({
               <p className="support-contract-description">{contract.description}</p>
 
               <div className="support-contract-price">
-                {BigInt(contract.monthlyPriceRial || "0") > 0n ? (
+                {contract.sellable && BigInt(contract.monthlyPriceRial || "0") > 0n ? (
                   <>
                     <strong>{formatTomanFa(BigInt(contract.monthlyPriceRial))}</strong>
                     <span>تومان / ماه</span>
                   </>
                 ) : (
-                  <strong>قیمت در سفارش</strong>
+                  <strong>برای فروش عمومی آماده نیست</strong>
                 )}
               </div>
 
@@ -112,7 +98,7 @@ export function SupportSelector({
                 </span>
               </div>
 
-              <h3>نتیجه‌ای که تحویل می‌گیری</h3>
+              <h3>{contract.sellable ? "نتیجه‌ای که تحویل می‌گیری" : "وضعیت فعلی"}</h3>
               <ul className="support-contract-outcomes">
                 {highlights.map((item) => (
                   <li key={`${contract.level}-${item}`}>
@@ -138,8 +124,12 @@ export function SupportSelector({
 
       <div className="support-purchase-cta">
         <div>
-          <span>سرور + قرارداد عملیاتی</span>
-          <strong>پلن را انتخاب کن؛ مبلغ دقیق پرچین قبل از پرداخت شفاف است.</strong>
+          <span>سرور ابری</span>
+          <strong>
+            {catalog.status === "available"
+              ? "پلن را انتخاب کن؛ مبلغ دقیق پرچین قبل از پرداخت شفاف است."
+              : "الان می‌توانی سرور را ببینی؛ سطح پرچین تأییدنشده قابل خرید نیست."}
+          </strong>
         </div>
         <Link className="button button-primary" href="/cloud-servers">
           انتخاب سرور
@@ -147,25 +137,27 @@ export function SupportSelector({
         </Link>
       </div>
 
-      <section className="support-contract-definitions" aria-labelledby="parchin-definitions-title">
-        <h2 id="parchin-definitions-title">تعریف دقیق خدمات</h2>
-        <p>
-          این تعریف‌ها روی نسخه قرارداد سفارش قفل می‌شوند تا مشتری و تیم عملیات
-          دقیقاً یک برداشت داشته باشند.
-        </p>
-        <dl>
-          <div><dt>ساعات کاری</dt><dd>{cards[0].definitions.businessHours}</dd></div>
-          <div><dt>پاسخ اولیه</dt><dd>{cards[0].definitions.firstResponse}</dd></div>
-          <div><dt>رخداد P1</dt><dd>{cards[0].definitions.p1Incident}</dd></div>
-          <div><dt>درخواست روتین</dt><dd>{cards[0].definitions.routineRequest}</dd></div>
-          <div><dt>خارج از سهمیه روتین</dt><dd>{cards[0].definitions.routineExclusions}</dd></div>
-          <div><dt>بکاپ روزانه</dt><dd>{cards[0].definitions.backup}</dd></div>
-          <div><dt>بررسی Restore</dt><dd>{cards[0].definitions.restoreCheck}</dd></div>
-          <div><dt>آزمون Restore</dt><dd>{cards[0].definitions.restoreTest}</dd></div>
-          <div><dt>مدیریت تغییر</dt><dd>{cards[0].definitions.changeManagement}</dd></div>
-          <div><dt>مرز Application</dt><dd>{cards[0].definitions.applicationBoundary}</dd></div>
-        </dl>
-      </section>
+      {catalog.status === "available" ? (
+        <section className="support-contract-definitions" aria-labelledby="parchin-definitions-title">
+          <h2 id="parchin-definitions-title">تعریف دقیق خدمات</h2>
+          <p>
+            این تعریف‌ها روی نسخه قرارداد سفارش قفل می‌شوند تا مشتری و تیم عملیات
+            دقیقاً یک برداشت داشته باشند.
+          </p>
+          <dl>
+            <div><dt>ساعات کاری</dt><dd>{cards[0]?.definitions.businessHours}</dd></div>
+            <div><dt>پاسخ اولیه</dt><dd>{cards[0]?.definitions.firstResponse}</dd></div>
+            <div><dt>رخداد P1</dt><dd>{cards[0]?.definitions.p1Incident}</dd></div>
+            <div><dt>درخواست روتین</dt><dd>{cards[0]?.definitions.routineRequest}</dd></div>
+            <div><dt>خارج از سهمیه روتین</dt><dd>{cards[0]?.definitions.routineExclusions}</dd></div>
+            <div><dt>بکاپ روزانه</dt><dd>{cards[0]?.definitions.backup}</dd></div>
+            <div><dt>بررسی Restore</dt><dd>{cards[0]?.definitions.restoreCheck}</dd></div>
+            <div><dt>آزمون Restore</dt><dd>{cards[0]?.definitions.restoreTest}</dd></div>
+            <div><dt>مدیریت تغییر</dt><dd>{cards[0]?.definitions.changeManagement}</dd></div>
+            <div><dt>مرز Application</dt><dd>{cards[0]?.definitions.applicationBoundary}</dd></div>
+          </dl>
+        </section>
+      ) : null}
     </div>
   );
 }

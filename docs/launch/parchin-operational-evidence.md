@@ -1,34 +1,39 @@
-# رجیستری عملیات و شواهد پرچین ۳
+# Parchin operational evidence
 
-وضعیت محصول: **قابل فروش با Fulfillment انسانی کنترل‌شده**.
+وضعیت محصول برای فروش عمومی پرچین: **fail-closed**.
 
-پرچین از Gate سراسری و دستی «تأیید شواهد» استفاده نمی‌کند. دامنه خدمت در Snapshot نسخه‌دار Quote و Order قفل می‌شود و پس از تأیید نهایی تحویل، برای همان سرور یک `ParchinEnrollment` فعال می‌گردد. شواهد هر تعهد در Task، Support Request و Report همان قرارداد ثبت می‌شود.
+پرچین از Gate سراسری جداگانه در env استفاده نمی‌کند. فروش سطح فقط وقتی مجاز است که
+ردیف `ParchinPricingConfig` هم `active = true` باشد و هم
+`operationalEvidenceApprovedAt` پر شده باشد. قطع پایگاه‌داده یا نبود شواهد یعنی
+**ناموجود**، نه فعال با قیمت صفر.
+
+ادعاهای SLA (پاسخ ۲۴/۷، پایش پنج‌دقیقه‌ای، بکاپ روزانه مدیریت‌شده، آزمون Restore
+ماهانه) فقط روی سطح قابل‌فروش نمایش داده می‌شوند.
 
 ## منبع‌های ماشینی
 
 | مسئولیت | منبع |
 | --- | --- |
-| قرارداد، تعریف‌ها و عددهای SLA | `lib/parchin/service-contract.ts` |
-| تقویم پاسخ و الگوی کارهای دوره‌ای | `lib/parchin/operations.ts` |
+| قرارداد الگو | `lib/parchin/service-contract.ts` |
+| فروش‌پذیری و شواهد | `lib/parchin/sellable.ts` و ستون `operationalEvidenceApprovedAt` |
+| نمایش عمومی fail-closed | `lib/parchin/availability.ts` |
+| تقویم پاسخ و الگوی کار | `lib/parchin/operations.ts` |
 | قرارداد فعال هر سرور | `ParchinEnrollment` |
-| Owner، Due، Status و Evidence | `ParchinTask` |
-| زمان پاسخ و مصرف سهمیه | `SupportRequest` |
-| شاخص‌های سلامت و نتیجه عملیات | `ParchinReport` |
 
-## جریان اجرایی
+## فعال‌سازی شواهد (فقط پس از مدارک واقعی مالک)
 
-1. مشتری در Quote سطح شروع، استوار یا کهکشان را انتخاب می‌کند؛ قیمت و قرارداد نسخه ۳ Snapshot می‌شوند.
-2. سفارش با Wallet پرداخت و با دو تأیید مستقل ادمین Fulfill می‌شود.
-3. تأیید نهایی تحویل، قرارداد پرچین و صف اولیه/دوره‌ای را اتمیک فعال می‌کند.
-4. اپراتور هر کار را Assign، Block یا Complete می‌کند؛ Complete نیازمند خلاصه شاهد است و موعد بعدی را idempotent می‌سازد.
-5. درخواست روتین فقط از سهمیه قرارداد فعال مصرف می‌کند. رخداد P1 فقط برای کهکشان و با موعد پاسخ ۳۰ دقیقه‌ای قابل ثبت است.
-6. گزارش منتشرشده شامل بازه، خلاصه، CPU/RAM/Disk/Uptime، وضعیت Backup/Patch/Restore و اقدام پیشنهادی در پنل مشتری دیده می‌شود.
-7. ارتقای سطح برای دوره بعد ثبت می‌شود، Quote تمدید قبلی را باطل می‌کند و سطح جدید در تمدید پرداخت‌شده فعال می‌گردد.
+```sql
+UPDATE "ParchinPricingConfig"
+SET "operationalEvidenceApprovedAt" = NOW(),
+    "updatedAt" = NOW()
+WHERE "level" = 'PARCHIN_START' -- or ACTIVE / STABLE
+  AND "active" = true;
+```
+
+بدون این به‌روزرسانی، پرداخت سفارش با آن سطح `quote_unavailable` می‌شود.
+تست‌های ایزوله با `ABRCHIN_ISOLATED_TEST=1` از مهر شواهد می‌گذرند؛ پروداکشن این متغیر را ندارد.
 
 ## کنترل عرضه
 
-فروش همچنان با `PUBLIC_SALE_ENABLED`، Gate منبع/Provider، Region، موجودی و freshness کنترل می‌شود. هیچ Flag مستقل پرچین وجود ندارد. خاموش بودن Provider mutation با Fulfillment انسانی سازگار است و وعده‌های پرچین از طریق مرکز عملیات ادمین اجرا و ممیزی می‌شوند.
-
-## مرز تعهد
-
-پاسخ اولیه به معنی تأیید دریافت، تعیین مسئول و اعلام اقدام بعدی است. نگهداری کد Application، رفع باگ، DBA تخصصی، مهاجرت کامل و تغییر معماری داخل پرچین نیستند. تعریف دقیق ساعت کاری، درخواست روتین، P1، Backup، Restore و مدیریت تغییر در Snapshot قرارداد نمایش داده می‌شود.
+فروش سرور همچنان با `PUBLIC_SALE_ENABLED` و Gate منبع/Provider کنترل می‌شود.
+خاموش بودن Provider mutation با Fulfillment انسانی سازگار است.

@@ -419,6 +419,8 @@ test("production deploy gate keeps one-shot migrate and rejects degraded readine
   assert.match(deploy, /compose config --quiet/);
   assert.match(deploy, /backup-postgres\.sh/);
   assert.match(deploy, /migrate-deploy\.sh/);
+  const migrateSh = await readFile("scripts/migrate-deploy.sh", "utf8");
+  assert.match(migrateSh, /parspack-drop-gate/);
   assert.match(deploy, /local_readiness_acceptable/);
   assert.match(deploy, /degraded is not accepted/);
   assert.doesNotMatch(deploy, /status" == "degraded"/);
