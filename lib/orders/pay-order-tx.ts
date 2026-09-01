@@ -6,11 +6,11 @@ import {
   LedgerDirection,
   LedgerStatus,
   LedgerType,
+  Prisma,
   RecommendationFlowStatus,
   RecommendationQuoteStatus,
   ServiceOrderStatus,
   WalletStatus,
-  type Prisma,
 } from "@prisma/client";
 
 import { ensureWalletForUser } from "@/lib/wallet/ensure-wallet";
@@ -79,6 +79,12 @@ export async function executePayOrderWithWalletTx(
   orderId: string,
   options?: PayOrderTxOptions,
 ): Promise<PayOrderTxResult> {
+  await tx.$queryRaw`
+    SELECT id
+    FROM "ServiceOrder"
+    WHERE id = ${orderId}
+    FOR UPDATE
+  `;
   const order = await tx.serviceOrder.findUnique({
     where: { id: orderId },
     include: {
@@ -320,6 +326,15 @@ export async function executePayOrderWithWalletTx(
       "موجودی رزروشده با Snapshot سفارش یکسان نیست؛ مبلغی برداشت نشد.",
     );
   }
+  const amountRial = order.amount;
+  if (amountRial <= 1n) {
+    throw new WalletError(
+      "pricing_unavailable",
+      "قیمت این سفارش معتبر نیست؛ مبلغی برداشت نشد.",
+    );
+  }
+  const idempotencyKey = `order_pay_${order.id}`;
+
   if (manualAdmin) {
     if (!plan.catalogItemId) {
       throw new WalletError(
@@ -341,21 +356,28 @@ export async function executePayOrderWithWalletTx(
       },
     });
     if (reserved.count !== 1) {
+      const racedLedger = await tx.walletLedgerEntry.findUnique({
+        where: { idempotencyKey },
+      });
+      const racedOrder = await tx.serviceOrder.findUnique({
+        where: { id: order.id },
+        include: { recommendationQuote: true },
+      });
+      if (
+        racedLedger?.status === LedgerStatus.COMPLETED ||
+        racedOrder?.status === ServiceOrderStatus.PAID
+      ) {
+        const infra = await tx.infrastructureOrder.findUnique({
+          where: { serviceOrderId: order.id },
+        });
+        return { order: racedOrder ?? order, infrastructureOrder: infra };
+      }
       throw new WalletError(
         "inventory_unavailable",
         "ظرفیت دستی این سفارش تمام شده است؛ مبلغی برداشت نشد.",
       );
     }
   }
-
-  const amountRial = order.amount;
-  if (amountRial <= 1n) {
-    throw new WalletError(
-      "pricing_unavailable",
-      "قیمت این سفارش معتبر نیست؛ مبلغی برداشت نشد.",
-    );
-  }
-  const idempotencyKey = `order_pay_${order.id}`;
 
   const existingLedger = await tx.walletLedgerEntry.findUnique({ where: { idempotencyKey } });
   if (existingLedger?.status === LedgerStatus.COMPLETED) {

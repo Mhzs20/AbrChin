@@ -252,8 +252,6 @@ function runCommand(
       clearTimeout(timer);
       child.stdout?.destroy();
       child.stderr?.destroy();
-      killTree("SIGTERM");
-      setTimeout(() => killTree("SIGKILL"), 400);
       resolveRun({ code: code ?? 1, output });
     };
     const timer = setTimeout(() => {

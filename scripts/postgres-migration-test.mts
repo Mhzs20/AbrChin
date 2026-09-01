@@ -4704,8 +4704,8 @@ try {
       observedResource: {
         state: "active",
         ipv4: "192.0.2.80",
-        networkIds: null,
-        securityIds: null,
+        networkIds: ["network-1"],
+        securityIds: ["security-1"],
       },
     });
   }

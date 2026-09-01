@@ -595,6 +595,19 @@ export async function payOrderWithWallet(
       executePayOrderWithWalletTx(tx, userId, orderId, options),
     );
   } catch (error) {
+    const raced = await prisma.serviceOrder.findUnique({
+      where: { id: orderId },
+      include: { infrastructureOrder: true },
+    });
+    if (
+      raced?.userId === userId &&
+      raced.status === ServiceOrderStatus.PAID
+    ) {
+      return {
+        order: raced,
+        infrastructureOrder: raced.infrastructureOrder,
+      };
+    }
     await releaseInventoryReservationForOrder(
       orderId,
       error instanceof WalletError ? error.code : "payment_failed",

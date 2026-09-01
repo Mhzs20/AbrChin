@@ -81,7 +81,7 @@ export async function createPublishedManualArvanPlan(
       priceScale: 0,
       currencyCode: "IRR",
       amountUnit: "RIAL",
-      manualAvailableUnits: 50,
+      manualAvailableUnits: 1,
       manualPriceValidUntil: validUntil,
       manualLastVerifiedAt: now,
       lastSyncedAt: now,
