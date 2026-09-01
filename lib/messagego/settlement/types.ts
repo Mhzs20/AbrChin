@@ -13,7 +13,7 @@ export type AuthorityOutcomeStatus =
 
 export type AuthorityOutcome = {
   contract_id: "MESSAGEGO-V2-ABRCHIN-SETTLEMENT";
-  contract_version: "2.0.0";
+  contract_version: "2.1.0";
   authority_reservation_id: string;
   status: AuthorityOutcomeStatus;
   hold_amount: string;
@@ -39,9 +39,15 @@ export type ReserveInput = {
   runId: string;
   usageReservationId: string;
   callerServiceId: string;
-  holdAmount: unknown;
-  pricingFingerprint: string;
-  pricingVersion: string;
+  holdAmount?: unknown;
+  modelAlias: string;
+  estimatedMaxInputTokens: unknown;
+  requestedMaxOutputTokens: unknown;
+  providerPricingFingerprint: string;
+  providerPricingVersion: string;
+  providerCostCeiling?: unknown;
+  pricingFingerprint?: string;
+  pricingVersion?: string;
 };
 
 export type SettleInput = {
@@ -53,12 +59,14 @@ export type SettleInput = {
   usageReservationId: string;
   authorityReservationId: string;
   callerServiceId: string;
-  customerBillableAmount: unknown;
-  pricingFingerprint: string;
-  pricingVersion: string;
+  customerBillableAmount?: unknown;
+  pricingFingerprint?: string;
+  pricingVersion?: string;
   outcomeClass?: SettlementOutcomeClass;
   providerUsage?: unknown;
   providerCost?: unknown;
+  providerPricingFingerprint?: string;
+  providerPricingVersion?: string;
 };
 
 export type ReleaseInput = {
@@ -82,11 +90,13 @@ export type ReconcileInput = {
   usageReservationId: string;
   authorityReservationId: string;
   callerServiceId: string;
-  customerBillableAmount: unknown;
-  pricingFingerprint: string;
-  pricingVersion: string;
+  customerBillableAmount?: unknown;
+  pricingFingerprint?: string;
+  pricingVersion?: string;
   providerUsage?: unknown;
   providerCost?: unknown;
+  providerPricingFingerprint?: string;
+  providerPricingVersion?: string;
 };
 
 export function reservationStatusToOutcome(

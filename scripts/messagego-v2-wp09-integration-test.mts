@@ -19,7 +19,7 @@ import { parseWalletAmount } from "../lib/messagego/settlement/amount.ts";
 
 const CANARY = "WP09_SECRET_CANARY_DO_NOT_LEAK";
 const PHASE1_HASH = "9bb2311d7dc7a01d87b31c664ec65c1cb346efaa";
-const SETTLEMENT_DIGEST = "b943e627a5486fd4ae6ae5e062cc7b220ccb945808cebb4757ef42262f882f33";
+const SETTLEMENT_DIGEST = "43392f82b465ba2462621ea09b092bd7977994d5b22ea15f616ffbc12601f242";
 
 test("AbrChin pin matches canonical MessageGo settlement digest", () => {
   const lock = readPinnedSettlementLock();

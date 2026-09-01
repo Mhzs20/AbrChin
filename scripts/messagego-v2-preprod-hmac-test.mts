@@ -17,7 +17,7 @@ import {
 
 const HMAC_DIGEST = "bf20696a20ab028733d53153c94f45447e4c23f25b871afe73287e5f15e11c07";
 const HANDOFF_DIGEST = "1bf21efb63c6ac9b364edac9961d9ab4cbb06d3be46088f6ad56a7b3bf7989be";
-const SETTLEMENT_DIGEST = "b943e627a5486fd4ae6ae5e062cc7b220ccb945808cebb4757ef42262f882f33";
+const SETTLEMENT_DIGEST = "43392f82b465ba2462621ea09b092bd7977994d5b22ea15f616ffbc12601f242";
 const PHASE1_HASH = "9bb2311d7dc7a01d87b31c664ec65c1cb346efaa";
 
 test("frozen HMAC vector matches Go/MessageGo contract", () => {
@@ -188,7 +188,7 @@ test("HMAC settlement auth fail-closed matrix does not require postgres", async 
       "",
       signBody,
       "MESSAGEGO-V2-ABRCHIN-SETTLEMENT",
-      "2.0.0",
+      "2.1.0",
     );
     return headers;
   };

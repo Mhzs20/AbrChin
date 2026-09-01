@@ -1,9 +1,9 @@
 {
   "contract_id": "MESSAGEGO-V2-ABRCHIN-SETTLEMENT",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "canonical_repository": "Mhzs20/MessageGo",
   "canonical_path": "contracts/integrations/messagego-v2-abrchin-settlement.json",
-  "json_sha256": "b943e627a5486fd4ae6ae5e062cc7b220ccb945808cebb4757ef42262f882f33",
+  "json_sha256": "43392f82b465ba2462621ea09b092bd7977994d5b22ea15f616ffbc12601f242",
   "status": "pinned_not_executable",
   "executable": false
 }

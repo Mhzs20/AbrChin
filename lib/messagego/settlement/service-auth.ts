@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
 import { getEnv } from "@/lib/env";
-import { SettlementError } from "@/lib/messagego/settlement/amount";
+import { SETTLEMENT_CONTRACT_VERSION, SettlementError } from "@/lib/messagego/settlement/amount";
 import {
   boundSkewSeconds,
   compareSignature,
@@ -70,7 +70,7 @@ export async function authenticateSettlementRequest(
       );
       if (
         parsed.fields.contractId !== "MESSAGEGO-V2-ABRCHIN-SETTLEMENT" ||
-        parsed.fields.contractVersion !== "2.0.0"
+        parsed.fields.contractVersion !== SETTLEMENT_CONTRACT_VERSION
       ) {
         throw new S2SError("unauthenticated", "contract identity");
       }

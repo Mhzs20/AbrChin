@@ -4,8 +4,10 @@ import test from "node:test";
 
 import {
   assertNoJsonNumberMoney,
+  costRial,
   parseWalletAmount,
   SETTLEMENT_CONTRACT_ID,
+  SETTLEMENT_CONTRACT_VERSION,
   SettlementError,
   walletAmountString,
 } from "../lib/messagego/settlement/amount.ts";
@@ -18,13 +20,14 @@ import {
 import { settlementFingerprint } from "../lib/messagego/settlement/fingerprint.ts";
 import { authenticateSettlementRequest } from "../lib/messagego/settlement/service-auth.ts";
 
-test("settlement pin matches MESSAGEGO-V2-ABRCHIN-SETTLEMENT@2.0.0", () => {
+test("settlement pin matches MESSAGEGO-V2-ABRCHIN-SETTLEMENT@2.1.0", () => {
   const lock = readPinnedSettlementLock();
   assert.equal(lock.contract_id, SETTLEMENT_CONTRACT_ID);
-  assert.equal(lock.version, "2.0.0");
+  assert.equal(lock.version, SETTLEMENT_CONTRACT_VERSION);
+  assert.equal(lock.version, "2.1.0");
   assert.equal(
     lock.json_sha256,
-    "b943e627a5486fd4ae6ae5e062cc7b220ccb945808cebb4757ef42262f882f33",
+    "43392f82b465ba2462621ea09b092bd7977994d5b22ea15f616ffbc12601f242",
   );
   assert.equal(SETTLEMENT_CONTRACT_PIN.json_sha256, lock.json_sha256);
   const sibling = siblingCanonicalContractPath();
@@ -56,6 +59,17 @@ test("wallet amounts are lossless integer rial strings", () => {
       provider_usage: { input_text_tokens: 10, output_text_tokens: 4 },
     }),
   );
+});
+
+test("AbrChin customer cost differs by usage and fails closed on a zero rate", () => {
+  assert.equal(costRial(10n, 2_000_000n), 20n);
+  assert.equal(costRial(100n, 2_000_000n), 200n);
+  assert.notEqual(costRial(10n, 2_000_000n), costRial(100n, 2_000_000n));
+  assert.throws(() => costRial(4n, 0n), (error: unknown) => {
+    assert.ok(error instanceof SettlementError);
+    assert.equal(error.code, "unknown_pricing");
+    return true;
+  });
 });
 
 test("identical semantic bodies share a fingerprint and conflicts do not", () => {

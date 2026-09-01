@@ -9,7 +9,7 @@ import {
 } from "@/lib/messagego/settlement/amount";
 
 const PINNED_DIGEST =
-  "b943e627a5486fd4ae6ae5e062cc7b220ccb945808cebb4757ef42262f882f33";
+  "43392f82b465ba2462621ea09b092bd7977994d5b22ea15f616ffbc12601f242";
 
 export const SETTLEMENT_CONTRACT_PIN = {
   contract_id: SETTLEMENT_CONTRACT_ID,
@@ -39,7 +39,7 @@ export function readPinnedSettlementLock() {
     lock.version !== SETTLEMENT_CONTRACT_VERSION ||
     lock.json_sha256 !== PINNED_DIGEST
   ) {
-    throw new Error("AbrChin settlement pin does not match MESSAGEGO-V2-ABRCHIN-SETTLEMENT@2.0.0");
+    throw new Error("AbrChin settlement pin does not match MESSAGEGO-V2-ABRCHIN-SETTLEMENT@2.1.0");
   }
   return { ...lock, pin: PINNED_DIGEST, lockPath };
 }

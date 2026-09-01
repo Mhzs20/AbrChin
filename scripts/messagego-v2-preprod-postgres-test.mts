@@ -16,6 +16,7 @@ import {
 import { prisma } from "../lib/db.ts";
 import { UserAccountStatus, WalletStatus } from "@prisma/client";
 import { randomBytes } from "node:crypto";
+import { ensureUnitCustomerPrice } from "../lib/messagego/settlement/customer-pricing.ts";
 
 const SETTLEMENT_PATH = "/api/internal/messagego/v2/settlement";
 
@@ -113,11 +114,12 @@ test("HMAC signed reserve/settle mutates AbrChin wallet once; replay and tamper 
 
   const ring = parseKeyringJSON(keyring.json);
   const suffix = randomBytes(4).toString("hex");
+  await ensureUnitCustomerPrice(prisma);
   const reserveBody = Buffer.from(
     JSON.stringify({
       operation: "reserve",
       contract_id: "MESSAGEGO-V2-ABRCHIN-SETTLEMENT",
-      contract_version: "2.0.0",
+      contract_version: "2.1.0",
       operation_id: `op_r_${suffix}`,
       account_id: user.id,
       product_id: "prod_a",
@@ -125,9 +127,11 @@ test("HMAC signed reserve/settle mutates AbrChin wallet once; replay and tamper 
       run_id: `run_${suffix}`,
       usage_reservation_id: `ures_${suffix}`,
       caller_service_id: "messagego-runtime",
-      hold_amount: "250",
-      pricing_fingerprint: "ab".repeat(32),
-      pricing_version: "price.v2.test",
+      model_alias: "messagego.fast",
+      estimated_max_input_tokens: 100,
+      requested_max_output_tokens: 150,
+      provider_pricing_fingerprint: "cd".repeat(32),
+      provider_pricing_version: "provider-price.v1",
     }),
   );
 
@@ -143,7 +147,7 @@ test("HMAC signed reserve/settle mutates AbrChin wallet once; replay and tamper 
       "",
       body,
       "MESSAGEGO-V2-ABRCHIN-SETTLEMENT",
-      "2.0.0",
+      "2.1.0",
     );
     return new Request(`http://127.0.0.1${SETTLEMENT_PATH}`, {
       method: "POST",
@@ -175,7 +179,7 @@ test("HMAC signed reserve/settle mutates AbrChin wallet once; replay and tamper 
       "",
       reserveBody,
       "MESSAGEGO-V2-ABRCHIN-SETTLEMENT",
-      "2.0.0",
+      "2.1.0",
     );
     tamperedHeaders.set("X-MessageGo-S2S-Signature", "ff".repeat(32));
     const tampered = await handleSettlementHttp(
@@ -193,7 +197,7 @@ test("HMAC signed reserve/settle mutates AbrChin wallet once; replay and tamper 
       JSON.stringify({
         operation: "settle",
         contract_id: "MESSAGEGO-V2-ABRCHIN-SETTLEMENT",
-        contract_version: "2.0.0",
+        contract_version: "2.1.0",
         operation_id: `op_s_${suffix}`,
         account_id: user.id,
         product_id: "prod_a",
@@ -203,10 +207,10 @@ test("HMAC signed reserve/settle mutates AbrChin wallet once; replay and tamper 
         authority_reservation_id: authorityReservationId,
         caller_service_id: "messagego-runtime",
         customer_billable_amount: "200",
-        provider_cost: "1",
-        provider_usage: { input_text_tokens: 1, output_text_tokens: 1 },
-        pricing_fingerprint: "ab".repeat(32),
-        pricing_version: "price.v2.test",
+        provider_cost: "999999",
+        provider_usage: { input_text_tokens: 80, output_text_tokens: 120 },
+        provider_pricing_fingerprint: "cd".repeat(32),
+        provider_pricing_version: "provider-price.v1",
       }),
     );
     const settleHeaders = new Headers({ "content-type": "application/json" });
@@ -220,7 +224,7 @@ test("HMAC signed reserve/settle mutates AbrChin wallet once; replay and tamper 
       "",
       settleBody,
       "MESSAGEGO-V2-ABRCHIN-SETTLEMENT",
-      "2.0.0",
+      "2.1.0",
     );
     const settled = await handleSettlementHttp(
       new Request(`http://127.0.0.1${SETTLEMENT_PATH}`, {
@@ -284,7 +288,7 @@ test("production + settlement enabled + valid HMAC is technically available on r
       "",
       body,
       "MESSAGEGO-V2-ABRCHIN-SETTLEMENT",
-      "2.0.0",
+      "2.1.0",
     );
     const caller = await authenticateSettlementRequest(
       new Request(`http://127.0.0.1${SETTLEMENT_PATH}`, { method: "POST", headers, body }),

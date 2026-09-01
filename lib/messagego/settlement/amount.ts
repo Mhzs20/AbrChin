@@ -1,5 +1,5 @@
 export const SETTLEMENT_CONTRACT_ID = "MESSAGEGO-V2-ABRCHIN-SETTLEMENT";
-export const SETTLEMENT_CONTRACT_VERSION = "2.0.0";
+export const SETTLEMENT_CONTRACT_VERSION = "2.1.0";
 export const SETTLEMENT_CURRENCY = "IRR";
 export const SETTLEMENT_UNIT = "rial";
 
@@ -31,7 +31,11 @@ export type SettlementErrorCode =
   | "production_denied"
   | "browser_forbidden"
   | "unauthenticated"
-  | "settlement_runtime_unavailable";
+  | "settlement_runtime_unavailable"
+  | "unknown_pricing"
+  | "stale_pricing"
+  | "usage_unknown"
+  | "customer_amount_untrusted";
 
 function statusFor(code: SettlementErrorCode): number {
   switch (code) {
@@ -50,9 +54,14 @@ function statusFor(code: SettlementErrorCode): number {
     case "wallet_frozen":
     case "account_inactive":
       return 409;
+    case "stale_pricing":
+    case "usage_unknown":
+      return 409;
     case "json_number_money":
     case "invalid_amount":
     case "invalid_request":
+    case "unknown_pricing":
+    case "customer_amount_untrusted":
       return 422;
     default:
       return 400;
@@ -85,6 +94,39 @@ export function walletAmountString(value: bigint): string {
     throw new SettlementError("invalid_amount", "wallet amounts must not be negative");
   }
   return value.toString(10);
+}
+
+const TOKENS_PER_MILLION = 1_000_000n;
+
+export function parseOptionalWalletAmount(value: unknown, field: string): bigint | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  return parseWalletAmount(value, field);
+}
+
+export function costRial(tokens: bigint, rialPerMillion: bigint): bigint {
+  if (tokens < 0n || rialPerMillion < 0n) {
+    throw new SettlementError("invalid_amount", "token cost inputs must not be negative");
+  }
+  if (rialPerMillion === 0n && tokens > 0n) {
+    throw new SettlementError("unknown_pricing", "customer rate is zero");
+  }
+  return (tokens * rialPerMillion + (TOKENS_PER_MILLION - 1n)) / TOKENS_PER_MILLION;
+}
+
+export function rejectUntrustedAmount(
+  supplied: bigint | null,
+  derived: bigint,
+  field: string,
+) {
+  if (supplied === null) return;
+  if (supplied !== derived) {
+    throw new SettlementError(
+      "customer_amount_untrusted",
+      `${field} is not the AbrChin-derived amount`,
+    );
+  }
 }
 
 export function assertNoJsonNumberMoney(value: unknown, path = "$"): void {

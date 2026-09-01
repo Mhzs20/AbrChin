@@ -81,6 +81,8 @@ async function main() {
   await run("./node_modules/.bin/prisma", ["migrate", "deploy"]);
   const { handleSettlementHttp } = await import("../lib/messagego/settlement/http.ts");
   const { prisma } = await import("../lib/db.ts");
+  const { ensureUnitCustomerPrice } = await import("../lib/messagego/settlement/customer-pricing.ts");
+  await ensureUnitCustomerPrice(prisma);
 
   const server = createServer(async (req, res) => {
     try {

@@ -2940,6 +2940,13 @@ model MessageGoAuthorityReservation {
   status               MessageGoReservationStatus
   pricingFingerprint   String
   pricingVersion       String
+  modelAlias           String?
+  estimatedMaxInputTokens BigInt?
+  requestedMaxOutputTokens BigInt?
+  customerInputRialPerMillion BigInt?
+  customerOutputRialPerMillion BigInt?
+  providerPricingFingerprint String?
+  providerPricingVersion     String?
   reserveOperationId   String                     @unique
   createdAt            DateTime                   @default(now())
   updatedAt            DateTime                   @updatedAt
@@ -2953,6 +2960,26 @@ model MessageGoAuthorityReservation {
   @@index([productId, workspaceId])
   @@index([runId])
   @@index([status, createdAt])
+  @@index([modelAlias])
+}
+
+/// AbrChin-owned, immutable customer tariff for MessageGo AI.
+/// MessageGo may send provider prices; it must not dictate customer billable money.
+model MessageGoCustomerPrice {
+  stableModelAlias     String
+  revision             BigInt
+  pricingVersion       String
+  pricingFingerprint   String
+  currency             String   @default("IRR")
+  inputRialPerMillion  BigInt
+  outputRialPerMillion BigInt
+  maxInputTokens       BigInt
+  maxOutputTokens      BigInt
+  effectiveAt          DateTime
+  createdAt            DateTime @default(now())
+
+  @@id([stableModelAlias, revision])
+  @@index([stableModelAlias, effectiveAt])
 }
 
 model MessageGoSettlementOperation {

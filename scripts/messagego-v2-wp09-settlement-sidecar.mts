@@ -109,6 +109,8 @@ async function main() {
 
   const { handleSettlementHttp } = await import("../lib/messagego/settlement/http.ts");
   const { prisma } = await import("../lib/db.ts");
+  const { ensureUnitCustomerPrice } = await import("../lib/messagego/settlement/customer-pricing.ts");
+  await ensureUnitCustomerPrice(prisma);
   const { getCustomerAiSurface, handoffCustomerProviderCredential } = await import(
     "../lib/messagego/customer/surface.ts"
   );

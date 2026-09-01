@@ -15,6 +15,7 @@ import {
 } from "../lib/messagego/customer/surface.ts";
 import { customerViewContainsForbiddenSecret } from "../lib/messagego/customer/view.ts";
 import { reserveWalletAuthority } from "../lib/messagego/settlement/authority.ts";
+import { ensureUnitCustomerPrice } from "../lib/messagego/settlement/customer-pricing.ts";
 import { creditWallet } from "../lib/wallet/ledger.ts";
 
 if (!process.env.DATABASE_URL || process.env.ABRCHIN_ISOLATED_TEST !== "1") {
@@ -40,6 +41,7 @@ async function fundedAccount() {
 }
 
 test("wallet top-up primitive still works beside MessageGo settlement", async () => {
+  await ensureUnitCustomerPrice(prisma);
   const fx = await fundedAccount();
   const topup = await creditWallet({
     userId: fx.user.id,
@@ -57,9 +59,11 @@ test("wallet top-up primitive still works beside MessageGo settlement", async ()
     runId: `run_${fx.user.id}`,
     usageReservationId: `ures_${fx.user.id}`,
     callerServiceId: "messagego-test",
-    holdAmount: "100",
-    pricingFingerprint: "ab".repeat(32),
-    pricingVersion: "price.v2.test",
+    modelAlias: "messagego.fast",
+    estimatedMaxInputTokens: 50,
+    requestedMaxOutputTokens: 50,
+    providerPricingFingerprint: "cd".repeat(32),
+    providerPricingVersion: "provider-price.v1",
   });
   assert.equal(reserved.status, "reserved");
   const wallet = await prisma.wallet.findUniqueOrThrow({ where: { id: fx.wallet.id } });

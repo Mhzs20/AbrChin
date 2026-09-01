@@ -11,6 +11,7 @@ import {
   handoffCustomerProviderCredential,
 } from "../lib/messagego/customer/surface.ts";
 import { reserveWalletAuthority } from "../lib/messagego/settlement/authority.ts";
+import { ensureUnitCustomerPrice } from "../lib/messagego/settlement/customer-pricing.ts";
 
 if (!process.env.DATABASE_URL || process.env.ABRCHIN_ISOLATED_TEST !== "1") {
   throw new Error("MessageGo customer UX tests require isolated PostgreSQL");
@@ -21,6 +22,7 @@ after(async () => {
 });
 
 test("customer surface shows AbrChin financial state and never returns raw provider secrets", async () => {
+  await ensureUnitCustomerPrice(prisma);
   const suffix = `${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
   const user = await prisma.user.create({
     data: {
@@ -44,9 +46,11 @@ test("customer surface shows AbrChin financial state and never returns raw provi
     runId: `run_ux_${suffix}`,
     usageReservationId: `ures_ux_${suffix}`,
     callerServiceId: "messagego-test",
-    holdAmount: "1200",
-    pricingFingerprint: "cd".repeat(32),
-    pricingVersion: "price.v2.test",
+    modelAlias: "messagego.fast",
+    estimatedMaxInputTokens: 600,
+    requestedMaxOutputTokens: 600,
+    providerPricingFingerprint: "cd".repeat(32),
+    providerPricingVersion: "provider-price.v1",
   });
   assert.equal(reserved.status, "reserved");
 

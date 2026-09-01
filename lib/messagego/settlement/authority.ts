@@ -12,12 +12,22 @@ import {
 
 import { prisma } from "@/lib/db";
 import {
+  parseOptionalWalletAmount,
   parseWalletAmount,
+  rejectUntrustedAmount,
   SETTLEMENT_CONTRACT_ID,
   SETTLEMENT_CONTRACT_VERSION,
   SettlementError,
   walletAmountString,
 } from "@/lib/messagego/settlement/amount";
+import {
+  deriveBillableRial,
+  deriveHoldRial,
+  latestCustomerPrice,
+  parseProviderUsage,
+  parseTokenCount,
+  type CustomerPriceRecord,
+} from "@/lib/messagego/settlement/customer-pricing";
 import { settlementFingerprint } from "@/lib/messagego/settlement/fingerprint";
 import type {
   AuthorityOutcome,
@@ -271,7 +281,7 @@ async function applyBillable(
       metadata: {
         kind: "messagego_settlement_extra",
         operation_id: operationId,
-        provider_usage_ignored_for_wallet: true,
+        provider_usage_ignored_for_wallet: false,
         provider_cost_ignored_for_wallet: true,
       },
     });
@@ -309,8 +319,46 @@ function technicalQuantities(input: { providerUsage?: unknown; providerCost?: un
     provider_usage: input.providerUsage ?? null,
     provider_cost:
       typeof input.providerCost === "string" ? input.providerCost : null,
-    distinct_from_wallet: true,
+    wallet_derived_from_provider_usage: true,
+    provider_cost_ignored_for_wallet: true,
   };
+}
+
+function reservationPriceSnapshot(
+  reservation: MessageGoAuthorityReservation,
+): Pick<CustomerPriceRecord, "inputRialPerMillion" | "outputRialPerMillion"> & {
+  maxInput: bigint;
+  maxOutput: bigint;
+} {
+  if (
+    reservation.estimatedMaxInputTokens == null ||
+    reservation.requestedMaxOutputTokens == null ||
+    reservation.customerInputRialPerMillion == null ||
+    reservation.customerOutputRialPerMillion == null
+  ) {
+    throw new SettlementError("unknown_pricing", "reservation is missing the customer price snapshot");
+  }
+  return {
+    inputRialPerMillion: reservation.customerInputRialPerMillion,
+    outputRialPerMillion: reservation.customerOutputRialPerMillion,
+    maxInput: reservation.estimatedMaxInputTokens,
+    maxOutput: reservation.requestedMaxOutputTokens,
+  };
+}
+
+function assertStoredCustomerPricing(
+  reservation: MessageGoAuthorityReservation,
+  fingerprint?: string,
+  version?: string,
+) {
+  const suppliedFingerprint = fingerprint?.trim() ?? "";
+  const suppliedVersion = version?.trim() ?? "";
+  if (suppliedFingerprint && suppliedFingerprint !== reservation.pricingFingerprint) {
+    throw new SettlementError("stale_pricing", "customer pricing fingerprint is stale");
+  }
+  if (suppliedVersion && suppliedVersion !== reservation.pricingVersion) {
+    throw new SettlementError("stale_pricing", "customer pricing version is stale");
+  }
 }
 
 export async function reserveWalletAuthority(input: ReserveInput): Promise<AuthorityOutcome> {
@@ -321,9 +369,29 @@ export async function reserveWalletAuthority(input: ReserveInput): Promise<Autho
   const runId = requiredId(input.runId, "run_id");
   const usageReservationId = requiredId(input.usageReservationId, "usage_reservation_id");
   const callerServiceId = requiredId(input.callerServiceId, "caller_service_id");
-  const pricingFingerprint = requiredText(input.pricingFingerprint, "pricing_fingerprint", 128);
-  const pricingVersion = requiredText(input.pricingVersion, "pricing_version", 128);
-  const holdAmount = parseWalletAmount(input.holdAmount, "hold_amount");
+  const modelAlias = requiredText(input.modelAlias, "model_alias", 64);
+  const estimatedMaxInputTokens = parseTokenCount(
+    input.estimatedMaxInputTokens,
+    "estimated_max_input_tokens",
+  );
+  const requestedMaxOutputTokens = parseTokenCount(
+    input.requestedMaxOutputTokens,
+    "requested_max_output_tokens",
+  );
+  const providerPricingFingerprint = requiredText(
+    input.providerPricingFingerprint,
+    "provider_pricing_fingerprint",
+    128,
+  );
+  const providerPricingVersion = requiredText(
+    input.providerPricingVersion,
+    "provider_pricing_version",
+    128,
+  );
+  const suppliedHold = parseOptionalWalletAmount(input.holdAmount, "hold_amount");
+  if (input.providerCostCeiling !== undefined && input.providerCostCeiling !== null && input.providerCostCeiling !== "") {
+    parseWalletAmount(input.providerCostCeiling, "provider_cost_ceiling");
+  }
   const fingerprint = settlementFingerprint({
     account_id: accountId,
     product_id: productId,
@@ -331,9 +399,11 @@ export async function reserveWalletAuthority(input: ReserveInput): Promise<Autho
     run_id: runId,
     usage_reservation_id: usageReservationId,
     caller_service_id: callerServiceId,
-    hold_amount: walletAmountString(holdAmount),
-    pricing_fingerprint: pricingFingerprint,
-    pricing_version: pricingVersion,
+    model_alias: modelAlias,
+    estimated_max_input_tokens: estimatedMaxInputTokens.toString(10),
+    requested_max_output_tokens: requestedMaxOutputTokens.toString(10),
+    provider_pricing_fingerprint: providerPricingFingerprint,
+    provider_pricing_version: providerPricingVersion,
   });
 
   const committed = await prisma.$transaction(async (tx) => {
@@ -408,6 +478,19 @@ export async function reserveWalletAuthority(input: ReserveInput): Promise<Autho
         message: "Wallet is not active",
       };
     }
+
+    const price = await latestCustomerPrice(tx, modelAlias);
+    const suppliedFingerprint = input.pricingFingerprint?.trim() ?? "";
+    const suppliedVersion = input.pricingVersion?.trim() ?? "";
+    if (suppliedFingerprint && suppliedFingerprint !== price.pricingFingerprint) {
+      throw new SettlementError("stale_pricing", "customer pricing fingerprint is stale");
+    }
+    if (suppliedVersion && suppliedVersion !== price.pricingVersion) {
+      throw new SettlementError("stale_pricing", "customer pricing version is stale");
+    }
+    const holdAmount = deriveHoldRial(price, estimatedMaxInputTokens, requestedMaxOutputTokens);
+    rejectUntrustedAmount(suppliedHold, holdAmount, "hold_amount");
+
     if (lockedWallet.availableBalance < holdAmount) {
       await recordOperation(tx, {
         operationId,
@@ -438,8 +521,15 @@ export async function reserveWalletAuthority(input: ReserveInput): Promise<Autho
         remainingHoldRial: holdAmount,
         settledAmountRial: 0n,
         status: MessageGoReservationStatus.RESERVED,
-        pricingFingerprint,
-        pricingVersion,
+        pricingFingerprint: price.pricingFingerprint,
+        pricingVersion: price.pricingVersion,
+        modelAlias,
+        estimatedMaxInputTokens,
+        requestedMaxOutputTokens,
+        customerInputRialPerMillion: price.inputRialPerMillion,
+        customerOutputRialPerMillion: price.outputRialPerMillion,
+        providerPricingFingerprint,
+        providerPricingVersion,
         reserveOperationId: operationId,
       },
     });
@@ -510,10 +600,13 @@ export async function settleWalletAuthority(input: SettleInput): Promise<Authori
     "authority_reservation_id",
   );
   const callerServiceId = requiredId(input.callerServiceId, "caller_service_id");
-  const pricingFingerprint = requiredText(input.pricingFingerprint, "pricing_fingerprint", 128);
-  const pricingVersion = requiredText(input.pricingVersion, "pricing_version", 128);
   const outcomeClass = input.outcomeClass === "uncertain" ? "uncertain" : "known";
-  const billable = parseWalletAmount(input.customerBillableAmount, "customer_billable_amount");
+  const suppliedBillable = parseOptionalWalletAmount(
+    input.customerBillableAmount,
+    "customer_billable_amount",
+  );
+  const usage =
+    outcomeClass === "uncertain" ? null : parseProviderUsage(input.providerUsage);
   const fingerprint = settlementFingerprint({
     account_id: accountId,
     product_id: productId,
@@ -522,10 +615,9 @@ export async function settleWalletAuthority(input: SettleInput): Promise<Authori
     usage_reservation_id: usageReservationId,
     authority_reservation_id: authorityReservationId,
     caller_service_id: callerServiceId,
-    customer_billable_amount: walletAmountString(billable),
-    pricing_fingerprint: pricingFingerprint,
-    pricing_version: pricingVersion,
     outcome_class: outcomeClass,
+    input_text_tokens: usage ? usage.inputTextTokens.toString(10) : "",
+    output_text_tokens: usage ? usage.outputTextTokens.toString(10) : "",
   });
 
   const committed = await prisma.$transaction(async (tx) => {
@@ -567,6 +659,8 @@ export async function settleWalletAuthority(input: SettleInput): Promise<Authori
       throw error;
     }
 
+    assertStoredCustomerPricing(reservation, input.pricingFingerprint, input.pricingVersion);
+
     if (reservation.status === MessageGoReservationStatus.RELEASED) {
       await recordOperation(tx, {
         operationId,
@@ -583,6 +677,55 @@ export async function settleWalletAuthority(input: SettleInput): Promise<Authori
         message: "Reservation was released and cannot be settled",
       };
     }
+
+    if (outcomeClass === "uncertain") {
+      if (
+        reservation.status === MessageGoReservationStatus.SETTLED ||
+        reservation.status === MessageGoReservationStatus.RECONCILED
+      ) {
+        await recordOperation(tx, {
+          operationId,
+          kind: MessageGoSettlementOpKind.SETTLE,
+          fingerprint,
+          reservationId: reservation.id,
+          accountId,
+          outcome: { error: "state_conflict" },
+          errorCode: "state_conflict",
+        });
+        return {
+          kind: "error" as const,
+          code: "state_conflict" as const,
+          message: "Reservation is already settled with a different amount",
+        };
+      }
+      const updated = await tx.messageGoAuthorityReservation.update({
+        where: { id: reservation.id },
+        data: { status: MessageGoReservationStatus.UNCERTAIN },
+      });
+      const outcome = outcomeFromReservation(updated, []);
+      await recordEvent(tx, updated.id, "uncertain", operationId, {
+        ...outcome,
+        ...technicalQuantities(input),
+      });
+      await recordOperation(tx, {
+        operationId,
+        kind: MessageGoSettlementOpKind.SETTLE,
+        fingerprint,
+        reservationId: updated.id,
+        accountId,
+        outcome,
+      });
+      return { kind: "ok" as const, outcome };
+    }
+
+    const snapshot = reservationPriceSnapshot(reservation);
+    const billable = deriveBillableRial(
+      snapshot,
+      usage as NonNullable<typeof usage>,
+      snapshot.maxInput,
+      snapshot.maxOutput,
+    );
+    rejectUntrustedAmount(suppliedBillable, billable, "customer_billable_amount");
 
     if (
       reservation.status === MessageGoReservationStatus.SETTLED ||
@@ -610,27 +753,6 @@ export async function settleWalletAuthority(input: SettleInput): Promise<Authori
         kind: MessageGoSettlementOpKind.SETTLE,
         fingerprint,
         reservationId: reservation.id,
-        accountId,
-        outcome,
-      });
-      return { kind: "ok" as const, outcome };
-    }
-
-    if (outcomeClass === "uncertain") {
-      const updated = await tx.messageGoAuthorityReservation.update({
-        where: { id: reservation.id },
-        data: { status: MessageGoReservationStatus.UNCERTAIN },
-      });
-      const outcome = outcomeFromReservation(updated, []);
-      await recordEvent(tx, updated.id, "uncertain", operationId, {
-        ...outcome,
-        ...technicalQuantities(input),
-      });
-      await recordOperation(tx, {
-        operationId,
-        kind: MessageGoSettlementOpKind.SETTLE,
-        fingerprint,
-        reservationId: updated.id,
         accountId,
         outcome,
       });
@@ -824,9 +946,11 @@ export async function reconcileWalletAuthority(
     "authority_reservation_id",
   );
   const callerServiceId = requiredId(input.callerServiceId, "caller_service_id");
-  const pricingFingerprint = requiredText(input.pricingFingerprint, "pricing_fingerprint", 128);
-  const pricingVersion = requiredText(input.pricingVersion, "pricing_version", 128);
-  const billable = parseWalletAmount(input.customerBillableAmount, "customer_billable_amount");
+  const suppliedBillable = parseOptionalWalletAmount(
+    input.customerBillableAmount,
+    "customer_billable_amount",
+  );
+  const usage = parseProviderUsage(input.providerUsage);
   const fingerprint = settlementFingerprint({
     account_id: accountId,
     product_id: productId,
@@ -835,9 +959,8 @@ export async function reconcileWalletAuthority(
     usage_reservation_id: usageReservationId,
     authority_reservation_id: authorityReservationId,
     caller_service_id: callerServiceId,
-    customer_billable_amount: walletAmountString(billable),
-    pricing_fingerprint: pricingFingerprint,
-    pricing_version: pricingVersion,
+    input_text_tokens: usage.inputTextTokens.toString(10),
+    output_text_tokens: usage.outputTextTokens.toString(10),
   });
 
   const committed = await prisma.$transaction(async (tx) => {
@@ -879,6 +1002,8 @@ export async function reconcileWalletAuthority(
       throw error;
     }
 
+    assertStoredCustomerPricing(reservation, input.pricingFingerprint, input.pricingVersion);
+
     if (reservation.status === MessageGoReservationStatus.RELEASED) {
       await recordOperation(tx, {
         operationId,
@@ -895,6 +1020,10 @@ export async function reconcileWalletAuthority(
         message: "Released reservation cannot be reconciled into a charge",
       };
     }
+
+    const snapshot = reservationPriceSnapshot(reservation);
+    const billable = deriveBillableRial(snapshot, usage, snapshot.maxInput, snapshot.maxOutput);
+    rejectUntrustedAmount(suppliedBillable, billable, "customer_billable_amount");
 
     if (
       reservation.status === MessageGoReservationStatus.SETTLED ||

@@ -51,6 +51,7 @@ async function main() {
 
   try {
     await socket.start();
+    await run("./node_modules/.bin/prisma", ["generate"]);
     await run("./node_modules/.bin/prisma", ["migrate", "deploy"]);
     await run("node", [
       "--import",

@@ -72,7 +72,7 @@ export async function handleSettlementHttp(request: Request) {
     if (contractVersion && contractVersion !== SETTLEMENT_CONTRACT_VERSION) {
       throw new SettlementError(
         "invalid_request",
-        "settlement contract_version is not 2.0.0",
+        `settlement contract_version is not ${SETTLEMENT_CONTRACT_VERSION}`,
       );
     }
     const operation = readString(payload.operation).trim().toLowerCase();
@@ -96,6 +96,12 @@ export async function handleSettlementHttp(request: Request) {
       const outcome = await reserveWalletAuthority({
         ...base,
         holdAmount: payload.hold_amount,
+        modelAlias: readString(payload.model_alias),
+        estimatedMaxInputTokens: payload.estimated_max_input_tokens,
+        requestedMaxOutputTokens: payload.requested_max_output_tokens,
+        providerPricingFingerprint: readString(payload.provider_pricing_fingerprint),
+        providerPricingVersion: readString(payload.provider_pricing_version),
+        providerCostCeiling: payload.provider_cost_ceiling,
         pricingFingerprint: readString(payload.pricing_fingerprint),
         pricingVersion: readString(payload.pricing_version),
       });
@@ -112,6 +118,8 @@ export async function handleSettlementHttp(request: Request) {
         outcomeClass: outcomeClass(payload.outcome_class),
         providerUsage: payload.provider_usage,
         providerCost: payload.provider_cost,
+        providerPricingFingerprint: readString(payload.provider_pricing_fingerprint),
+        providerPricingVersion: readString(payload.provider_pricing_version),
       });
       assertNoJsonNumberMoney(outcome);
       return jsonOk({ outcome });
@@ -134,6 +142,8 @@ export async function handleSettlementHttp(request: Request) {
         pricingVersion: readString(payload.pricing_version),
         providerUsage: payload.provider_usage,
         providerCost: payload.provider_cost,
+        providerPricingFingerprint: readString(payload.provider_pricing_fingerprint),
+        providerPricingVersion: readString(payload.provider_pricing_version),
       });
       assertNoJsonNumberMoney(outcome);
       return jsonOk({ outcome });
