@@ -531,11 +531,13 @@ export function parseLockedProvisioningSelection(input: {
   const explicitTopologyMode =
     string(snapshot.topologyVerificationMode) ??
     string(delivery.topologyVerificationMode);
-  // ArvanCloud is the only provider and it always verifies the observed
-  // network/security topology against the locked selection.
-  const expectedTopologyMode = "STRICT_OBSERVED";
-  const topologyVerificationMode = explicitTopologyMode;
+  const topologyVerificationMode =
+    explicitTopologyMode === "PROVIDER_MANAGED" ||
+    explicitTopologyMode === "STRICT_OBSERVED"
+      ? explicitTopologyMode
+      : null;
   const accessMethod = string(delivery.accessMethod);
+  const strictObserved = topologyVerificationMode === "STRICT_OBSERVED";
   if (
     provider !== input.provider ||
     providerApiVersion !== input.providerApiVersion ||
@@ -543,9 +545,8 @@ export function parseLockedProvisioningSelection(input: {
     !region ||
     !externalPlanId ||
     !externalImageId ||
-    topologyVerificationMode !== expectedTopologyMode ||
-    (topologyVerificationMode === "STRICT_OBSERVED" &&
-      (!externalNetworkId || !externalSecurityId)) ||
+    !topologyVerificationMode ||
+    (strictObserved && (!externalNetworkId || !externalSecurityId)) ||
     !["SSH_KEY", "ONE_TIME_PASSWORD", "WINDOWS_PASSWORD"].includes(
       accessMethod ?? "",
     ) ||
@@ -555,7 +556,7 @@ export function parseLockedProvisioningSelection(input: {
     delivery.region !== region ||
     delivery.externalPlanId !== externalPlanId ||
     delivery.externalImageId !== externalImageId ||
-    (topologyVerificationMode === "STRICT_OBSERVED" &&
+    (strictObserved &&
       (delivery.externalNetworkId !== externalNetworkId ||
         delivery.externalSecurityId !== externalSecurityId)) ||
     (explicitTopologyMode != null &&

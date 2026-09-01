@@ -44,6 +44,27 @@ test("worker accepts only the exact paid provider selection snapshot", () => {
   assert.equal(parsed.accessMethod, "SSH_KEY");
   assert.equal(parsed.sshKeyName, "abrchin-key");
 
+  const manual = {
+    provider: InfrastructureProvider.ARVAN,
+    providerApiVersion: "v1",
+    productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
+    region: "wp5-tehran",
+    externalPlanId: "g1-2",
+    externalImageId: "ubuntu-wp5",
+    externalNetworkId: null,
+    externalSecurityId: null,
+    topologyVerificationMode: "PROVIDER_MANAGED",
+    accessMethod: "ONE_TIME_PASSWORD",
+  };
+  const manualParsed = parseLockedProvisioningSelection({
+    snapshot: { ...manual, deliveryConfiguration: manual },
+    provider: InfrastructureProvider.ARVAN,
+    providerApiVersion: "v1",
+    productKind: InfrastructureProductKind.READY_INSTANT_SERVER,
+  });
+  assert.equal(manualParsed.topologyVerificationMode, "PROVIDER_MANAGED");
+  assert.equal(manualParsed.externalNetworkId, null);
+
   assert.throws(
     () =>
       parseLockedProvisioningSelection({

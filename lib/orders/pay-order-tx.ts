@@ -469,6 +469,20 @@ export async function executePayOrderWithWalletTx(
     return { order: paidOrder, infrastructureOrder: existingInfra };
   }
 
+  const deliverySnapshot =
+    order.recommendationQuote?.deliveryConfigurationSnapshot &&
+    typeof order.recommendationQuote.deliveryConfigurationSnapshot === "object" &&
+    !Array.isArray(order.recommendationQuote.deliveryConfigurationSnapshot)
+      ? (order.recommendationQuote.deliveryConfigurationSnapshot as Record<string, unknown>)
+      : {};
+  const topologyVerificationMode =
+    deliverySnapshot.topologyVerificationMode === "PROVIDER_MANAGED" ||
+    deliverySnapshot.topologyVerificationMode === "STRICT_OBSERVED"
+      ? deliverySnapshot.topologyVerificationMode
+      : manualAdmin
+        ? "PROVIDER_MANAGED"
+        : "STRICT_OBSERVED";
+
   const infrastructureOrder = await tx.infrastructureOrder.create({
     data: {
       serviceOrderId: order.id,
@@ -496,7 +510,7 @@ export async function executePayOrderWithWalletTx(
           order.recommendationQuote?.externalNetworkId ?? null,
         externalSecurityId:
           order.recommendationQuote?.externalSecurityId ?? null,
-        topologyVerificationMode: "STRICT_OBSERVED",
+        topologyVerificationMode,
         deliveryConfiguration:
           order.recommendationQuote?.deliveryConfigurationSnapshot ??
           null,
